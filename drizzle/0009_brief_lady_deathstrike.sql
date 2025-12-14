@@ -1,0 +1,1 @@
+ALTER TABLE "style_guide_images" ALTER COLUMN "url" DROP NOT NULL;

@@ -1,0 +1,1 @@
+ALTER TABLE "characters" ADD COLUMN "reference_image_url" text;

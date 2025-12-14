@@ -1,0 +1,1 @@
+ALTER TABLE "story_style_guide" ADD COLUMN "user_notes" text;

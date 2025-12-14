@@ -1,65 +1,302 @@
+// src/app/page.tsx
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import Link from "next/link";
 import Image from "next/image";
+import { Playfair_Display, Lato } from "next/font/google";
+// Import the Client Component we just created
+import HeroButton from "@/components/HeroButton"; 
 
-export default function Home() {
+// 1. Load Premium Fonts
+const playfair = Playfair_Display({ 
+  subsets: ["latin"], 
+  variable: "--font-serif",
+  weight: ["400", "700", "900"]
+});
+
+const lato = Lato({ 
+  subsets: ["latin"], 
+  variable: "--font-sans",
+  weight: ["400", "700"]
+});
+
+export default async function Home() {
+  const session = await getServerSession(authOptions);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <main className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans bg-[#FDF8F0] text-slate-900 overflow-x-hidden`}>
+      
+      {/* 
+        ========================================
+        HERO SECTION
+        ========================================
+      */}
+      <section className="relative w-full min-h-[90vh] flex flex-col">
+        
+        {/* HERO BACKGROUND IMAGE & OVERLAY */}
+        <div className="absolute inset-0 z-0">
+            <Image 
+              src="/LandingPage/hero-forest.jpeg" 
+              alt="Magical forest background with a child and fox"
+              fill
+              priority
+              className="object-cover"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-[#0F2236]/90"></div>
         </div>
-      </main>
-    </div>
+
+        {/* NAVBAR */}
+        <header className="relative z-50 w-full px-6 py-6 md:px-12 flex justify-between items-center">
+            <div className="flex items-center gap-2 text-[#FDF8F0]">
+                <span className="text-2xl">📖</span>
+                <span className="font-serif text-2xl font-bold tracking-wide">FlipWhizz</span>
+            </div>
+            
+            <nav className="hidden md:flex items-center gap-8 text-[#FDF8F0]/90 text-sm font-medium tracking-wide">
+                <Link href="#how-it-works" className="hover:text-amber-200 transition">How It Works</Link>
+                <Link href="#gallery" className="hover:text-amber-200 transition">Gallery</Link>
+                <Link href="#pricing" className="hover:text-amber-200 transition">Pricing</Link>
+                
+                {!session ? (
+                   <Link href="/api/auth/signin" className="px-6 py-2 rounded-full border border-[#FDF8F0]/30 hover:bg-[#FDF8F0] hover:text-[#0F2236] transition duration-300">
+                     Sign In
+                   </Link>
+                ) : (
+                   <Link href="/projects" className="px-6 py-2 rounded-full bg-[#F4A261] text-[#0F2236] font-bold hover:bg-[#E76F51] transition shadow-lg">
+                     My Library
+                   </Link>
+                )}
+            </nav>
+        </header>
+
+        {/* HERO CONTENT */}
+        <div className="relative z-10 flex-grow flex flex-col justify-center px-6 md:px-20 max-w-4xl pt-10">
+            <h1 className="font-serif text-5xl md:text-7xl lg:text-8xl text-[#FDF8F0] leading-[1.1] drop-shadow-lg">
+                Turn Their Inner World <br/>
+                <span className="text-[#F4A261]">Into a Tangible Tale</span>
+            </h1>
+            
+            <p className="mt-6 text-lg md:text-xl text-[#FDF8F0]/90 max-w-xl font-light leading-relaxed shadow-black/50 drop-shadow-md">
+                Beautifully illustrated, deeply personal storybooks created from your child’s favorite things, quirks, and dreams.
+            </p>
+
+            <div className="mt-10">
+                {/* We pass the session down to the Client Component */}
+                <HeroButton session={session} />
+            </div>
+        </div>
+
+        {/* CURVED DIVIDER */}
+        <div className="absolute bottom-[-2px] left-0 w-full overflow-hidden leading-none z-20">
+            <svg className="relative block w-[calc(100%+1.3px)] h-[80px] md:h-[120px]" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
+                <path d="M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z" fill="#FDF8F0" transform="scale(1, -1) translate(0, -120)"></path>
+            </svg>
+        </div>
+      </section>
+
+      {/* 
+        ========================================
+        HOW IT WORKS
+        ========================================
+      */}
+      <section id="how-it-works" className="relative py-24 px-6 md:px-12 bg-[#FDF8F0]">
+        <div className="text-center mb-16">
+            <h2 className="font-serif text-4xl md:text-5xl text-[#261C15] font-bold">
+                The Creative Journey
+            </h2>
+        </div>
+
+        <div className="relative mx-auto max-w-6xl p-8 md:p-12 bg-[#F3EAD3] rounded-3xl border-4 border-[#E6D5B8] shadow-[inset_0_0_40px_rgba(0,0,0,0.05)]">
+            <div className="hidden md:block absolute top-1/2 left-20 right-20 h-1 border-t-4 border-dashed border-[#Cfb791] -translate-y-1/2 z-0"></div>
+
+            <div className="relative z-10 grid gap-10 md:grid-cols-3">
+                {/* Step 1 */}
+                <div className="flex flex-col items-center text-center group">
+                    <div className="w-full aspect-[4/3] bg-white rounded-lg shadow-md border-4 border-white rotate-[-2deg] overflow-hidden mb-6 transition-transform group-hover:rotate-0 group-hover:scale-105 relative">
+                        <Image 
+                          src="/LandingPage/jar.jpeg" 
+                          alt="Glowing jar with memories"
+                          fill
+                          className="object-cover"
+                        />
+                    </div>
+                    <h3 className="font-serif text-xl font-bold text-[#261C15]">1. You Whisper a Detail</h3>
+                    <p className="mt-2 text-sm text-[#6B5D52] font-medium">Tell us about their favorite toy, pet, or fear.</p>
+                </div>
+
+                {/* Step 2 */}
+                <div className="flex flex-col items-center text-center group">
+                    <div className="w-full aspect-[4/3] bg-white rounded-lg shadow-md border-4 border-white rotate-[1deg] overflow-hidden mb-6 transition-transform group-hover:rotate-0 group-hover:scale-105 relative">
+                         {/* Placeholder Image */}
+                         <Image 
+                          src="/LandingPage/tablet.jpeg" 
+                          alt="Glowing jar with memories"
+                          fill
+                          className="object-cover"
+                        />
+                    </div>
+                    <h3 className="font-serif text-xl font-bold text-[#261C15]">2. We Sketch the Dream</h3>
+                    <p className="mt-2 text-sm text-[#6B5D52] font-medium">Our engine weaves the art & story instantly.</p>
+                </div>
+
+                {/* Step 3 */}
+                <div className="flex flex-col items-center text-center group">
+                    <div className="w-full aspect-[4/3] bg-white rounded-lg shadow-md border-4 border-white rotate-[-1deg] overflow-hidden mb-6 transition-transform group-hover:rotate-0 group-hover:scale-105 relative">
+                        {/* Placeholder Image */}
+                        <Image 
+                          src="/LandingPage/book.jpeg" 
+                          alt="Glowing jar with memories"
+                          fill
+                          className="object-cover"
+                        />
+                    </div>
+                    <h3 className="font-serif text-xl font-bold text-[#261C15]">3. A Book is Born</h3>
+                    <p className="mt-2 text-sm text-[#6B5D52] font-medium">Read on any device or order a hardcover.</p>
+                </div>
+            </div>
+        </div>
+      </section>
+
+      {/* 
+        ========================================
+        FEATURE SHOWCASE
+        ========================================
+      */}
+      <section className="py-24 px-6 md:px-12 bg-white">
+        <div className="mx-auto max-w-6xl">
+            <div className="text-center mb-12">
+                 <h2 className="font-serif text-4xl text-[#261C15] font-bold">A Keepsake, Not Just a File</h2>
+                 <p className="mt-4 text-[#6B5D52]">Designed to be printed, held, and read under a duvet with a flashlight.</p>
+            </div>
+
+            <div className="relative w-full aspect-[16/9] md:aspect-[21/9] bg-[#EEE5D5] rounded-xl shadow-2xl overflow-hidden">
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center p-10">
+                        <span className="block text-4xl mb-4">📖</span>
+                        <span className="font-serif text-[#8C7A6B] text-lg font-bold">[Insert High-Res Mockup: Open Book on Desk]</span>
+                    </div>
+                </div>
+                <div className="absolute bottom-8 right-8 hidden md:block max-w-xs text-right">
+                    <p className="font-serif text-lg text-[#261C15] font-bold italic">"For Leo, our brave explorer."</p>
+                </div>
+            </div>
+        </div>
+      </section>
+
+      {/* 
+        ========================================
+        GALLERY
+        ========================================
+      */}
+      <section id="gallery" className="py-24 px-6 md:px-12 bg-[#FDF8F0]">
+         <div className="mx-auto max-w-6xl">
+            <h2 className="text-center font-serif text-4xl text-[#261C15] font-bold mb-16">
+                Gallery of Wonder
+            </h2>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
+                {/* Item 1 */}
+                <div className="flex flex-col gap-4">
+                    <div className="aspect-square bg-slate-800 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
+                        <div className="absolute bottom-0 p-4 w-full">
+                           <p className="text-white font-serif font-bold">Mitch & The Dragon</p>
+                        </div>
+                        <div className="absolute inset-0 bg-red-900/20 z-[-1]"></div>
+                    </div>
+                    <div className="flex items-start gap-3 px-1">
+                        <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
+                        <p className="text-xs text-[#6B5D52] italic">"The best gift I've ever given. She reads it every night." <br/><span className="font-bold not-italic">- Sarah, Mum of 2</span></p>
+                    </div>
+                </div>
+
+                {/* Item 2 */}
+                <div className="flex flex-col gap-4">
+                    <div className="aspect-square bg-sky-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
+                        <div className="absolute bottom-0 p-4 w-full">
+                           <p className="text-white font-serif font-bold">The Sea Secret</p>
+                        </div>
+                        <div className="absolute inset-0 bg-blue-900/20 z-[-1]"></div>
+                    </div>
+                    <div className="flex items-start gap-3 px-1">
+                        <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
+                        <p className="text-xs text-[#6B5D52] italic">"He couldn't believe the boy in the book looked just like him!" <br/><span className="font-bold not-italic">- Mike, Dad</span></p>
+                    </div>
+                </div>
+
+                {/* Item 3 */}
+                <div className="flex flex-col gap-4">
+                    <div className="aspect-square bg-emerald-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
+                        <div className="absolute bottom-0 p-4 w-full">
+                           <p className="text-white font-serif font-bold">Magical Treehouse</p>
+                        </div>
+                        <div className="absolute inset-0 bg-green-900/20 z-[-1]"></div>
+                    </div>
+                    <div className="flex items-start gap-3 px-1">
+                        <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
+                        <p className="text-xs text-[#6B5D52] italic">"Beautiful illustrations. Worth every penny." <br/><span className="font-bold not-italic">- Jess, Mum</span></p>
+                    </div>
+                </div>
+
+                {/* Item 4 */}
+                <div className="flex flex-col gap-4">
+                    <div className="aspect-square bg-amber-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
+                        <div className="absolute bottom-0 p-4 w-full">
+                           <p className="text-white font-serif font-bold">Wild Animals</p>
+                        </div>
+                        <div className="absolute inset-0 bg-orange-900/20 z-[-1]"></div>
+                    </div>
+                    <div className="flex items-start gap-3 px-1">
+                        <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
+                        <p className="text-xs text-[#6B5D52] italic">"Finally, a keepsake that isn't plastic junk." <br/><span className="font-bold not-italic">- Tom, Grandad</span></p>
+                    </div>
+                </div>
+            </div>
+         </div>
+      </section>
+
+      {/* 
+        ========================================
+        FOOTER
+        ========================================
+      */}
+      <footer className="relative bg-[#0F2236] text-[#FDF8F0] pt-32 pb-12">
+         {/* Top Wave Divider */}
+         <div className="absolute top-[-2px] left-0 w-full overflow-hidden leading-none z-20">
+            <svg className="relative block w-[calc(100%+1.3px)] h-[60px] md:h-[100px]" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
+                <path d="M985.66,92.83C906.67,72,823.78,31,743.84,14.19c-82.26-17.34-168.06-16.33-250.45.39-57.84,11.73-114,31.07-172,41.86A600.21,600.21,0,0,1,0,27.35V120H1200V95.8C1132.19,118.92,1055.71,111.31,985.66,92.83Z" fill="#FDF8F0"></path>
+            </svg>
+         </div>
+
+         <div className="relative z-10 mx-auto max-w-6xl px-6 md:px-12 flex flex-col md:flex-row justify-between items-end gap-12">
+            
+            {/* Left: Links */}
+            <div className="flex flex-col gap-4 text-sm font-medium text-[#FDF8F0]/60">
+                <Link href="/" className="hover:text-white transition">Home</Link>
+                <Link href="#how-it-works" className="hover:text-white transition">How It Works</Link>
+                <Link href="#gallery" className="hover:text-white transition">Gallery</Link>
+                <Link href="#pricing" className="hover:text-white transition">Pricing</Link>
+                <Link href="/contact" className="hover:text-white transition">Contact Us</Link>
+            </div>
+
+            {/* Middle: Brand */}
+            <div className="text-center md:text-right">
+                <h4 className="font-serif text-2xl font-bold">FlipWhizz</h4>
+                <p className="text-sm opacity-50 mt-1">Made for magic, built to last.</p>
+                <p className="text-xs opacity-30 mt-8">© {new Date().getFullYear()} FlipWhizz Ltd.</p>
+            </div>
+
+            {/* Right: Sleeping Child Illustration Placeholder */}
+            <div className="w-full md:w-auto flex justify-center md:justify-end">
+                <div className="w-64 h-40 bg-indigo-900/50 rounded-t-full border-b-0 border-4 border-indigo-800 flex items-center justify-center text-center p-4">
+                    <span className="text-xs opacity-50">[IMG: Sleeping Child Illustration]</span>
+                </div>
+            </div>
+         </div>
+      </footer>
+    </main>
   );
 }
