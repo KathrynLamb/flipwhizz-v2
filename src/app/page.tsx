@@ -4,10 +4,8 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import Link from "next/link";
 import Image from "next/image";
 import { Playfair_Display, Lato } from "next/font/google";
-// Import the Client Component we just created
 import HeroButton from "@/components/HeroButton"; 
 
-// 1. Load Premium Fonts
 const playfair = Playfair_Display({ 
   subsets: ["latin"], 
   variable: "--font-serif",
@@ -31,21 +29,24 @@ export default async function Home() {
         HERO SECTION
         ========================================
       */}
-      <section className="relative w-full min-h-[90vh] flex flex-col">
+      <section className="relative w-full min-h-[95vh] flex flex-col">
         
-        {/* HERO BACKGROUND IMAGE & OVERLAY */}
+        {/* 1. BACKGROUND IMAGE 
+            - object-[center_60%] ensures the boy stays visible on mobile
+        */}
         <div className="absolute inset-0 z-0">
             <Image 
-              src="/LandingPage/hero-forest.jpeg" 
-              alt="Magical forest background with a child and fox"
+              src="/LandingPage/hero-forestv2.jpeg" 
+              alt="Magical forest background"
               fill
               priority
-              className="object-cover"
+              className="object-cover object-[center_60%] md:object-center"
             />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-[#0F2236]/90"></div>
+            {/* Dark gradient overlay to make text pop */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/30 to-[#0F2236]/80"></div>
         </div>
 
-        {/* NAVBAR */}
+        {/* 2. NAVBAR */}
         <header className="relative z-50 w-full px-6 py-6 md:px-12 flex justify-between items-center">
             <div className="flex items-center gap-2 text-[#FDF8F0]">
                 <span className="text-2xl">📖</span>
@@ -69,26 +70,33 @@ export default async function Home() {
             </nav>
         </header>
 
-        {/* HERO CONTENT */}
-        <div className="relative z-10 flex-grow flex flex-col justify-center px-6 md:px-20 max-w-4xl pt-10">
-            <h1 className="font-serif text-5xl md:text-7xl lg:text-8xl text-[#FDF8F0] leading-[1.1] drop-shadow-lg">
-                Turn Their Inner World <br/>
-                <span className="text-[#F4A261]">Into a Tangible Tale</span>
-            </h1>
-            
-            <p className="mt-6 text-lg md:text-xl text-[#FDF8F0]/90 max-w-xl font-light leading-relaxed shadow-black/50 drop-shadow-md">
-                Beautifully illustrated, deeply personal storybooks created from your child’s favorite things, quirks, and dreams.
-            </p>
+        {/* 3. HERO CONTENT 
+            - justify-center: Vertically centers the content block
+            - items-center: Horizontally centers the text
+            - pb-32 md:pb-40: CRITICAL. This adds padding at the bottom so the button 
+              doesn't touch the white wave divider.
+        */}
+        <div className="relative z-10 flex-grow flex flex-col justify-center items-center text-center px-4 pb-32 md:pb-40 pt-10">
+            <div className="max-w-4xl space-y-8 animate-fade-in-up">
+                <h1 className="font-serif text-5xl md:text-7xl lg:text-8xl text-[#FDF8F0] leading-[1.1] drop-shadow-2xl">
+                    Turn Their Inner World <br/>
+                    <span className="text-[#F4A261]">Into a Tangible Tale</span>
+                </h1>
+                
+                <p className="mx-auto text-lg md:text-2xl text-[#FDF8F0]/90 max-w-2xl font-light leading-relaxed drop-shadow-lg">
+                    Beautifully illustrated, deeply personal storybooks created from your child’s favorite things, quirks, and dreams.
+                </p>
 
-            <div className="mt-10">
-                {/* We pass the session down to the Client Component */}
-                <HeroButton session={session} />
+                {/* Button Container */}
+                <div className="flex justify-center pt-4">
+                    <HeroButton session={session} />
+                </div>
             </div>
         </div>
 
-        {/* CURVED DIVIDER */}
-        <div className="absolute bottom-[-2px] left-0 w-full overflow-hidden leading-none z-20">
-            <svg className="relative block w-[calc(100%+1.3px)] h-[80px] md:h-[120px]" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
+        {/* 4. CURVED DIVIDER (Wave) */}
+        <div className="absolute bottom-[-1px] left-0 w-full overflow-hidden leading-none z-20">
+            <svg className="relative block w-[calc(100%+1.3px)] h-[60px] md:h-[120px]" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
                 <path d="M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z" fill="#FDF8F0" transform="scale(1, -1) translate(0, -120)"></path>
             </svg>
         </div>
@@ -96,7 +104,7 @@ export default async function Home() {
 
       {/* 
         ========================================
-        HOW IT WORKS
+        HOW IT WORKS SECTION (Rest of page...)
         ========================================
       */}
       <section id="how-it-works" className="relative py-24 px-6 md:px-12 bg-[#FDF8F0]">
@@ -106,7 +114,9 @@ export default async function Home() {
             </h2>
         </div>
 
-        <div className="relative mx-auto max-w-6xl p-8 md:p-12 bg-[#F3EAD3] rounded-3xl border-4 border-[#E6D5B8] shadow-[inset_0_0_40px_rgba(0,0,0,0.05)]">
+        {/* Example Grid for How It Works */}
+        <div className="relative mx-auto max-w-6xl p-8 md:p-12 bg-[#F3EAD3] rounded-3xl border-4 border-[#E6D5B8]">
+  
             <div className="hidden md:block absolute top-1/2 left-20 right-20 h-1 border-t-4 border-dashed border-[#Cfb791] -translate-y-1/2 z-0"></div>
 
             <div className="relative z-10 grid gap-10 md:grid-cols-3">
@@ -162,26 +172,39 @@ export default async function Home() {
         FEATURE SHOWCASE
         ========================================
       */}
-      <section className="py-24 px-6 md:px-12 bg-white">
-        <div className="mx-auto max-w-6xl">
-            <div className="text-center mb-12">
-                 <h2 className="font-serif text-4xl text-[#261C15] font-bold">A Keepsake, Not Just a File</h2>
-                 <p className="mt-4 text-[#6B5D52]">Designed to be printed, held, and read under a duvet with a flashlight.</p>
-            </div>
-
-            <div className="relative w-full aspect-[16/9] md:aspect-[21/9] bg-[#EEE5D5] rounded-xl shadow-2xl overflow-hidden">
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center p-10">
-                        <span className="block text-4xl mb-4">📖</span>
-                        <span className="font-serif text-[#8C7A6B] text-lg font-bold">[Insert High-Res Mockup: Open Book on Desk]</span>
-                    </div>
-                </div>
-                <div className="absolute bottom-8 right-8 hidden md:block max-w-xs text-right">
-                    <p className="font-serif text-lg text-[#261C15] font-bold italic">"For Leo, our brave explorer."</p>
-                </div>
-            </div>
+    <section className="py-24 px-6 md:px-12 bg-white">
+      <div className="mx-auto max-w-6xl">
+        <div className="text-center mb-12">
+          <h2 className="font-serif text-4xl text-[#261C15] font-bold">
+            A Keepsake, Not Just a File
+          </h2>
+          <p className="mt-4 text-[#6B5D52]">
+            Designed to be printed, held, and read under a duvet with a flashlight.
+          </p>
         </div>
-      </section>
+
+        <div className="relative w-full aspect-[16/9] md:aspect-[21/9] bg-[#EEE5D5] rounded-xl shadow-2xl overflow-hidden">
+          {/* ✅ Image */}
+          <Image
+            src="/LandingPage/product.jpeg"   // change to /product.jpg or /product.webp if needed
+            alt="FlipWhizz printed storybook mockup"
+            fill
+            className="object-cover"
+            priority
+          />
+
+          {/* ✅ Soft overlay to keep the quote readable */}
+          <div className="absolute inset-0 bg-black/0 md:bg-gradient-to-t md:from-black/20 md:via-black/0 md:to-black/0" />
+
+          {/* ✅ Quote */}
+          <div className="absolute bottom-6 right-6 hidden md:block max-w-xs text-right">
+            <p className="font-serif text-lg text-[#261C15] font-bold italic drop-shadow-sm">
+              "For Leo, our brave explorer."
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
 
       {/* 
         ========================================
