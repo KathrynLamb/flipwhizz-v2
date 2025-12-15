@@ -23,7 +23,9 @@ const lato = Lato({
 export default async function ProjectsIndexPage() {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user?.id) {
+  console.log("Session", session)
+
+  if (!session?.user?.email) {
     return (
       <main
         className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans bg-[#FDF8F0] text-slate-900`}

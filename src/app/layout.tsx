@@ -3,7 +3,7 @@ import "./globals.css";
 // import { NextAuthProvider } from "@/components/next-auth-provider";
 
 export const metadata = {
-  title: "FlipWhizz v2",
+  title: "Flip Whizz",
   description: "AI-powered story builder",
 };
 
