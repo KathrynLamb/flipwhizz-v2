@@ -25,7 +25,7 @@ export default async function ProjectsIndexPage() {
 
   console.log("Session", session)
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return (
       <main
         className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans bg-[#FDF8F0] text-slate-900`}
