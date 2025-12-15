@@ -44,11 +44,11 @@ export default function CheckoutPage() {
           
           <div className="flex justify-between items-center py-4 border-t border-white/10">
             <span>Full Story Generation</span>
-            <span className="font-semibold">$9.99</span>
+            <span className="font-semibold">£29.99</span>
           </div>
           <div className="flex justify-between items-center py-4 border-t border-white/10 text-lg font-bold text-green-400">
             <span>Total</span>
-            <span>$9.99</span>
+            <span>£29.99</span>
           </div>
         </div>
 
@@ -59,7 +59,7 @@ export default function CheckoutPage() {
             <p className="text-xs text-white/40">Powered by PayPal. Secure checkout.</p>
           </div>
 
-          <PayPalScriptProvider options={{ clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID! }}>
+          <PayPalScriptProvider options={{ clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!, currency: "GBP" }}>
             <PayPalButtons
               style={{ layout: "vertical", color: "gold", shape: "rect", label: "pay" }}
               createOrder={(data, actions) => {
@@ -68,8 +68,8 @@ export default function CheckoutPage() {
                   purchase_units: [
                     {
                       amount: {
-                        currency_code: "USD",
-                        value: "9.99",
+                        currency_code: "GBP",
+                        value: "29.99",
                       },
                       description: `FlipWhizz Book: ${story.title}`,
                     },

@@ -5,6 +5,7 @@ import {
   timestamp,
   integer,
   uuid,
+  boolean
 } from "drizzle-orm/pg-core";
 
 /* ==================== USERS ==================== */
@@ -48,7 +49,7 @@ export const stories = pgTable("stories", {
   fullDraft: text("full_draft"),
 
   status: varchar("status", { length: 20 }).default("planning"),
-
+  storyConfirmed: boolean("story_confirmed").default(false).notNull(),
   paymentStatus: text("payment_status").default("pending"),
   paymentId: text("payment_id"),
 

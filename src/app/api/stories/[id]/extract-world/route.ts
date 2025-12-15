@@ -131,6 +131,15 @@ export async function POST(
       return NextResponse.json({ error: "Missing story ID" }, { status: 400 });
     }
 
+    await db
+    .update(stories)
+    .set({
+      storyConfirmed: true,       // ✅ Marks the boolean as true
+      status: "extracting",       // ✅ Updates status to track progress
+      updatedAt: new Date(),      // ✅ Keeps timestamps fresh
+    })
+    .where(eq(stories.id, storyId));
+
     // Load story
     const story = await db
       .select()

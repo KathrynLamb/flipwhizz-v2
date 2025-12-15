@@ -1,0 +1,1 @@
+ALTER TABLE "stories" ADD COLUMN "story_confirmed" boolean DEFAULT false NOT NULL;
