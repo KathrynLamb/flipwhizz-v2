@@ -1,10 +1,25 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
-import { Loader2, Upload, Wand2, RefreshCw, Check, ImagePlus } from "lucide-react";
+import { 
+  Loader2, 
+  Upload, 
+  Wand2, 
+  RefreshCw, 
+  Check, 
+  Image as ImageIcon,
+  Palette,
+  ChevronDown,
+  ChevronUp,
+  Users,
+  Pencil,
+  ArrowLeft,
+  Sparkles
+} from "lucide-react";
 import { SampleImageCharacterCard } from "@/components/SampleImageCharacterCard";
 import { SampleImageLocationCard } from "@/components/SampleImageLocationCard";
+import { motion, AnimatePresence } from "framer-motion";
 
 /* ===================== Types ===================== */
 
@@ -37,92 +52,85 @@ export default function InitialStyleDesignEditor({
   characters: Entity[];
   locations: Entity[];
 }) {
-  // Local State
+  // --- STATE ---
   const [prompt, setPrompt] = useState(style.summary ?? "");
   const [styleRefUrl, setStyleRefUrl] = useState<string | null>(style.styleGuideImage);
-  const [localCharacters, setLocalCharacters] = useState<Entity[]>(characters);
-  const [localLocations, setLocalLocations] = useState<Entity[]>(locations);
+  const [isEditing, setIsEditing] = useState<boolean>(false)
   
-  // UI State
-  const [isUploading, setIsUploading] = useState(false);
+  // 'default' = Show AI Text, 'edit' = Textarea, 'upload' = File Dropzone
+  const [mode, setMode] = useState<'default' | 'edit' | 'upload'>('default');
+
+  const [showCast, setShowCast] = useState(false);
+  const [isUploadingRef, setIsUploadingRef] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState("");
   const [generatedSample, setGeneratedSample] = useState<string | null>(style.sampleIllustrationUrl);
 
+  // Helper to handle characters (passed to API)
+  const [localCharacters, setLocalCharacters] = useState<Entity[]>(characters);
+  const [localLocations, setLocalLocations] = useState<Entity[]>(locations);
+
   /* -------------------------------------------
-     1. Upload Style Reference
+     1. Upload Logic
   ------------------------------------------- */
   async function handleUploadStyleRef(file: File) {
-    setIsUploading(true);
+    setIsUploadingRef(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
-      fd.append("userId", "anonymous"); // or generic folder
-
-      const res = await fetch("/api/uploads/reference", {
-        method: "POST",
-        body: fd,
-      });
-
+      const res = await fetch("/api/uploads/reference", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      // Update State
       setStyleRefUrl(data.url);
-
-      // Persist immediately
       await fetch("/api/style-guide/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          storyId: style.storyId,
-          styleGuideImage: data.url,
-        }),
+        body: JSON.stringify({ storyId: style.storyId, styleGuideImage: data.url }),
       });
-
     } catch (err) {
-      console.error("Upload failed", err);
-      alert("Failed to upload style reference.");
+      alert("Failed to upload.");
     } finally {
-      setIsUploading(false);
+      setIsUploadingRef(false);
     }
   }
 
-  /* -------------------------------------------
-     2. Update Character/Location
-  ------------------------------------------- */
   function updateEntity(id: string, updates: Partial<Entity>, type: 'char' | 'loc') {
-    if (type === 'char') {
-      setLocalCharacters(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
-    } else {
-      setLocalLocations(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
-    }
+    if (type === 'char') setLocalCharacters(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    else setLocalLocations(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
   }
 
   /* -------------------------------------------
-     3. Generate Sample (FIXED FORMATTING)
+     2. Generate Logic
   ------------------------------------------- */
- /* -------------------------------------------
-     3. Generate Sample (Polling Implementation)
+/* -------------------------------------------
+     3. Generate Sample (Extended Polling)
   ------------------------------------------- */
   async function handleGenerate() {
     setIsGenerating(true);
+    setGenerationStatus("Waking up the studio...");
     setGeneratedSample(null);
-
-    // Save prompt first
-    await fetch("/api/style-guide/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storyId: style.storyId, summary: prompt }),
-    });
+    setIsEditing(false); // Switch to loading view
 
     try {
-      const references = [];
-      // ... (your existing code to build references array) ...
-      if (styleRefUrl) references.push({ url: styleRefUrl, type: "style", label: "Style" });
-      localCharacters.forEach(c => c.referenceImageUrl && references.push({ url: c.referenceImageUrl, type: "character", label: c.name, notes: c.description }));
+      // 1. Save prompt & update DB first
+      await fetch("/api/style-guide/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storyId: style.storyId, summary: prompt }),
+      });
 
-      // 1. Kick off the job
-      await fetch("/api/style/generate", {
+      // 2. Prepare Payload
+      const references = [];
+      if (styleRefUrl) {
+        references.push({ url: styleRefUrl, type: "style", label: "Art Style" });
+      }
+      localCharacters.forEach(c => {
+        references.push({ url: c.referenceImageUrl || null, type: "character", label: c.name, notes: c.description || "" });
+      });
+
+      // 3. Dispatch Job
+      const res = await fetch("/api/style/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -134,197 +142,237 @@ export default function InitialStyleDesignEditor({
         }),
       });
 
-      // 2. Poll for the result (Check every 2s for 60s)
+      if (!res.ok) throw new Error("Failed to start generation");
+
+      // 4. Poll (Extended Duration)
       let attempts = 0;
-      while (attempts < 30) {
-        // Wait 2 seconds
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        
-        // Fetch current style guide state
-        // You might need to create a simple GET endpoint or reuse the design page fetch logic
-        // For now, assuming you have an endpoint or re-fetching the main story endpoint:
-        const checkRes = await fetch(`/api/stories/${style.storyId}/style-poll`); 
-        // ^ You need to create this simple GET endpoint!
-        
-        if (checkRes.ok) {
-           const data = await checkRes.json();
-           if (data.sampleUrl) {
-              setGeneratedSample(data.sampleUrl);
-              break;
-           }
-        }
-        attempts++;
-      }
+      const maxAttempts = 90; // 90 * 2s = 3 minutes max
       
+      const poll = setInterval(async () => {
+        attempts++;
+        
+        // Dynamic Status Updates
+        if (attempts === 2) setGenerationStatus("Reading your story...");
+        if (attempts === 10) setGenerationStatus("Analyzing character photos...");
+        if (attempts === 25) setGenerationStatus("Sketching the scene layout...");
+        if (attempts === 40) setGenerationStatus("Mixing paints and colors...");
+        if (attempts === 60) setGenerationStatus("Adding final magical details...");
+
+        try {
+            const checkRes = await fetch(`/api/stories/${style.storyId}/style-poll`);
+            if (checkRes.ok) {
+                const data = await checkRes.json();
+                if (data.sampleUrl) {
+                    clearInterval(poll);
+                    setGeneratedSample(data.sampleUrl);
+                    setIsGenerating(false);
+                }
+            }
+        } catch (e) { /* ignore network blips */ }
+
+        if (attempts >= maxAttempts) {
+            clearInterval(poll);
+            setIsGenerating(false);
+            setIsEditing(true); 
+            alert("This is taking longer than usual. The image might still appear in a moment, try refreshing the page.");
+        }
+      }, 2000); // Check every 2 seconds
+
     } catch (e: any) {
       console.error(e);
-      alert("Something went wrong triggering the magic.");
-    } finally {
       setIsGenerating(false);
+      setIsEditing(true);
+      alert("Something went wrong starting the process.");
     }
   }
-  /* -------------------------------------------
-     4. Payment Handler
-  ------------------------------------------- */
+
   const handleApprovePayment = async (orderID: string) => {
     const res = await fetch("/api/paypal/capture", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orderID, storyId: style.storyId }),
     });
-
-    if (res.ok) {
-      window.location.href = `/stories/${style.storyId}/studio`;
-    } else {
-      alert("Payment capture failed.");
-    }
+    if (res.ok) window.location.href = `/stories/${style.storyId}/studio`;
   };
 
   /* ===================== RENDER ===================== */
 
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-      
-      {/* LEFT COLUMN: Controls */}
-      <div className="lg:col-span-5 space-y-8">
-        
-        {/* Style Description */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-          <div className="flex items-center gap-2 mb-4 text-amber-500 font-bold uppercase text-xs tracking-wider">
-            <Wand2 className="w-4 h-4" /> Art Direction
-          </div>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            className="w-full h-32 bg-black/40 border border-white/10 rounded-xl p-4 text-white placeholder-white/20 focus:outline-none focus:border-amber-500/50 transition-colors resize-none"
-            placeholder="Describe the art style..."
-          />
-        </div>
-
-        {/* Style Reference Image */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-          <div className="flex items-center gap-2 mb-4 text-amber-500 font-bold uppercase text-xs tracking-wider">
-            <ImagePlus className="w-4 h-4" /> Style Reference
-          </div>
-          
-          <div className="relative group w-full h-48 bg-black/40 border-2 border-dashed border-white/10 rounded-xl overflow-hidden flex flex-col items-center justify-center hover:border-amber-500/30 transition-colors">
-            {styleRefUrl ? (
-              <>
-                <img src={styleRefUrl} alt="Style Ref" className="w-full h-full object-cover opacity-80" />
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/60">
-                  <span className="text-xs font-bold px-3 py-1 rounded-full border border-white/20">Change Image</span>
+  // 1. RESULT VIEW (Image Generated)
+  if (generatedSample && !isGenerating) {
+    return (
+        <div className="max-w-4xl mx-auto pb-40">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-8">
+                {/* Result Image */}
+                <div className="relative bg-white rounded-[2rem] shadow-2xl overflow-hidden border border-stone-100 group">
+                    <img src={generatedSample} alt="Sample" className="w-full h-auto" />
+                    <button 
+                        onClick={() => setGeneratedSample(null)} 
+                        className="absolute top-4 right-4 bg-white/90 text-stone-800 px-4 py-2 rounded-full text-sm font-bold shadow-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2"
+                    >
+                        <RefreshCw className="w-4 h-4" /> Try Again
+                    </button>
                 </div>
-              </>
-            ) : (
-              <div className="flex flex-col items-center text-white/30">
-                {isUploading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Upload className="w-6 h-6 mb-2" />}
-                <span className="text-xs">Upload Reference</span>
-              </div>
-            )}
-            <input
-              type="file"
-              accept="image/*"
-              className="absolute inset-0 opacity-0 cursor-pointer"
-              onChange={(e) => e.target.files?.[0] && handleUploadStyleRef(e.target.files[0])}
-            />
-          </div>
-        </div>
 
-        {/* Characters & Locations List */}
-        <div className="space-y-4">
-          <h3 className="text-sm font-bold text-white/90 uppercase tracking-widest">Cast & Locations</h3>
-          <div className="grid gap-4">
-            {localCharacters.map(char => (
-         
-              <SampleImageCharacterCard 
-                key={char.id} 
-                character={{...char, referenceImageUrl: char.referenceImageUrl ?? null, description: char.description ?? null}}
-                onUpdated={(u) => updateEntity(char.id, u, 'char')}
-              />
-            ))}
-             {localLocations.map(loc => (
-              
-              <SampleImageLocationCard 
-                key={loc.id} 
-                location={{
-                  ...loc, 
-                  referenceImageUrl: loc.referenceImageUrl ?? null, 
-                  description: loc.description ?? null
-                }}                onUpdated={(u) => updateEntity(loc.id, u, 'loc')} 
-              />
-            ))}
-          </div>
+                {/* Unlock */}
+                <div className="bg-white rounded-3xl p-8 shadow-xl border border-indigo-50 text-center max-w-xl mx-auto">
+                    <h3 className="text-3xl font-serif text-indigo-900 mb-2">Love this look?</h3>
+                    <p className="text-stone-500 mb-8">Unlock the full studio to generate the rest of your book.</p>
+                    <div className="max-w-xs mx-auto">
+                        <PayPalScriptProvider options={{ clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "", currency: "GBP" }}>
+                            <PayPalButtons 
+                                style={{ layout: "horizontal", color: "gold", shape: "pill", label: "pay" }}
+                                createOrder={async () => {
+                                    const res = await fetch("/api/paypal/order", {
+                                        method: "POST",
+                                        body: JSON.stringify({ storyId: style.storyId })
+                                    });
+                                    const data = await res.json();
+                                    return data.orderID;
+                                }}
+                                onApprove={(data) => handleApprovePayment(data.orderID)}
+                            />
+                        </PayPalScriptProvider>
+                    </div>
+                </div>
+            </motion.div>
         </div>
-      </div>
+    );
+  }
 
-      {/* RIGHT COLUMN: Preview & Action */}
-      <div className="lg:col-span-7 flex flex-col">
+  // 2. LOADING VIEW
+  if (isGenerating) {
+    return (
+        <div className="min-h-[60vh] flex flex-col items-center justify-center text-center max-w-md mx-auto">
+            <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-xl mb-8 animate-pulse">
+                <Sparkles className="w-10 h-10 text-indigo-500" />
+            </div>
+            <h2 className="text-3xl font-serif text-indigo-900 mb-4">Painting your story...</h2>
+            <p className="text-stone-500 text-lg">{generationStatus}</p>
+        </div>
+    );
+  }
+
+  // 3. EDIT VIEW (Style Selection)
+  return (
+    <div className="max-w-3xl mx-auto pb-40">
         
-        {/* Story Text Context */}
-        <div className="grid grid-cols-2 gap-6 mb-8 opacity-60 hover:opacity-100 transition-opacity">
-          <div className="bg-white/5 p-4 rounded-lg text-sm font-serif leading-relaxed border border-white/5">
-            <span className="text-xs text-amber-500/50 block mb-2 uppercase">Page 1</span>
-            {leftText}
-          </div>
-          <div className="bg-white/5 p-4 rounded-lg text-sm font-serif leading-relaxed border border-white/5">
-            <span className="text-xs text-amber-500/50 block mb-2 uppercase">Page 2</span>
-            {rightText}
-          </div>
+        {/* HEADER */}
+        <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest mb-4">
+                <Palette className="w-4 h-4" /> Visual Style
+            </div>
+            <h1 className="text-4xl font-serif text-stone-900 mb-4">How should this story look?</h1>
+            <p className="text-stone-500">Choose the AI suggestion, tweak it, or upload your own reference.</p>
         </div>
 
-        {/* Generate Button / Result Area */}
-        <div className="flex-1 bg-black/20 border border-white/10 rounded-3xl p-2 relative flex flex-col items-center justify-center min-h-[500px]">
-          {!generatedSample ? (
-            <div className="text-center p-8">
-               <div className="w-20 h-20 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-6 text-indigo-400">
-                {isGenerating ? <Loader2 className="w-8 h-8 animate-spin" /> : <Wand2 className="w-8 h-8" />}
-              </div>
-              <h3 className="text-xl font-medium text-white mb-2">
-                {isGenerating ? "Painting your story..." : "Ready to Visualize?"}
-              </h3>
-              
-              {!isGenerating && (
-                <button
-                  onClick={handleGenerate}
-                  className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-bold py-4 px-10 rounded-full shadow-lg shadow-orange-900/20 mt-4 transition-all transform hover:scale-105"
-                >
-                  Generate Sample Spread
-                </button>
-              )}
+        {/* STYLE CARD */}
+        <div className="bg-white rounded-3xl shadow-xl border border-stone-200 overflow-hidden relative">
+            
+            {/* CARD CONTENT AREA */}
+            <div className="p-8 min-h-[240px] flex flex-col justify-center bg-stone-50/50">
+                {mode === 'default' && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                        <p className="text-lg font-serif text-indigo-900 leading-relaxed text-center italic">
+                            &ldquo;{prompt}&rdquo;
+                        </p>
+                    </motion.div>
+                )}
+
+                {mode === 'edit' && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full">
+                        <label className="text-xs font-bold text-stone-400 uppercase mb-2 block">Edit AI Suggestion</label>
+                        <textarea 
+                            value={prompt} 
+                            onChange={(e) => setPrompt(e.target.value)}
+                            className="w-full h-40 bg-white border border-stone-200 rounded-xl p-4 text-stone-800 focus:ring-2 focus:ring-indigo-500/20 outline-none resize-none shadow-inner"
+                            autoFocus
+                        />
+                    </motion.div>
+                )}
+
+                {mode === 'upload' && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full">
+                        <label className="text-xs font-bold text-stone-400 uppercase mb-2 block">Upload Reference</label>
+                        <div className="relative group w-full h-48 bg-white rounded-xl border-2 border-dashed border-stone-200 hover:border-indigo-400 cursor-pointer overflow-hidden flex flex-col items-center justify-center text-center">
+                            {styleRefUrl ? (
+                                <img src={styleRefUrl} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="text-stone-400">
+                                    {isUploadingRef ? <Loader2 className="w-8 h-8 animate-spin mx-auto" /> : <Upload className="w-8 h-8 mx-auto mb-2" />}
+                                    <span className="text-sm">Click to upload image</span>
+                                </div>
+                            )}
+                            <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" 
+                                onChange={(e) => e.target.files?.[0] && handleUploadStyleRef(e.target.files[0])} 
+                            />
+                        </div>
+                    </motion.div>
+                )}
             </div>
-          ) : (
-            <div className="w-full h-full flex flex-col items-center animate-in fade-in duration-700">
-              <div className="relative w-full rounded-2xl overflow-hidden shadow-2xl mb-6 group">
-                <img src={generatedSample} alt="Generated Sample" className="w-full h-auto" />
+
+            {/* ACTION FOOTER */}
+            <div className="bg-white border-t border-stone-100 p-6 flex flex-col gap-4 items-center">
+                
+                {/* PRIMARY ACTION */}
                 <button 
-                  onClick={handleGenerate} 
-                  className="absolute top-4 right-4 bg-black/60 hover:bg-black/80 text-white p-2 rounded-full backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={handleGenerate}
+                    className="w-full sm:w-auto min-w-[300px] bg-[#4635B1] hover:bg-[#3b2d96] text-white text-lg font-bold py-4 px-8 rounded-full shadow-lg shadow-indigo-200 transition-all transform hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
                 >
-                  <RefreshCw className="w-4 h-4" />
+                    <Wand2 className="w-5 h-5" />
+                    {mode === 'default' ? "Generate with this Style" : 
+                     mode === 'edit' ? "Generate with Custom Style" : 
+                     "Generate from Image"}
                 </button>
-              </div>
 
-              <div className="w-full max-w-md bg-[#1a1b26] p-6 rounded-xl border border-white/10 text-center">
-                <p className="text-sm text-white/50 mb-4">Unlock the full studio to generate the rest of the book.</p>
-                <PayPalScriptProvider options={{ clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "", currency: "GBP" }}>
-                  <PayPalButtons 
-                    style={{ layout: "horizontal", color: "gold", shape: "pill", label: "pay" }}
-                    createOrder={async () => {
-                        const res = await fetch("/api/paypal/order", {
-                           method: "POST",
-                           body: JSON.stringify({ storyId: style.storyId })
-                        });
-                        const data = await res.json();
-                        return data.orderID;
-                    }}
-                    onApprove={(data) => handleApprovePayment(data.orderID)}
-                  />
-                </PayPalScriptProvider>
-              </div>
+                {/* SECONDARY OPTIONS (The Switchers) */}
+                <div className="flex items-center gap-6 text-sm font-medium pt-2">
+                    {mode !== 'edit' && (
+                        <button onClick={() => setMode('edit')} className="text-stone-400 hover:text-indigo-600 flex items-center gap-2 transition-colors">
+                            <Pencil className="w-4 h-4" /> Edit Text
+                        </button>
+                    )}
+                    
+                    {mode !== 'upload' && (
+                        <button onClick={() => setMode('upload')} className="text-stone-400 hover:text-indigo-600 flex items-center gap-2 transition-colors">
+                            <ImageIcon className="w-4 h-4" /> Use Image
+                        </button>
+                    )}
+
+                    {mode !== 'default' && (
+                        <button onClick={() => setMode('default')} className="text-stone-400 hover:text-indigo-600 flex items-center gap-2 transition-colors">
+                            <ArrowLeft className="w-4 h-4" /> Reset
+                        </button>
+                    )}
+                </div>
             </div>
-          )}
         </div>
-      </div>
+
+        {/* CAST TOGGLE (Subtle at bottom) */}
+        <div className="mt-12 text-center">
+            <button 
+                onClick={() => setShowCast(!showCast)}
+                className="inline-flex items-center gap-2 text-stone-400 hover:text-stone-600 text-xs font-bold uppercase tracking-widest transition-colors"
+            >
+                {showCast ? "Hide Cast" : "View Cast & Locations"}
+                {showCast ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+
+            <AnimatePresence>
+                {showCast && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden mt-6 text-left">
+                        <div className="grid md:grid-cols-2 gap-4">
+                            {localCharacters.map(char => (
+                                <SampleImageCharacterCard key={char.id} character={{...char, referenceImageUrl: char.referenceImageUrl ?? null, description: char.description ?? null}} onUpdated={(u) => updateEntity(char.id, u, 'char')} />
+                            ))}
+                            {localLocations.map(loc => (
+                                <SampleImageLocationCard key={loc.id} location={{...loc, referenceImageUrl: loc.referenceImageUrl ?? null, description: loc.description ?? null}} onUpdated={(u) => updateEntity(loc.id, u, 'loc')} />
+                            ))}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+
     </div>
   );
 }

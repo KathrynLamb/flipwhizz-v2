@@ -109,11 +109,11 @@ export default async function DesignPage({
   }));
 
   return (
-    <main className="min-h-screen bg-[#0b0b10] text-white p-6 lg:p-12">
+    <main className="min-h-screen bg-[#FAF9F6] text-stone-800 p-6 lg:p-12">
       <div className="max-w-5xl mx-auto">
         <header className="mb-10">
-          <h1 className="text-3xl font-serif text-white mb-2">{story.title}</h1>
-          <p className="text-white/60">
+          <h1 className="text-3xl font-serif text-indigo-900 mb-2">{story.title}</h1>
+          <p className="text-indigo-900">
             Let's design the visual style for your book using the first two pages.
           </p>
         </header>
