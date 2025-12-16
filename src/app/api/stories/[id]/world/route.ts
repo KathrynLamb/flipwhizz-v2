@@ -1,95 +1,84 @@
-import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import {
-  stories,
-  storyCharacters,
-  characters,
+import { 
+  stories, 
+  characters, 
+  locations, 
+  storyPages, 
+  storyCharacters, 
   storyLocations,
-  locations,
-  storyStyleGuide,
+  storyPageCharacters 
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
-
-export const runtime = "nodejs";
+import { eq, asc, inArray } from "drizzle-orm";
+import { NextResponse } from "next/server";
 
 export async function GET(
-  _request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id: storyId } = await context.params;
+  const { id } = await params;
 
-    if (!storyId) {
-      return NextResponse.json({ error: "Missing story id" }, { status: 400 });
-    }
+  // 1. Fetch Story
+  const story = await db.query.stories.findFirst({
+    where: eq(stories.id, id),
+  });
 
-    // -------------------------------
-    // Story
-    // -------------------------------
-    const story = await db
-      .select()
-      .from(stories)
-      .where(eq(stories.id, storyId))
-      .then((r) => r[0]);
-
-    if (!story) {
-      return NextResponse.json({ error: "Story not found" }, { status: 404 });
-    }
-
-    // -------------------------------
-    // Characters (join -> single query)
-    // -------------------------------
-    const charRows = await db
-      .select()
-      .from(storyCharacters)
-      .innerJoin(characters, eq(storyCharacters.characterId, characters.id))
-      .where(eq(storyCharacters.storyId, storyId));
-
-    const charactersList = charRows.map((r: any) => r.characters);
-
-    // -------------------------------
-    // Locations (join -> single query)
-    // -------------------------------
-    const locRows = await db
-      .select()
-      .from(storyLocations)
-      .innerJoin(locations, eq(storyLocations.locationId, locations.id))
-      .where(eq(storyLocations.storyId, storyId));
-
-    const locationsList = locRows.map((r: any) => r.locations);
-
-    // -------------------------------
-    // Style guide (this is your "style")
-    // -------------------------------
-    const guide = await db
-      .select()
-      .from(storyStyleGuide)
-      .where(eq(storyStyleGuide.storyId, storyId))
-      .then((r) => r[0] ?? null);
-
-    return NextResponse.json({
-      story: {
-        id: story.id,
-        title: story.title,
-        projectId: story.projectId,
-        length: story.length,
-      },
-      characters: charactersList,
-      locations: locationsList,
-      style: guide
-        ? {
-            summary: guide.summary ?? null,
-            negativePrompt: guide.negativePrompt ?? null,
-            userNotes: guide.userNotes ?? null,
-            sampleIllustrationUrl: guide.sampleIllustrationUrl ?? null,
-          }
-        : null,
-    });
-  } catch (err) {
-    console.error("[world GET] error:", err);
-    return NextResponse.json(
-      { error: "Failed to load story world", details: String(err) },
-      { status: 500 }
-    );
+  if (!story) {
+    return NextResponse.json({ error: "Story not found" }, { status: 404 });
   }
+
+  // 2. Fetch Characters (Using Explicit Join)
+  // JOIN storyCharacters -> characters
+  const fetchedCharacters = await db
+    .select({
+      id: characters.id,
+      name: characters.name,
+      description: characters.description,
+      appearance: characters.appearance,
+      referenceImageUrl: characters.referenceImageUrl,
+    })
+    .from(storyCharacters)
+    .innerJoin(characters, eq(storyCharacters.characterId, characters.id))
+    .where(eq(storyCharacters.storyId, id));
+
+  // 3. Fetch Locations (Using Explicit Join)
+  // JOIN storyLocations -> locations
+  const fetchedLocations = await db
+    .select({
+      id: locations.id,
+      name: locations.name,
+      description: locations.description,
+      // Add referenceImageUrl if your schema has it for locations
+      referenceImageUrl: locations.referenceImageUrl,
+    })
+    .from(storyLocations)
+    .innerJoin(locations, eq(storyLocations.locationId, locations.id))
+    .where(eq(storyLocations.storyId, id));
+
+  // 4. Fetch Pages
+  const pages = await db.query.storyPages.findMany({
+    where: eq(storyPages.storyId, id),
+    orderBy: asc(storyPages.pageNumber),
+    columns: { id: true, pageNumber: true }
+  });
+
+  // 5. Fetch Page Presence
+  // We want all character presence entries for the pages we just fetched
+  const pageIds = pages.map(p => p.id);
+  
+  let presenceData: any[] = [];
+  
+  if (pageIds.length > 0) {
+    presenceData = await db
+      .select()
+      .from(storyPageCharacters)
+      .where(inArray(storyPageCharacters.pageId, pageIds));
+  }
+
+  return NextResponse.json({
+    story,
+    characters: fetchedCharacters,
+    locations: fetchedLocations,
+    pages,
+    presence: presenceData // List of { pageId, characterId }
+  });
 }

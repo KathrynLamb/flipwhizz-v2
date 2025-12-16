@@ -115,112 +115,85 @@ if (session?.user?.id) {
         </div>
       </section>
 
-      {/* 
-        ========================================
-        HOW IT WORKS SECTION (Rest of page...)
-        ========================================
-      */}
-      <section id="how-it-works" className="relative py-24 px-6 md:px-12 bg-[#FDF8F0]">
-        <div className="items-center mb-16">
-        <Image 
-                          src="/LandingPage/theCreativeJourney.png" 
-                          alt="The Creative Journey"
-                          fill
-                          className="object-cover"
-                        />
 
-            {/* <h2 className="font-serif text-4xl md:text-5xl text-[#261C15] font-bold">
-                The Creative Journey
-            </h2> */}
+{/* ========================================
+  HOW IT WORKS SECTION
+  ========================================
+*/}
+<section id="how-it-works" className="relative py-24 px-6 md:px-12 bg-[#FDF8F0]">
+  
+  {/* Corrected Header Container */}
+  <div className="relative flex justify-center items-center mb-20 w-full">
+    <div className="relative w-full max-w-[450px] md:max-w-[700px] h-32 md:h-48 transition-all duration-700 ease-in-out">
+      <Image 
+        src="/LandingPage/theCreativeJourney.png" 
+        alt="The Creative Journey"
+        fill
+        className="object-contain drop-shadow-md" // Added a subtle shadow to help it pop against the light background
+        priority
+      />
+    </div>
+  </div>
+
+  {/* Example Grid for How It Works */}
+  <div className="max-w-6xl mx-auto relative">
+    <div className="absolute inset-0 ring-1 ring-amber-400/20 rounded-xl pointer-events-none" />
+
+    <div className="
+          hidden md:block absolute top-1/2 left-20 right-20
+          h-px
+          bg-gradient-to-r
+          from-transparent via-amber-400/60 to-transparent
+          blur-[0.5px]
+          -translate-y-1/2
+          z-0
+        " />
+
+    <div className="relative z-10 grid gap-10 md:grid-cols-3">
+      {/* Step 1 */}
+      <div className="flex flex-col items-center text-center group">
+        <div className="w-full aspect-[4/3] rounded-xl overflow-hidden mb-6 relative shadow-[0_20px_60px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-transform group-hover:scale-105">
+          <Image 
+            src="/LandingPage/jar.jpeg" 
+            alt="Glowing jar with memories"
+            fill
+            className="object-cover"
+          />
         </div>
+        <h3 className="font-serif text-xl font-bold text-[#261C15]">1. You Whisper a Detail</h3>
+        <p className="mt-2 text-sm text-[#6B5D52] font-medium">Tell us about their favorite toy, pet, or fear.</p>
+      </div>
 
-        {/* Example Grid for How It Works */}
-        <div className="absolute inset-0 ring-1 ring-amber-400/20 rounded-xl pointer-events-none" />
- 
-<div className="
-  hidden md:block absolute top-1/2 left-20 right-20
-  h-px
-  bg-gradient-to-r
-  from-transparent via-amber-400/60 to-transparent
-  blur-[0.5px]
-  -translate-y-1/2
-  z-0
-" />
+      {/* Step 2 */}
+      <div className="flex flex-col items-center text-center group">
+        <div className="w-full aspect-[4/3] rounded-xl overflow-hidden mb-6 relative shadow-[0_20px_60px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-transform group-hover:scale-105">
+          <Image 
+            src="/LandingPage/tablet.jpeg" 
+            alt="Sketching the dream"
+            fill
+            className="object-cover"
+          />
+        </div>
+        <h3 className="font-serif text-xl font-bold text-[#261C15]">2. We Sketch the Dream</h3>
+        <p className="mt-2 text-sm text-[#6B5D52] font-medium">Our engine weaves the art & story instantly.</p>
+      </div>
 
-            <div className="relative z-10 grid gap-10 md:grid-cols-3">
-                {/* Step 1 */}
-                <div className="flex flex-col items-center text-center group">
-                <div className="
-  w-full aspect-[4/3]
-  rounded-xl
-  overflow-hidden
-  mb-6
-  relative
-  shadow-[0_20px_60px_rgba(0,0,0,0.45)]
-  ring-1 ring-white/10
-  transition-transform
-  group-hover:scale-105
-">                        <Image 
-                          src="/LandingPage/jar.jpeg" 
-                          alt="Glowing jar with memories"
-                          fill
-                          className="object-cover"
-                        />
-                    </div>
-                    <h3 className="font-serif text-xl font-bold text-[#261C15]">1. You Whisper a Detail</h3>
-                    <p className="mt-2 text-sm text-[#6B5D52] font-medium">Tell us about their favorite toy, pet, or fear.</p>
-                </div>
-
-                {/* Step 2 */}
-                <div className="flex flex-col items-center text-center group">
-                <div className="
-  w-full aspect-[4/3]
-  rounded-xl
-  overflow-hidden
-  mb-6
-  relative
-  shadow-[0_20px_60px_rgba(0,0,0,0.45)]
-  ring-1 ring-white/10
-  transition-transform
-  group-hover:scale-105
-">                         {/* Placeholder Image */}
-                         <Image 
-                          src="/LandingPage/tablet.jpeg" 
-                          alt="Glowing jar with memories"
-                          fill
-                          className="object-cover"
-                        />
-                    </div>
-                    <h3 className="font-serif text-xl font-bold text-[#261C15]">2. We Sketch the Dream</h3>
-                    <p className="mt-2 text-sm text-[#6B5D52] font-medium">Our engine weaves the art & story instantly.</p>
-                </div>
-
-                {/* Step 3 */}
-                <div className="flex flex-col items-center text-center group">
-                <div className="
-  w-full aspect-[4/3]
-  rounded-xl
-  overflow-hidden
-  mb-6
-  relative
-  shadow-[0_20px_60px_rgba(0,0,0,0.45)]
-  ring-1 ring-white/10
-  transition-transform
-  group-hover:scale-105
-">                        {/* Placeholder Image */}
-                        <Image 
-                          src="/LandingPage/book.jpeg" 
-                          alt="Glowing jar with memories"
-                          fill
-                          className="object-cover"
-                        />
-                    </div>
-                    <h3 className="font-serif text-xl font-bold text-[#261C15]">3. A Book is Born</h3>
-                    <p className="mt-2 text-sm text-[#6B5D52] font-medium">Read on any device or order a hardcover.</p>
-                </div>
-            </div>
-
-      </section>
+      {/* Step 3 */}
+      <div className="flex flex-col items-center text-center group">
+        <div className="w-full aspect-[4/3] rounded-xl overflow-hidden mb-2 relative shadow-[0_20px_60px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-transform group-hover:scale-115">
+          <Image 
+            src="/LandingPage/book.jpeg" 
+            alt="The finished book"
+            fill
+            className="object-cover"
+          />
+        </div>
+        <h3 className="font-serif text-xl font-bold text-[#261C15]">3. A Book is Born</h3>
+        <p className="mt-2 text-sm text-[#6B5D52] font-medium">Read on any device or order a hardcover.</p>
+      </div>
+    </div>
+  </div>
+</section>
 
       {/* 
         ========================================

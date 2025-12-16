@@ -73,7 +73,7 @@ export const globalRewriteJob = inngest.createFunction(
         .join("\n");
 
       const completion = await client.messages.create({
-        model: "claude-3-5-sonnet-20241022",
+        model: "claude-sonnet-4-20250514",
         max_tokens: 4000,
         system: `You are FlipWhizz, a children's story editor. Rewrite the story into ${pageCount} pages. Use SINGLE QUOTES for dialogue. Output ONLY valid JSON: { "pages": [{ "page": 1, "text": "..." }] }`,
         messages: [{ 
@@ -135,7 +135,7 @@ export const extractWorldJob = inngest.createFunction(
     const extractionJson = await step.run("ai-extraction", async () => {
       const storyText = data.pages.map((p) => `PAGE ${p.pageNumber}: ${p.text}`).join("\n");
       const completion = await client.messages.create({
-        model: "claude-3-5-sonnet-20241022",
+        model: "claude-sonnet-4-20250514",
         max_tokens: 3000,
         system: `You are FlipWhizz, a world and scene extractor. Output ONLY valid JSON: { "characters": [], "locations": [], "pagePresence": {}, "style": {} }`,
         messages: [{ role: "user", content: `Extract world from this story:\n\n${storyText}` }],

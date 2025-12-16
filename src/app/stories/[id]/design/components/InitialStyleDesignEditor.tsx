@@ -101,61 +101,28 @@ export default function InitialStyleDesignEditor({
   /* -------------------------------------------
      3. Generate Sample (FIXED FORMATTING)
   ------------------------------------------- */
+ /* -------------------------------------------
+     3. Generate Sample (Polling Implementation)
+  ------------------------------------------- */
   async function handleGenerate() {
     setIsGenerating(true);
     setGeneratedSample(null);
 
-    // 1. Save prompt
+    // Save prompt first
     await fetch("/api/style-guide/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        storyId: style.storyId,
-        summary: prompt,
-      }),
+      body: JSON.stringify({ storyId: style.storyId, summary: prompt }),
     });
 
     try {
-      // ✅ FIX: Construct the 'references' array exactly like the code that worked
       const references = [];
+      // ... (your existing code to build references array) ...
+      if (styleRefUrl) references.push({ url: styleRefUrl, type: "style", label: "Style" });
+      localCharacters.forEach(c => c.referenceImageUrl && references.push({ url: c.referenceImageUrl, type: "character", label: c.name, notes: c.description }));
 
-      // A. Style Reference
-      if (styleRefUrl) {
-        references.push({
-          url: styleRefUrl,
-          type: "style",
-          label: "Art Style",
-          notes: "Use this image as the main art style reference.",
-        });
-      }
-
-      // B. Characters (Only send if they have an image)
-      localCharacters.forEach(c => {
-        if (c.referenceImageUrl) {
-          references.push({
-            url: c.referenceImageUrl,
-            type: "character",
-            label: c.name,
-            notes: c.description || "Character Reference",
-          });
-        }
-      });
-
-      // C. Locations (Only send if they have an image)
-      localLocations.forEach(l => {
-        if (l.referenceImageUrl) {
-          references.push({
-            url: l.referenceImageUrl,
-            type: "location",
-            label: l.name,
-            notes: l.description || "Location Reference",
-          });
-        }
-      });
-
-      console.log("Sending Payload:", { references, leftText, rightText });
-
-      const res = await fetch("/api/style/generate", {
+      // 1. Kick off the job
+      await fetch("/api/style/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -163,32 +130,39 @@ export default function InitialStyleDesignEditor({
           description: prompt,
           leftText,
           rightText,
-          references, // ✅ Sending the array
+          references,
         }),
       });
 
-      const result = await res.json();
-      
-      if (!res.ok) throw new Error(result.error || "Generation failed");
-
-      if (result.image) {
-        // Handle both raw base64 and data URL formats
-        const imgData = result.image.data || result.image; 
-        const mime = result.image.mimeType || "image/jpeg";
-        const finalUrl = imgData.startsWith("data:") 
-          ? imgData 
-          : `data:${mime};base64,${imgData}`;
-          
-        setGeneratedSample(finalUrl);
+      // 2. Poll for the result (Check every 2s for 60s)
+      let attempts = 0;
+      while (attempts < 30) {
+        // Wait 2 seconds
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        
+        // Fetch current style guide state
+        // You might need to create a simple GET endpoint or reuse the design page fetch logic
+        // For now, assuming you have an endpoint or re-fetching the main story endpoint:
+        const checkRes = await fetch(`/api/stories/${style.storyId}/style-poll`); 
+        // ^ You need to create this simple GET endpoint!
+        
+        if (checkRes.ok) {
+           const data = await checkRes.json();
+           if (data.sampleUrl) {
+              setGeneratedSample(data.sampleUrl);
+              break;
+           }
+        }
+        attempts++;
       }
+      
     } catch (e: any) {
       console.error(e);
-      alert(`Magic failed: ${e.message}`);
+      alert("Something went wrong triggering the magic.");
     } finally {
       setIsGenerating(false);
     }
   }
-
   /* -------------------------------------------
      4. Payment Handler
   ------------------------------------------- */
