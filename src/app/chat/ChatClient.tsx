@@ -1,93 +1,61 @@
-
-
 "use client";
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Send } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion";
+import { Send, Sparkles, PenTool, CheckCircle, RotateCcw, BookOpen } from "lucide-react";
+
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
 export default function ChatPage() {
   const searchParams = useSearchParams();
   const projectId = useMemo(() => searchParams.get("project"), [searchParams]);
-  const [storyCreating, setStoryCreating] = useState(false);
-  const [storyId, setStoryId] = useState<string | null>(null);
+  
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(true);
+  const [storyCreating, setStoryCreating] = useState(false);
+  const [storyId, setStoryId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-
-
-  // Auto-scroll on new message
+  // 1. Initial Load: Sync everything from Database
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, loading]);
-
-  useEffect(() => {
-    async function loadChat() {
+    async function initializeStudio() {
       if (!projectId) return;
-      const res = await fetch(`/api/chat/history?projectId=${projectId}`);
-      const data = await res.json();
-      if (data.sessionId) {
-        setMessages(data.messages || []);
+
+      try {
+        // Fetch Chat History
+        const chatRes = await fetch(`/api/chat/history?projectId=${projectId}`);
+        const chatData = await chatRes.json();
+        if (chatData.messages) {
+          setMessages(chatData.messages);
+        }
+
+        // Check for Existing Story
+        const storyRes = await fetch(`/api/stories/by-project?projectId=${projectId}`);
+        const storyData = await storyRes.json();
+        if (storyData.storyId) {
+          setStoryId(storyData.storyId);
+        }
+      } catch (err) {
+        console.error("Studio sync failed:", err);
+      } finally {
+        setIsSyncing(false);
       }
     }
-    loadChat();
+    initializeStudio();
   }, [projectId]);
 
+  // 2. Auto-scroll and Local Backup
   useEffect(() => {
-    async function loadExistingStory() {
-      if (!projectId) return;
-      const res = await fetch(`/api/stories/by-project?projectId=${projectId}`);
-      const data = await res.json();
-      if (data.storyId) {
-        setStoryId(data.storyId);
-      }
+    if (projectId && messages.length > 0) {
+      localStorage.setItem(`chat_backup_${projectId}`, JSON.stringify(messages));
     }
-    loadExistingStory();
-  }, [projectId]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, projectId]);
 
-  async function createStoryFromChat() {
-    if (!projectId || storyCreating) return;
-    setStoryCreating(true);
-
-    try {
-      const res = await fetch("/api/stories/create-from-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
-      });
-
-      const data = await res.json();
-      if (data.storyId) {
-        setStoryId(data.storyId);
-      } else {
-        console.error("Story creation returned:", data);
-      }
-    } catch (err) {
-      console.error("Story creation failed:", err);
-    } finally {
-      setStoryCreating(false);
-    }
-  }
-
-  if (!projectId) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-violet-50 via-pink-50 to-orange-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 text-center">
-          <div className="text-6xl mb-4">📚</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Oops! No Project Found
-          </h2>
-          <p className="text-gray-600">
-            Please start from a project page to begin crafting your story.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
+  // 3. Core Functions
   async function sendMessage() {
     if (!input.trim() || loading) return;
 
@@ -103,281 +71,186 @@ export default function ChatPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: nextHistory,
-          projectId,
-        }),
+        body: JSON.stringify({ message: text, history: nextHistory, projectId }),
       });
 
       const data = await res.json();
       const assistantMessage: ChatMsg = {
         role: "assistant",
-        content: data.reply ?? "(no reply)",
+        content: data.reply ?? "(The ink paused... please try again)",
       };
 
       setMessages((m) => [...m, assistantMessage]);
     } catch (err) {
       console.error(err);
-      setMessages((m) => [
-        ...m,
-        {
-          role: "assistant",
-          content: "⚠️ Sorry — something went wrong. Please try again.",
-        },
-      ]);
     } finally {
       setLoading(false);
     }
   }
 
-  function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+  async function createStoryFromChat() {
+    if (!projectId || storyCreating) return;
+    setStoryCreating(true);
+
+    try {
+      const res = await fetch("/api/stories/create-from-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+
+      const data = await res.json();
+      if (data.storyId) {
+        setStoryId(data.storyId);
+      }
+    } catch (err) {
+      console.error("Story creation failed:", err);
+    } finally {
+      setStoryCreating(false);
     }
   }
 
+  if (!projectId) return <div className="p-20 text-center font-serif text-stone-400">Project context required to begin.</div>;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-pink-50 to-orange-50">
-      {/* Elegant Header */}
-      <div className="bg-white/80 backdrop-blur-xl border-b border-gray-200/50 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center text-white text-xl shadow-lg">
-                ✨
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-gray-900">
-                  Story Builder
-                </h1>
-                <p className="text-xs text-gray-500">
-                  Creating magic, one detail at a time
-                </p>
-              </div>
+    <div className="min-h-screen bg-[#FAF9F6] text-[#1A1A1A] font-sans selection:bg-indigo-100">
+      {/* --- NAV BAR --- */}
+      <nav className="fixed top-0 w-full z-50 bg-[#FAF9F6]/80 backdrop-blur-md border-b border-stone-200/60">
+        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-200">
+              <Sparkles className="text-white w-5 h-5" />
             </div>
             <div>
-
-            {storyId && (
-                  <a
-                    href={`/stories/${storyId}`}
-                    className="flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all text-center"
-                  >
-                    <span className="flex items-center justify-center gap-2">
-                      <span>📖</span>
-                      Open Your Book
-                    </span>
-                  </a>
+              <h1 className="text-lg font-serif italic font-semibold tracking-tight">FlipWhizz Studio</h1>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-stone-400">
+                {isSyncing ? (
+                  <><RotateCcw className="w-3 h-3 animate-spin" /> Syncing Manuscript...</>
+                ) : (
+                  <><CheckCircle className="w-3 h-3 text-emerald-500" /> Scribed to Library</>
                 )}
-            </div>
-            <div className="hidden sm:flex items-center gap-2">
-              <div className="px-3 py-1.5 bg-gradient-to-r from-violet-100 to-pink-100 rounded-full">
-                <span className="text-xs font-semibold bg-gradient-to-r from-violet-600 to-pink-600 bg-clip-text text-transparent">
-                  Auto-saving
-                </span>
-              </div>
+              </span>
             </div>
           </div>
         </div>
-      </div>
+      </nav>
 
-      {/* Main Chat Container */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-32">
-        <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
-          {/* Messages Area */}
-          <div className="h-[calc(100vh-280px)] sm:h-[600px] overflow-y-auto px-4 sm:px-6 py-6 space-y-4">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center px-4">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-400 via-pink-400 to-orange-400 flex items-center justify-center text-4xl mb-6 shadow-xl animate-pulse">
-                  📖
-                </div>
-                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3 max-w-xl">
-                  Let's create something magical together
-                </h2>
-                <p className="text-gray-600 text-base sm:text-lg mb-8 max-w-md leading-relaxed">
-                  Tell me about the little one this story is for. Their name,
-                  age, what makes them laugh, what they love...
-                </p>
+      <main className="max-w-3xl mx-auto pt-32 pb-48 px-6">
+        <AnimatePresence>
+          {messages.length === 0 && !isSyncing && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center py-20">
+              <h2 className="text-5xl font-serif leading-[1.1] mb-6">
+                Tell me about the magic <br/> 
+                <span className="italic text-indigo-600">waiting to be written.</span>
+              </h2>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-                {/* Example prompts */}
-                <div className="flex flex-wrap gap-2 justify-center max-w-xl">
-                  {[
-                    "My daughter Emma loves unicorns and baking...",
-                    "Make it funny like Roald Dahl",
-                    "Include our dog Max as a hero",
-                    "Set it in a magical forest",
-                  ].map((prompt, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setInput(prompt)}
-                      className="px-4 py-2 bg-gradient-to-r from-violet-50 to-pink-50 hover:from-violet-100 hover:to-pink-100 rounded-full text-sm text-gray-700 border border-violet-200/50 transition-all hover:shadow-md hover:scale-105"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
+        <div className="space-y-10">
+          {messages.map((msg, i) => (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              key={i} 
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div className={`max-w-[85%] text-lg leading-relaxed ${
+                msg.role === "user" 
+                ? "bg-indigo-600 text-white px-6 py-4 rounded-3xl rounded-tr-none shadow-xl shadow-indigo-100" 
+                : "text-stone-800 border-l-2 border-stone-200 pl-8 py-2 italic font-serif"
+              }`}>
+                {msg.content}
               </div>
-            )}
+            </motion.div>
+          ))}
 
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                }`}
-              >
-                <div
-                  className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-5 py-3.5 shadow-sm ${
-                    msg.role === "user"
-                      ? "bg-gradient-to-br from-violet-500 to-pink-500 text-white"
-                      : "bg-gray-50 border border-gray-200 text-gray-900"
-                  }`}
-                >
-                  <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap">
-                    {msg.content}
-                  </p>
-                </div>
+          {/* MILESTONE ACTION */}
+          {messages.length >= 3 && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col items-center gap-4 py-16 border-t border-stone-100 mt-20"
+            >
+              <div className="text-center space-y-2 mb-4">
+                <h3 className="font-serif italic text-2xl">The ink is ready...</h3>
+                <p className="text-sm text-stone-500">I have enough magic to begin drafting your heirloom.</p>
               </div>
-            ))}
 
-            {loading && (
-              <div className="flex justify-start">
-                <div className="max-w-[75%] rounded-2xl px-5 py-3.5 bg-gray-50 border border-gray-200">
-                  <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
-                      <div className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" />
-                      <div className="w-2 h-2 bg-pink-400 rounded-full animate-bounce delay-100" />
-                      <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce delay-200" />
-                    </div>
-                    <span className="text-sm text-gray-500">
-                      Crafting response...
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div ref={bottomRef} />
-          </div>
-
-          {/* Input Area */}
-          <div className="border-t border-gray-200 bg-gray-50/50 px-4 sm:px-6 py-4">
-            <div className="flex gap-3 items-end">
-              <div className="flex-1 relative">
-                <textarea
-                  className="w-full rounded-2xl border-2 border-gray-200 bg-white px-4 py-3 text-sm sm:text-base resize-none focus:outline-none focus:border-violet-300 focus:ring-4 focus:ring-violet-100 transition-all"
-                  placeholder="Share your ideas..."
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKey}
-                  rows={1}
-                  style={{
-                    minHeight: "44px",
-                    maxHeight: "120px",
-                  }}
-                />
-              </div>
               <button
-                onClick={sendMessage}
-                disabled={loading || !input.trim()}
-                className="shrink-0 w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-500 to-pink-500 hover:from-violet-600 hover:to-pink-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+                onClick={createStoryFromChat}
+                disabled={storyCreating}
+                className="group relative px-10 py-5 bg-indigo-600 text-white rounded-full font-bold shadow-2xl shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-70"
               >
-                {/* <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+                {storyCreating ? (
+                  <span className="flex items-center gap-3">
+                    <RotateCcw className="w-5 h-5 animate-spin" />
+                    Weaving the tale...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-3">
+                    <Sparkles className="w-5 h-5 text-indigo-200" />
+                    Create Story Book
+                  </span>
+                )}
+              </button>
+              
+              {storyId && (
+                <a
+                  href={`/stories/${storyId}`}
+                  className="mt-4 px-6 py-2 border border-stone-200 rounded-full text-sm font-bold text-stone-600 hover:bg-stone-50 transition-colors flex items-center gap-2"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2.5}
-                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                  />
-                </svg> */}
-                <Send className='' />
+                  <BookOpen className="w-4 h-4 text-indigo-600" />
+                  Open Existing Draft
+                </a>
+              )}
+            </motion.div>
+          )}
+
+          {loading && (
+            <div className="flex gap-2 pl-8">
+              <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse" />
+              <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse delay-75" />
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+      </main>
+
+      {/* --- INPUT AREA --- */}
+      <div className="fixed bottom-10 w-full px-6 pointer-events-none">
+        <div className="max-w-3xl mx-auto pointer-events-auto">
+          <div className="bg-white/80 backdrop-blur-xl border border-stone-200 rounded-[2.5rem] p-2 shadow-2xl shadow-stone-200/50">
+            <div className="flex items-center gap-2">
+              <div className="p-4 text-stone-400">
+                <PenTool className="w-5 h-5" />
+              </div>
+              <textarea
+                className="flex-1 bg-transparent py-4 text-lg focus:outline-none resize-none placeholder:text-stone-300"
+                placeholder="Share a detail..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
+                rows={1}
+              />
+              <button 
+                onClick={sendMessage}
+                className="bg-black text-white p-4 rounded-full hover:scale-105 transition-transform active:scale-95"
+              >
+                <Send className="w-5 h-5" />
               </button>
             </div>
-
-            {/* Action Buttons */}
-            {messages.length > 2 && (
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  onClick={createStoryFromChat}
-                  disabled={storyCreating}
-                  className="flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-700 hover:to-pink-700 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {storyCreating ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Creating magic...
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center gap-2">
-                      <span>✨</span>
-                      Create Story Book
-                    </span>
-                  )}
-                </button>
-
-                {storyId && (
-                  <a
-                    href={`/stories/${storyId}`}
-                    className="flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all text-center"
-                  >
-                    <span className="flex items-center justify-center gap-2">
-                      <span>📖</span>
-                      Open Your Book
-                    </span>
-                  </a>
-                )}
-              </div>
-            )}
-
-            {/* Helpful tip */}
-            <div className="mt-4 text-center">
-              <p className="text-xs text-gray-500">
-                💡 Tip: The more details you share, the more magical the story
-                becomes
-              </p>
-            </div>
           </div>
-        </div>
-      </div>
-
-      {/* Floating encouragement for mobile */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white to-transparent px-4 pb-6 pt-8 pointer-events-none sm:hidden">
-        <div className="max-w-4xl mx-auto text-center">
-          <p className="text-xs text-gray-600 font-medium">
-            You're building something your child will treasure forever ✨
+          <p className="text-center text-[10px] text-stone-400 font-bold uppercase tracking-widest mt-6">
+            Review all AI drafted content before finalized printing.
           </p>
         </div>
       </div>
     </div>
   );
 }
-
-// Add to your globals.css:
-/*
-@keyframes bounce {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
-}
-
-.animate-bounce {
-  animation: bounce 1s infinite;
-}
-
-.delay-100 {
-  animation-delay: 0.1s;
-}
-
-.delay-200 {
-  animation-delay: 0.2s;
-}
-*/

@@ -2,6 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { 
+  Sparkles, 
+  ChevronLeft, 
+  ChevronRight, 
+  Save, 
+  Wand2, 
+  Stars,
+  Loader2,
+  BookOpen
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 type StoryPage = {
   id: string;
@@ -9,215 +20,102 @@ type StoryPage = {
   text: string;
 };
 
-export default function StoryEditPage() {
+export default function MobileStoryEditor() {
   const params = useParams();
   const router = useRouter();
-
   const storyId = useMemo(() => {
     const raw = (params as any)?.id;
     return typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : null;
   }, [params]);
 
-  const [story, setStory] = useState<any>(null);
   const [pages, setPages] = useState<StoryPage[]>([]);
+  const [currentPageIdx, setCurrentPageIdx] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
+  const [status, setStatus] = useState("idle");
   const [rewriteInstruction, setRewriteInstruction] = useState("");
-  const [rewriting, setRewriting] = useState(false);
 
   useEffect(() => {
     async function load() {
-      if (!storyId) {
-        setLoading(false);
-        return;
-      }
+      if (!storyId) return;
       const res = await fetch(`/api/stories/${storyId}`);
       const data = await res.json();
-      setStory(data.story ?? null);
       setPages(data.pages ?? []);
       setLoading(false);
     }
     load();
   }, [storyId]);
 
-  function updateLocalPage(id: string, text: string) {
-    setPages((prev) => prev.map((p) => (p.id === id ? { ...p, text } : p)));
-  }
+  const updatePageText = (text: string) => {
+    setPages(prev => prev.map((p, i) => i === currentPageIdx ? { ...p, text } : p));
+  };
 
-  async function saveManualEdits() {
-    if (!storyId || saving) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/stories/${storyId}/pages`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pages: pages.map((p) => ({ id: p.id, text: p.text })),
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        console.error("Save failed", err);
-      }
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function runGlobalRewrite() {
-    if (!storyId || rewriting || !rewriteInstruction.trim()) return;
-    setRewriting(true);
-    try {
-      const res = await fetch(`/api/stories/${storyId}/global-rewrite`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instruction: rewriteInstruction }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        console.error("Rewrite failed", data);
-        if (data?.debug?.rawPreview) {
-          console.log("RAW PREVIEW:", data.debug.rawPreview);
-        }
-        alert(data?.error ?? "Rewrite failed");
-        return;
-      }
-      
-
-      // Reload story after rewrite
-      const reload = await fetch(`/api/stories/${storyId}`);
-      const fresh = await reload.json();
-      setStory(fresh.story ?? null);
-      setPages(fresh.pages ?? []);
-      setRewriteInstruction("");
-    } finally {
-      setRewriting(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0b0b10] text-white p-10">
-        Loading editor…
-      </div>
-    );
-  }
-
-  if (!storyId || !story) {
-    return (
-      <div className="min-h-screen bg-[#0b0b10] text-red-300 p-10">
-        Story not found.
-      </div>
-    );
-  }
+  if (loading) return <div className="min-h-screen bg-[#FAF9F6] flex items-center justify-center"><Loader2 className="animate-spin text-[#4635B1]" /></div>;
 
   return (
-    <div className="min-h-screen bg-[#0b0b10] text-white">
-      <div className="mx-auto max-w-4xl p-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-wide text-white/50">
-              Edit story
-            </div>
-            <h1 className="text-2xl font-semibold">
-              {story.title ?? "Untitled Story"}
-            </h1>
-            <p className="text-white/60 text-sm mt-1">
-              {pages.length} pages • Print-friendly pacing
-            </p>
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => router.push(`/stories/${storyId}`)}
-              className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs"
-            >
-              ← Back to story
-            </button>
-            <button
-              onClick={saveManualEdits}
-              disabled={saving}
-              className="rounded-xl bg-white text-black px-4 py-2 text-xs font-semibold disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save manual edits"}
-            </button>
-          </div>
+    <div className="fixed inset-0 bg-[#FAF9F6] flex flex-col font-sans overflow-hidden">
+      
+      --- MINIMAL HEADER ---
+      <nav className="flex-none px-6 py-4 flex items-center justify-between border-b border-stone-200/40 bg-white/50 backdrop-blur-md">
+        <button onClick={() => router.push(`/stories/${storyId}`)} className="text-[#4635B1]"><ChevronLeft /></button>
+        <div className="text-center">
+          <span className="block text-[10px] font-black uppercase tracking-widest text-stone-400">Manuscript</span>
+          <span className="text-sm font-serif italic">Page {currentPageIdx + 1} of {pages.length}</span>
         </div>
+        <button className="text-[#4635B1] font-bold text-sm">Save</button>
+      </nav>
 
-        {/* Global rewrite */}
-        <div className="mt-6 rounded-2xl bg-white/5 border border-white/10 p-4">
-          <div className="text-sm font-semibold mb-1">
-            Claude-powered global rewrite
-          </div>
-          <div className="text-xs text-white/60 mb-3">
-            Keeps the same {pages.length} pages. Great for tone shifts, style changes,
-            or tightening the story.
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              value={rewriteInstruction}
-              onChange={(e) => setRewriteInstruction(e.target.value)}
-              placeholder='e.g., "Make it funnier and more rhyming"'
-              className="flex-1 rounded-xl bg-black/20 border border-white/10 px-3 py-2 text-sm outline-none"
-            />
-            <button
-              onClick={runGlobalRewrite}
-              disabled={rewriting || !rewriteInstruction.trim()}
-              className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-            >
-              {rewriting ? "Rewriting…" : "Rewrite all pages"}
-            </button>
-          </div>
-        </div>
-
-        {/* Manual page editor */}
-        <div className="mt-8 space-y-4">
-          {pages.map((p) => (
-            <div
-              key={p.id}
-              className="rounded-2xl bg-white text-black p-5 shadow"
-            >
-              <div className="text-xs font-semibold text-neutral-500 mb-2">
-                Page {p.pageNumber}
-              </div>
+      {/* --- SWIPABLE CARD AREA --- */}
+      <main className="flex-1 relative flex items-center justify-center p-6">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentPageIdx}
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -50 }}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            onDragEnd={(_, info) => {
+              if (info.offset.x < -100 && currentPageIdx < pages.length - 1) setCurrentPageIdx(i => i + 1);
+              if (info.offset.x > 100 && currentPageIdx > 0) setCurrentPageIdx(i => i - 1);
+            }}
+            className="w-full max-w-sm aspect-[3/4] bg-white rounded-[2.5rem] shadow-2xl shadow-stone-200/50 p-8 flex flex-col border border-stone-100"
+          >
+            <div className="flex-1">
               <textarea
-                value={p.text}
-                onChange={(e) => updateLocalPage(p.id, e.target.value)}
-                className="w-full min-h-[90px] rounded-xl border border-black/10 p-3 text-sm leading-relaxed outline-none focus:ring-2 focus:ring-black/10"
+                value={pages[currentPageIdx]?.text || ""}
+                onChange={(e) => updatePageText(e.target.value)}
+                className="w-full h-full bg-transparent text-2xl font-serif leading-relaxed text-[#1A1A1A] focus:outline-none resize-none"
+                placeholder="The story continues..."
               />
             </div>
-          ))}
+            <div className="pt-4 border-t border-stone-50 flex justify-between items-center">
+              <span className="text-[10px] font-bold text-[#AEEA94] uppercase tracking-widest">Scribed</span>
+              <BookOpen className="w-4 h-4 text-stone-200" />
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </main>
+
+      {/* --- MOBILE ACTIONS --- */}
+      <footer className="flex-none p-6 space-y-4 bg-white border-t border-stone-200/40">
+        <div className="flex gap-2">
+           <input 
+            value={rewriteInstruction}
+            onChange={(e) => setRewriteInstruction(e.target.value)}
+            placeholder="Rewrite this page..." 
+            className="flex-1 bg-[#FAF9F6] rounded-full px-5 py-3 text-sm focus:outline-none italic"
+          />
+          <button className="bg-[#4635B1] text-white p-3 rounded-full"><Wand2 className="w-5 h-5" /></button>
         </div>
-
-        <div className="mt-10 flex flex-wrap gap-3">
-          <button
-            onClick={saveManualEdits}
-            disabled={saving}
-            className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save manual edits"}
-          </button>
-
-          <a
-            href={`/stories/${storyId}/pdf`}
-            className="rounded-xl bg-white/10 border border-white/20 px-4 py-2 text-sm"
-          >
-            Generate Print-Ready PDF
-          </a>
-
-          <a
-  href={`/stories/${storyId}/extract`}
-  className="px-4 py-2 bg-white text-black rounded-xl text-sm font-semibold"
->
-  Confirm Story & Extract World
-</a>
-
-        </div>
-      </div>
+        
+        <button 
+          onClick={() => router.push(`/stories/${storyId}/extract`)}
+          className="w-full py-4 bg-[#4635B1] text-white rounded-full font-bold shadow-xl shadow-[#4635B1]/20 flex items-center justify-center gap-2"
+        >
+          <Stars className="w-5 h-5 text-[#AEEA94]" />
+          Confirm Story & Continue
+        </button>
+      </footer>
     </div>
   );
 }

@@ -5,6 +5,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { Playfair_Display, Lato } from "next/font/google";
 import HeroButton from "@/components/HeroButton"; 
+import { db } from "@/db"; // Import your drizzle db
+import { projects } from "@/db/schema";
+import { eq, sql } from "drizzle-orm";
 
 const playfair = Playfair_Display({ 
   subsets: ["latin"], 
@@ -20,6 +23,16 @@ const lato = Lato({
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
+// Check if user has projects
+let hasProjects = false;
+if (session?.user?.id) {
+  const userProjects = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(projects)
+    .where(eq(projects.userId, session.user.id));
+  
+  hasProjects = userProjects[0].count > 0;
+}
 
   return (
     <main className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans bg-[#FDF8F0] text-slate-900 overflow-x-hidden`}>
@@ -89,7 +102,7 @@ export default async function Home() {
 
                 {/* Button Container */}
                 <div className="flex justify-center pt-4">
-                    <HeroButton session={session} />
+                <HeroButton session={session} hasProjects={hasProjects} />
                 </div>
             </div>
         </div>
@@ -108,22 +121,46 @@ export default async function Home() {
         ========================================
       */}
       <section id="how-it-works" className="relative py-24 px-6 md:px-12 bg-[#FDF8F0]">
-        <div className="text-center mb-16">
-            <h2 className="font-serif text-4xl md:text-5xl text-[#261C15] font-bold">
+        <div className="items-center mb-16">
+        <Image 
+                          src="/LandingPage/theCreativeJourney.png" 
+                          alt="The Creative Journey"
+                          fill
+                          className="object-cover"
+                        />
+
+            {/* <h2 className="font-serif text-4xl md:text-5xl text-[#261C15] font-bold">
                 The Creative Journey
-            </h2>
+            </h2> */}
         </div>
 
         {/* Example Grid for How It Works */}
-        <div className="relative mx-auto max-w-6xl p-8 md:p-12 bg-[#F3EAD3] rounded-3xl border-4 border-[#E6D5B8]">
-  
-            <div className="hidden md:block absolute top-1/2 left-20 right-20 h-1 border-t-4 border-dashed border-[#Cfb791] -translate-y-1/2 z-0"></div>
+        <div className="absolute inset-0 ring-1 ring-amber-400/20 rounded-xl pointer-events-none" />
+ 
+<div className="
+  hidden md:block absolute top-1/2 left-20 right-20
+  h-px
+  bg-gradient-to-r
+  from-transparent via-amber-400/60 to-transparent
+  blur-[0.5px]
+  -translate-y-1/2
+  z-0
+" />
 
             <div className="relative z-10 grid gap-10 md:grid-cols-3">
                 {/* Step 1 */}
                 <div className="flex flex-col items-center text-center group">
-                    <div className="w-full aspect-[4/3] bg-white rounded-lg shadow-md border-4 border-white rotate-[-2deg] overflow-hidden mb-6 transition-transform group-hover:rotate-0 group-hover:scale-105 relative">
-                        <Image 
+                <div className="
+  w-full aspect-[4/3]
+  rounded-xl
+  overflow-hidden
+  mb-6
+  relative
+  shadow-[0_20px_60px_rgba(0,0,0,0.45)]
+  ring-1 ring-white/10
+  transition-transform
+  group-hover:scale-105
+">                        <Image 
                           src="/LandingPage/jar.jpeg" 
                           alt="Glowing jar with memories"
                           fill
@@ -136,8 +173,17 @@ export default async function Home() {
 
                 {/* Step 2 */}
                 <div className="flex flex-col items-center text-center group">
-                    <div className="w-full aspect-[4/3] bg-white rounded-lg shadow-md border-4 border-white rotate-[1deg] overflow-hidden mb-6 transition-transform group-hover:rotate-0 group-hover:scale-105 relative">
-                         {/* Placeholder Image */}
+                <div className="
+  w-full aspect-[4/3]
+  rounded-xl
+  overflow-hidden
+  mb-6
+  relative
+  shadow-[0_20px_60px_rgba(0,0,0,0.45)]
+  ring-1 ring-white/10
+  transition-transform
+  group-hover:scale-105
+">                         {/* Placeholder Image */}
                          <Image 
                           src="/LandingPage/tablet.jpeg" 
                           alt="Glowing jar with memories"
@@ -151,8 +197,17 @@ export default async function Home() {
 
                 {/* Step 3 */}
                 <div className="flex flex-col items-center text-center group">
-                    <div className="w-full aspect-[4/3] bg-white rounded-lg shadow-md border-4 border-white rotate-[-1deg] overflow-hidden mb-6 transition-transform group-hover:rotate-0 group-hover:scale-105 relative">
-                        {/* Placeholder Image */}
+                <div className="
+  w-full aspect-[4/3]
+  rounded-xl
+  overflow-hidden
+  mb-6
+  relative
+  shadow-[0_20px_60px_rgba(0,0,0,0.45)]
+  ring-1 ring-white/10
+  transition-transform
+  group-hover:scale-105
+">                        {/* Placeholder Image */}
                         <Image 
                           src="/LandingPage/book.jpeg" 
                           alt="Glowing jar with memories"
@@ -164,7 +219,7 @@ export default async function Home() {
                     <p className="mt-2 text-sm text-[#6B5D52] font-medium">Read on any device or order a hardcover.</p>
                 </div>
             </div>
-        </div>
+
       </section>
 
       {/* 
@@ -206,80 +261,86 @@ export default async function Home() {
       </div>
     </section>
 
-      {/* 
-        ========================================
-        GALLERY
-        ========================================
-      */}
-      <section id="gallery" className="py-24 px-6 md:px-12 bg-[#FDF8F0]">
-         <div className="mx-auto max-w-6xl">
-            <h2 className="text-center font-serif text-4xl text-[#261C15] font-bold mb-16">
-                Gallery of Wonder
-            </h2>
+   {/* ========================================
+  GALLERY
+  ========================================
+*/}
+<section id="gallery" className="py-24 px-6 md:px-12 bg-[#FDF8F0]">
+   <div className="mx-auto max-w-6xl">
+      <h2 className="text-center font-serif text-4xl text-[#261C15] font-bold mb-16">
+          Gallery of Wonder
+      </h2>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
-                {/* Item 1 */}
-                <div className="flex flex-col gap-4">
-                    <div className="aspect-square bg-slate-800 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
-                        <div className="absolute bottom-0 p-4 w-full">
-                           <p className="text-white font-serif font-bold">Mitch & The Dragon</p>
-                        </div>
-                        <div className="absolute inset-0 bg-red-900/20 z-[-1]"></div>
-                    </div>
-                    <div className="flex items-start gap-3 px-1">
-                        <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
-                        <p className="text-xs text-[#6B5D52] italic">"The best gift I've ever given. She reads it every night." <br/><span className="font-bold not-italic">- Sarah, Mum of 2</span></p>
-                    </div>
-                </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
+          {/* Item 1: Mitch & The Dragon (NOW WITH REAL IMAGE) */}
+          <div className="flex flex-col gap-4">
+              <div className="aspect-square bg-slate-800 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
+                  <Image 
+                    src="/LandingPage/mitch_and_the_dragon.jpeg" 
+                    alt="Mitch and the Dragon illustration"
+                    fill
+                    className="object-cover transition-transform duration-500 group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-80"></div>
+                  <div className="absolute bottom-0 p-4 w-full">
+                     <p className="text-white font-serif font-bold text-lg">Mitch & The Dragon</p>
+                  </div>
+              </div>
+              <div className="flex items-start gap-3 px-1">
+                  <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0 overflow-hidden relative">
+                     {/* Optional: Add a small avatar image here */}
+                  </div>
+                  <p className="text-xs text-[#6B5D52] italic">
+                    "The best gift I've ever given. She reads it every night." 
+                    <br/><span className="font-bold not-italic">- Sarah, Mum of 2</span>
+                  </p>
+              </div>
+          </div>
 
-                {/* Item 2 */}
-                <div className="flex flex-col gap-4">
-                    <div className="aspect-square bg-sky-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
-                        <div className="absolute bottom-0 p-4 w-full">
-                           <p className="text-white font-serif font-bold">The Sea Secret</p>
-                        </div>
-                        <div className="absolute inset-0 bg-blue-900/20 z-[-1]"></div>
-                    </div>
-                    <div className="flex items-start gap-3 px-1">
-                        <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
-                        <p className="text-xs text-[#6B5D52] italic">"He couldn't believe the boy in the book looked just like him!" <br/><span className="font-bold not-italic">- Mike, Dad</span></p>
-                    </div>
-                </div>
+          {/* Item 2: The Sea Secret */}
+          <div className="flex flex-col gap-4">
+              <div className="aspect-square bg-sky-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
+                  <div className="absolute bottom-0 p-4 w-full">
+                     <p className="text-white font-serif font-bold">The Sea Secret</p>
+                  </div>
+              </div>
+              <div className="flex items-start gap-3 px-1">
+                  <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
+                  <p className="text-xs text-[#6B5D52] italic">"He couldn't believe the boy in the book looked just like him!" <br/><span className="font-bold not-italic">- Mike, Dad</span></p>
+              </div>
+          </div>
 
-                {/* Item 3 */}
-                <div className="flex flex-col gap-4">
-                    <div className="aspect-square bg-emerald-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
-                        <div className="absolute bottom-0 p-4 w-full">
-                           <p className="text-white font-serif font-bold">Magical Treehouse</p>
-                        </div>
-                        <div className="absolute inset-0 bg-green-900/20 z-[-1]"></div>
-                    </div>
-                    <div className="flex items-start gap-3 px-1">
-                        <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
-                        <p className="text-xs text-[#6B5D52] italic">"Beautiful illustrations. Worth every penny." <br/><span className="font-bold not-italic">- Jess, Mum</span></p>
-                    </div>
-                </div>
+          {/* Item 3: Magical Treehouse */}
+          <div className="flex flex-col gap-4">
+              <div className="aspect-square bg-emerald-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
+                  <div className="absolute bottom-0 p-4 w-full">
+                     <p className="text-white font-serif font-bold">Magical Treehouse</p>
+                  </div>
+              </div>
+              <div className="flex items-start gap-3 px-1">
+                  <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
+                  <p className="text-xs text-[#6B5D52] italic">"Beautiful illustrations. Worth every penny." <br/><span className="font-bold not-italic">- Jess, Mum</span></p>
+              </div>
+          </div>
 
-                {/* Item 4 */}
-                <div className="flex flex-col gap-4">
-                    <div className="aspect-square bg-amber-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
-                        <div className="absolute bottom-0 p-4 w-full">
-                           <p className="text-white font-serif font-bold">Wild Animals</p>
-                        </div>
-                        <div className="absolute inset-0 bg-orange-900/20 z-[-1]"></div>
-                    </div>
-                    <div className="flex items-start gap-3 px-1">
-                        <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
-                        <p className="text-xs text-[#6B5D52] italic">"Finally, a keepsake that isn't plastic junk." <br/><span className="font-bold not-italic">- Tom, Grandad</span></p>
-                    </div>
-                </div>
-            </div>
-         </div>
-      </section>
+          {/* Item 4: Wild Animals */}
+          <div className="flex flex-col gap-4">
+              <div className="aspect-square bg-amber-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
+                  <div className="absolute bottom-0 p-4 w-full">
+                     <p className="text-white font-serif font-bold">Wild Animals</p>
+                  </div>
+              </div>
+              <div className="flex items-start gap-3 px-1">
+                  <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
+                  <p className="text-xs text-[#6B5D52] italic">"Finally, a keepsake that isn't plastic junk." <br/><span className="font-bold not-italic">- Tom, Grandad</span></p>
+              </div>
+          </div>
+      </div>
+   </div>
+</section>
 
       {/* 
         ========================================
@@ -314,9 +375,14 @@ export default async function Home() {
 
             {/* Right: Sleeping Child Illustration Placeholder */}
             <div className="w-full md:w-auto flex justify-center md:justify-end">
-                <div className="w-64 h-40 bg-indigo-900/50 rounded-t-full border-b-0 border-4 border-indigo-800 flex items-center justify-center text-center p-4">
-                    <span className="text-xs opacity-50">[IMG: Sleeping Child Illustration]</span>
-                </div>
+            <div className="w-64 h-40 relative rounded-t-full border-b-0 border-4 border-indigo-800 overflow-hidden">
+                  <Image 
+                    src="/illustrations/sleeping-child.png" 
+                    alt="Child sleeping with a storybook"
+                    fill
+                    className="object-cover"
+                  />
+              </div>
             </div>
          </div>
       </footer>

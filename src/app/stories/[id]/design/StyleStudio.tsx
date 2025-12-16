@@ -54,19 +54,26 @@ export default function StyleStudio({ data }: { data: StudioData }) {
 
   const [showStory, setShowStory] =useState<boolean>(false)
 
-  const [styleReferenceImageUrl, setStyleReferenceImageUrl] = useState()
+  const [styleReferenceImageUrl, setStyleReferenceImageUrl] = useState<string | null>(null);
+  const [styleReferenceUrl, setStyleReferenceUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState<boolean>(false)
-  const [styleReferenceUrl, setStyleReferenceUrl] = useState()
+
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingPhase, setLoadingPhase] = useState("");
 
+  // function updateCharacter(id: string, updates: Partial<Entity>) {
+  //   setLocalCharacters((prev) =>
+  //     prev.map((c) => (c.id === id ? { ...c, ...updates } : c))
+  //   );
+  // }
+
   function updateCharacter(id: string, updates: Partial<Entity>) {
     setLocalCharacters((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, ...updates } : c))
+      prev.map((c) => (c.id === id ? { ...c, ...updates } as Entity : c))
     );
   }
-
+  
   const viewPrompt = () => {
     console.log("storyId", data.storyId)
     console.log("SYORY PROMPT", stylePrompt)

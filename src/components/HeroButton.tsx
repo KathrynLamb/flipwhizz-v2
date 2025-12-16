@@ -4,7 +4,13 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export default function HeroButton({ session }: { session: any }) {
+export default function HeroButton({ 
+  session, 
+  hasProjects 
+}: { 
+  session: any; 
+  hasProjects: boolean 
+}) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -28,7 +34,8 @@ export default function HeroButton({ session }: { session: any }) {
       const data = await res.json();
 
       if (data.id) {
-        router.push(`/projects/${data.id}`);
+        // ✅ CHANGED: Redirect to chat with the project ID as a query parameter
+        router.push(`/chat?project=${data.id}`);
       }
     } catch (error) {
       console.error("Failed to create project", error);
@@ -42,7 +49,11 @@ export default function HeroButton({ session }: { session: any }) {
       disabled={isLoading}
       className="inline-flex items-center justify-center px-10 py-5 text-lg font-serif font-bold text-[#261C15] bg-[#FDF8F0] rounded-full shadow-[0_0_40px_-10px_rgba(253,248,240,0.6)] hover:scale-105 hover:shadow-[0_0_60px_-10px_rgba(253,248,240,0.8)] transition-all duration-300 transform disabled:opacity-70 disabled:cursor-not-allowed"
     >
-      {isLoading ? "Creating..." : "Create Your First Story"}
+      {isLoading 
+        ? "Creating..." 
+        : hasProjects 
+          ? "Create Another Story" 
+          : "Create Your First Story"}
     </button>
   );
 }

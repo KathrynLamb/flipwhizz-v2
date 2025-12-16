@@ -1,356 +1,186 @@
-
 "use client";
-
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { StyleEditor } from "@/components/StyleEditor";
-import { CharacterCard } from "@/components/CharacterCard";
-import { LocationCard } from "@/components/LocationCard";
-import { StyleConfirmation } from "@/components/StyleConfirmation";
+import { motion, AnimatePresence } from "framer-motion";
+import { 
+  Users, 
+  MapPin, 
+  Sparkles, 
+  CheckCircle2, 
+  ChevronRight, 
+  ArrowLeft,
+  ImagePlus,
+  Loader2,
+  Camera
+} from "lucide-react";
+import { SampleImageCharacterCard } from "@/components/SampleImageCharacterCard";
+import { SampleImageLocationCard } from "@/components/SampleImageLocationCard";
 
-
-// ... (Keep your Type Definitions: Character, Location, Style exactly as before) ...
-type Character = {
+type Entity = {
   id: string;
   name: string;
   description: string | null;
   appearance?: string | null;
-  age?: string | null;
   referenceImageUrl?: string | null;
-  _localPreview?: string | null;
 };
-
-type Location = {
-  id: string;
-  name: string;
-  description: string | null;
-  appearance?: string | null;
-  referenceImageUrl?: string | null;
-  _localPreview?: string | null;
-};
-
-type Style = {
-  summary?: string;
-  lighting?: string;
-  palette?: string;
-  render?: string;
-  userNotes?: string;
-  referenceImageUrl?: string | null;
-  sampleIllustrationUrl?: string | null; // Make sure this is in type
-};
-
-// ... (Keep normalizeImage function as is) ...
-async function normalizeImage(file: File): Promise<File> {
-  const lower = file.name.toLowerCase();
-  const isHeic =
-    file.type === "image/heic" ||
-    file.type === "image/heif" ||
-    lower.endsWith(".heic") ||
-    lower.endsWith(".heif");
-
-  if (!isHeic) return file;
-
-  try {
-    const { default: heic2any } = await import("heic2any");
-    const converted = await heic2any({
-      blob: file,
-      toType: "image/jpeg",
-      quality: 0.9,
-    });
-    const blob = Array.isArray(converted) ? converted[0] : converted;
-    const newName = file.name.replace(/\.(heic|heif)$/i, ".jpg");
-    return new File([blob as BlobPart], newName, { type: "image/jpeg" });
-  } catch (err) {
-    console.warn("HEIC convert failed, uploading original", err);
-    return file;
-  }
-}
 
 export default function ExtractWorldPage() {
   const params = useParams();
   const router = useRouter();
-
   const storyId = useMemo(() => {
     const raw = (params as any)?.id;
     return typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : null;
   }, [params]);
 
+  // --- UI STEPS: 'extracting' | 'characters' | 'locations' ---
+  const [step, setStep] = useState<'extracting' | 'characters' | 'locations'>('extracting');
   const [loading, setLoading] = useState(true);
-  const [extracting, setExtracting] = useState(false);
-  const [savingStyle, setSavingStyle] = useState(false);
-
-  // --- NEW STATE: To manually toggle back to edit mode even if URL exists ---
-  const [isEditing, setIsEditing] = useState(false);
-
-  const [story, setStory] = useState<any>(null);
-  const [pages, setPages] = useState<any[]>([]);
-  const [characters, setCharacters] = useState<Character[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
-  const [style, setStyle] = useState<Style>({});
-  const [error, setError] = useState<string | null>(null);
+  const [localCharacters, setLocalCharacters] = useState<Entity[]>([]);
+  const [localLocations, setLocalLocations] = useState<Entity[]>([]);
 
   /* ---------------- LOAD DATA ---------------- */
-
   async function loadWorld() {
     if (!storyId) return;
-    setLoading(true);
-    setError(null);
     try {
       const res = await fetch(`/api/stories/${storyId}/world`);
       const data = await res.json();
-      if (!res.ok) {
-        setError(data?.error ?? "Failed to load world");
-        return;
+      if (!res.ok) return;
+
+      setLocalCharacters(data?.characters ?? []);
+      setLocalLocations(data?.locations ?? []);
+
+      // If story is already extracting, keep showing loader
+      if (data.story?.status === 'needs_style') {
+          setStep('characters');
       }
-      console.log("STOry", data)
-      setStory(data?.story);
-      setCharacters(data?.characters ?? []);
-      setLocations(data?.locations ?? []);
-      setStyle(data?.style ?? {});
-    
-    } catch (err) {
-      console.log(err);
-      setError("Network error loading world.");
     } finally {
       setLoading(false);
     }
   }
 
+  // Initial Extraction Trigger
   useEffect(() => {
-    loadWorld();
-  }, [storyId]);
-
-  useEffect(() => {
-    async function load() {
-      if (!storyId) return;
-      try {
-        const res = await fetch(`/api/stories/${storyId}`);
-        const data = await res.json();
+    async function init() {
+        if (!storyId) return;
+        const res = await fetch(`/api/stories/${storyId}/extract-world`, { method: "POST" });
         if (res.ok) {
-          setStory(data.story);
-          const loadedPages = data.pages || [];
-          loadedPages.sort((a: any, b: any) => a.pageNumber - b.pageNumber);
-          setPages(loadedPages);
+            await loadWorld();
         }
-      } catch (e) {
-        console.error(e);
-      }
     }
-    load();
+    init();
   }, [storyId]);
 
-  async function startExtraction() {
-    if (!storyId || extracting) return;
-    setExtracting(true);
-    try {
-      const res = await fetch(`/api/stories/${storyId}/extract-world`, { method: "POST" });
-      if (res.ok) await loadWorld();
-    } catch (err) {
-      setError("Network error running extraction.");
-    } finally {
-      setExtracting(false);
+  /* ---------------- UPDATE LOGIC ---------------- */
+  function updateEntity(id: string, updates: Partial<Entity>, type: 'char' | 'loc') {
+    if (type === 'char') {
+      setLocalCharacters(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    } else {
+      setLocalLocations(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
     }
   }
-
-  /* ---------------- HELPER FUNCTIONS ---------------- */
-  // ... (Keep updateCharacterLocal, updateLocationLocal, saveCharacter, saveLocation, uploadReference) ...
-  
-  function updateCharacterLocal(id: string, patch: Partial<Character>) {
-    setCharacters((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-  }
-
-  function updateLocationLocal(id: string, patch: Partial<Location>) {
-    setLocations((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-  }
-
-  async function saveCharacter(c: Character) {
-    const payload = { ...c };
-    await fetch(`/api/characters/${c.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-  }
-
-  async function saveLocation(l: Location) {
-      await fetch(`/api/locations/${l.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            name: l.name,
-            description: l.description,
-            appearance: l.appearance,
-            referenceImageUrl: l.referenceImageUrl
-        }),
-      });
-  }
-
-  async function uploadReference(file: File) {
-    const fd = new FormData();
-    fd.append("file", file);
-    const session = await fetch("/api/auth/session").then((r) => r.json());
-    fd.append("userId", session?.user?.id);
-    const res = await fetch("/api/uploads/reference", { method: "POST", body: fd });
-    const data = await res.json();
-    return data.url as string;
-  }
-
-  // --- SAVE STYLE (No changes needed, used by StyleEditor) ---
-  async function saveStyle() {
-    if (!storyId || savingStyle) return;
-    setSavingStyle(true);
-    try {
-      const res = await fetch(`/api/stories/${storyId}/style`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ style }),
-      });
-      if (!res.ok) throw new Error("Failed to save style");
-      
-      // IMPORTANT: After saving successfully, ensure we exit edit mode if a URL exists
-      if (style.sampleIllustrationUrl) {
-        setIsEditing(false);
-      }
-    } finally {
-      setSavingStyle(false);
-    }
-  }
-
-  // Sample pages context for AI
-  const sampleStoryContext = pages.slice(0, 2).map(p => p.text);
-
-  // --- LOGIC: Determine which view to show ---
-  // If we have a sample URL AND the user hasn't explicitly clicked "Edit", show Confirmation.
-  const showConfirmation = !!style?.sampleIllustrationUrl && !isEditing;
-
 
   /* ---------------- RENDER ---------------- */
 
-  if (!storyId) return <div>Missing story id.</div>;
-  if (loading) return <div className="min-h-screen bg-[#0b0b10] text-white flex items-center justify-center">Loading world...</div>;
+  if (loading || step === 'extracting') return (
+    <div className="min-h-screen bg-[#FFFBCA] flex flex-col items-center justify-center p-6 text-center">
+      <div className="w-24 h-24 bg-[#4635B1] rounded-[2rem] flex items-center justify-center mb-8 shadow-2xl animate-bounce">
+        <Sparkles className="text-[#AEEA94] w-12 h-12" />
+      </div>
+      <h2 className="text-4xl font-serif font-black text-[#4635B1] mb-4">Reading your manuscript...</h2>
+      <p className="text-[#6B5D52] max-w-sm font-medium">FlipWhizz is identifying the heroes and magical places in your story.</p>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-[#0b0b10] text-white">
-      <div className="max-w-5xl mx-auto p-6">
-
-        {/* HEADER */}
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <div className="text-[10px] uppercase text-white/50">Story world review</div>
-            <h1 className="text-2xl font-semibold">{story?.title}</h1>
+    <div className="min-h-screen bg-[#FAF9F6] text-[#261C15] pb-32">
+      
+      {/* --- PREMIUM HEADER --- */}
+      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-stone-200/40 px-8 py-5">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${step === 'characters' ? 'bg-[#4635B1] text-white' : 'bg-[#AEEA94] text-[#4635B1]'}`}>
+              {step === 'characters' ? <Users /> : <CheckCircle2 />}
+            </div>
+            <div className="h-px w-8 bg-stone-200 hidden sm:block" />
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${step === 'locations' ? 'bg-[#4635B1] text-white' : 'bg-stone-100 text-stone-400'}`}>
+              <MapPin />
+            </div>
           </div>
           
-          {/* Only show Extract button if we are in edit mode or haven't started yet */}
-          {!showConfirmation && (
-            <button
-                onClick={startExtraction}
-                disabled={extracting}
-                className="bg-white/10 text-white px-4 py-2 rounded-xl text-xs font-semibold hover:bg-white/20 transition"
-            >
-                {extracting ? "Extracting..." : "Re-Run Extraction"}
-            </button>
-          )}
+          <button 
+            onClick={() => step === 'characters' ? setStep('locations') : router.push(`/stories/${storyId}/design`)}
+            className="flex items-center gap-2 px-8 py-3 bg-[#4635B1] text-white rounded-full font-bold shadow-xl shadow-indigo-100 hover:scale-105 transition-all"
+          >
+            {step === 'characters' ? "Next: Scouting Locations" : "Finish & Design Style"}
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
+      </nav>
 
-        {error && (
-          <div className="mb-5 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-200">
-            {error}
-          </div>
-        )}
+      <main className="max-w-4xl mx-auto px-6 pt-16">
+        <AnimatePresence mode="wait">
+          {step === 'characters' ? (
+            <motion.section 
+              key="chars"
+              initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+              className="space-y-12"
+            >
+              <header>
+                <h1 className="text-5xl font-serif font-black text-[#4635B1] mb-4">Meet the Cast</h1>
+                <p className="text-xl text-stone-500 italic">We found {localCharacters.length} characters. Give them a face and a personality.</p>
+              </header>
 
-        {/* --- MAIN CONTENT SWITCHER --- */}
-        
-        {showConfirmation ? (
-          
-          /* VIEW 1: CONFIRMATION / NEXT STEPS */
-          <StyleConfirmation 
-            imageUrl={style.sampleIllustrationUrl!} 
-            storyId={storyId as string}
-            onRefine={() => setIsEditing(true)}
-          />
-
-        ) : (
-
-          /* VIEW 2: EDITORS (Style, Characters, Locations) */
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            
-            {/* STYLE EDITOR */}
-            <StyleEditor
-              style={style}
-              setStyle={setStyle}
-              onSave={saveStyle}
-              pages={sampleStoryContext}
-              characters={characters}
-              locations={locations}
-              // We don't need setSampleIllustrationUrl passed separately anymore
-              // because setStyle handles the object update
-              setSampleIllustrationUrl={() => {}} 
-            />
-
-            {/* CHARACTERS DECK */}
-            <div className="mt-14">
-              <div className="flex items-end gap-3 mb-6 border-b border-white/10 pb-4">
-                <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-400">
-                  Character Deck
-                </h2>
-                <span className="text-sm text-white/40 pb-1">
-                  {characters.length} cards collected
-                </span>
-              </div>
-
-              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8">
-                {characters.map((c) => (
-                  <CharacterCard
-                    key={c.id}
-                    character={c}
-                    onUpdate={updateCharacterLocal}
-                    onSave={saveCharacter}
-                    onUpload={uploadReference}
-                    onNormalize={normalizeImage}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {localCharacters.map(char => (
+                  <SampleImageCharacterCard 
+                    key={char.id}
+                    character={{...char, referenceImageUrl: char.referenceImageUrl ?? null, description: char.description ?? null}}
+                    onUpdated={(u) => updateEntity(char.id, u, 'char')}
                   />
                 ))}
-                {characters.length === 0 && (
-                  <div className="col-span-full py-10 text-center text-white/30 border border-dashed border-white/10 rounded-xl">
-                    No characters found. Run extraction to find them.
-                  </div>
-                )}
               </div>
-            </div>
+            </motion.section>
+          ) : (
+            <motion.section 
+              key="locs"
+              initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+              className="space-y-12"
+            >
+              <header>
+                <button onClick={() => setStep('characters')} className="flex items-center gap-2 text-sm font-bold text-[#B771E5] mb-4 uppercase tracking-widest">
+                  <ArrowLeft className="w-4 h-4" /> Back to Cast
+                </button>
+                <h1 className="text-5xl font-serif font-black text-[#4635B1] mb-4">Scouting Locations</h1>
+                <p className="text-xl text-stone-500 italic">These settings bring your story to life. Describe the vibe.</p>
+              </header>
 
-            {/* LOCATIONS DECK */}
-            <div className="mt-16 pb-20">
-              <div className="flex items-end gap-3 mb-6 border-b border-white/10 pb-4">
-                <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
-                  World Locations
-                </h2>
-                <span className="text-sm text-white/40 pb-1">
-                  {locations.length} settings found
-                </span>
-              </div>
-
-              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8">
-                {locations.map((l) => (
-                  <LocationCard
-                    key={l.id}
-                    location={l}
-                    onUpdate={updateLocationLocal}
-                    onSave={saveLocation}
-                    onUpload={uploadReference}
-                    onNormalize={normalizeImage}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {localLocations.map(loc => (
+                  <SampleImageLocationCard 
+                    key={loc.id}
+                    location={{...loc, referenceImageUrl: loc.referenceImageUrl ?? null, description: loc.description ?? null}}
+                    onUpdated={(u) => updateEntity(loc.id, u, 'loc')}
                   />
                 ))}
-                {locations.length === 0 && (
-                  <div className="col-span-full py-10 text-center text-white/30 border border-dashed border-white/10 rounded-xl">
-                    No locations found.
-                  </div>
-                )}
               </div>
-            </div>
-            
-          </div>
-        )}
+            </motion.section>
+          )}
+        </AnimatePresence>
+      </main>
 
+      {/* --- FLOATING HELPER --- */}
+      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-white px-6 py-3 rounded-full border border-stone-200 shadow-2xl flex items-center gap-4">
+        <div className="flex -space-x-2">
+          {localCharacters.slice(0, 3).map((c, i) => (
+            <div key={i} className="w-8 h-8 rounded-full border-2 border-white bg-[#B771E5] flex items-center justify-center text-[10px] text-white font-bold uppercase">
+              {c.name[0]}
+            </div>
+          ))}
+        </div>
+        <p className="text-xs font-bold text-stone-400 uppercase tracking-widest">
+            {step === 'characters' ? "Reviewing Characters" : "Reviewing Locations"}
+        </p>
       </div>
     </div>
   );
