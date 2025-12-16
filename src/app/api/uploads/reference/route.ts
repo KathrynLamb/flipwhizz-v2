@@ -45,10 +45,11 @@ export async function POST(req: Request) {
   try {
     const form = await req.formData();
     const file = form.get("file") as File | null;
-    const userId = form.get("userId") as string | null;
+    
+    // ✅ FIX: Allow userId to be optional, fallback to 'anonymous' or a general folder
+    const userId = (form.get("userId") as string | null) || "anonymous";
 
     if (!file) return NextResponse.json({ error: "Missing file" }, { status: 400 });
-    if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 });
 
     const arrayBuffer = await file.arrayBuffer();
     const originalBuffer = Buffer.from(arrayBuffer);
@@ -58,9 +59,10 @@ export async function POST(req: Request) {
     const result: any = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
+          // ✅ FIX: Ensure folder structure doesn't break if userId is generic
           folder: `flipwhizz/reference/${userId}`,
           filename_override: uuid(),
-          resource_type: "image", // Auto-detect usually better, but 'image' is fine for strict enforcement
+          resource_type: "image", 
         },
         (err, res) => {
           if (err) reject(err);

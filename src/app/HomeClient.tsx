@@ -114,7 +114,7 @@ export default function HomeClient({ session, fonts }: Props) {
               onClick={createProject}
               className="px-10 py-5 text-lg font-serif font-bold text-[#261C15] bg-[#FDF8F0] rounded-full shadow-xl hover:scale-105 transition"
             >
-              Create Your First Story
+              Create Your Story
             </button>
           </div>
         </div>

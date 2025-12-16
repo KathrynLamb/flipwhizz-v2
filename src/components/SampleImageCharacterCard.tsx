@@ -24,7 +24,8 @@ export function SampleImageCharacterCard({
   );
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-
+  
+  console.log("Character", character)
   /* ----------------------------
      Save description (on blur)
   ----------------------------- */
@@ -147,7 +148,7 @@ export function SampleImageCharacterCard({
       </div>
 
       {/* ACCENT */}
-      <div className="h-1 bg-gradient-to-r from-violet-500 via-pink-500 to-orange-500" />
+      {/* <div className="h-1 bg-gradient-to-r from-violet-500 via-pink-500 to-orange-500" /> */}
     </div>
   );
 }

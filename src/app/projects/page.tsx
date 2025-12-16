@@ -24,23 +24,44 @@ export default async function ProjectsIndexPage() {
   }
 
 
-  const userStories = await db
+const userStories = await db
   .select({
     id: stories.id,
     projectId: stories.projectId,
     title: stories.title,
     description: stories.description,
+
     status: sql<string>`coalesce(${stories.status}, 'planning')`,
     paymentStatus: sql<string>`coalesce(${stories.paymentStatus}, 'pending')`,
+
     createdAt: stories.createdAt,
     updatedAt: stories.updatedAt,
     storyConfirmed: sql<boolean>`true`,
+
+    // ✅ COVER IMAGE LOGIC (page image → style guide image → null)
+    coverImageUrl: sql<string | null>`
+      coalesce(
+        (
+          select pi.url
+          from story_pages sp
+          join page_images pi on pi.page_id = sp.id
+          where sp.story_id = ${stories.id}
+          order by sp.page_number asc
+          limit 1
+        ),
+        (
+          select ssg.sample_illustration_url
+          from story_style_guide ssg
+          where ssg.story_id = ${stories.id}
+          limit 1
+        )
+      )
+    `,
   })
   .from(stories)
   .innerJoin(projects, eq(stories.projectId, projects.id))
   .where(eq(projects.userId, session.user.id))
   .orderBy(desc(stories.updatedAt));
-
 
   return (
     <main className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans bg-[#FDF8F0] text-slate-900 overflow-x-hidden`}>

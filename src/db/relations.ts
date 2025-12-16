@@ -64,3 +64,4 @@ export const styleGuideImagesRelations = relations(styleGuideImages, ({ one }) =
     references: [storyStyleGuide.id],
   }),
 }));
+

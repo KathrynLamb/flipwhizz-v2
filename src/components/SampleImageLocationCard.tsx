@@ -17,9 +17,9 @@ export function SampleImageLocationCard({
   location: Location;
   onUpdated?: (l: Location) => void;
 }) {
-  const [desc, setDesc] = useState(location.description ?? "");
+  const [desc, setDesc] = useState(location?.description ?? "");
   const [imageUrl, setImageUrl] = useState<string | null>(
-    location.referenceImageUrl ?? null
+    location?.referenceImageUrl ?? null
   );
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -28,7 +28,8 @@ export function SampleImageLocationCard({
      Save description
   ----------------------------- */
   async function saveDescription() {
-    if (desc === location.description) return;
+    if (!location) return;
+    if (desc === location?.description) return;
 
     setSaving(true);
     try {
@@ -72,7 +73,7 @@ export function SampleImageLocationCard({
       onUpdated?.({ ...location, referenceImageUrl: data.url });
 
       // Persist
-      await fetch(`/api/locations/${location.id}`, {
+      await fetch(`/api/locations/${location?.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ referenceImageUrl: data.url }),
@@ -89,7 +90,7 @@ export function SampleImageLocationCard({
         {imageUrl ? (
           <img
             src={imageUrl}
-            alt={location.name}
+            alt={location?.name}
             className="w-full h-full object-cover"
           />
         ) : (
@@ -115,7 +116,7 @@ export function SampleImageLocationCard({
       {/* CONTENT */}
       <div className="p-4 bg-black/60">
         <h3 className="font-bold text-sm mb-2 text-white">
-          {location.name}
+          {location?.name}
         </h3>
 
         <textarea

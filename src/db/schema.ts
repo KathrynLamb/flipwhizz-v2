@@ -124,6 +124,9 @@ export const locations = pgTable("locations", {
   description: text("description"),
   aiSummary: text("ai_summary"),
 
+  portraitImageUrl: text("portrait_image_url"),
+  referenceImageUrl: text("reference_image_url"),
+
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -166,6 +169,7 @@ export const storyStyleGuide = pgTable("story_style_guide", {
   userNotes: text("user_notes"),
 
   sampleIllustrationUrl: text("sample_illustration_url"),
+  styleGuideImage: text("style_guide_image"), // Add this to keep the "one true style" ref handy
 
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

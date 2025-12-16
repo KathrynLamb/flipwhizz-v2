@@ -1,0 +1,1 @@
+ALTER TABLE "story_style_guide" ADD COLUMN "style_guide_image" text;

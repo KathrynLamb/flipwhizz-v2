@@ -135,7 +135,7 @@ export async function POST(
     .update(stories)
     .set({
       storyConfirmed: true,       // ✅ Marks the boolean as true
-      status: "extracting",       // ✅ Updates status to track progress
+      status:  'extracting',     // ✅ Updates status to track progress
       updatedAt: new Date(),      // ✅ Keeps timestamps fresh
     })
     .where(eq(stories.id, storyId));
@@ -346,7 +346,10 @@ export async function POST(
       // Bump story timestamp
       await tx
         .update(stories)
-        .set({ updatedAt: new Date() })
+        .set({ 
+          status: 'needs_style',
+          updatedAt: new Date(),
+         })
         .where(eq(stories.id, storyId));
     });
 

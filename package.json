@@ -26,6 +26,7 @@
     "drizzle-orm": "^0.45.0",
     "firebase": "^12.6.0",
     "firebase-admin": "^13.6.0",
+    "framer-motion": "^12.23.26",
     "heic-convert": "^2.1.0",
     "heic2any": "^0.0.4",
     "lucide-react": "^0.556.0",
