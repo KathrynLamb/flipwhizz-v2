@@ -53,7 +53,6 @@ export const stories = pgTable("stories", {
   paymentStatus: text("payment_status").default("pending"),
   paymentId: text("payment_id"),
 
-
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -72,6 +71,7 @@ export const storyPages = pgTable("story_pages", {
 
   illustrationPrompt: text("illustration_prompt"),
   imageId: uuid("image_id"),
+  imageUrl: text("image_url"), 
 
   createdAt: timestamp("created_at").defaultNow(),
 });

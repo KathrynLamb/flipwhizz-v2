@@ -114,11 +114,14 @@ export async function POST(req: Request) {
     await db
       .update(stories)
       .set({
+        status: 'paid',  
         paymentStatus: "paid",
         paymentId: orderID,
         updatedAt: new Date(),
       })
       .where(eq(stories.id, storyId));
+
+
 
     return NextResponse.json({ success: true, storyId, orderID, receipt });
   } catch (err: any) {

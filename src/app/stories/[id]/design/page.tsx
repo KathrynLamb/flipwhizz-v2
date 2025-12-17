@@ -124,6 +124,9 @@ export default async function DesignPage({
           rightText={rightText}
           characters={characterEntities}
           locations={locationEntities}
+          storyStatus={story.status} 
+          orderId={story.paymentId}
+          paymentStatus={story.paymentStatus}
         />
       </div>
     </main>

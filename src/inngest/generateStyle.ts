@@ -7,7 +7,7 @@ import { v2 as cloudinary } from "cloudinary";
 import { Readable } from "node:stream";
 import { v4 as uuid } from "uuid";
 
-// --- Configuration ---
+// --- CONFIG ---
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
   api_key: process.env.CLOUDINARY_API_KEY!,
@@ -19,11 +19,11 @@ const client = new GoogleGenAI({
   apiVersion: "v1alpha"
 });
 
-// --- Helpers ---
+// --- HELPERS ---
 async function fetchImageAsBase64(url: string) {
   try {
     const res = await fetch(url);
-    if (!res.ok) return null;
+    if (!res.ok) throw new Error(`Failed to fetch: ${res.statusText}`);
     const arrayBuffer = await res.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     return {
@@ -31,12 +31,13 @@ async function fetchImageAsBase64(url: string) {
       mimeType: "image/jpeg",
     };
   } catch (e) {
-    console.error("Fetch failed for", url);
+    console.error("❌ Fetch failed for", url, e);
     return null;
   }
 }
 
 async function saveImageToStorage(base64Data: string, mimeType: string, storyId: string) {
+  console.log("☁️ Uploading to Cloudinary...");
   const buffer = Buffer.from(base64Data, "base64");
   const result: any = await new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -52,56 +53,66 @@ async function saveImageToStorage(base64Data: string, mimeType: string, storyId:
     );
     Readable.from(buffer).pipe(stream);
   });
+  console.log("✅ Cloudinary URL:", result.secure_url);
   return result.secure_url as string;
 }
 
 function extractInlineImage(result: any) {
   const parts = result.candidates?.[0]?.content?.parts || [];
+  const thinking = parts.find((p: any) => p.text)?.text;
+  if (thinking) console.log("🤖 Gemini Thought Process:", thinking.substring(0, 150) + "...");
+  
   const imagePart = parts.find((p: any) => p.inlineData?.data);
   return imagePart?.inlineData
     ? { data: imagePart.inlineData.data, mimeType: imagePart.inlineData.mimeType }
     : null;
 }
 
-// --- The Inngest Function ---
+// --- MAIN FUNCTION ---
 export const generateStyleSample = inngest.createFunction(
   { id: "generate-style-sample", concurrency: 5 },
   { event: "style/generate.sample" },
   async ({ event, step }) => {
     const { references, leftText, rightText, description, storyId } = event.data;
 
-    if (!storyId) throw new Error("No storyId provided");
+    console.log(`🚀 Starting Generation for Story: ${storyId}`);
+    console.log(`📝 Description: "${description.substring(0, 50)}..."`);
+    console.log(`📸 References: ${references.length}`);
 
-    // STEP 1: Analyze Characters (Image-to-Text)
+    // STEP 1: Analyze Characters
     const characterDescriptions = await step.run("analyze-characters", async () => {
       let descriptions = "";
       const charRefs = references.filter((r: any) => r.type === 'character');
 
+      console.log(`🔍 Analyzing ${charRefs.length} characters...`);
+
       for (const char of charRefs) {
         let visualDesc = char.notes || ""; 
         
-        // If there is a photo, ask Gemini 3 to describe it
         if (char.url) {
+           console.log(`   - Analyzing photo for: ${char.label}`);
            try {
               const imgData = await fetchImageAsBase64(char.url);
               if (imgData) {
                   const result = await client.models.generateContent({
-                      model: "gemini-3-pro-image-preview", 
+                      model: "gemini-1.5-flash", // Use fast vision model
                       contents: [{
                           role: "user",
                           parts: [
                               { text: `Describe the visual appearance of the person in this photo so an illustrator can create a character based on them. Focus on: Hairstyle, hair color, eye color, facial structure, clothing, and approximate age. Keep it descriptive but concise (2 sentences). IMPORTANT: Do NOT say "real photo".` },
                               { inlineData: imgData }
                           ]
-                      }],
-                      config: { responseModalities: ["TEXT"] }
+                      }]
                   });
-                  const parts = result.candidates?.[0]?.content?.parts || [];
-                  const text = parts.find((p: any) => p.text)?.text ?? "";
+                  
+                  // ✅ FIXED: Manual extraction instead of .text()
+                  const text = result.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text;
+                  
+                  console.log(`     > AI Description: "${text ? text.substring(0, 50) : "No text"}..."`);
                   if (text) visualDesc = `${text.trim()}. ${visualDesc}`;
               }
            } catch (e) {
-              console.warn(`Analysis failed for ${char.label}`, e);
+              console.warn(`   ⚠️ Analysis failed for ${char.label}`, e);
            }
         }
         descriptions += `- ${char.label}: ${visualDesc}\n`;
@@ -109,9 +120,10 @@ export const generateStyleSample = inngest.createFunction(
       return descriptions;
     });
 
-    // STEP 2: Generate & Upload Image
-    const savedUrl = await step.run("generate-and-save", async () => {
-      // Build Prompt
+    // STEP 2: Generate Image
+    const savedUrl = await step.run("generate-image", async () => {
+      console.log("🎨 Constructing Final Prompt...");
+      
       let textPrompt = `You are a professional children's book illustrator.
       TASK: Generate a single high-quality illustration of an open book (double-page spread) lying flat.
       STYLE INSTRUCTIONS: Use the attached "ART STYLE" image as the primary visual reference. Adapt all characters to match this style. Do NOT generate photorealistic people.
@@ -131,6 +143,7 @@ export const generateStyleSample = inngest.createFunction(
       const styleRefs = references.filter((r: any) => r.type === 'style');
       for (const ref of styleRefs) {
           if (!ref.url) continue;
+          console.log("   - Adding Style Reference Image");
           const img = await fetchImageAsBase64(ref.url);
           if (img) {
               parts.push({ text: `\n[ART STYLE REFERENCE IMAGE]:` });
@@ -138,7 +151,8 @@ export const generateStyleSample = inngest.createFunction(
           }
       }
 
-      // Generate
+      console.log("🖌️ Calling Gemini 3 Pro Image Preview...");
+      
       const response = await client.models.generateContent({
         model: "gemini-3-pro-image-preview", 
         contents: [{ role: "user", parts }],
@@ -154,30 +168,23 @@ export const generateStyleSample = inngest.createFunction(
       });
 
       const output = extractInlineImage(response);
-      if (!output) throw new Error("Gemini refused to generate image");
+      if (!output) {
+         console.error("❌ Gemini Output was empty or blocked.");
+         throw new Error("Gemini refused to generate image");
+      }
 
-      // Save to Cloudinary
       return await saveImageToStorage(output.data, output.mimeType, storyId);
     });
 
     // STEP 3: Update Database
     await step.run("update-db", async () => {
-      const existing = await db.query.storyStyleGuide.findFirst({
-        where: eq(storyStyleGuide.storyId, storyId),
-      });
-
-      if (existing) {
-        await db.update(storyStyleGuide)
-          .set({ sampleIllustrationUrl: savedUrl, updatedAt: new Date() })
-          .where(eq(storyStyleGuide.id, existing.id));
-      } else {
-        await db.insert(storyStyleGuide).values({
-          storyId,
-          sampleIllustrationUrl: savedUrl,
-        });
-      }
+      console.log("💾 Saving to Database...");
+      await db.update(storyStyleGuide)
+        .set({ sampleIllustrationUrl: savedUrl, updatedAt: new Date() })
+        .where(eq(storyStyleGuide.storyId, storyId));
     });
 
+    console.log("✅ JOB COMPLETE");
     return { success: true, url: savedUrl };
   }
 );
