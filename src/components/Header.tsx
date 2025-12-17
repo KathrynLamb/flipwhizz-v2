@@ -19,7 +19,7 @@ export default function Header({ session }: { session: any }) {
       {/* DESKTOP NAV */}
       <nav className="hidden md:flex items-center gap-8 text-[#FDF8F0]/90 text-sm font-medium tracking-wide">
         <Link href="#how-it-works" className="hover:text-amber-200 transition">How It Works</Link>
-        <Link href="#gallery" className="hover:text-amber-200 transition">Gallery</Link>
+        <Link href="#gallery" className="hover:text-red-300 transition">Gallery</Link>
         <Link href="#pricing" className="hover:text-amber-200 transition">Pricing</Link>
 
         {!session ? (
