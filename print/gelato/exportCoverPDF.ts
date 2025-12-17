@@ -1,3 +1,5 @@
+import "server-only";
+
 import puppeteer from "puppeteer";
 import fs from "fs/promises";
 import path from "path";
@@ -19,8 +21,9 @@ export async function exportCoverPDF(input: ExportInput) {
   const html = renderCoverHTML(input);
 
   const browser = await puppeteer.launch({
-    headless: "new"
+    headless: true
   });
+  
 
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: "networkidle0" });
