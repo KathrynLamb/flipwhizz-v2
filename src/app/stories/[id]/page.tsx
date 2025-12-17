@@ -1,20 +1,28 @@
-// src/app/page.tsx
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { Playfair_Display, Lato } from "next/font/google";
-import HeroButton from "@/components/HeroButton"; 
+import { 
+  BookOpen, 
+  Sparkles, 
+  Edit3, 
+  ArrowRight, 
+  FileText, 
+  ChevronLeft, 
+  Download,
+  Feather,
+  Map,
+  User,
+  Palette
+} from "lucide-react";
 
-import { db } from "@/db"; 
-import { projects } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
-import Header from "@/components/Header";
-
+// 1. Font Setup
 const playfair = Playfair_Display({ 
   subsets: ["latin"], 
   variable: "--font-serif",
-  weight: ["400", "700", "900"]
+  weight: ["400", "600", "700"]
 });
 
 const lato = Lato({ 
@@ -23,253 +31,280 @@ const lato = Lato({
   weight: ["400", "700"]
 });
 
-export default async function Home() {
-  const session = await getServerSession(authOptions);
+type StoryPage = {
+  id: string;
+  pageNumber: number;
+  text: string;
+};
 
-  // Check if user has projects
-  let hasProjects = false;
-  if (session?.user?.id) {
-    const userProjects = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(projects)
-      .where(eq(projects.userId, session.user.id));
+// 2. Magical Loading Messages
+const LOADING_STEPS = [
+  { text: "Reading your story...", icon: BookOpen },
+  { text: "Identifying the heroes...", icon: User },
+  { text: "Scouting locations...", icon: Map },
+  { text: "Preparing the sketchpad...", icon: Feather },
+  { text: "Mixing the magic paints...", icon: Palette },
+  { text: "Almost ready...", icon: Sparkles },
+];
+
+export default function StoryViewPage() {
+  const params = useParams();
+  const router = useRouter();
+
+  const storyId = useMemo(() => {
+    const raw = params?.id;
+    return typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : null;
+  }, [params]);
+
+  const [story, setStory] = useState<any>(null);
+  const [pages, setPages] = useState<StoryPage[]>([]);
+  
+  // State for initial load
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // State for "Confirming" (The AI Extraction Phase)
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [loadingStepIndex, setLoadingStepIndex] = useState(0);
+
+  // Cycle through magical messages while confirming
+  useEffect(() => {
+    if (!isConfirming) return;
+
+    const interval = setInterval(() => {
+      setLoadingStepIndex((prev) => (prev + 1) % LOADING_STEPS.length);
+    }, 2500); 
+
+    return () => clearInterval(interval);
+  }, [isConfirming]);
+
+  useEffect(() => {
+    async function load() {
+      if (!storyId) {
+        setLoading(false);
+        setError("Missing story id.");
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/stories/${storyId}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          setError(data?.error ?? "Failed to load story.");
+          setLoading(false);
+          return;
+        }
+
+        setStory(data.story);
+        setPages(data.pages || []);
+      } catch (e) {
+        setError("Network error loading story.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [storyId]);
+
+  const confirmStory = async () => {
+    setIsConfirming(true); 
     
-    hasProjects = userProjects[0].count > 0;
+    try {
+      await fetch(`/api/stories/${storyId}/extract-world`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ overwriteLinks: true }),
+      });
+
+      router.push(`/stories/${storyId}/extract`);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to confirm story.");
+      setIsConfirming(false); 
+    }
+  };
+
+  // -- 1. MAGICAL LOADING SCREEN (Extraction Phase) --
+  if (isConfirming) {
+    const CurrentStep = LOADING_STEPS[loadingStepIndex];
+    const Icon = CurrentStep.icon;
+
+    return (
+      <div className={`fixed inset-0 z-[100] bg-[#FDF8F0] flex flex-col items-center justify-center ${playfair.variable} ${lato.variable} font-sans`}>
+        
+        {/* Animated Icon Circle */}
+        <div className="relative mb-10">
+          <div className="absolute inset-0 bg-amber-200 rounded-full blur-2xl opacity-40 animate-pulse"></div>
+          <div className="relative w-24 h-24 bg-white rounded-full shadow-xl border-4 border-[#E6D5B8] flex items-center justify-center">
+             <Icon className="w-10 h-10 text-[#F4A261] animate-bounce-slow" />
+          </div>
+        </div>
+
+        {/* Dynamic Text */}
+        <h2 className="font-serif text-3xl font-bold text-[#261C15] mb-4 animate-fade-in text-center px-4">
+          {CurrentStep.text}
+        </h2>
+        
+        <p className="text-[#8C7A6B] text-sm mb-8 animate-pulse">
+          Please wait while we weave the magic...
+        </p>
+
+        {/* Progress Bar */}
+        <div className="w-64 h-2 bg-[#E6D5B8] rounded-full overflow-hidden">
+           <div className="h-full bg-[#F4A261] animate-progress-indeterminate"></div>
+        </div>
+
+      </div>
+    );
   }
 
+  // -- 2. INITIAL LOADING STATE --
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#FDF8F0] flex flex-col items-center justify-center space-y-4">
+        <div className="animate-bounce text-4xl">📖</div>
+        <p className="font-serif text-[#261C15] text-xl animate-pulse">Unfolding your story...</p>
+      </div>
+    );
+  }
+
+  // -- 3. ERROR STATE --
+  if (error || !story) {
+    return (
+      <div className="min-h-screen bg-[#FDF8F0] flex items-center justify-center p-6">
+        <div className="bg-white p-8 rounded-2xl shadow-xl border-2 border-red-100 max-w-md text-center">
+          <div className="text-red-500 mb-4 text-4xl">🥀</div>
+          <h2 className="text-xl font-bold text-[#261C15] mb-2">Oh no!</h2>
+          <p className="text-[#6B5D52] mb-6">{error || "Story not found."}</p>
+          <Link href="/projects" className="px-6 py-2 bg-[#261C15] text-white rounded-full text-sm font-medium hover:bg-black transition">
+            Back to Library
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // -- 4. MAIN MANUSCRIPT VIEW --
   return (
-    <main className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans bg-[#FDF8F0] text-slate-900 overflow-x-hidden`}>
+    <div className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans bg-[#FDF8F0] text-[#261C15] pb-40`}>
       
-      {/* 
-        ========================================
-        HERO SECTION
-        ========================================
-      */}
-      <section className="relative w-full min-h-[95vh] flex flex-col">
-        
-        {/* 1. BACKGROUND IMAGE */}
-        <div className="absolute inset-0 z-0">
-            <Image 
-              src="/LandingPage/hero-forestv2.jpeg" 
-              alt="Magical forest background"
-              fill
-              priority
-              className="object-cover object-[center_60%] md:object-center"
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/30 to-[#0F2236]/80"></div>
-        </div>
+      {/* HEADER (Sticky) */}
+      <header className="sticky top-0 z-40 bg-[#FDF8F0]/95 backdrop-blur-md border-b border-[#E6D5B8] shadow-sm">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+            {/* LEFT: Back Button (Always Visible) */}
+            <Link href="/projects" className="flex items-center text-sm font-bold text-[#8C7A6B] hover:text-[#261C15] transition p-2 -ml-2 rounded-lg hover:bg-black/5">
+               <ChevronLeft className="w-5 h-5 mr-1" />
+               <span className="hidden xs:inline">Library</span>
+            </Link>
 
-        {/* 2. NAVBAR (Replaced with Component) */}
-        <Header session={session} /> 
-
-        {/* 3. HERO CONTENT ... (Rest remains same) */}
-        <div className="relative z-10 flex-grow flex flex-col justify-center items-center text-center px-4 pb-32 md:pb-40 pt-10">
-            <div className="max-w-4xl space-y-8 animate-fade-in-up">
-                <h1 className="font-serif text-5xl md:text-7xl lg:text-8xl text-[#FDF8F0] leading-[1.1] drop-shadow-2xl">
-                    Turn Their Inner World <br/>
-                    <span className="text-[#F4A261]">Into a Tangible Tale</span>
-                </h1>
-                
-                <p className="mx-auto text-lg md:text-2xl text-[#FDF8F0]/90 max-w-2xl font-light leading-relaxed drop-shadow-lg">
-                    Beautifully illustrated, deeply personal storybooks created from your child’s favorite things, quirks, and dreams.
-                </p>
-
-                <div className="flex justify-center pt-4">
-                   <HeroButton session={session} hasProjects={hasProjects} />
-                </div>
+            {/* CENTER: Progress Indicators (Hidden on small mobile) */}
+            <div className="hidden sm:flex items-center gap-2 text-[10px] sm:text-xs font-bold uppercase tracking-wider">
+               <span className="flex items-center text-[#261C15] px-3 py-1 rounded-full bg-[#E6D5B8]">
+                  <FileText className="w-3 h-3 mr-2" /> 
+                  <span className="hidden sm:inline">The Text</span>
+                  <span className="sm:hidden">Text</span>
+               </span>
+               <div className="w-4 sm:w-8 h-[1px] bg-[#E6D5B8]"></div>
+               <span className="flex items-center text-[#B0A69D] px-3 py-1">
+                  <Sparkles className="w-3 h-3 mr-2" /> 
+                  <span className="hidden sm:inline">Magic Art</span>
+                  <span className="sm:hidden">Art</span>
+               </span>
             </div>
+
+            {/* RIGHT: Logout / Spacer (Empty for now to balance layout) */}
+            <div className="w-16"></div> 
         </div>
+      </header>
 
-        {/* 4. CURVED DIVIDER (Wave) */}
-        <div className="absolute bottom-[-1px] left-0 w-full overflow-hidden leading-none z-20">
-            <svg className="relative block w-[calc(100%+1.3px)] h-[60px] md:h-[120px]" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
-                <path d="M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z" fill="#FDF8F0" transform="scale(1, -1) translate(0, -120)"></path>
-            </svg>
-        </div>
-      </section>
-
-      {/* ... Rest of your sections (How It Works, Gallery, Footer) ... */}
-      {/* Be sure to keep them as they were in your code */}
-      {/* ... */}
-      
-      <section id="how-it-works" className="relative py-24 px-6 md:px-12 bg-[#FDF8F0]">
-        {/* ... content ... */}
-        {/* Just pasting the rest of your original code here to complete the file for you if needed */}
-        {/* But for brevity, I assume you keep the sections below the hero unchanged */}
-        <div className="relative flex justify-center items-center mb-20 w-full">
-            <div className="relative w-full max-w-[450px] md:max-w-[700px] h-32 md:h-48 transition-all duration-700 ease-in-out">
-            <Image 
-                src="/LandingPage/theCreativeJourney.png" 
-                alt="The Creative Journey"
-                fill
-                className="object-contain drop-shadow-md"
-                priority
-            />
-            </div>
-        </div>
-        {/* ... */}
-      </section>
-      
-      {/* ... (Gallery Section & Footer Section from your original code) ... */}
-      <section className="py-24 px-6 md:px-12 bg-white">
-      <div className="mx-auto max-w-6xl">
-        <div className="text-center mb-12">
-          <h2 className="font-serif text-4xl text-[#261C15] font-bold">
-            A Keepsake, Not Just a File
-          </h2>
-          <p className="mt-4 text-[#6B5D52]">
-            Designed to be printed, held, and read under a duvet with a flashlight.
-          </p>
-        </div>
-
-        <div className="relative w-full aspect-[16/9] md:aspect-[21/9] bg-[#EEE5D5] rounded-xl shadow-2xl overflow-hidden">
-          {/* ✅ Image */}
-          <Image
-            src="/LandingPage/product.jpeg"   // change to /product.jpg or /product.webp if needed
-            alt="FlipWhizz printed storybook mockup"
-            fill
-            className="object-cover"
-            priority
-          />
-
-          {/* ✅ Soft overlay to keep the quote readable */}
-          <div className="absolute inset-0 bg-black/0 md:bg-gradient-to-t md:from-black/20 md:via-black/0 md:to-black/0" />
-
-          {/* ✅ Quote */}
-          <div className="absolute bottom-6 right-6 hidden md:block max-w-xs text-right">
-            <p className="font-serif text-lg text-[#261C15] font-bold italic drop-shadow-sm">
-              "For Leo, our brave explorer."
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-   {/* ========================================
-  GALLERY
-  ========================================
-*/}
-<section id="gallery" className="py-24 px-6 md:px-12 bg-[#FDF8F0]">
-   <div className="mx-auto max-w-6xl">
-      <h2 className="text-center font-serif text-4xl text-[#261C15] font-bold mb-16">
-          Gallery of Wonder
-      </h2>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
-          {/* Item 1: Mitch & The Dragon (NOW WITH REAL IMAGE) */}
-          <div className="flex flex-col gap-4">
-              <div className="aspect-square bg-slate-800 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
-                  <Image 
-                    src="/LandingPage/mitch_and_the_dragon.jpeg" 
-                    alt="Mitch and the Dragon illustration"
-                    fill
-                    className="object-cover transition-transform duration-500 group-hover:scale-110"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-80"></div>
-                  <div className="absolute bottom-0 p-4 w-full">
-                     <p className="text-white font-serif font-bold text-lg">Mitch & The Dragon</p>
-                  </div>
-              </div>
-              <div className="flex items-start gap-3 px-1">
-                  <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0 overflow-hidden relative">
-                     {/* Optional: Add a small avatar image here */}
-                  </div>
-                  <p className="text-xs text-[#6B5D52] italic">
-                    "The best gift I've ever given. She reads it every night." 
-                    <br/><span className="font-bold not-italic">- Sarah, Mum of 2</span>
-                  </p>
-              </div>
-          </div>
-
-          {/* Item 2: The Sea Secret */}
-          <div className="flex flex-col gap-4">
-              <div className="aspect-square bg-sky-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
-                  <div className="absolute bottom-0 p-4 w-full">
-                     <p className="text-white font-serif font-bold">The Sea Secret</p>
-                  </div>
-              </div>
-              <div className="flex items-start gap-3 px-1">
-                  <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
-                  <p className="text-xs text-[#6B5D52] italic">"He couldn't believe the boy in the book looked just like him!" <br/><span className="font-bold not-italic">- Mike, Dad</span></p>
-              </div>
-          </div>
-
-          {/* Item 3: Magical Treehouse */}
-          <div className="flex flex-col gap-4">
-              <div className="aspect-square bg-emerald-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
-                  <div className="absolute bottom-0 p-4 w-full">
-                     <p className="text-white font-serif font-bold">Magical Treehouse</p>
-                  </div>
-              </div>
-              <div className="flex items-start gap-3 px-1">
-                  <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
-                  <p className="text-xs text-[#6B5D52] italic">"Beautiful illustrations. Worth every penny." <br/><span className="font-bold not-italic">- Jess, Mum</span></p>
-              </div>
-          </div>
-
-          {/* Item 4: Wild Animals */}
-          <div className="flex flex-col gap-4">
-              <div className="aspect-square bg-amber-900 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group">
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
-                  <div className="absolute bottom-0 p-4 w-full">
-                     <p className="text-white font-serif font-bold">Wild Animals</p>
-                  </div>
-              </div>
-              <div className="flex items-start gap-3 px-1">
-                  <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0"></div>
-                  <p className="text-xs text-[#6B5D52] italic">"Finally, a keepsake that isn't plastic junk." <br/><span className="font-bold not-italic">- Tom, Grandad</span></p>
-              </div>
-          </div>
-      </div>
-   </div>
-</section>
-
-      {/* 
-        ========================================
-        FOOTER
-        ========================================
-      */}
-      <footer className="relative bg-[#0F2236] text-[#FDF8F0] pt-32 pb-12">
-         {/* Top Wave Divider */}
-         <div className="absolute top-[-2px] left-0 w-full overflow-hidden leading-none z-20">
-            <svg className="relative block w-[calc(100%+1.3px)] h-[60px] md:h-[100px]" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
-                <path d="M985.66,92.83C906.67,72,823.78,31,743.84,14.19c-82.26-17.34-168.06-16.33-250.45.39-57.84,11.73-114,31.07-172,41.86A600.21,600.21,0,0,1,0,27.35V120H1200V95.8C1132.19,118.92,1055.71,111.31,985.66,92.83Z" fill="#FDF8F0"></path>
-            </svg>
+      {/* TITLE SECTION */}
+      <div className="pt-8 sm:pt-12 pb-6 sm:pb-10 px-6 text-center max-w-3xl mx-auto">
+         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider mb-4 sm:mb-6 border border-amber-200">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            First Draft
          </div>
 
-         <div className="relative z-10 mx-auto max-w-6xl px-6 md:px-12 flex flex-col md:flex-row justify-between items-end gap-12">
+         <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold leading-tight text-[#261C15] mb-4">
+           {story.title ?? "Untitled Story"}
+         </h1>
+         
+         <p className="text-[#6B5D52] text-sm sm:text-lg max-w-lg mx-auto">
+            Review your tale before we bring it to life with illustrations.
+         </p>
+      </div>
+
+      {/* PAGES LIST */}
+      <div className="mx-auto max-w-2xl px-4 sm:px-6 space-y-6 sm:space-y-8">
+        {pages.map((p, index) => (
+          <div
+            key={p.id}
+            className="group relative bg-white text-[#261C15] p-6 sm:p-8 md:p-12 rounded-lg shadow-sm border border-[#EBEBEB] hover:shadow-md transition-shadow duration-300"
+          >
+            {/* Page Number Badge */}
+            <div className="absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center bg-[#261C15] text-[#FDF8F0] font-serif font-bold text-sm rounded-full shadow-lg z-10 border-2 border-[#FDF8F0]">
+              {p.pageNumber}
+            </div>
+
+            {/* Decorative Binding Holes */}
+            <div className="absolute left-2 sm:left-3 top-0 bottom-0 flex flex-col justify-center gap-8 sm:gap-12 opacity-20 pointer-events-none">
+               <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-stone-400 shadow-inner"></div>
+               <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-stone-400 shadow-inner"></div>
+               <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-stone-400 shadow-inner"></div>
+            </div>
+
+            {/* Page Text */}
+            <div className="pl-4 sm:pl-6 font-serif text-base sm:text-lg md:text-xl leading-relaxed whitespace-pre-line text-[#4A3B32]">
+              {p.text}
+            </div>
             
-            {/* Left: Links */}
-            <div className="flex flex-col gap-4 text-sm font-medium text-[#FDF8F0]/60">
-                <Link href="/" className="hover:text-white transition">Home</Link>
-                <Link href="#how-it-works" className="hover:text-white transition">How It Works</Link>
-                <Link href="#gallery" className="hover:text-white transition">Gallery</Link>
-                <Link href="#pricing" className="hover:text-white transition">Pricing</Link>
-                <Link href="/contact" className="hover:text-white transition">Contact Us</Link>
+            <div className="absolute bottom-3 right-4 opacity-50 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                <span className="text-[10px] sm:text-xs text-stone-400 italic">Page {index + 1} of {pages.length}</span>
+            </div>
+          </div>
+        ))}
+        
+        <div className="text-center pt-8 pb-4">
+             <div className="text-4xl opacity-20 text-[#261C15]">❦</div>
+             <p className="text-xs text-[#8C7A6B] mt-2 font-serif italic">End of draft</p>
+        </div>
+      </div>
+
+      {/* ACTION DOCK (Fixed Bottom) */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 p-4 sm:px-6 sm:pb-6 pointer-events-none">
+         <div className="pointer-events-auto max-w-3xl mx-auto bg-[#261C15] text-white p-3 rounded-2xl shadow-2xl border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
+            
+            {/* Secondary Actions */}
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-start">
+                <a
+                  href={`/stories/${storyId}/edit`}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white/5 hover:bg-white/10 transition text-stone-300 hover:text-white"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  Edit
+                </a>
+                <a
+                  href={`/stories/${storyId}/pdf`}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white/5 hover:bg-white/10 transition text-stone-300 hover:text-white"
+                >
+                  <Download className="w-4 h-4" />
+                  PDF
+                </a>
             </div>
 
-            {/* Middle: Brand */}
-            <div className="text-center md:text-right">
-                <h4 className="font-serif text-2xl font-bold">FlipWhizz</h4>
-                <p className="text-sm opacity-50 mt-1">Made for magic, built to last.</p>
-                <p className="text-xs opacity-30 mt-8">© {new Date().getFullYear()} FlipWhizz Ltd.</p>
-            </div>
-
-            {/* Right: Sleeping Child Illustration Placeholder */}
-            <div className="w-full md:w-auto flex justify-center md:justify-end">
-            <div className="w-64 h-40 relative rounded-t-full border-b-0 border-4 border-indigo-800 overflow-hidden">
-                  <Image 
-                    src="/illustrations/sleeping-child.png" 
-                    alt="Child sleeping with a storybook"
-                    fill
-                    className="object-cover"
-                  />
-              </div>
-            </div>
+            {/* Primary Action */}
+            <button
+              onClick={confirmStory}
+              disabled={isConfirming}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#F4A261] hover:bg-[#E76F51] text-[#0F2236] font-bold shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Approve & Create Art</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
          </div>
-      </footer>
-    </main>
+      </div>
+
+    </div>
   );
 }
