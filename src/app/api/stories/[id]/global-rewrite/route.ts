@@ -71,7 +71,7 @@ CRITICAL RULES:
 `;
 
   const completion = await client.messages.create({
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-sonnet-4-20250514",
     system: SYSTEM,
     max_tokens: 2200,
     temperature: 0,
@@ -137,7 +137,7 @@ export async function POST(
           error: `Global rewrite is capped at ${MAX_GLOBAL_REWRITE_PAGES} pages.`,
           details:
             `This story currently has ${pageCount} pages. ` +
-            `Consider recreating with a print-safe page count (e.g., 24).`,
+            `Consider recreating with a print-safe page count (e.g., 30).`,
         },
         { status: 400 }
       );
@@ -276,6 +276,12 @@ RULES:
         createdAt: new Date(),
       };
     });
+
+    // NOTE:
+// This route intentionally does NOT update stories.status.
+// Workflow progression is handled exclusively via
+// POST /api/stories/[id]/status after user confirmation.
+
 
     await db.transaction(async (tx) => {
       await tx

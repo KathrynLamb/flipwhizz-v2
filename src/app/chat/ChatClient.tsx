@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Sparkles, PenTool, CheckCircle, RotateCcw, BookOpen } from "lucide-react";
@@ -8,6 +9,7 @@ import { Send, Sparkles, PenTool, CheckCircle, RotateCcw, BookOpen } from "lucid
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
 export default function ChatPage() {
+  const router = useRouter()
   const searchParams = useSearchParams();
   const projectId = useMemo(() => searchParams.get("project"), [searchParams]);
   
@@ -36,7 +38,10 @@ export default function ChatPage() {
         const storyRes = await fetch(`/api/stories/by-project?projectId=${projectId}`);
         const storyData = await storyRes.json();
         if (storyData.storyId) {
-          setStoryId(storyData.storyId);
+          router.push(`/stories/${storyData.storyId}`)
+          
+          // setStoryId(storyData.storyId);
+
         }
       } catch (err) {
         console.error("Studio sync failed:", err);
@@ -102,6 +107,7 @@ export default function ChatPage() {
       const data = await res.json();
       if (data.storyId) {
         setStoryId(data.storyId);
+
       }
     } catch (err) {
       console.error("Story creation failed:", err);

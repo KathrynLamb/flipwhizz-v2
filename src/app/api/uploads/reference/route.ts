@@ -45,6 +45,7 @@ export async function POST(req: Request) {
   try {
     const form = await req.formData();
     const file = form.get("file") as File | null;
+    console.log("file", file)
     
     // ✅ FIX: Allow userId to be optional, fallback to 'anonymous' or a general folder
     const userId = (form.get("userId") as string | null) || "anonymous";
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
     const originalBuffer = Buffer.from(arrayBuffer);
 
     const { buffer } = await maybeConvertHeic(originalBuffer, file);
+    console.log("buffer", buffer)
 
     const result: any = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
@@ -72,7 +74,7 @@ export async function POST(req: Request) {
 
       Readable.from(buffer).pipe(stream);
     });
-
+    console.log("result", result)
     return NextResponse.json({
       ok: true,
       url: result.secure_url,

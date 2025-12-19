@@ -1,30 +1,30 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
-import { 
-  Loader2, 
-  Upload, 
-  Wand2, 
-  RefreshCw, 
-  Check, 
-  Image as ImageIcon,
-  Palette,
-  ChevronDown,
-  ChevronUp,
-  Users,
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Wand2,
+  Upload,
   Pencil,
   ArrowLeft,
-  Sparkles,
-  Rocket, 
+  Rocket,
+  Settings2,
   ArrowRight,
-  Settings2
+  Check,
+  Image as ImageIcon,
+  Loader2,
+  RefreshCw,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
 } from "lucide-react";
-import { SampleImageCharacterCard } from "@/components/SampleImageCharacterCard";
-import { SampleImageLocationCard } from "@/components/SampleImageLocationCard";
-import { motion, AnimatePresence } from "framer-motion";
 
-/* ===================== Types ===================== */
+import { buildCharacterReferences } from "@/lib/buildCharacterreferences";
+
+/* ======================================================
+   TYPES
+====================================================== */
 
 export type Entity = {
   id: string;
@@ -42,6 +42,47 @@ export type ClientStyleGuide = {
   sampleIllustrationUrl: string | null;
 };
 
+type StoryStatus =
+  | "world_ready"
+  | "style_ready"
+  | "awaiting_payment"
+  | "awaiting_generation_choice"
+  | "generating";
+
+/* ======================================================
+   ANIMATIONS
+====================================================== */
+
+const easeOut: [number, number, number, number] = [0.16, 1, 0.3, 1];
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 24 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: easeOut } },
+};
+
+const scaleIn = {
+  hidden: { opacity: 0, scale: 0.92 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: { duration: 0.4, ease: easeOut },
+  },
+};
+
+const slideDown = {
+  hidden: { opacity: 0, height: 0 },
+  visible: {
+    opacity: 1,
+    height: "auto",
+    transition: { duration: 0.3, ease: easeOut },
+  },
+  exit: { opacity: 0, height: 0, transition: { duration: 0.2 } },
+};
+
+/* ======================================================
+   COMPONENT
+====================================================== */
+
 export default function InitialStyleDesignEditor({
   style,
   leftText,
@@ -49,452 +90,747 @@ export default function InitialStyleDesignEditor({
   characters,
   locations,
   storyStatus,
-  orderId,
-  paymentStatus
+  sampleImage
 }: {
   style: ClientStyleGuide;
   leftText: string;
   rightText: string;
   characters: Entity[];
   locations: Entity[];
-  storyStatus: string | null;
-  orderId: string | null;
-  paymentStatus: string | null;
-
+  storyStatus: StoryStatus;
+  sampleImage: string | null | undefined;
 }) {
-  // --- STATE ---
+  /* ---------------- STATE ---------------- */
+
   const [prompt, setPrompt] = useState(style.summary ?? "");
-  const [styleRefUrl, setStyleRefUrl] = useState<string | null>(style.styleGuideImage);
+  const [styleRefUrl, setStyleRefUrl] = useState(style.styleGuideImage);
+  const [mode, setMode] = useState<"view" | "edit" | "upload">("view");
+  const [showDetails, setShowDetails] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isGeneratingSample, setIsGeneratingSample] = useState(false);
+  const [sampleUrl, setSampleUrl] = useState(style.sampleIllustrationUrl || sampleImage);
+  const [generationProgress, setGenerationProgress] = useState("");
+  const [isSampleOpen, setIsSampleOpen] = useState(false);
+
+  const needsPayment = storyStatus === "awaiting_payment";
+  const canContinue = storyStatus === "awaiting_generation_choice";
+
+
+  console.log('stort status', storyStatus)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setIsSampleOpen(false);
+    }
   
-  // 'default' = Show AI Text, 'edit' = Textarea, 'upload' = File Dropzone
-  const [mode, setMode] = useState<'default' | 'edit' | 'upload'>('default');
-
-  const [showCast, setShowCast] = useState(false);
-  const [isUploadingRef, setIsUploadingRef] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generationStatus, setGenerationStatus] = useState("");
+    if (isSampleOpen) {
+      window.addEventListener("keydown", onKey);
+    }
   
-  // Initialize sample from props, but allow local updates
-  const [generatedSample, setGeneratedSample] = useState<string | null>(style.sampleIllustrationUrl);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isSampleOpen]);
+  
+  /* ======================================================
+     ACTIONS
+  ====================================================== */
 
-  // Helper to handle characters (passed to API)
-  const [localCharacters, setLocalCharacters] = useState<Entity[]>(characters);
-  const [localLocations, setLocalLocations] = useState<Entity[]>(locations);
-
-  // Payment Flow
-  const [paymentSuccess, setPaymentSuccess] = useState(false);
-  const [isStartingJob, setIsStartingJob] = useState(false);
-
-console.log("payment success", paymentStatus, paymentSuccess, orderId)
-
-    useEffect(() => {
-      if (storyStatus === 'paid' && paymentStatus === 'paid' && orderId !== null) {
-        console.log("story status", storyStatus)
-        console.log("payment status", paymentStatus)
-        console.log("order id ", orderId)
-         // Redirect straight to studio if they are past the payment/choice phase
-         setPaymentSuccess(true)
-        //  window.location.href = `/stories/${style.storyId}/studio?mode=live`;
-      }
-
-  }, [storyStatus, paymentStatus, orderId]);
-
-
-  /* -------------------------------------------
-     1. Upload Logic
-  ------------------------------------------- */
-  async function handleUploadStyleRef(file: File) {
-    setIsUploadingRef(true);
+  async function uploadStyleRef(file: File) {
+    setIsUploading(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
-      // Optional: Add userId if available contextually
-      const res = await fetch("/api/uploads/reference", { method: "POST", body: fd });
+
+      const res = await fetch("/api/uploads/reference", {
+        method: "POST",
+        body: fd,
+      });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
       setStyleRefUrl(data.url);
-      
-      // Save immediately so it persists even if they don't generate yet
+
       await fetch("/api/style-guide/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storyId: style.storyId, styleGuideImage: data.url }),
-      });
-    } catch (err) {
-      alert("Failed to upload reference image.");
-    } finally {
-      setIsUploadingRef(false);
-    }
-  }
-
-  function updateEntity(id: string, updates: Partial<Entity>, type: 'char' | 'loc') {
-    if (type === 'char') setLocalCharacters(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
-    else setLocalLocations(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
-  }
-
-  /* -------------------------------------------
-     2. Generate Logic (Extended Polling)
-  ------------------------------------------- */
-  async function handleGenerate() {
-    setIsGenerating(true);
-    setGenerationStatus("Waking up the studio...");
-    setGeneratedSample(null);
-
-    try {
-      // 1. Save prompt & update DB first
-      await fetch("/api/style-guide/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storyId: style.storyId, summary: prompt }),
-      });
-
-      // 2. Prepare Payload
-      const references = [];
-      
-      // Logic: If user uploaded a ref, send it.
-      if (styleRefUrl) {
-        references.push({ url: styleRefUrl, type: "style", label: "Art Style" });
-      }
-
-      localCharacters.forEach(c => {
-        references.push({ url: c.referenceImageUrl || null, type: "character", label: c.name, notes: c.description || "" });
-      });
-
-      // 3. Dispatch Job
-      const res = await fetch("/api/style/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           storyId: style.storyId,
-          description: prompt,
-          leftText,
-          rightText,
-          references,
+          styleGuideImage: data.url,
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to start generation");
+      setMode("view");
+    } finally {
+      setIsUploading(false);
+    }
+  }
 
-      // 4. Poll (Extended Duration: 3 mins)
-      let attempts = 0;
-      const maxAttempts = 90; // 90 * 2s = 180s
+  async function savePromptEdit() {
+    await fetch("/api/style-guide/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        storyId: style.storyId,
+        summary: prompt,
+      }),
+    });
+    setMode("view");
+  }
+
+  async function generateSample() {
+    setIsGeneratingSample(true);
+    setSampleUrl(null);
+    setGenerationProgress("Preparing your style...");
+
+    await fetch("/api/style-guide/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        storyId: style.storyId,
+        summary: prompt,
+      }),
+    });
+
+    const references: any[] = [];
+
+    if (styleRefUrl) {
+      references.push({
+        url: styleRefUrl,
+        type: "style",
+        label: "Art Style",
+      });
+    }
+
+    references.push(...buildCharacterReferences(characters));
+
+    await fetch("/api/style/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        storyId: style.storyId,
+        description: prompt,
+        leftText,
+        rightText,
+        references,
+      }),
+    });
+
+    setGenerationProgress("Gathering references...");
+
+    // Poll with progress updates
+    let pollCount = 0;
+    const poll = setInterval(async () => {
+      pollCount++;
       
-      const poll = setInterval(async () => {
-        attempts++;
-        
-        // Dynamic Status Updates
-        if (attempts === 2) setGenerationStatus("Reading your story...");
-        if (attempts === 10) setGenerationStatus("Analyzing character photos...");
-        if (attempts === 25) setGenerationStatus("Sketching the scene layout...");
-        if (attempts === 40) setGenerationStatus("Mixing paints and colors...");
-        if (attempts === 60) setGenerationStatus("Adding final magical details...");
+      if (pollCount === 3) setGenerationProgress("Creating illustration...");
+      if (pollCount === 6) setGenerationProgress("Adding details...");
+      if (pollCount === 9) setGenerationProgress("Almost there...");
 
-        try {
-            const checkRes = await fetch(`/api/stories/${style.storyId}/style-poll`);
-            if (checkRes.ok) {
-                const data = await checkRes.json();
-                if (data.sampleUrl) {
-                    clearInterval(poll);
-                    setGeneratedSample(data.sampleUrl);
-                    setIsGenerating(false);
-                }
+      const res = await fetch(`/api/stories/${style.storyId}/style-poll`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (data.sampleUrl) {
+        clearInterval(poll);
+        setSampleUrl(data.sampleUrl);
+        setIsGeneratingSample(false);
+        setGenerationProgress("");
+      }
+    }, 2000);
+  }
+
+  async function regenerateSample() {
+    setSampleUrl(null);
+    await generateSample();
+  }
+
+  /* ======================================================
+     STATUS-DRIVEN VIEWS
+  ====================================================== */
+
+  if (storyStatus === "awaiting_generation_choice") {
+    return (
+      <CenteredShell>
+        <SuccessIcon />
+        <h1 className="text-5xl font-black mb-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 bg-clip-text text-transparent">
+          You're Ready to Create ✨
+        </h1>
+        <p className="text-xl text-stone-600 mb-12 max-w-xl">
+          Choose how you'd like to bring your book to life.
+        </p>
+
+        <div className="grid md:grid-cols-2 gap-6 max-w-4xl w-full">
+          <ActionCard
+            icon={Rocket}
+            title="Generate Full Book"
+            text="Start illustrating every page automatically."
+            onClick={() =>
+              fetch(`/api/stories/${style.storyId}/start-generation`, {
+                method: "POST",
+              }).then(() => {
+                window.location.href = `/stories/${style.storyId}/studio`;
+              })
             }
-        } catch (e) { /* ignore network blips */ }
+          />
 
-        if (attempts >= maxAttempts) {
-            clearInterval(poll);
-            setIsGenerating(false);
-            alert("This is taking longer than usual. The image might still appear in a moment, try refreshing the page.");
-        }
-      }, 2000); 
-
-    } catch (e: any) {
-      console.error(e);
-      setIsGenerating(false);
-      alert("Something went wrong starting the process.");
-    }
+          <ActionCard
+            icon={Settings2}
+            title="Edit in Studio"
+            text="Fine-tune characters and details first."
+            onClick={() =>
+              (window.location.href = `/stories/${style.storyId}/studio?mode=edit`)
+            }
+          />
+        </div>
+      </CenteredShell>
+    );
   }
 
-  /* -------------------------------------------
-     3. Payment Logic
-  ------------------------------------------- */
-  const handleApprovePayment = async (orderID: string) => {
-    try {
-        const res = await fetch("/api/paypal/capture", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderID, storyId: style.storyId }),
-        });
-
-        if (res.ok) {
-            setPaymentSuccess(true);
-        } else {
-            alert("Payment capture failed.");
-        }
-    } catch (e) {
-        console.error(e);
-    }
-  };
-
-  async function handleOptionGenerateNow() {
-    setIsStartingJob(true);
-    await fetch(`/api/stories/${style.storyId}/start-generation`, { method: "POST" });
-    window.location.href = `/stories/${style.storyId}/studio?mode=live`;
-  }
-
-  function handleOptionEditFirst() {
-    window.location.href = `/stories/${style.storyId}/studio?mode=edit`;
-  }
-
-  /* ===================== RENDER ===================== */
-
-  // --- VIEW 1: PAYMENT SUCCESS (The Choice) ---
-  if (paymentSuccess) {
+  if (storyStatus === "generating") {
     return (
-        <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }} 
-            animate={{ opacity: 1, scale: 1 }}
-            className="max-w-4xl mx-auto min-h-[60vh] flex flex-col items-center justify-center text-center pb-20"
+      <CenteredShell>
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+          className="w-28 h-28 rounded-3xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-2xl mb-8"
         >
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-green-100/50">
-                <Check className="w-10 h-10 text-green-600" />
-            </div>
-            
-            <h1 className="text-4xl font-serif text-stone-900 mb-4">You&apos;re officially an author!</h1>
-            <p className="text-stone-500 mb-12 text-lg max-w-xl mx-auto">
-                Your story slot is secured. How would you like to proceed with the illustration process?
-            </p>
-
-            <div className="grid md:grid-cols-2 gap-6 w-full max-w-2xl">
-                {/* OPTION 1: FAST */}
-                <button 
-                    onClick={handleOptionGenerateNow}
-                    disabled={isStartingJob}
-                    className="group relative bg-white p-8 rounded-[2rem] border-2 border-indigo-100 hover:border-[#4635B1] shadow-xl hover:shadow-2xl transition-all text-left flex flex-col h-full"
-                >
-                    <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-[#4635B1] transition-colors">
-                        <Rocket className="w-6 h-6 text-[#4635B1] group-hover:text-white" />
-                    </div>
-                    <h3 className="text-xl font-bold text-stone-900 mb-2">Generate Full Book</h3>
-                    <p className="text-stone-500 text-sm mb-6 flex-1">
-                        I love the sample! Start generating illustrations for every page right now.
-                    </p>
-                    <div className="flex items-center gap-2 text-[#4635B1] font-bold text-sm uppercase tracking-widest group-hover:gap-4 transition-all">
-                        {isStartingJob ? "Starting..." : "Start Magic"} <ArrowRight className="w-4 h-4" />
-                    </div>
-                </button>
-
-                {/* OPTION 2: SLOW */}
-                <button 
-                    onClick={handleOptionEditFirst}
-                    className="group relative bg-white p-8 rounded-[2rem] border-2 border-stone-100 hover:border-stone-400 shadow-xl hover:shadow-2xl transition-all text-left flex flex-col h-full"
-                >
-                    <div className="w-12 h-12 bg-stone-50 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-stone-800 transition-colors">
-                        <Settings2 className="w-6 h-6 text-stone-600 group-hover:text-white" />
-                    </div>
-                    <h3 className="text-xl font-bold text-stone-900 mb-2">Enter Studio Mode</h3>
-                    <p className="text-stone-500 text-sm mb-6 flex-1">
-                        I want to tweak the text, add more character details, or adjust locations before generating.
-                    </p>
-                    <div className="flex items-center gap-2 text-stone-600 font-bold text-sm uppercase tracking-widest group-hover:gap-4 transition-all">
-                        Go to Studio <ArrowRight className="w-4 h-4" />
-                    </div>
-                </button>
-            </div>
+          <Wand2 className="w-14 h-14 text-white" />
         </motion.div>
+
+        <h2 className="text-5xl font-black mb-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 bg-clip-text text-transparent">
+          Creating Your Book…
+        </h2>
+        <p className="text-xl text-stone-600">
+          Illustrating each page with care ✨
+        </p>
+      </CenteredShell>
     );
   }
 
-  // --- VIEW 2: LOADING ---
-  if (isGenerating) {
-    return (
-        <div className="min-h-[60vh] flex flex-col items-center justify-center text-center max-w-md mx-auto">
-            <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-xl mb-8 animate-pulse">
-                <Sparkles className="w-10 h-10 text-indigo-500" />
-            </div>
-            <h2 className="text-3xl font-serif text-indigo-900 mb-4">Painting your story...</h2>
-            <p className="text-stone-500 text-lg">{generationStatus}</p>
-        </div>
-    );
-  }
+  /* ======================================================
+     STYLE EDITOR (MAIN VIEW)
+  ====================================================== */
 
-  // --- VIEW 3: RESULT + PAYPAL ---
-  if (generatedSample  && !paymentSuccess) {
-    return (
-        <div className="max-w-4xl mx-auto pb-40">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-8">
-                {/* Result Image */}
-                <div className="relative bg-white rounded-[2rem] shadow-2xl overflow-hidden border border-stone-100 group">
-                    <img src={generatedSample} alt="Sample" className="w-full h-auto" />
-                    <button 
-                        onClick={() => setGeneratedSample(null)} 
-                        className="absolute top-4 right-4 bg-white/90 text-stone-800 px-4 py-2 rounded-full text-sm font-bold shadow-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 hover:scale-105"
-                    >
-                        <RefreshCw className="w-4 h-4" /> Try Again
-                    </button>
-                </div>
+  const hasCharacters = characters.length > 0;
+  const hasLocations = locations.length > 0;
 
-                {/* Unlock */}
-                <div className="bg-white rounded-3xl p-8 shadow-xl border border-indigo-50 text-center max-w-xl mx-auto">
-                    <h3 className="text-3xl font-serif text-indigo-900 mb-2">Love this look?</h3>
-                    <p className="text-stone-500 mb-8">Unlock the full studio to generate the rest of your book.</p>
-                    <div className="max-w-xs mx-auto">
-                        <PayPalScriptProvider options={{ clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "", currency: "GBP" }}>
-                            <PayPalButtons 
-                                style={{ layout: "horizontal", color: "gold", shape: "pill", label: "pay" }}
-                                createOrder={async () => {
-                                    const res = await fetch("/api/paypal/order", {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ 
-                                            storyId: style.storyId,
-                                            price: "29.99", // Ensure this matches your expected format
-                                            product: "Full Book Generation" 
-                                        })
-                                    });
-                                    
-                                    if (!res.ok) {
-                                        const err = await res.json();
-                                        throw new Error(err.error || "Order failed");
-                                    }
-                                    
-                                    const data = await res.json();
-                                    return data.orderID;
-                                }}
-                                onApprove={(data) => handleApprovePayment(data.orderID)}
-                            />
-                        </PayPalScriptProvider>
-                    </div>
-                    <p className="text-[10px] text-stone-400 mt-4 uppercase tracking-widest font-bold">100% Satisfaction Guarantee</p>
-                </div>
-            </motion.div>
-        </div>
-    );
-  }
-
-  // --- VIEW 4: EDITOR (Default) ---
   return (
-    <div className="max-w-3xl mx-auto pb-40">
-        
-        {/* HEADER */}
-        <div className="text-center mb-10">
-            <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest mb-4">
-                <Palette className="w-4 h-4" /> Visual Style
-            </div>
-            <h1 className="text-4xl font-serif text-stone-900 mb-4">How should this story look?</h1>
-            <p className="text-stone-500">Choose the AI suggestion, tweak it, or upload your own reference.</p>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-fuchsia-50 to-amber-50">
+      {/* HEADER */}
+      <motion.header
+        initial="hidden"
+        animate="visible"
+        variants={fadeUp}
+        className="pt-20 pb-12 px-6 text-center"
+      >
+        <h1 className="text-5xl md:text-6xl font-black mb-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 bg-clip-text text-transparent">
+          Design Your Story's Look
+        </h1>
+        <p className="text-xl text-stone-600 max-w-2xl mx-auto">
+          We've suggested a style based on your story. Edit it, upload a
+          reference, or generate a sample.
+        </p>
+      </motion.header>
 
-        {/* STYLE CARD */}
-        <div className="bg-white rounded-3xl shadow-xl border border-stone-200 overflow-hidden relative">
-            
-            {/* CONTENT */}
-            <div className="p-8 min-h-[240px] flex flex-col justify-center bg-stone-50/50">
-                
-                {mode === 'default' && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                        <p className="text-lg font-serif text-indigo-900 leading-relaxed text-center italic">
-                            &ldquo;{prompt}&rdquo;
-                        </p>
-                    </motion.div>
-                )}
-
-                {mode === 'edit' && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full">
-                        <label className="text-xs font-bold text-stone-400 uppercase mb-2 block">Edit AI Suggestion</label>
-                        <textarea 
-                            value={prompt} 
-                            onChange={(e) => setPrompt(e.target.value)}
-                            className="w-full h-40 bg-white border border-stone-200 rounded-xl p-4 text-stone-800 focus:ring-2 focus:ring-indigo-500/20 outline-none resize-none shadow-inner"
-                            autoFocus
-                        />
-                    </motion.div>
-                )}
-
-                {mode === 'upload' && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full">
-                        <label className="text-xs font-bold text-stone-400 uppercase mb-2 block">Upload Reference</label>
-                        <div className="relative group w-full h-48 bg-white rounded-xl border-2 border-dashed border-stone-200 hover:border-indigo-400 cursor-pointer overflow-hidden flex flex-col items-center justify-center text-center">
-                            {styleRefUrl ? (
-                                <img src={styleRefUrl} className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="text-stone-400">
-                                    {isUploadingRef ? <Loader2 className="w-8 h-8 animate-spin mx-auto" /> : <Upload className="w-8 h-8 mx-auto mb-2" />}
-                                    <span className="text-sm">Click to upload image</span>
-                                </div>
-                            )}
-                            <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" 
-                                onChange={(e) => e.target.files?.[0] && handleUploadStyleRef(e.target.files[0])} 
-                            />
-                        </div>
-                    </motion.div>
-                )}
-            </div>
-
-            {/* ACTION FOOTER */}
-            <div className="bg-white border-t border-stone-100 p-6 flex flex-col gap-4 items-center">
-                
-                {/* PRIMARY ACTION */}
-                <button 
-                    onClick={handleGenerate}
-                    className="w-full sm:w-auto min-w-[300px] bg-[#4635B1] hover:bg-[#3b2d96] text-white text-lg font-bold py-4 px-8 rounded-full shadow-lg shadow-indigo-200 transition-all transform hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
-                >
-                    <Wand2 className="w-5 h-5" />
-                    {mode === 'default' ? "Generate with this Style" : 
-                     mode === 'edit' ? "Generate with Custom Style" : 
-                     "Generate from Image"}
-                </button>
-
-                {/* SECONDARY OPTIONS */}
-                <div className="flex items-center gap-6 text-sm font-medium pt-2">
-                    {mode !== 'edit' && (
-                        <button onClick={() => setMode('edit')} className="text-stone-400 hover:text-indigo-600 flex items-center gap-2 transition-colors">
-                            <Pencil className="w-4 h-4" /> Edit Text
-                        </button>
-                    )}
-                    
-                    {mode !== 'upload' && (
-                        <button onClick={() => setMode('upload')} className="text-stone-400 hover:text-indigo-600 flex items-center gap-2 transition-colors">
-                            <ImageIcon className="w-4 h-4" /> Use Image
-                        </button>
-                    )}
-
-                    {mode !== 'default' && (
-                        <button onClick={() => setMode('default')} className="text-stone-400 hover:text-indigo-600 flex items-center gap-2 transition-colors">
-                            <ArrowLeft className="w-4 h-4" /> Reset
-                        </button>
-                    )}
+      <div className="max-w-6xl mx-auto px-6 pb-20">
+        <div className="grid lg:grid-cols-2 gap-8">
+          {/* LEFT COLUMN: STYLE EDITOR */}
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={scaleIn}
+            className="space-y-6"
+          >
+            {/* STYLE PROMPT CARD */}
+            <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white overflow-hidden">
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-2xl font-bold text-stone-800">
+                    Art Style
+                  </h3>
+                  {mode === "view" && (
+                    <button
+                      onClick={() => setMode("edit")}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full bg-violet-100 text-violet-700 hover:bg-violet-200 transition-colors text-sm font-semibold"
+                    >
+                      <Pencil className="w-4 h-4" />
+                      Edit
+                    </button>
+                  )}
                 </div>
-            </div>
-        </div>
 
-        {/* CAST TOGGLE */}
-        <div className="mt-12 text-center">
-            <button 
-                onClick={() => setShowCast(!showCast)}
-                className="inline-flex items-center gap-2 text-stone-400 hover:text-stone-600 text-xs font-bold uppercase tracking-widest transition-colors"
-            >
-                {showCast ? "Hide Cast" : "View Cast & Locations"}
-                {showCast ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
+                {mode === "view" && (
+                  <p className="text-lg text-stone-700 leading-relaxed italic">
+                    "{prompt}"
+                  </p>
+                )}
+
+                {mode === "edit" && (
+                  <div className="space-y-4">
+                    <textarea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      className="w-full h-40 border-2 border-violet-200 rounded-2xl p-4 text-lg focus:border-violet-400 focus:outline-none transition-colors"
+                      placeholder="Describe the art style..."
+                      autoFocus
+                    />
+                    <div className="flex gap-3">
+                      <button
+                        onClick={savePromptEdit}
+                        className="flex-1 px-6 py-3 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-bold hover:shadow-lg transition-shadow"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => {
+                          setPrompt(style.summary ?? "");
+                          setMode("view");
+                        }}
+                        className="px-6 py-3 rounded-full bg-stone-200 text-stone-700 font-bold hover:bg-stone-300 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* STYLE REFERENCE IMAGE */}
+            <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white overflow-hidden">
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-2xl font-bold text-stone-800">
+                    Reference Image
+                  </h3>
+                  {mode === "view" && !styleRefUrl && (
+                    <button
+                      onClick={() => setMode("upload")}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full bg-violet-100 text-violet-700 hover:bg-violet-200 transition-colors text-sm font-semibold"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Upload
+                    </button>
+                  )}
+                </div>
+
+                {mode === "upload" && (
+                  <div className="space-y-4">
+                    <label className="block border-2 border-dashed border-violet-300 rounded-2xl p-12 text-center cursor-pointer hover:border-violet-400 transition-colors bg-violet-50/50">
+                      {isUploading ? (
+                        <div className="flex flex-col items-center gap-3">
+                          <Loader2 className="w-10 h-10 text-violet-600 animate-spin" />
+                          <p className="text-violet-600 font-semibold">
+                            Uploading...
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          <Upload className="w-12 h-12 mx-auto mb-4 text-violet-400" />
+                          <p className="text-lg font-semibold text-stone-700 mb-1">
+                            Click to upload
+                          </p>
+                          <p className="text-sm text-stone-500">
+                            JPG, PNG or WebP
+                          </p>
+                        </>
+                      )}
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={(e) =>
+                          e.target.files && uploadStyleRef(e.target.files[0])
+                        }
+                        disabled={isUploading}
+                      />
+                    </label>
+                    <button
+                      onClick={() => setMode("view")}
+                      className="w-full px-6 py-3 rounded-full bg-stone-200 text-stone-700 font-bold hover:bg-stone-300 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                {mode === "view" && styleRefUrl && (
+                  <div className="space-y-4">
+                    <div className="relative group">
+                      <img
+                        src={styleRefUrl}
+                        alt="Style reference"
+                        className="w-full rounded-2xl shadow-lg"
+                      />
+                      <button
+                        onClick={() => {
+                          setStyleRefUrl(null);
+                          setMode("upload");
+                        }}
+                        className="absolute top-3 right-3 p-2 rounded-full bg-white/90 text-stone-700 hover:bg-red-100 hover:text-red-600 transition-colors shadow-lg opacity-0 group-hover:opacity-100"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {mode === "view" && !styleRefUrl && (
+                  <div className="text-center py-8 text-stone-400">
+                    <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                    <p className="text-sm">No reference image uploaded</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* CHARACTER & LOCATION DETAILS */}
+            {(hasCharacters || hasLocations) && (
+              <button
+                onClick={() => setShowDetails(!showDetails)}
+                className="w-full bg-white/90 backdrop-blur-xl rounded-3xl shadow-xl border border-white p-6 hover:shadow-2xl transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
+                      <Sparkles className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="text-left">
+                      <h4 className="font-bold text-stone-800">
+                        Story Details
+                      </h4>
+                      <p className="text-sm text-stone-500">
+                        {characters.length} character{characters.length !== 1 ? "s" : ""} · {locations.length} location{locations.length !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  </div>
+                  {showDetails ? (
+                    <ChevronUp className="w-5 h-5 text-stone-400" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-stone-400" />
+                  )}
+                </div>
+              </button>
+            )}
 
             <AnimatePresence>
-                {showCast && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden mt-6 text-left">
-                        <div className="grid md:grid-cols-2 gap-4">
-                            {localCharacters.map(char => (
-                                <SampleImageCharacterCard key={char.id} character={{...char, referenceImageUrl: char.referenceImageUrl ?? null, description: char.description ?? null}} onUpdated={(u) => updateEntity(char.id, u, 'char')} />
-                            ))}
-                            {localLocations.map(loc => (
-                                <SampleImageLocationCard key={loc.id} location={{...loc, referenceImageUrl: loc.referenceImageUrl ?? null, description: loc.description ?? null}} onUpdated={(u) => updateEntity(loc.id, u, 'loc')} />
-                            ))}
+              {showDetails && (
+                <motion.div
+                  variants={slideDown}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-xl border border-white overflow-hidden"
+                >
+                  <div className="p-8 space-y-6">
+                    {hasCharacters && (
+                      <div>
+                        <h4 className="font-bold text-stone-800 mb-4">
+                          Characters
+                        </h4>
+                        <div className="space-y-3">
+                          {characters.map((char) => (
+                            <div
+                              key={char.id}
+                              className="flex items-center gap-3 p-3 rounded-xl bg-stone-50"
+                            >
+                              {char.referenceImageUrl ? (
+                                <img
+                                  src={char.referenceImageUrl}
+                                  alt={char.name}
+                                  className="w-12 h-12 rounded-lg object-cover"
+                                />
+                              ) : (
+                                <div className="w-12 h-12 rounded-lg bg-violet-200 flex items-center justify-center text-violet-700 font-bold">
+                                  {char.name[0]}
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-stone-800">
+                                  {char.name}
+                                </p>
+                                {char.description && (
+                                  <p className="text-sm text-stone-500 truncate">
+                                    {char.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                    </motion.div>
-                )}
+                      </div>
+                    )}
+
+                    {hasLocations && (
+                      <div>
+                        <h4 className="font-bold text-stone-800 mb-4">
+                          Locations
+                        </h4>
+                        <div className="space-y-3">
+                          {locations.map((loc) => (
+                            <div
+                              key={loc.id}
+                              className="flex items-center gap-3 p-3 rounded-xl bg-stone-50"
+                            >
+                              {loc.referenceImageUrl ? (
+                                <img
+                                  src={loc.referenceImageUrl}
+                                  alt={loc.name}
+                                  className="w-12 h-12 rounded-lg object-cover"
+                                />
+                              ) : (
+                                <div className="w-12 h-12 rounded-lg bg-amber-200 flex items-center justify-center text-amber-700 font-bold">
+                                  {loc.name[0]}
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-stone-800">
+                                  {loc.name}
+                                </p>
+                                {loc.description && (
+                                  <p className="text-sm text-stone-500 truncate">
+                                    {loc.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
             </AnimatePresence>
+          </motion.div>
+
+          {/* RIGHT COLUMN: SAMPLE PREVIEW */}
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={scaleIn}
+            className="lg:sticky lg:top-8 h-fit"
+          >
+            <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white overflow-hidden">
+              <div className="p-8">
+                <h3 className="text-2xl font-bold text-stone-800 mb-6">
+                  Sample Preview
+                </h3>
+
+                {isGeneratingSample && (
+                  <div className="aspect-[4/3] rounded-2xl bg-gradient-to-br from-violet-100 to-fuchsia-100 flex flex-col items-center justify-center p-8">
+                    <Loader2 className="w-16 h-16 text-violet-600 animate-spin mb-6" />
+                    <p className="text-lg font-semibold text-violet-700 mb-2">
+                      {generationProgress}
+                    </p>
+                    <p className="text-sm text-violet-600 text-center max-w-xs">
+                      This usually takes 30-60 seconds
+                    </p>
+                  </div>
+                )}
+
+                {!isGeneratingSample && !sampleUrl && (
+                  <div className="aspect-[4/3] rounded-2xl bg-gradient-to-br from-stone-100 to-stone-200 flex flex-col items-center justify-center p-8 border-2 border-dashed border-stone-300">
+                    <Wand2 className="w-16 h-16 text-stone-400 mb-4" />
+                    <p className="text-lg font-semibold text-stone-600 mb-2">
+                      No Sample Yet
+                    </p>
+                    <p className="text-sm text-stone-500 text-center max-w-xs">
+                      Generate a sample to preview your story's visual style
+                    </p>
+                  </div>
+                )}
+
+                {!isGeneratingSample && sampleUrl && (
+                  <div className="space-y-4">
+                    <div className="relative group">
+                    <img
+                          src={sampleUrl}
+                          alt="Style sample"
+                          onClick={() => setIsSampleOpen(true)}
+                          className="w-full rounded-2xl shadow-lg cursor-zoom-in hover:opacity-95 transition"
+                        />
+
+<div className="absolute inset-0 pointer-events-none bg-black/0 group-hover:bg-black/5 transition-colors rounded-2xl" />
+                    </div>
+                    <button
+                      onClick={regenerateSample}
+                      className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-stone-100 text-stone-700 font-semibold hover:bg-stone-200 transition-colors"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Regenerate Sample
+                    </button>
+                  </div>
+                )}
+
+<div className="mt-8 pt-8 border-t space-y-4">
+  {!sampleUrl && (
+    <button
+      onClick={generateSample}
+      disabled={isGeneratingSample || mode !== "view"}
+      className="w-full px-8 py-5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-black text-lg shadow-xl hover:shadow-2xl hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      {isGeneratingSample ? (
+        <span className="flex items-center justify-center gap-3">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Generating...
+        </span>
+      ) : (
+        <span className="flex items-center justify-center gap-3">
+          <Wand2 className="w-5 h-5" />
+          Generate Sample
+        </span>
+      )}
+    </button>
+  )}
+
+  {sampleUrl && (
+    <div className="space-y-4 text-center">
+      <p className="text-lg font-semibold text-stone-700">
+        Happy with this style?
+      </p>
+
+      {needsPayment ? (
+        <button
+          onClick={() =>
+            (window.location.href = `/stories/${style.storyId}/checkout`)
+          }
+          className="w-full px-8 py-5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black text-lg shadow-xl hover:shadow-2xl hover:scale-105 transition-all"
+        >
+          <span className="flex items-center justify-center gap-3">
+            <Sparkles className="w-5 h-5" />
+            Unlock Full Book
+          </span>
+        </button>
+      ) : (
+        <button
+          onClick={() =>
+            (window.location.href = `/stories/${style.storyId}/studio`)
+          }
+          className="w-full px-8 py-5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-black text-lg shadow-xl hover:shadow-2xl hover:scale-105 transition-all"
+        >
+          <span className="flex items-center justify-center gap-3">
+            <ArrowRight className="w-5 h-5" />
+            Continue to Studio
+          </span>
+        </button>
+      )}
+
+      <button
+        onClick={regenerateSample}
+        className="mx-auto flex items-center gap-2 text-sm text-stone-500 hover:text-stone-700 transition"
+      >
+        <RefreshCw className="w-4 h-4" />
+        Try a different style
+      </button>
+    </div>
+  )}
+
+  {mode !== "view" && (
+    <p className="text-sm text-center text-stone-500">
+      Save your changes before generating
+    </p>
+  )}
+</div>
+
+              </div>
+            </div>
+          </motion.div>
         </div>
+      </div>
+      <AnimatePresence>
+  {isSampleOpen && sampleUrl && (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center px-4"
+      onClick={() => setIsSampleOpen(false)}
+    >
+      {/* Image container */}
+      <motion.div
+        initial={{ scale: 0.92, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.92, opacity: 0 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="relative max-w-6xl max-h-[90vh] w-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close button */}
+        <button
+          onClick={() => setIsSampleOpen(false)}
+          className="absolute -top-4 -right-4 z-10 p-2 rounded-full bg-white shadow-lg hover:bg-stone-100 transition"
+        >
+          <X className="w-5 h-5 text-stone-700" />
+        </button>
+
+        {/* Full image */}
+        <img
+          src={sampleUrl}
+          alt="Full style sample"
+          className="w-full h-auto max-h-[90vh] object-contain rounded-2xl shadow-2xl bg-white"
+        />
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
 
     </div>
+  );
+}
+
+/* ======================================================
+   UI HELPERS
+====================================================== */
+
+function CenteredShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center text-center px-6 bg-gradient-to-br from-violet-50 via-fuchsia-50 to-amber-50">
+      {children}
+    </div>
+  );
+}
+
+function SuccessIcon() {
+  return (
+    <motion.div
+      initial={{ scale: 0 }}
+      animate={{ scale: 1 }}
+      transition={{ type: "spring", duration: 0.6 }}
+      className="w-28 h-28 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-2xl mb-10"
+    >
+      <Check className="w-14 h-14 text-white" />
+    </motion.div>
+  );
+}
+
+function ActionCard({
+  icon: Icon,
+  title,
+  text,
+  onClick,
+}: {
+  icon: any;
+  title: string;
+  text: string;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      className="group bg-white/80 backdrop-blur-xl p-10 rounded-[2rem] border-2 border-transparent hover:border-violet-400 shadow-xl text-left transition-all"
+    >
+      <div className="w-16 h-16 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+        <Icon className="w-8 h-8 text-white" />
+      </div>
+      <h3 className="text-2xl font-bold mb-3 text-stone-800">{title}</h3>
+      <p className="text-stone-600 mb-6">{text}</p>
+      <div className="flex items-center text-violet-600 font-bold group-hover:gap-3 transition-all">
+        Continue
+        <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+      </div>
+    </motion.button>
   );
 }

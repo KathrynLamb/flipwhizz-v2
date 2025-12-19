@@ -19,26 +19,35 @@ export function renderCoverHTML(data: CoverInput): string {
       margin: 0;
     }
 
-    body {
+    html, body {
       margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
       background: white;
     }
 
+    /* === FULL PAGE (TRIM + BLEED) === */
     .cover {
       position: relative;
       width: ${spec.pdf.widthMm}mm;
       height: ${spec.pdf.heightMm}mm;
+      overflow: hidden;
       font-family: "Georgia", serif;
     }
 
+    /* === BLEED BACKGROUND === */
     .bg {
       position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
+      top: -${spec.bleedMm}mm;
+      left: -${spec.bleedMm}mm;
+      width: calc(100% + ${spec.bleedMm * 2}mm);
+      height: calc(100% + ${spec.bleedMm * 2}mm);
       object-fit: cover;
+      z-index: 0;
     }
 
+    /* === BACK COVER (TRIM ZONE) === */
     .back {
       position: absolute;
       left: ${spec.zones.back.trim.x}mm;
@@ -46,8 +55,10 @@ export function renderCoverHTML(data: CoverInput): string {
       width: ${spec.zones.back.trim.w}mm;
       height: ${spec.zones.back.trim.h}mm;
       padding: 10mm;
+      z-index: 1;
     }
 
+    /* === SPINE (TRIM ZONE) === */
     .spine {
       position: absolute;
       left: ${spec.zones.spine.trim.x}mm;
@@ -57,15 +68,19 @@ export function renderCoverHTML(data: CoverInput): string {
       display: flex;
       align-items: center;
       justify-content: center;
+      z-index: 1;
     }
 
     .spine-text {
       writing-mode: vertical-rl;
       transform: rotate(180deg);
       font-size: 6pt;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
+      white-space: nowrap;
     }
 
+    /* === FRONT COVER (TRIM ZONE) === */
     .front {
       position: absolute;
       left: ${spec.zones.front.trim.x}mm;
@@ -77,6 +92,7 @@ export function renderCoverHTML(data: CoverInput): string {
       flex-direction: column;
       justify-content: center;
       text-align: center;
+      z-index: 1;
     }
 
     .title {
@@ -88,6 +104,13 @@ export function renderCoverHTML(data: CoverInput): string {
       margin-top: 6mm;
       font-size: 14pt;
     }
+
+    /* === OPTIONAL DEBUG (REMOVE FOR PROD) === */
+    /*
+    .back { outline: 2px solid red; }
+    .spine { outline: 2px solid yellow; }
+    .front { outline: 2px solid blue; }
+    */
   </style>
 </head>
 
