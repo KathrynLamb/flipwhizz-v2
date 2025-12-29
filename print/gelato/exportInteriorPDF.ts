@@ -1,6 +1,6 @@
 import puppeteer from "puppeteer";
-import fs from "fs/promises";
-import path from "path";
+// import fs from "fs/promises";
+// import path from "path";
 import { renderInteriorHTML } from "./renderInteriorHTML";
 
 export async function exportInteriorPDF(

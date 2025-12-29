@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+
 import { 
   Loader2, 
   RefreshCw, 
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 type Page = {
   id: string;
@@ -45,7 +47,8 @@ export default function StudioEditor({
   initialMode: 'live' | 'edit'
 }) {
   const [pages, setPages] = useState<Page[]>(initialPages);
-  
+  const router = useRouter();
+
   // Polling State
   const [isPolling, setIsPolling] = useState(
     initialMode === 'live' || story.status === 'generating'
@@ -55,8 +58,32 @@ export default function StudioEditor({
   const [isStartingGlobal, setIsStartingGlobal] = useState(false);
 
   const spreads = useMemo(() => groupIntoSpreads(pages), [pages]);
+  const [isExporting, setIsExporting] = useState(false);
 
-  // --- 1. POLLING LOGIC ---
+
+
+async function handleExportPDF() {
+  if (isExporting) return;
+  setIsExporting(true);
+
+  try {
+    const res = await fetch(`/api/stories/${story.id}/export-pdf`, {
+      method: "POST",
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Export failed");
+
+    // open/download the PDF
+    window.open(data.url, "_blank");
+  } catch (err: any) {
+    alert(err.message || "Failed to export PDF");
+  } finally {
+    setIsExporting(false);
+  }
+}
+
+// --- 1. POLLING LOGIC ---
   useEffect(() => {
     if (!isPolling) return;
 
@@ -131,21 +158,44 @@ export default function StudioEditor({
         </div>
         
         <div className="flex items-center gap-3">
-           {pages.some(p => !p.imageUrl) && !isPolling && (
-               <button 
-                 onClick={handleGenerateAll}
-                 disabled={isStartingGlobal}
-                 className="bg-indigo-600 text-white px-5 py-2 rounded-full text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200"
-               >
-                  {isStartingGlobal ? <Loader2 className="w-4 h-4 animate-spin"/> : <Play className="w-4 h-4 fill-current" />}
-                  Generate All
-               </button>
-           )}
+  {pages.some(p => !p.imageUrl) && !isPolling && (
+    <button 
+      onClick={handleGenerateAll}
+      disabled={isStartingGlobal}
+      className="bg-indigo-600 text-white px-5 py-2 rounded-full text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200"
+    >
+      {isStartingGlobal ? (
+        <Loader2 className="w-4 h-4 animate-spin"/>
+      ) : (
+        <Play className="w-4 h-4 fill-current" />
+      )}
+      Generate All
+    </button>
+  )}
 
-           <button className="bg-stone-900 text-white px-5 py-2 rounded-full text-sm font-bold flex items-center gap-2 hover:bg-black transition-all shadow-md">
-              <Download className="w-4 h-4" /> Export PDF
-           </button>
-        </div>
+
+<button
+    onClick={() => router.push(`/stories/${story.id}/cover`)}
+    disabled={isExporting}
+    className="bg-stone-900 text-white px-5 py-2 rounded-full text-sm font-bold flex items-center gap-2 hover:bg-black transition-all shadow-md disabled:opacity-50"
+  >
+   create cover
+  </button>
+
+  <button
+    onClick={handleExportPDF}
+    disabled={isExporting}
+    className="bg-stone-900 text-white px-5 py-2 rounded-full text-sm font-bold flex items-center gap-2 hover:bg-black transition-all shadow-md disabled:opacity-50"
+  >
+    {isExporting ? (
+      <Loader2 className="w-4 h-4 animate-spin" />
+    ) : (
+      <Download className="w-4 h-4" />
+    )}
+    {isExporting ? "Exporting..." : "Export PDF"}
+  </button>
+</div>
+
       </header>
 
       {/* --- SPREADS CANVAS --- */}

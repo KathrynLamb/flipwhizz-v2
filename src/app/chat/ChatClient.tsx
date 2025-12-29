@@ -1,15 +1,24 @@
+
+
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useRouter } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Sparkles, PenTool, CheckCircle, RotateCcw, BookOpen } from "lucide-react";
+import { 
+  Send, 
+  Sparkles, 
+  ArrowRight, 
+  Check, 
+  Loader2, 
+  Library,
+  Feather
+} from "lucide-react";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
 export default function ChatPage() {
-  const router = useRouter()
+  const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = useMemo(() => searchParams.get("project"), [searchParams]);
   
@@ -20,6 +29,7 @@ export default function ChatPage() {
   const [storyCreating, setStoryCreating] = useState(false);
   const [storyId, setStoryId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // 1. Initial Load: Sync everything from Database
   useEffect(() => {
@@ -27,21 +37,16 @@ export default function ChatPage() {
       if (!projectId) return;
 
       try {
-        // Fetch Chat History
         const chatRes = await fetch(`/api/chat/history?projectId=${projectId}`);
         const chatData = await chatRes.json();
         if (chatData.messages) {
           setMessages(chatData.messages);
         }
 
-        // Check for Existing Story
         const storyRes = await fetch(`/api/stories/by-project?projectId=${projectId}`);
         const storyData = await storyRes.json();
         if (storyData.storyId) {
-          router.push(`/stories/${storyData.storyId}`)
-          
-          // setStoryId(storyData.storyId);
-
+          router.push(`/stories/${storyData.storyId}`);
         }
       } catch (err) {
         console.error("Studio sync failed:", err);
@@ -50,15 +55,26 @@ export default function ChatPage() {
       }
     }
     initializeStudio();
-  }, [projectId]);
+  }, [projectId, router]);
 
-  // 2. Auto-scroll and Local Backup
+  // 2. Auto-scroll & Local Backup
   useEffect(() => {
     if (projectId && messages.length > 0) {
       localStorage.setItem(`chat_backup_${projectId}`, JSON.stringify(messages));
     }
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Delayed scroll for better UX after animation
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
   }, [messages, projectId]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
+    }
+  }, [input]);
 
   // 3. Core Functions
   async function sendMessage() {
@@ -71,6 +87,9 @@ export default function ChatPage() {
     setMessages(nextHistory);
     setInput("");
     setLoading(true);
+
+    // Reset height
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     try {
       const res = await fetch("/api/chat", {
@@ -92,22 +111,22 @@ export default function ChatPage() {
       setLoading(false);
     }
   }
-
   async function createStoryFromChat() {
     if (!projectId || storyCreating) return;
     setStoryCreating(true);
-
+  
     try {
       const res = await fetch("/api/stories/create-from-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId }),
       });
-
+  
       const data = await res.json();
+  
       if (data.storyId) {
         setStoryId(data.storyId);
-
+        router.push(`/stories/${data.storyId}`); // ✅ navigate immediately
       }
     } catch (err) {
       console.error("Story creation failed:", err);
@@ -115,125 +134,178 @@ export default function ChatPage() {
       setStoryCreating(false);
     }
   }
-
-  if (!projectId) return <div className="p-20 text-center font-serif text-stone-400">Project context required to begin.</div>;
+  
+  if (!projectId) return (
+    <div className="flex h-screen items-center justify-center bg-stone-50 text-stone-400 font-serif italic">
+      Project context required...
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6] text-[#1A1A1A] font-sans selection:bg-indigo-100">
-      {/* --- NAV BAR --- */}
-      <nav className="fixed top-0 w-full z-50 bg-[#FAF9F6]/80 backdrop-blur-md border-b border-stone-200/60">
-        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-200">
-              <Sparkles className="text-white w-5 h-5" />
+    <div className="min-h-screen bg-stone-50 text-stone-800 font-sans selection:bg-orange-100 selection:text-orange-900">
+      
+      {/* ================= HEADER ================= */}
+      <nav className="fixed top-0 w-full z-40 bg-stone-50/80 backdrop-blur-md border-b border-stone-100 transition-all duration-300">
+        <div className="max-w-5xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 group cursor-pointer">
+            <div className="bg-orange-500 text-white p-1.5 rounded-lg rotate-3 group-hover:rotate-0 transition-transform duration-300">
+              <Feather className="w-4 h-4" />
             </div>
-            <div>
-              <h1 className="text-lg font-serif italic font-semibold tracking-tight">FlipWhizz Studio</h1>
-              <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-stone-400">
-                {isSyncing ? (
-                  <><RotateCcw className="w-3 h-3 animate-spin" /> Syncing Manuscript...</>
-                ) : (
-                  <><CheckCircle className="w-3 h-3 text-emerald-500" /> Scribed to Library</>
-                )}
-              </span>
+            <span className="font-serif font-bold text-lg tracking-tight text-stone-900">
+              FlipWhizz
+            </span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-white border border-stone-200 rounded-full text-xs font-medium text-stone-500 shadow-sm">
+              {isSyncing ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Syncing to cloud...</span>
+                </>
+              ) : (
+                <>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span>Auto-saved</span>
+                </>
+              )}
             </div>
           </div>
         </div>
       </nav>
 
-      <main className="max-w-3xl mx-auto pt-32 pb-48 px-6">
+      {/* ================= MAIN CONTENT ================= */}
+      <main className="max-w-2xl mx-auto pt-32 pb-48 px-4 md:px-0">
+        
+        {/* WELCOME STATE */}
         <AnimatePresence>
           {messages.length === 0 && !isSyncing && (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center py-20">
-              <h2 className="text-5xl font-serif leading-[1.1] mb-6">
-                Tell me about the magic <br/> 
-                <span className="italic text-indigo-600">waiting to be written.</span>
-              </h2>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="text-center py-12 md:py-24 space-y-6"
+            >
+              <div className="inline-flex items-center justify-center p-4 bg-orange-100/50 rounded-full mb-2 ring-1 ring-orange-100">
+                <Sparkles className="w-8 h-8 text-orange-500" />
+              </div>
+              <h1 className="text-4xl md:text-5xl font-serif font-medium text-stone-900 leading-[1.15]">
+                What story shall we <br/>
+                <span className="italic text-stone-400">write today?</span>
+              </h1>
+              <p className="text-lg text-stone-500 max-w-md mx-auto leading-relaxed">
+                Tell me about a child, a favorite toy, or a magical place. 
+                I'll handle the rest.
+              </p>
             </motion.div>
           )}
         </AnimatePresence>
 
+        {/* MESSAGES */}
         <div className="space-y-10">
           {messages.map((msg, i) => (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              key={i} 
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <div className={`max-w-[85%] text-lg leading-relaxed ${
-                msg.role === "user" 
-                ? "bg-indigo-600 text-white px-6 py-4 rounded-3xl rounded-tr-none shadow-xl shadow-indigo-100" 
-                : "text-stone-800 border-l-2 border-stone-200 pl-8 py-2 italic font-serif"
-              }`}>
-                {msg.content}
-              </div>
+              {msg.role === "user" ? (
+                <div className="relative max-w-[85%]">
+                  <div className="bg-stone-900 text-stone-50 px-6 py-4 rounded-3xl rounded-tr-sm shadow-xl shadow-stone-200/50 text-[17px] leading-relaxed">
+                    {msg.content}
+                  </div>
+                </div>
+              ) : (
+                <div className="relative max-w-[90%] md:max-w-[85%]">
+                  <div className="flex gap-4">
+                    <div className="hidden md:flex flex-shrink-0 w-8 h-8 bg-white border border-stone-200 rounded-full items-center justify-center mt-1">
+                      <Sparkles className="w-4 h-4 text-orange-400" />
+                    </div>
+                    <div className="space-y-2">
+                       <div className="bg-white border border-stone-100 px-7 py-6 rounded-3xl rounded-tl-sm shadow-sm text-stone-700 text-[17px] leading-relaxed font-serif">
+                        {msg.content}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </motion.div>
           ))}
 
-          {/* MILESTONE ACTION */}
-          {messages.length >= 3 && (
+          {/* LOADING INDICATOR */}
+          {loading && (
             <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col items-center gap-4 py-16 border-t border-stone-100 mt-20"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center gap-3 pl-4 md:pl-14"
             >
-              <div className="text-center space-y-2 mb-4">
-                <h3 className="font-serif italic text-2xl">The ink is ready...</h3>
-                <p className="text-sm text-stone-500">I have enough magic to begin drafting your heirloom.</p>
+              <div className="flex gap-1.5">
+                <motion.div animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 0.8, ease: "easeInOut" }} className="w-2 h-2 bg-stone-300 rounded-full" />
+                <motion.div animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 0.8, ease: "easeInOut", delay: 0.1 }} className="w-2 h-2 bg-stone-300 rounded-full" />
+                <motion.div animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 0.8, ease: "easeInOut", delay: 0.2 }} className="w-2 h-2 bg-stone-300 rounded-full" />
               </div>
-
-              <button
-                onClick={createStoryFromChat}
-                disabled={storyCreating}
-                className="group relative px-10 py-5 bg-indigo-600 text-white rounded-full font-bold shadow-2xl shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-70"
-              >
-                {storyCreating ? (
-                  <span className="flex items-center gap-3">
-                    <RotateCcw className="w-5 h-5 animate-spin" />
-                    Weaving the tale...
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-3">
-                    <Sparkles className="w-5 h-5 text-indigo-200" />
-                    Create Story Book
-                  </span>
-                )}
-              </button>
-              
-              {storyId && (
-                <a
-                  href={`/stories/${storyId}`}
-                  className="mt-4 px-6 py-2 border border-stone-200 rounded-full text-sm font-bold text-stone-600 hover:bg-stone-50 transition-colors flex items-center gap-2"
-                >
-                  <BookOpen className="w-4 h-4 text-indigo-600" />
-                  Open Existing Draft
-                </a>
-              )}
             </motion.div>
           )}
 
-          {loading && (
-            <div className="flex gap-2 pl-8">
-              <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse" />
-              <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse delay-75" />
-            </div>
+          {/* CTA: CREATE BOOK */}
+          {messages.length >= 3 && !storyId && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="py-12 flex justify-center"
+            >
+              <div className="bg-white p-1 rounded-[2rem] border border-stone-100 shadow-2xl shadow-orange-900/5">
+                <div className="bg-gradient-to-b from-orange-50 to-white rounded-[1.8rem] border border-orange-100 px-8 py-8 text-center max-w-sm">
+                  <div className="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto mb-4 text-2xl">📖</div>
+                  <h3 className="font-serif text-2xl font-semibold text-stone-900 mb-2">
+                    A story is born!
+                  </h3>
+                  <p className="text-stone-500 mb-6 text-sm leading-relaxed">
+                    We have enough magic to draft your book. Shall we illustrate it?
+                  </p>
+                  
+                  <button
+                    onClick={createStoryFromChat}
+                    disabled={storyCreating}
+                    className="w-full py-4 bg-stone-900 text-white rounded-xl font-medium hover:bg-stone-800 active:scale-95 transition-all flex items-center justify-center gap-2 group shadow-lg shadow-stone-900/20"
+                  >
+                    {storyCreating ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <>
+                        <span>Draft my Book</span>
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           )}
-          <div ref={bottomRef} />
+          
+          <div ref={bottomRef} className="h-4" />
         </div>
       </main>
 
-      {/* --- INPUT AREA --- */}
-      <div className="fixed bottom-10 w-full px-6 pointer-events-none">
-        <div className="max-w-3xl mx-auto pointer-events-auto">
-          <div className="bg-white/80 backdrop-blur-xl border border-stone-200 rounded-[2.5rem] p-2 shadow-2xl shadow-stone-200/50">
-            <div className="flex items-center gap-2">
-              <div className="p-4 text-stone-400">
-                <PenTool className="w-5 h-5" />
-              </div>
+      {/* ================= INPUT AREA ================= */}
+      <div className="fixed bottom-0 w-full z-50 pointer-events-none">
+        {/* Gradient fade to hide text behind input */}
+        <div className="absolute bottom-0 w-full h-48 bg-gradient-to-t from-stone-50 via-stone-50/90 to-transparent pointer-events-none" />
+
+        <div className="max-w-3xl mx-auto px-4 pb-8 md:pb-10 pt-4 pointer-events-auto relative">
+          <motion.div 
+            layout
+            className={`
+              relative bg-white rounded-[2rem] shadow-[0_8px_40px_-12px_rgba(0,0,0,0.12)] 
+              border border-stone-200/60 overflow-hidden ring-4 ring-transparent transition-all
+              ${input.trim().length > 0 ? "ring-orange-100 border-orange-200" : ""}
+            `}
+          >
+            <div className="flex items-end p-2 gap-2">
               <textarea
-                className="flex-1 bg-transparent py-4 text-lg focus:outline-none resize-none placeholder:text-stone-300"
-                placeholder="Share a detail..."
+                ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -242,21 +314,42 @@ export default function ChatPage() {
                     sendMessage();
                   }
                 }}
+                placeholder="Type a detail (e.g., 'His dog is named Barnaby')..."
+                className="w-full max-h-40 bg-transparent border-0 focus:ring-0 text-lg placeholder:text-stone-300 text-stone-800 py-4 pl-6 resize-none min-h-[60px]"
                 rows={1}
               />
-              <button 
+              
+              <button
                 onClick={sendMessage}
-                className="bg-black text-white p-4 rounded-full hover:scale-105 transition-transform active:scale-95"
+                disabled={!input.trim() || loading}
+                className={`
+                  mb-1.5 mr-1.5 h-12 w-12 rounded-full flex items-center justify-center transition-all duration-300
+                  ${input.trim() 
+                    ? "bg-stone-900 text-white shadow-md hover:scale-105 active:scale-90" 
+                    : "bg-stone-100 text-stone-300 cursor-not-allowed"}
+                `}
               >
-                <Send className="w-5 h-5" />
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 ml-0.5" />}
               </button>
             </div>
+            
+            {/* Progress bar hint */}
+            <div className="h-1 w-full bg-stone-50">
+               <motion.div 
+                 className="h-full bg-gradient-to-r from-orange-400 to-amber-400"
+                 initial={{ width: "0%" }}
+                 animate={{ width: `${Math.min(messages.length * 20, 100)}%` }}
+               />
+            </div>
+          </motion.div>
+
+          <div className="mt-4 flex justify-between items-center px-4 text-xs font-medium text-stone-400">
+             <span>Press Enter to send</span>
+             {messages.length > 0 && <span>{messages.length} story beats added</span>}
           </div>
-          <p className="text-center text-[10px] text-stone-400 font-bold uppercase tracking-widest mt-6">
-            Review all AI drafted content before finalized printing.
-          </p>
         </div>
       </div>
+
     </div>
   );
 }

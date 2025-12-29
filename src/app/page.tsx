@@ -91,10 +91,7 @@ export default async function Home() {
       {/* Be sure to keep them as they were in your code */}
       {/* ... */}
       
-      <section id="how-it-works" className="relative py-24 px-6 md:px-12 bg-[#FDF8F0]">
-        {/* ... content ... */}
-        {/* Just pasting the rest of your original code here to complete the file for you if needed */}
-        {/* But for brevity, I assume you keep the sections below the hero unchanged */}
+      {/* <section id="how-it-works" className="relative py-24 px-6 md:px-12 bg-[#FDF8F0]">
         <div className="relative flex justify-center items-center mb-20 w-full">
             <div className="relative w-full max-w-[450px] md:max-w-[700px] h-32 md:h-48 transition-all duration-700 ease-in-out">
             <Image 
@@ -106,8 +103,7 @@ export default async function Home() {
             />
             </div>
         </div>
-        {/* ... */}
-      </section>
+      </section> */}
       
       {/* ... (Gallery Section & Footer Section from your original code) ... */}
       <section className="py-24 px-6 md:px-12 bg-white">
@@ -232,11 +228,11 @@ export default async function Home() {
       */}
       <footer className="relative bg-[#0F2236] text-[#FDF8F0] pt-32 pb-12">
          {/* Top Wave Divider */}
-         <div className="absolute top-[-2px] left-0 w-full overflow-hidden leading-none z-20">
+         {/* <div className="absolute top-[-2px] left-0 w-full overflow-hidden leading-none z-20">
             <svg className="relative block w-[calc(100%+1.3px)] h-[60px] md:h-[100px]" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
                 <path d="M985.66,92.83C906.67,72,823.78,31,743.84,14.19c-82.26-17.34-168.06-16.33-250.45.39-57.84,11.73-114,31.07-172,41.86A600.21,600.21,0,0,1,0,27.35V120H1200V95.8C1132.19,118.92,1055.71,111.31,985.66,92.83Z" fill="#FDF8F0"></path>
             </svg>
-         </div>
+         </div> */}
 
          <div className="relative z-10 mx-auto max-w-6xl px-6 md:px-12 flex flex-col md:flex-row justify-between items-end gap-12">
             
@@ -258,14 +254,14 @@ export default async function Home() {
 
             {/* Right: Sleeping Child Illustration Placeholder */}
             <div className="w-full md:w-auto flex justify-center md:justify-end">
-            <div className="w-64 h-40 relative rounded-t-full border-b-0 border-4 border-indigo-800 overflow-hidden">
+            {/* <div className="w-64 h-40 relative rounded-t-full border-b-0 border-4 border-indigo-800 overflow-hidden">
                   <Image 
                     src="/illustrations/sleeping-child.png" 
                     alt="Child sleeping with a storybook"
                     fill
                     className="object-cover"
                   />
-              </div>
+              </div> */}
             </div>
          </div>
       </footer>

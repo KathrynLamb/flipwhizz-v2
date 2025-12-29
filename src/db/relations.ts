@@ -7,8 +7,13 @@ import {
   stories,
   storyPages,
   storyStyleGuide,
-  styleGuideImages
+  styleGuideImages,
+  characters,
+  locations,
+  storyCharacters,
+  storyLocations,
 } from "./schema";
+
 
 /* ---------------- USERS ---------------- */
 
@@ -64,4 +69,35 @@ export const styleGuideImagesRelations = relations(styleGuideImages, ({ one }) =
     references: [storyStyleGuide.id],
   }),
 }));
+
+export const storyCharactersRelations = relations(storyCharacters, ({ one }) => ({
+  story: one(stories, {
+    fields: [storyCharacters.storyId],
+    references: [stories.id],
+  }),
+  character: one(characters, {
+    fields: [storyCharacters.characterId],
+    references: [characters.id],
+  }),
+}));
+
+
+export const storyLocationsRelations = relations(storyLocations, ({ one }) => ({
+  story: one(stories, {
+    fields: [storyLocations.storyId],
+    references: [stories.id],
+  }),
+  location: one(locations, {
+    fields: [storyLocations.locationId],
+    references: [locations.id],
+  }),
+}));
+
+export const storyStyleGuideToStoryRelations = relations(storyStyleGuide, ({ one }) => ({
+  story: one(stories, {
+    fields: [storyStyleGuide.storyId],
+    references: [stories.id],
+  }),
+}));
+
 

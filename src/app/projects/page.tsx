@@ -7,6 +7,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { Playfair_Display, Lato } from "next/font/google";
 import StoriesCard from "@/app/projects/components/StoriesCard";
+import CreateStoryButton from "@/app/projects/components/CreateStoryButton";
 
 const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-serif", weight: ["400","700","900"] });
 const lato = Lato({ subsets: ["latin"], variable: "--font-sans", weight: ["400","700"] });
@@ -23,6 +24,7 @@ export default async function ProjectsIndexPage() {
     );
   }
 
+  
 
 const userStories = await db
   .select({
@@ -72,14 +74,7 @@ const userStories = await db
           <span className="font-serif text-2xl font-bold tracking-wide">FlipWhizz</span>
         </Link>
 
-        <div className="flex items-center gap-3">
-          <Link
-            href="/projects/create"
-            className="inline-flex items-center gap-2 rounded-full bg-[#F4A261] px-5 py-2.5 text-sm font-bold text-[#0F2236] hover:bg-[#E76F51] transition shadow-lg"
-          >
-            <span className="text-base">➕</span> New Project
-          </Link>
-        </div>
+      <CreateStoryButton />
       </header>
 
       <section className="px-6 md:px-12 pb-10">

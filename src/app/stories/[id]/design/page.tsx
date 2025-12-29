@@ -8,6 +8,7 @@ import {
   storyPageLocations,
   characters,
   locations,
+  styleGuideImages,
 } from "@/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 
@@ -58,27 +59,66 @@ export default async function DesignPage({
      STYLE GUIDE + REFERENCES
   -------------------------------------------------- */
 
-  const guide = await db.query.storyStyleGuide.findFirst({
-    where: eq(storyStyleGuide.storyId, storyId),
-    with: {
-      referenceImages: true,
-    },
-  });
+//   // const guide = await db.query.storyStyleGuide.findFirst({
+//   //   where: eq(storyStyleGuide.storyId, storyId),
+//   //   with: {
+//   //     referenceImages: true,
+//   //   },
+//   // });
 
-  console.log("guide", guide)
-  console.log("sampleIll", guide?.sampleIllustrationUrl)
+//   const guide = await db.query.storyStyleGuide.findFirst({
+//     where: eq(storyStyleGuide.storyId, storyId),
+//   });
 
-  const styleImage =
-    guide?.referenceImages?.find((img) => img.type === "style")?.url ?? null;
 
-  const clientStyle: ClientStyleGuide = {
-    id: guide?.id ?? "new",
-    storyId,
-    summary: guide?.summary ?? "",
-    styleGuideImage: styleImage,
-    negativePrompt: guide?.negativePrompt ?? "",
-    sampleIllustrationUrl: guide?.sampleIllustrationUrl ?? null,
-  };
+
+// const images = guide
+// ? await db.query.styleGuideImages.findMany({
+//     where: eq(styleGuideImages.styleGuideId, guide.id),
+//   })
+// : [];
+
+
+//   console.log("guide", guide)
+//   console.log("sampleIll", guide?.sampleIllustrationUrl)
+
+//   const styleImage =
+//     guide?.referenceImages?.find((img) => img.type === "style")?.url ?? null;
+
+//   const clientStyle: ClientStyleGuide = {
+//     id: guide?.id ?? "new",
+//     storyId,
+//     summary: guide?.summary ?? "",
+//     styleGuideImage: styleImage,
+//     negativePrompt: guide?.negativePrompt ?? "",
+//     sampleIllustrationUrl: guide?.sampleIllustrationUrl ?? null,
+//   };
+
+/* -------------------------------------------------
+   STYLE GUIDE + REFERENCES
+-------------------------------------------------- */
+
+const guide = await db.query.storyStyleGuide.findFirst({
+  where: eq(storyStyleGuide.storyId, storyId),
+});
+
+const images = guide
+  ? await db.query.styleGuideImages.findMany({
+      where: eq(styleGuideImages.styleGuideId, guide.id),
+    })
+  : [];
+
+const styleImage =
+  images.find((img) => img.type === "style")?.url ?? null;
+
+const clientStyle: ClientStyleGuide = {
+  id: guide?.id ?? "new",
+  storyId,
+  summary: guide?.summary ?? "",
+  styleGuideImage: styleImage,
+  negativePrompt: guide?.negativePrompt ?? "",
+  sampleIllustrationUrl: guide?.sampleIllustrationUrl ?? null,
+};
 
   /* -------------------------------------------------
      CHARACTERS (FROM FIRST SPREAD)
