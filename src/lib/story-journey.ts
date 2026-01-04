@@ -1,0 +1,93 @@
+// // lib/story-journey.ts
+// export const STORY_JOURNEY = [
+//     {
+//       step: 1,
+//       key: 'draft',
+//       title: 'Write Your Story',
+//       description: 'Create the narrative of your book',
+//       requiredStatus: [
+//         'draft',
+//         'extracting',
+//         'world_ready',
+//         'style_ready',
+//         'awaiting_payment',
+//         'generating',
+//         'publishing',
+//         'completed',
+//       ],
+      
+//       href: (id) => `/stories/${id}/view`,
+//       previewComponent: StoryDraftPreview,
+//     },
+//     {
+//       step: 2,
+//       key: 'extract',
+//       title: 'Extract the Magic',
+//       description: 'AI identifies characters, locations, and scenes',
+//       requiredStatus: [
+//         'draft',
+//         'extracting',
+//         'world_ready',
+//         'style_ready',
+//         'awaiting_payment'
+//         'generating',
+//         'publishing',a
+//         'completed',
+//       ],
+      
+//       unlockedBy: 'Complete your story draft',
+//       // href: (id) => `/stories/${id}/extract`,
+//       href: (id) => `/stories/${id}/hub`,
+//       previewComponent: ExtractedEntitiesPreview,
+//     },
+//     {
+//       step: 3,
+//       key: 'design',
+//       title: 'Design Your World',
+//       description: 'Confirm characters and choose your art style',
+//       requiredStatus: [
+//         'draft',
+//         'extracting',
+//         'world_ready',
+//         'style_ready',
+//         'awaiting_payment',
+//         'generating',
+//         'publishing',
+//         'completed',
+//       ],
+      
+//       unlockedBy: 'Finish extraction',
+//       href: (id) => `/stories/${id}/design`,
+//       previewComponent: CharacterStylePreview,
+//     },
+//     {
+//       step: 4,
+//       key: 'payment',
+//       title: 'Unlock the Art Studio',
+//       description: 'One-time payment to generate illustrations',
+//       requiredStatus: ['awaiting_payment', 'generating', ...],
+//       unlockedBy: 'Complete character & style design',
+//       href: (id) => `/stories/${id}/checkout`,
+//       lockReason: 'We need your characters and style finalized before creating artwork.',
+//     },
+//     {
+//       step: 5,
+//       key: 'studio',
+//       title: 'Illustrate Your Pages',
+//       description: 'Generate and refine artwork for each page',
+//       requiredStatus: ['generating', 'publishing', 'completed'],
+//       unlockedBy: 'Complete payment',
+//       href: (id) => `/stories/${id}/studio`,
+//       lockReason: 'Payment required to access the art studio.',
+//     },
+//     {
+//       step: 6,
+//       key: 'print',
+//       title: 'Print & Ship',
+//       description: 'Order your physical book',
+//       requiredStatus: ['completed'],
+//       unlockedBy: 'Complete all illustrations',
+//       href: (id) => `/orders/${id}`,
+//       lockReason: 'All pages need artwork before printing.',
+//     },
+//   ];

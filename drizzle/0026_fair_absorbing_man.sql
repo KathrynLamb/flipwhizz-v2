@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ALTER COLUMN "story_id" DROP NOT NULL;

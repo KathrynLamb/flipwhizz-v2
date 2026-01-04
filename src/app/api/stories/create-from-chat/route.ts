@@ -8,6 +8,7 @@ import {
   storyStyleGuide,
   chatSessions,
   chatMessages,
+  storyProducts,
 } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
@@ -23,10 +24,22 @@ const client = new Anthropic({
 
 const DEFAULT_PAGE_COUNT = 28;
 
+
+
+
 export async function POST(req: Request) {
   console.log("🟢 API: Received story creation request");
   try {
-    const { projectId, pageCount = DEFAULT_PAGE_COUNT } = await req.json();
+    const { projectId, pageCount = DEFAULT_PAGE_COUNT, intent } = await req.json();
+
+    const ALLOWED_INTENTS = ["digital", "print", "gift"] as const;
+
+    if (intent && !ALLOWED_INTENTS.includes(intent)) {
+      return NextResponse.json(
+        { error: "Invalid intent" },
+        { status: 400 }
+      );
+    }
 
     if (!projectId) {
       console.error("🔴 API: Missing projectId");
@@ -183,6 +196,22 @@ Output ONLY valid JSON, no markdown formatting, no preamble.`;
       }));
       await db.insert(storyPages).values(pageRows);
     }
+
+    if (intent) {
+      const existing = await db.query.storyProducts.findFirst({
+        where: eq(storyProducts.storyId, storyId),
+      });
+    
+      if (!existing) {
+        await db.insert(storyProducts).values({
+          storyId,
+          productType: intent,
+          requiresShipping: intent !== "digital",
+          requiresPdf: true,
+        });
+      }
+    }
+    
 
     // 6. Create Style Guide (Safe Mode)
     let styleGuideCreated = false;

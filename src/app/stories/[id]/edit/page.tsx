@@ -109,7 +109,8 @@ export default function MobileStoryEditor() {
         </div>
         
         <button 
-          onClick={() => router.push(`/stories/${storyId}/extract`)}
+          // onClick={() => router.push(`/stories/${storyId}/extract`)}
+          onClick={() => router.push(`/stories/${storyId}/hub`)}
           className="w-full py-4 bg-[#4635B1] text-white rounded-full font-bold shadow-xl shadow-[#4635B1]/20 flex items-center justify-center gap-2"
         >
           <Stars className="w-5 h-5 text-[#AEEA94]" />

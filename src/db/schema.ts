@@ -58,11 +58,42 @@ export const stories = pgTable("stories", {
   pdfUrl: text("pdf_url"),
   pdfUpdatedAt: timestamp("pdf_updated_at"),
   orderStatus: text("order_status").default("not_ready"), 
+  currentStep: integer("current_step").default(1),
+  completedSteps: jsonb("completed_steps").default('[]'),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 /* ==================== STORY PAGES ==================== */
+
+
+export const storyProducts = pgTable("story_products", {
+  id: uuid("id").primaryKey().defaultRandom(),
+
+  storyId: uuid("story_id")
+    .references(() => stories.id, { onDelete: "cascade" })
+    .notNull(),
+
+  // What the user is intending to buy (can change)
+  productType: varchar("product_type", { length: 30 })
+    .default("undecided"), 
+    // 'undecided' | 'digital' | 'print' | 'gift'
+
+  // Snapshot of pricing at time of checkout (not authoritative yet)
+  estimatedPrice: integer("estimated_price"), // in cents
+  currency: varchar("currency", { length: 10 }).default("GBP"),
+
+  // Fulfilment flags
+  requiresShipping: boolean("requires_shipping").default(false),
+  requiresPdf: boolean("requires_pdf").default(true),
+
+  // Lock once paid
+  lockedAt: timestamp("locked_at"),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 
 export const storyPages = pgTable("story_pages", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -373,6 +404,11 @@ export const orders = pgTable("orders", {
 
   gelatoOrderId: text("gelato_order_id"),
   gelatoStatus: text("gelato_status"),
+
+  storyProductId: uuid("story_product_id")
+  .references(() => storyProducts.id, { onDelete: "cascade" }),
+  // .notNull(),
+
 
   status: text("status").notNull().default("pending"),
   submittedAt: timestamp("submitted_at"),

@@ -87,23 +87,6 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ... Rest of your sections (How It Works, Gallery, Footer) ... */}
-      {/* Be sure to keep them as they were in your code */}
-      {/* ... */}
-      
-      {/* <section id="how-it-works" className="relative py-24 px-6 md:px-12 bg-[#FDF8F0]">
-        <div className="relative flex justify-center items-center mb-20 w-full">
-            <div className="relative w-full max-w-[450px] md:max-w-[700px] h-32 md:h-48 transition-all duration-700 ease-in-out">
-            <Image 
-                src="/LandingPage/theCreativeJourney.png" 
-                alt="The Creative Journey"
-                fill
-                className="object-contain drop-shadow-md"
-                priority
-            />
-            </div>
-        </div>
-      </section> */}
       
       {/* ... (Gallery Section & Footer Section from your original code) ... */}
       <section className="py-24 px-6 md:px-12 bg-white">
@@ -221,18 +204,148 @@ export default async function Home() {
    </div>
 </section>
 
+{/* ========================================
+  PRICING
+======================================== */}
+<section
+  id="pricing"
+  className="py-28 px-6 md:px-12 bg-white relative overflow-hidden"
+>
+  <div className="mx-auto max-w-6xl">
+    {/* Header */}
+    <div className="text-center max-w-3xl mx-auto mb-20">
+      <h2 className="font-serif text-4xl md:text-5xl text-[#261C15] font-bold">
+        Simple, Honest Pricing
+      </h2>
+      <p className="mt-6 text-lg text-[#6B5D52] leading-relaxed">
+        Each story is crafted once, then yours forever.  
+        No subscriptions. No upsells. Just a beautiful book.
+      </p>
+    </div>
+
+    {/* Pricing Cards */}
+    <div className="grid md:grid-cols-3 gap-8 items-stretch">
+      
+      {/* DIGITAL */}
+      <div className="rounded-2xl border border-[#E7DCC8] bg-[#FDF8F0] p-8 shadow-sm flex flex-col">
+        <h3 className="font-serif text-2xl text-[#261C15] font-bold mb-2">
+          Digital Keepsake
+        </h3>
+        <p className="text-sm text-[#6B5D52] mb-6">
+          A beautifully illustrated story, ready to read or print.
+        </p>
+
+        <div className="mb-6">
+          <span className="text-4xl font-serif font-bold text-[#261C15]">£14</span>
+          <span className="text-[#6B5D52]"> one-off</span>
+        </div>
+
+        <ul className="space-y-3 text-sm text-[#4A4038] mb-8">
+          <li>• Fully personalised story</li>
+          <li>• Custom illustrations</li>
+          <li>• Unlimited re-reads</li>
+          <li>• High-quality PDF download</li>
+        </ul>
+
+
+        <div className="mt-auto">
+            <HeroButton
+              session={session}
+              hasProjects={hasProjects}
+              intent="digital"
+              className="w-full"
+            />
+          </div>
+        </div>
+
+
+      {/* PRINTED (FEATURED) */}
+      <div className="rounded-2xl border-2 border-[#F4A261] bg-white p-10 shadow-xl relative flex flex-col">
+        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-[#F4A261] text-white text-xs font-semibold px-4 py-1 rounded-full">
+          Most Loved
+        </div>
+
+        <h3 className="font-serif text-2xl text-[#261C15] font-bold mb-2">
+          Printed Storybook
+        </h3>
+        <p className="text-sm text-[#6B5D52] mb-6">
+          A keepsake to hold, gift, and treasure for years.
+        </p>
+
+        <div className="mb-6">
+          <span className="text-4xl font-serif font-bold text-[#261C15]">£29</span>
+          <span className="text-[#6B5D52]"> one-off</span>
+        </div>
+
+        <ul className="space-y-3 text-sm text-[#4A4038] mb-8">
+          <li>• Everything in Digital</li>
+          <li>• Premium soft-touch cover</li>
+          <li>• Beautiful full-colour pages</li>
+          <li>• Perfect for bedtime reading</li>
+        </ul>
+
+        <HeroButton
+            session={session}
+            hasProjects={hasProjects}
+            intent="print"
+            variant="primary"
+            className="w-full"
+          />
+
+
+        {/* </div> */}
+      </div>
+
+      {/* GIFT */}
+      <div className="rounded-2xl border border-[#E7DCC8] bg-[#FDF8F0] p-8 shadow-sm flex flex-col">
+        <h3 className="font-serif text-2xl text-[#261C15] font-bold mb-2">
+          Gift Edition
+        </h3>
+        <p className="text-sm text-[#6B5D52] mb-6">
+          Made for birthdays, Christmas, and once-in-a-lifetime moments.
+        </p>
+
+        <div className="mb-6">
+          <span className="text-4xl font-serif font-bold text-[#261C15]">£39</span>
+          <span className="text-[#6B5D52]"> one-off</span>
+        </div>
+
+        <ul className="space-y-3 text-sm text-[#4A4038] mb-8">
+          <li>• Deluxe printed book</li>
+          <li>• Personal dedication page</li>
+          <li>• Gift-ready presentation</li>
+          <li>• Designed to be kept forever</li>
+        </ul>
+
+        <div className="mt-auto">
+        <HeroButton
+          session={session}
+          hasProjects={hasProjects}
+          intent="gift"
+          className="w-full"
+        />
+
+        </div>
+      </div>
+    </div>
+
+    {/* Reassurance */}
+    <div className="mt-20 text-center text-sm text-[#6B5D52]">
+      <p>
+        No subscriptions. No hidden fees.  
+        If your child doesn’t love it, we’ll make it right.
+      </p>
+    </div>
+  </div>
+</section>
+
+
       {/* 
         ========================================
         FOOTER
         ========================================
       */}
       <footer className="relative bg-[#0F2236] text-[#FDF8F0] pt-32 pb-12">
-         {/* Top Wave Divider */}
-         {/* <div className="absolute top-[-2px] left-0 w-full overflow-hidden leading-none z-20">
-            <svg className="relative block w-[calc(100%+1.3px)] h-[60px] md:h-[100px]" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
-                <path d="M985.66,92.83C906.67,72,823.78,31,743.84,14.19c-82.26-17.34-168.06-16.33-250.45.39-57.84,11.73-114,31.07-172,41.86A600.21,600.21,0,0,1,0,27.35V120H1200V95.8C1132.19,118.92,1055.71,111.31,985.66,92.83Z" fill="#FDF8F0"></path>
-            </svg>
-         </div> */}
 
          <div className="relative z-10 mx-auto max-w-6xl px-6 md:px-12 flex flex-col md:flex-row justify-between items-end gap-12">
             

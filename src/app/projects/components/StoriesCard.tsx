@@ -28,6 +28,8 @@ export default function StoriesCard({ story }: { story: Story }) {
    * =========================================================
    */
 
+  console.log("story sent to card", story)
+
   const configByStatus: Record<
     string,
     {
@@ -44,7 +46,8 @@ export default function StoriesCard({ story }: { story: Story }) {
       label: "Drafting",
       icon: BookOpen,
       buttonText: "Review Draft",
-      href: `/stories/${story.id}/view`,
+      // href: `/stories/${story.id}/view`,
+      href: `/stories/${story.id}/hub`,
       colorClass: "bg-amber-100 text-amber-800 border-amber-200",
       btnClass: "bg-[#F4A261] text-[#261C15] hover:bg-[#E76F51]",
     },
@@ -53,7 +56,8 @@ export default function StoriesCard({ story }: { story: Story }) {
       label: "Magic in Progress",
       icon: Sparkles,
       buttonText: "View Magic",
-      href: `/stories/${story.id}/extract`,
+      // href: `/stories/${story.id}/extract`,
+      href: `/stories/${story.id}/hub`,
       colorClass:
         "bg-purple-100 text-purple-800 border-purple-200 animate-pulse",
       btnClass: "bg-purple-600 text-white hover:bg-purple-700",

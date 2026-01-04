@@ -43,7 +43,19 @@ export default async function StoryViewPage({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50">
-      <StoryViewer story={story} pages={pages} userId={userId} />
+    <StoryViewer
+      story={{
+        id: story.id,
+        title: story.title,
+        status: story.status ?? "planning",
+        pdfUrl: story.pdfUrl ?? null,
+        frontCoverUrl: story.frontCoverUrl ?? null,
+        backCoverUrl: story.backCoverUrl ?? null,
+        paymentStatus: story.paymentStatus ?? null,
+      }}
+      pages={pages}
+      userId={userId}
+    />
     </div>
   );
 }

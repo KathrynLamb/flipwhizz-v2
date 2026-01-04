@@ -4,15 +4,34 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+type PurchaseIntent = "digital" | "print" | "gift";
+
+
 export default function HeroButton({ 
   session, 
-  hasProjects 
+  hasProjects,
+  intent, 
+  className,
+  variant,
 }: { 
   session: any; 
-  hasProjects: boolean 
+  hasProjects: boolean;
+  intent?: PurchaseIntent;
+  className?: string;
+  variant?: "primary" | "outline";
+
 }) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+
+  const base =
+  "inline-flex items-center justify-center px-10 py-5 text-lg font-serif font-bold rounded-full transition-all duration-300 transform disabled:opacity-70 disabled:cursor-not-allowed";
+
+const styles =
+  variant === "primary"
+    ? "bg-[#261C15] text-white hover:opacity-90"
+    : "bg-[#FDF8F0] text-[#261C15] hover:scale-105";
+
 
   async function createProject() {
     setIsLoading(true);
@@ -27,7 +46,10 @@ export default function HeroButton({
     try {
       const res = await fetch("/api/projects/create", {
         method: "POST",
-        body: JSON.stringify({ title: "New Project" }),
+        body: JSON.stringify({ 
+          title: "New Project",
+          intent, 
+        }),
         headers: { "Content-Type": "application/json" },
       });
 
@@ -47,7 +69,7 @@ export default function HeroButton({
     <button
       onClick={createProject}
       disabled={isLoading}
-      className="inline-flex items-center justify-center px-10 py-5 text-lg font-serif font-bold text-[#261C15] bg-[#FDF8F0] rounded-full shadow-[0_0_40px_-10px_rgba(253,248,240,0.6)] hover:scale-105 hover:shadow-[0_0_60px_-10px_rgba(253,248,240,0.8)] transition-all duration-300 transform disabled:opacity-70 disabled:cursor-not-allowed"
+      className={`${base} ${styles} ${className}`}
     >
       {isLoading 
         ? "Creating..." 
