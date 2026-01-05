@@ -14,13 +14,16 @@ export default async function LocationsPage({ params }: Props) {
   if (!data) notFound();
   const { story, locations: dbLocations } = data;
 
+  console.log("DB LOCATIONS", dbLocations)
+
   const locations = dbLocations.map((l) => ({
     id: l.id,
     name: l.name,
     description: l.description ?? null,
     referenceImageUrl: l.referenceImageUrl ?? null,
     portraitImageUrl: l.portraitImageUrl ?? null,
-    locked: story.storyConfirmed === true,
+    locked: l.locked
+    // locked: l.locked,
   }));
   
 

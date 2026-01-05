@@ -16,6 +16,7 @@ type Character = {
   appearance: string | null;
   personalityTraits: string | null;
   portraitImageUrl: string | null;
+  referenceImageUrl: string | null;
   locked: boolean
 };
 
@@ -99,13 +100,13 @@ export default function CharactersClient({
           {/* Character Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
             {characters.map((char, idx) => (
-              <CharacterCard
+                <CharacterCard
                 key={char.id}
                 storyId={storyId}
                 character={char}
-                locked={char.locked}
                 index={idx}
               />
+   
             ))}
           </div>
 

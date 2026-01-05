@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef, useState } from "react";
-import { Upload, Sparkles, Pencil, Check } from "lucide-react";
+import { useRef, useState } from 'react';
+import { Upload, Sparkles, Pencil, Lock, Check } from 'lucide-react';
 
 type Location = {
   id: string;
@@ -9,26 +9,25 @@ type Location = {
   description: string | null;
   referenceImageUrl: string | null;
   portraitImageUrl: string | null;
+  locked: boolean;
 };
 
 const GRADIENTS = [
-  "from-yellow-400 to-orange-500",
-  "from-pink-400 to-rose-500",
-  "from-purple-400 to-indigo-500",
-  "from-cyan-400 to-blue-500",
-  "from-lime-400 to-green-500",
+  'from-yellow-400 to-orange-500',
+  'from-pink-400 to-rose-500',
+  'from-purple-400 to-indigo-500',
+  'from-cyan-400 to-blue-500',
+  'from-lime-400 to-green-500',
 ];
 
 export function LocationCard({
   storyId,
   location,
   index,
-  locked,
 }: {
   storyId: string;
   location: Location;
   index: number;
-  locked: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const gradient = GRADIENTS[index % GRADIENTS.length];
@@ -40,35 +39,50 @@ export function LocationCard({
   );
 
   const [editingDesc, setEditingDesc] = useState(false);
-  const [desc, setDesc] = useState(location.description ?? "");
+  const [desc, setDesc] = useState(location.description ?? '');
+  const [locked, setLocked] = useState(location.locked);
 
   const displayImage = localPreview || imageUrl;
 
   /* ---------------- IMAGE UPLOAD ---------------- */
 
+  function isHeic(file: File) {
+    return (
+      file.type === "image/heic" ||
+      file.type === "image/heif" ||
+      file.name.toLowerCase().endsWith(".heic")
+    );
+  }
+
   async function handleUpload(file: File) {
     if (locked) return;
 
-    setLocalPreview(URL.createObjectURL(file));
+    if (!isHeic(file)) {
+      setLocalPreview(URL.createObjectURL(file));
+    } else {
+      setLocalPreview(null); // show "Converting HEIC…" UI
+    }
     setUploading(true);
 
     try {
       const fd = new FormData();
-      fd.append("file", file);
-      fd.append("locationId", location.id);
+      fd.append('file', file);
+      fd.append('locationId', location.id);
 
-      const res = await fetch("/api/locations/upload-reference", {
-        method: "POST",
+      const res = await fetch('/api/locations/upload-reference', {
+        method: 'POST',
         body: fd,
       });
 
       const data = await res.json();
+      console.log("Data", data);
+
       if (!res.ok) throw new Error(data.error);
 
       setImageUrl(data.url);
       setLocalPreview(null);
     } catch {
-      alert("Failed to upload image");
+      alert('Failed to upload image');
       setLocalPreview(null);
     } finally {
       setUploading(false);
@@ -82,9 +96,9 @@ export function LocationCard({
     setUploading(true);
 
     try {
-      const res = await fetch("/api/locations/use-ai-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/locations/use-ai-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ locationId: location.id }),
       });
 
@@ -93,7 +107,7 @@ export function LocationCard({
 
       setImageUrl(data.url);
     } catch {
-      alert("AI image failed");
+      alert('AI image failed');
     } finally {
       setUploading(false);
     }
@@ -104,9 +118,9 @@ export function LocationCard({
   async function saveDescription() {
     setEditingDesc(false);
 
-    await fetch("/api/locations/update", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    await fetch('/api/locations/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         locationId: location.id,
         description: desc,
@@ -114,12 +128,42 @@ export function LocationCard({
     });
   }
 
+  /* ---------------- LOCK ---------------- */
+
+  async function lockLocation() {
+    if (locked) return;
+
+    const ok = confirm(
+      'Lock this location?\n\nIts description and image will be used as the source of truth for all illustrations.'
+    );
+    if (!ok) return;
+
+    await fetch('/api/locations/lock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locationId: location.id }),
+    });
+
+    setLocked(true);
+  }
+
   return (
-    <div className="group bg-white border-4 border-black rounded-3xl p-5 hover:shadow-2xl transition-shadow">
-      
+    <div
+      className="
+        group relative bg-white
+        border-[3px] border-black
+        rounded-[28px] p-5
+        transition-all hover:shadow-2xl
+      "
+    >
       {/* IMAGE TILE */}
       <div
-        className={`relative aspect-square rounded-2xl bg-gradient-to-br ${gradient} mb-4 overflow-hidden flex items-center justify-center`}
+        className={`
+          relative aspect-square rounded-2xl
+          bg-gradient-to-br ${gradient}
+          mb-4 overflow-hidden
+          flex items-center justify-center
+        `}
       >
         {displayImage ? (
           <img
@@ -133,7 +177,6 @@ export function LocationCard({
           </div>
         )}
 
-        {/* Upload hover */}
         {!locked && (
           <>
             <input
@@ -146,30 +189,32 @@ export function LocationCard({
               }
             />
 
+            {/* Upload overlay */}
             <button
               onClick={() => fileRef.current?.click()}
               className="
-                absolute inset-0 bg-black/40 opacity-0
+                absolute inset-0 bg-black/50 opacity-0
                 group-hover:opacity-100 transition
-                flex items-center justify-center
-                text-white font-bold
+                flex flex-col items-center justify-center
+                text-white font-black
               "
             >
-              <Upload className="w-6 h-6 mr-2" />
+              <Upload className="w-7 h-7 mb-1" />
               Upload reference
             </button>
           </>
         )}
 
-        {/* AI decides button (replaces star) */}
+        {/* AI decides */}
         {!locked && (
           <button
             onClick={useAiImage}
             className="
               absolute top-3 right-3
-              bg-white border-2 border-black
               rounded-full px-3 py-1
               text-xs font-black
+              bg-white text-black
+              border-2 border-black
               hover:scale-105 transition
             "
           >
@@ -178,14 +223,16 @@ export function LocationCard({
         )}
 
         {uploading && (
-          <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white font-bold">
+          <div className="absolute inset-0 bg-black/70 flex items-center justify-center text-white font-black">
             Working…
           </div>
         )}
       </div>
 
-      {/* NAME */}
-      <h3 className="text-2xl font-black mb-2">{location.name}</h3>
+      {/* TITLE */}
+      <h3 className="text-2xl font-black mb-2 text-black">
+        {location.name}
+      </h3>
 
       {/* DESCRIPTION */}
       {editingDesc ? (
@@ -193,28 +240,75 @@ export function LocationCard({
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
           onBlur={saveDescription}
-          className="w-full text-sm border-2 border-black rounded-xl p-2 mb-2"
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+              saveDescription();
+            }
+          }}
+          className="
+            w-full rounded-xl p-3 mb-3
+            text-sm font-medium text-black
+            border-[3px] border-black
+            focus:outline-none focus:ring-4 focus:ring-black/10
+          "
           rows={3}
           autoFocus
         />
       ) : (
-        <p className="text-sm text-gray-600 mb-2">
-          {desc || "No description yet"}
+        <p className="text-sm text-slate-700 mb-3 leading-relaxed">
+          {desc || (
+            <span className="italic text-slate-400">
+              No description yet
+            </span>
+          )}
         </p>
       )}
 
-      {/* ACTION ROW */}
-      {!locked && (
-        <div className="flex justify-between items-center mt-2">
+      {/* ACTION BAR */}
+      <div className="flex items-center justify-between gap-3 mt-2">
+        {!locked && (
           <button
             onClick={() => setEditingDesc(true)}
-            className="text-sm font-black flex items-center gap-1 hover:underline"
+            className="
+              flex items-center gap-1
+              text-sm font-black text-black
+              hover:underline
+            "
           >
             <Pencil className="w-4 h-4" />
             Edit description
           </button>
-        </div>
-      )}
+        )}
+
+        {locked ? (
+          <div
+            className="
+              inline-flex items-center gap-2
+              px-4 py-2 rounded-full
+              bg-emerald-500 text-white
+              font-black text-sm
+            "
+          >
+            <Check className="w-4 h-4" />
+            Locked
+          </div>
+        ) : (
+          <button
+            onClick={lockLocation}
+            className="
+              inline-flex items-center gap-2
+              px-5 py-2 rounded-full
+              font-black text-sm
+              bg-gradient-to-r from-black to-neutral-800
+              text-white
+              hover:scale-105 transition
+            "
+          >
+            <Lock className="w-4 h-4" />
+            Lock location
+          </button>
+        )}
+      </div>
     </div>
   );
 }

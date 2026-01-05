@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef, useState } from "react";
-import { Upload, Sparkles, Pencil, Check } from "lucide-react";
+import { useRef, useState } from 'react';
+import { Upload, Sparkles, Pencil, Lock, Check } from 'lucide-react';
 
 type Character = {
   id: string;
@@ -9,64 +9,84 @@ type Character = {
   description: string | null;
   appearance: string | null;
   personalityTraits: string | null;
+  referenceImageUrl: string | null;
   portraitImageUrl: string | null;
+  locked: boolean;
 };
 
 const GRADIENTS = [
-  "from-yellow-400 to-orange-500",
-  "from-pink-400 to-rose-500",
-  "from-purple-400 to-indigo-500",
-  "from-cyan-400 to-blue-500",
-  "from-lime-400 to-green-500",
+  'from-yellow-400 to-orange-500',
+  'from-pink-400 to-rose-500',
+  'from-purple-400 to-indigo-500',
+  'from-cyan-400 to-blue-500',
+  'from-lime-400 to-green-500',
 ];
 
 const TRAIT_COLORS = [
-  "bg-pink-500",
-  "bg-purple-500",
-  "bg-blue-500",
-  "bg-green-500",
-  "bg-yellow-500",
+  'bg-pink-500',
+  'bg-purple-500',
+  'bg-blue-500',
+  'bg-green-500',
+  'bg-yellow-500',
 ];
 
 export function CharacterCard({
   storyId,
   character,
   index,
-  locked,
 }: {
   storyId: string;
   character: Character;
   index: number;
-  locked: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
-
   const gradient = GRADIENTS[index % GRADIENTS.length];
 
   const [uploading, setUploading] = useState(false);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
-  const [imageUrl, setImageUrl] = useState(character.portraitImageUrl);
+  const [imageUrl, setImageUrl] = useState(
+    character.portraitImageUrl || character.referenceImageUrl || null
+  );
 
   const [editingDesc, setEditingDesc] = useState(false);
-  const [desc, setDesc] = useState(character.description ?? "");
+  const [desc, setDesc] = useState(character.description ?? '');
+  const [locked, setLocked] = useState(character.locked);
 
   const traits = character.personalityTraits
-    ? character.personalityTraits.split(",").map(t => t.trim())
+    ? character.personalityTraits.split(',').map(t => t.trim())
     : [];
+
+  const displayImage = localPreview || imageUrl;
 
   /* ---------------- IMAGE UPLOAD ---------------- */
 
+  function isHeic(file: File) {
+    return (
+      file.type === 'image/heic' ||
+      file.type === 'image/heif' ||
+      file.name.toLowerCase().endsWith('.heic') ||
+      file.name.toLowerCase().endsWith('.heif')
+    );
+  }
+
   async function handleUpload(file: File) {
-    setLocalPreview(URL.createObjectURL(file));
+    if (locked) return;
+
+    if (!isHeic(file)) {
+      setLocalPreview(URL.createObjectURL(file));
+    } else {
+      setLocalPreview(null); // show converting UI
+    }
+
     setUploading(true);
 
     try {
       const fd = new FormData();
-      fd.append("file", file);
-      fd.append("characterId", character.id);
+      fd.append('file', file);
+      fd.append('characterId', character.id);
 
-      const res = await fetch("/api/characters/upload-reference", {
-        method: "POST",
+      const res = await fetch('/api/characters/upload-reference', {
+        method: 'POST',
         body: fd,
       });
 
@@ -76,7 +96,7 @@ export function CharacterCard({
       setImageUrl(data.url);
       setLocalPreview(null);
     } catch {
-      alert("Failed to upload image");
+      alert('Failed to upload image');
       setLocalPreview(null);
     } finally {
       setUploading(false);
@@ -90,9 +110,9 @@ export function CharacterCard({
     setUploading(true);
 
     try {
-      const res = await fetch("/api/characters/use-ai-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/characters/use-ai-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ characterId: character.id }),
       });
 
@@ -101,7 +121,7 @@ export function CharacterCard({
 
       setImageUrl(data.url);
     } catch {
-      alert("AI image failed");
+      alert('AI image failed');
     } finally {
       setUploading(false);
     }
@@ -112,9 +132,9 @@ export function CharacterCard({
   async function saveDescription() {
     setEditingDesc(false);
 
-    await fetch("/api/characters/update", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    await fetch('/api/characters/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         characterId: character.id,
         description: desc,
@@ -122,20 +142,52 @@ export function CharacterCard({
     });
   }
 
-  const displayImage = localPreview || imageUrl;
+  /* ---------------- LOCK ---------------- */
+
+  async function lockCharacter() {
+    if (locked) return;
+
+    const ok = confirm(
+      'Lock this character?\n\nTheir appearance and description will be used as the source of truth for all illustrations.'
+    );
+    if (!ok) return;
+
+    await fetch('/api/characters/lock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ characterId: character.id }),
+    });
+
+    setLocked(true);
+  }
 
   return (
-    <div className="group bg-white border-4 border-black rounded-3xl p-5 hover:shadow-2xl transition-shadow">
-      
-      {/* IMAGE */}
+    <div
+      className="
+        group relative bg-white
+        border-[3px] border-black
+        rounded-[28px] p-5
+        transition-all hover:shadow-2xl
+      "
+    >
+      {/* IMAGE TILE */}
       <div
-        className={`relative aspect-square rounded-2xl bg-gradient-to-br ${gradient} mb-4 overflow-hidden flex items-center justify-center`}
+        className={`
+          relative aspect-square rounded-2xl
+          bg-gradient-to-br ${gradient}
+          mb-4 overflow-hidden
+          flex items-center justify-center
+        `}
       >
         {displayImage ? (
-          <img src={displayImage} className="w-full h-full object-cover" />
+          <img
+            src={displayImage}
+            alt={character.name}
+            className="w-full h-full object-cover"
+          />
         ) : (
           <div className="text-7xl font-black text-white/30">
-            {character.name[0]}
+            {character.name.charAt(0)}
           </div>
         )}
 
@@ -146,34 +198,55 @@ export function CharacterCard({
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={e => e.target.files && handleUpload(e.target.files[0])}
+              onChange={(e) =>
+                e.target.files && handleUpload(e.target.files[0])
+              }
             />
 
-            {/* Upload on hover */}
+            {/* Upload overlay */}
             <button
               onClick={() => fileRef.current?.click()}
               className="
-                absolute inset-0 bg-black/40 opacity-0
-          group-hover:opacity-100 transition
-                flex items-center justify-center
-                text-white font-bold
+                absolute inset-0 bg-black/50 opacity-0
+                group-hover:opacity-100 transition
+                flex flex-col items-center justify-center
+                text-white font-black
               "
             >
-              <Upload className="w-6 h-6 mr-2" />
+              <Upload className="w-7 h-7 mb-1" />
               Upload reference
             </button>
           </>
         )}
 
+        {/* AI decides */}
+        {!locked && (
+          <button
+            onClick={useAiImage}
+            className="
+              absolute top-3 right-3
+              rounded-full px-3 py-1
+              text-xs font-black
+              bg-white text-black
+              border-2 border-black
+              hover:scale-105 transition
+            "
+          >
+            AI ✨
+          </button>
+        )}
+
         {uploading && (
-          <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white font-bold">
+          <div className="absolute inset-0 bg-black/70 flex items-center justify-center text-white font-black">
             Working…
           </div>
         )}
       </div>
 
-      {/* NAME */}
-      <h3 className="text-2xl font-black mb-2">{character.name}</h3>
+      {/* TITLE */}
+      <h3 className="text-2xl font-black mb-2 text-black">
+        {character.name}
+      </h3>
 
       {/* TRAITS */}
       {traits.length > 0 && (
@@ -181,7 +254,7 @@ export function CharacterCard({
           {traits.map((t, i) => (
             <span
               key={i}
-              className={`${TRAIT_COLORS[i % TRAIT_COLORS.length]} text-white px-3 py-1 rounded-full text-xs font-bold`}
+              className={`${TRAIT_COLORS[i % TRAIT_COLORS.length]} text-white px-3 py-1 rounded-full text-xs font-black`}
             >
               {t}
             </span>
@@ -189,40 +262,78 @@ export function CharacterCard({
         </div>
       )}
 
-      {/* DESCRIPTION (INLINE EDIT) */}
+      {/* DESCRIPTION */}
       {editingDesc ? (
         <textarea
           value={desc}
-          onChange={e => setDesc(e.target.value)}
+          onChange={(e) => setDesc(e.target.value)}
           onBlur={saveDescription}
-          className="w-full text-sm border border-black rounded-lg p-2 mb-2"
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+              saveDescription();
+            }
+          }}
+          className="
+            w-full rounded-xl p-3 mb-3
+            text-sm font-medium text-black
+            border-[3px] border-black
+            focus:outline-none focus:ring-4 focus:ring-black/10
+          "
           rows={3}
           autoFocus
         />
       ) : (
-        <p className="text-sm text-gray-600 mb-2">
-          {desc || "No description yet"}
+        <p className="text-sm text-slate-700 mb-3 leading-relaxed">
+          {desc || (
+            <span className="italic text-slate-400">
+              No description yet
+            </span>
+          )}
         </p>
       )}
 
-      {/* ACTION ROW */}
-      <div className="flex justify-between items-center mt-2">
+      {/* ACTION BAR */}
+      <div className="flex items-center justify-between gap-3 mt-2">
         {!locked && (
           <button
             onClick={() => setEditingDesc(true)}
-            className="text-sm font-bold flex items-center gap-1 hover:underline"
+            className="
+              flex items-center gap-1
+              text-sm font-black text-black
+              hover:underline
+            "
           >
             <Pencil className="w-4 h-4" />
             Edit description
           </button>
         )}
 
-        {!locked && (
-          <button
-            onClick={useAiImage}
-            className="text-xs font-bold px-3 py-1 rounded-full bg-black text-white hover:scale-105 transition"
+        {locked ? (
+          <div
+            className="
+              inline-flex items-center gap-2
+              px-4 py-2 rounded-full
+              bg-emerald-500 text-white
+              font-black text-sm
+            "
           >
-            AI decides ✨
+            <Check className="w-4 h-4" />
+            Locked
+          </div>
+        ) : (
+          <button
+            onClick={lockCharacter}
+            className="
+              inline-flex items-center gap-2
+              px-5 py-2 rounded-full
+              font-black text-sm
+              bg-gradient-to-r from-black to-neutral-800
+              text-white
+              hover:scale-105 transition
+            "
+          >
+            <Lock className="w-4 h-4" />
+            Lock character
           </button>
         )}
       </div>

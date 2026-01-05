@@ -16,9 +16,15 @@ export default async function CharactersPage({ params }: Props) {
 
 const { story, characters: dbCharacters } = data;
 
-const characters = dbCharacters.map(c => ({
-  ...c,
-  locked: story.storyConfirmed === true,
+const characters = dbCharacters.map((char) => ({
+  id: char.id,
+  name: char.name,
+  description: char.description ?? null,
+  appearance: char.appearance ?? null,
+  personalityTraits: char.personalityTraits ?? null,
+  referenceImageUrl: char.referenceImageUrl ?? null,
+  portraitImageUrl: char.portraitImageUrl ?? null,
+  locked: char.locked,
 }));
 
 

@@ -47,6 +47,7 @@ export async function getStoryForHub(storyId: string) {
       personalityTraits: characters.personalityTraits,
       portraitImageUrl: characters.portraitImageUrl,
       referenceImageUrl: characters.referenceImageUrl,
+      locked: characters.locked,
 
       // story-specific fields
       role: storyCharacters.role,
@@ -71,7 +72,7 @@ export async function getStoryForHub(storyId: string) {
       visualDetails: locations.visualDetails,
       portraitImageUrl: locations.portraitImageUrl,
       referenceImageUrl: locations.referenceImageUrl,
-
+      locked: locations.locked,
       // story-specific
       significance: storyLocations.significance,
     })

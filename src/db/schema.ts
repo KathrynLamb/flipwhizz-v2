@@ -145,7 +145,8 @@ export const characters = pgTable("characters", {
   visualDetails: jsonb("visual_details"), // { hairColor, eyeColor, clothing, age, height, etc. }
   personalityTraits: text("personality_traits"),
 
-
+  locked: boolean("locked").default(false).notNull(),
+  lockedAt: timestamp("locked_at"),
   
   portraitImageUrl: text("portrait_image_url"),
   referenceImageUrl: text("reference_image_url"),
@@ -166,7 +167,10 @@ export const locations = pgTable("locations", {
   
   // NEW: Visual consistency fields
   visualDetails: jsonb("visual_details"), // { architecture, colors, lighting, keyFeatures, etc. }
-  
+
+  locked: boolean("locked").default(false).notNull(),
+  lockedAt: timestamp("locked_at"),
+
   portraitImageUrl: text("portrait_image_url"),
   referenceImageUrl: text("reference_image_url"),
   createdAt: timestamp("created_at").defaultNow(),
