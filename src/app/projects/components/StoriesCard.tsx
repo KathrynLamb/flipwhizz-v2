@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import Link from "next/link";
 import {
@@ -21,180 +21,123 @@ type Story = {
   coverImageUrl: string | null;
 };
 
+const STATUS_CONFIG: Record<string, {
+  label: string;
+  icon: any;
+  href: (id: string) => string;
+  badge: string;
+}> = {
+  draft: {
+    label: "Draft",
+    icon: BookOpen,
+    href: id => `/stories/${id}/hub`,
+    badge: "bg-amber-200 text-black",
+  },
+  extracting: {
+    label: "Finding characters",
+    icon: Sparkles,
+    href: id => `/stories/${id}/hub`,
+    badge: "bg-purple-200 text-black",
+  },
+  world_ready: {
+    label: "Characters",
+    icon: Users2,
+    href: id => `/stories/${id}/characters`,
+    badge: "bg-indigo-200 text-black",
+  },
+  style_ready: {
+    label: "Style",
+    icon: Palette,
+    href: id => `/stories/${id}/design`,
+    badge: "bg-sky-200 text-black",
+  },
+  awaiting_payment: {
+    label: "Unlock art",
+    icon: Lock,
+    href: id => `/stories/${id}/checkout`,
+    badge: "bg-rose-200 text-black",
+  },
+  generating: {
+    label: "Illustrating",
+    icon: Paintbrush,
+    href: id => `/stories/${id}/studio`,
+    badge: "bg-indigo-200 text-black",
+  },
+  publishing: {
+    label: "Printing",
+    icon: Loader2,
+    href: () => "#",
+    badge: "bg-stone-200 text-black",
+  },
+  completed: {
+    label: "Complete",
+    icon: PackageCheck,
+    href: id => `/orders/${id}`,
+    badge: "bg-emerald-200 text-black",
+  },
+};
+
 export default function StoriesCard({ story }: { story: Story }) {
-  /**
-   * =========================================================
-   * 🧠 STORY STATUS → UI STATE MAP
-   * =========================================================
-   */
-
-  console.log("story sent to card", story)
-
-  const configByStatus: Record<
-    string,
-    {
-      label: string;
-      icon: any;
-      buttonText: string;
-      href: string;
-      colorClass: string;
-      btnClass: string;
-      isDisabled?: boolean;
-    }
-  > = {
-    draft: {
-      label: "Drafting",
-      icon: BookOpen,
-      buttonText: "Review Draft",
-      // href: `/stories/${story.id}/view`,
-      href: `/stories/${story.id}/hub`,
-      colorClass: "bg-amber-100 text-amber-800 border-amber-200",
-      btnClass: "bg-[#F4A261] text-[#261C15] hover:bg-[#E76F51]",
-    },
-
-    extracting: {
-      label: "Magic in Progress",
-      icon: Sparkles,
-      buttonText: "View Magic",
-      // href: `/stories/${story.id}/extract`,
-      href: `/stories/${story.id}/hub`,
-      colorClass:
-        "bg-purple-100 text-purple-800 border-purple-200 animate-pulse",
-      btnClass: "bg-purple-600 text-white hover:bg-purple-700",
-    },
-
-    world_ready: {
-      label: "Confirm Characters",
-      icon: Users2,
-      buttonText: "Characters",
-      href: `/stories/${story.id}/design`,
-      colorClass: "bg-indigo-100 text-indigo-800 border-indigo-200",
-      btnClass: "bg-indigo-600 text-white hover:bg-indigo-700",
-    },
-
-    style_ready: {
-      label: "Choose Style",
-      icon: Palette,
-      buttonText: "Design Style",
-      href: `/stories/${story.id}/design`,
-      colorClass: "bg-sky-100 text-sky-800 border-sky-200",
-      btnClass: "bg-sky-600 text-white hover:bg-sky-700",
-    },
-
-    awaiting_payment: {
-      label: "Payment Needed",
-      icon: Lock,
-      buttonText: "Unlock Studio",
-      href: `/stories/${story.id}/checkout`,
-      colorClass: "bg-rose-100 text-rose-800 border-rose-200",
-      btnClass:
-        "bg-[#261C15] text-white hover:bg-black ring-2 ring-[#261C15] ring-offset-2",
-    },
-
-    generating: {
-      label: "Art Studio",
-      icon: Paintbrush,
-      buttonText: "Open Studio",
-      href: `/stories/${story.id}/studio`,
-      colorClass: "bg-indigo-100 text-indigo-800 border-indigo-200",
-      btnClass: "bg-[#261C15] text-white hover:bg-black",
-    },
-
-    publishing: {
-      label: "Printing…",
-      icon: Loader2,
-      buttonText: "Processing",
-      href: "#",
-      colorClass:
-        "bg-stone-100 text-stone-600 border-stone-200 animate-pulse",
-      btnClass: "bg-stone-200 text-stone-500 cursor-not-allowed",
-      isDisabled: true,
-    },
-
-    completed: {
-      label: "Order Sent",
-      icon: PackageCheck,
-      buttonText: "Track Order",
-      href: `/orders/${story.id}`,
-      colorClass: "bg-emerald-100 text-emerald-800 border-emerald-200",
-      btnClass:
-        "bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200",
-    },
-  };
-
-  const config =
-    configByStatus[story.status] ?? configByStatus["draft"];
-
+  const config = STATUS_CONFIG[story.status] ?? STATUS_CONFIG.draft;
   const StatusIcon = config.icon;
 
   return (
-    <div className="group relative flex h-[340px] w-full flex-col rounded-r-2xl rounded-l-md border border-stone-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
-      {/* SPINE */}
-      <div className="absolute inset-y-0 left-0 z-20 flex w-3 flex-col items-center justify-center bg-[#261C15] rounded-l-md">
-        <div className="h-full w-px bg-white/10" />
-      </div>
-      <div className="absolute inset-y-0 left-3 z-10 w-1 bg-stone-300 shadow-inner" />
-
+    <div
+      className="
+        group relative
+        bg-white border-4 border-black rounded-3xl
+        overflow-hidden
+        hover:scale-[1.02] transition-transform
+        hover:shadow-2xl
+      "
+    >
       {/* COVER */}
-      <div className="relative ml-4 h-48 overflow-hidden rounded-tr-2xl bg-[#F3EAD3]">
+      <div className="relative aspect-[4/3] bg-gradient-to-br from-stone-100 to-stone-200">
         {story.coverImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={story.coverImageUrl}
             alt={story.title}
-            className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+            className="absolute inset-0 h-full w-full object-cover"
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center opacity-10">
-            <BookOpen className="h-20 w-20 text-[#261C15]" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <BookOpen className="w-16 h-16 text-black/20" />
           </div>
         )}
 
-        <div className="absolute right-3 top-3">
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider shadow-sm ${config.colorClass}`}
-          >
-            <StatusIcon
-              className={`h-3 w-3 ${
-                story.status === "publishing" ? "animate-spin" : ""
-              }`}
-            />
+        {/* STATUS BADGE */}
+        <div className="absolute top-3 left-3">
+          <span className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${config.badge}`}>
+            <StatusIcon className="w-3 h-3" />
             {config.label}
           </span>
         </div>
       </div>
 
-      {/* INFO */}
-      <div className="ml-4 flex flex-grow flex-col p-5">
-        <h3 className="line-clamp-2 font-serif text-xl font-bold text-[#261C15]">
-          {story.title || "Untitled Adventure"}
+      {/* CONTENT */}
+      <div className="p-5 flex flex-col gap-3">
+        <h3 className="font-black text-xl leading-tight line-clamp-2">
+          {story.title || "Untitled story"}
         </h3>
 
-        <p className="mt-2 flex items-center gap-1 text-xs text-[#8C7A6B]">
-          <Clock className="h-3 w-3" />
-          Updated{" "}
+        <p className="text-xs text-gray-500 flex items-center gap-1">
+          <Clock className="w-3 h-3" />
           {story.updatedAt
-            ? new Date(story.updatedAt).toLocaleDateString()
-            : "Just now"}
+            ? `Updated ${new Date(story.updatedAt).toLocaleDateString()}`
+            : "Just created"}
         </p>
 
-        <div className="mt-auto pt-4">
-          {config.isDisabled ? (
-            <button
-              disabled
-              className={`flex w-full items-center justify-center rounded-lg py-3 text-sm font-bold ${config.btnClass}`}
-            >
-              {config.buttonText}
-            </button>
-          ) : (
-            <Link
-              href={config.href}
-              className={`flex w-full items-center justify-center rounded-lg py-3 text-sm font-bold shadow-md transition-all active:scale-[0.98] ${config.btnClass}`}
-            >
-              {config.buttonText}
-            </Link>
-          )}
-        </div>
+        <Link
+          href={config.href(story.id)}
+          className="
+            mt-2 inline-flex items-center justify-center
+            rounded-xl bg-black text-white
+            py-3 text-sm font-bold
+            hover:scale-105 transition
+          "
+        >
+          Open story
+        </Link>
       </div>
     </div>
   );

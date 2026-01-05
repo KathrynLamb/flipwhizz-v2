@@ -24,8 +24,6 @@ export default async function ProjectsIndexPage() {
     );
   }
 
-  
-
 const userStories = await db
   .select({
     id: stories.id,
@@ -79,10 +77,13 @@ const userStories = await db
 
       <section className="px-6 md:px-12 pb-10">
         <div className="mx-auto max-w-6xl">
-          <h1 className="font-serif text-4xl md:text-5xl text-[#261C15] font-bold">Your Library</h1>
-          <p className="mt-3 text-[#6B5D52] md:text-lg">
-            Your stories (the good stuff) — titles, status, pages, and progress.
+        <h1 className="text-6xl font-black tracking-tight text-black">
+            Your stories
+          </h1>
+          <p className="mt-4 text-lg text-gray-600">
+            Every adventure you’ve created so far ✨
           </p>
+
         </div>
       </section>
 
@@ -102,10 +103,9 @@ const userStories = await db
               </div>
             </div>
           ) : (
-            <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <ul className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {userStories.map((story) => (
                 <StoriesCard story={story} key={story.id} />
-         
               ))}
             </ul>
           )}

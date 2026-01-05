@@ -86,7 +86,8 @@ export const storyProducts = pgTable("story_products", {
   // Fulfilment flags
   requiresShipping: boolean("requires_shipping").default(false),
   requiresPdf: boolean("requires_pdf").default(true),
-
+  
+  locked: boolean("locked").default(false),
   // Lock once paid
   lockedAt: timestamp("locked_at"),
 
@@ -143,6 +144,8 @@ export const characters = pgTable("characters", {
   // NEW: Visual consistency fields
   visualDetails: jsonb("visual_details"), // { hairColor, eyeColor, clothing, age, height, etc. }
   personalityTraits: text("personality_traits"),
+
+
   
   portraitImageUrl: text("portrait_image_url"),
   referenceImageUrl: text("reference_image_url"),
