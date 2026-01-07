@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Upload, Sparkles, Pencil, Lock, Check } from 'lucide-react';
+import { Upload, Pencil, Lock, Unlock } from 'lucide-react';
 
 type Location = {
   id: string;
@@ -44,13 +44,16 @@ export function LocationCard({
 
   const displayImage = localPreview || imageUrl;
 
-  /* ---------------- IMAGE UPLOAD ---------------- */
+  /* ---------------------------------------------------
+     IMAGE UPLOAD
+  --------------------------------------------------- */
 
   function isHeic(file: File) {
     return (
-      file.type === "image/heic" ||
-      file.type === "image/heif" ||
-      file.name.toLowerCase().endsWith(".heic")
+      file.type === 'image/heic' ||
+      file.type === 'image/heif' ||
+      file.name.toLowerCase().endsWith('.heic') ||
+      file.name.toLowerCase().endsWith('.heif')
     );
   }
 
@@ -60,8 +63,9 @@ export function LocationCard({
     if (!isHeic(file)) {
       setLocalPreview(URL.createObjectURL(file));
     } else {
-      setLocalPreview(null); // show "Converting HEIC…" UI
+      setLocalPreview(null);
     }
+
     setUploading(true);
 
     try {
@@ -75,8 +79,6 @@ export function LocationCard({
       });
 
       const data = await res.json();
-      console.log("Data", data);
-
       if (!res.ok) throw new Error(data.error);
 
       setImageUrl(data.url);
@@ -89,12 +91,14 @@ export function LocationCard({
     }
   }
 
-  /* ---------------- AI IMAGE ---------------- */
+  /* ---------------------------------------------------
+     AI IMAGE
+  --------------------------------------------------- */
 
   async function useAiImage() {
     if (locked) return;
-    setUploading(true);
 
+    setUploading(true);
     try {
       const res = await fetch('/api/locations/use-ai-image', {
         method: 'POST',
@@ -113,7 +117,9 @@ export function LocationCard({
     }
   }
 
-  /* ---------------- DESCRIPTION SAVE ---------------- */
+  /* ---------------------------------------------------
+     DESCRIPTION
+  --------------------------------------------------- */
 
   async function saveDescription() {
     setEditingDesc(false);
@@ -128,13 +134,13 @@ export function LocationCard({
     });
   }
 
-  /* ---------------- LOCK ---------------- */
+  /* ---------------------------------------------------
+     LOCK / UNLOCK
+  --------------------------------------------------- */
 
   async function lockLocation() {
-    if (locked) return;
-
     const ok = confirm(
-      'Lock this location?\n\nIts description and image will be used as the source of truth for all illustrations.'
+      'Lock this location?\n\nIts description and image will be frozen.'
     );
     if (!ok) return;
 
@@ -145,32 +151,33 @@ export function LocationCard({
     });
 
     setLocked(true);
+    setEditingDesc(false);
+  }
+
+  async function unlockLocation() {
+    const ok = confirm(
+      'Unlock this location?\n\nYou will be able to edit it again.'
+    );
+    if (!ok) return;
+
+    await fetch('/api/locations/unlock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locationId: location.id }),
+    });
+
+    setLocked(false);
   }
 
   return (
-    <div
-      className="
-        group relative bg-white
-        border-[3px] border-black
-        rounded-[28px] p-5
-        transition-all hover:shadow-2xl
-      "
-    >
+    <div className="group relative bg-white border-[3px] border-black rounded-[28px] p-5 transition-all hover:shadow-2xl">
+
       {/* IMAGE TILE */}
       <div
-        className={`
-          relative aspect-square rounded-2xl
-          bg-gradient-to-br ${gradient}
-          mb-4 overflow-hidden
-          flex items-center justify-center
-        `}
+        className={`relative aspect-square rounded-2xl bg-gradient-to-br ${gradient} mb-4 overflow-hidden flex items-center justify-center`}
       >
         {displayImage ? (
-          <img
-            src={displayImage}
-            alt={location.name}
-            className="w-full h-full object-cover"
-          />
+          <img src={displayImage} alt={location.name} className="w-full h-full object-cover" />
         ) : (
           <div className="text-7xl font-black text-white/30">
             {location.name.charAt(0)}
@@ -184,42 +191,24 @@ export function LocationCard({
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(e) =>
-                e.target.files && handleUpload(e.target.files[0])
-              }
+              onChange={(e) => e.target.files && handleUpload(e.target.files[0])}
             />
 
-            {/* Upload overlay */}
             <button
               onClick={() => fileRef.current?.click()}
-              className="
-                absolute inset-0 bg-black/50 opacity-0
-                group-hover:opacity-100 transition
-                flex flex-col items-center justify-center
-                text-white font-black
-              "
+              className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-white font-black"
             >
               <Upload className="w-7 h-7 mb-1" />
               Upload reference
             </button>
-          </>
-        )}
 
-        {/* AI decides */}
-        {!locked && (
-          <button
-            onClick={useAiImage}
-            className="
-              absolute top-3 right-3
-              rounded-full px-3 py-1
-              text-xs font-black
-              bg-white text-black
-              border-2 border-black
-              hover:scale-105 transition
-            "
-          >
-            AI ✨
-          </button>
+            <button
+              onClick={useAiImage}
+              className="absolute top-3 right-3 rounded-full px-3 py-1 text-xs font-black bg-white text-black border-2 border-black hover:scale-105 transition"
+            >
+              AI ✨
+            </button>
+          </>
         )}
 
         {uploading && (
@@ -235,45 +224,28 @@ export function LocationCard({
       </h3>
 
       {/* DESCRIPTION */}
-      {editingDesc ? (
+      {editingDesc && !locked ? (
         <textarea
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
           onBlur={saveDescription}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-              saveDescription();
-            }
-          }}
-          className="
-            w-full rounded-xl p-3 mb-3
-            text-sm font-medium text-black
-            border-[3px] border-black
-            focus:outline-none focus:ring-4 focus:ring-black/10
-          "
+          className="w-full rounded-xl p-3 mb-3 text-sm font-medium border-[3px] border-black"
           rows={3}
           autoFocus
         />
       ) : (
         <p className="text-sm text-slate-700 mb-3 leading-relaxed">
-          {desc || (
-            <span className="italic text-slate-400">
-              No description yet
-            </span>
-          )}
+          {desc || <span className="italic text-slate-400">No description yet</span>}
         </p>
       )}
 
       {/* ACTION BAR */}
       <div className="flex items-center justify-between gap-3 mt-2">
+
         {!locked && (
           <button
             onClick={() => setEditingDesc(true)}
-            className="
-              flex items-center gap-1
-              text-sm font-black text-black
-              hover:underline
-            "
+            className="flex items-center gap-1 text-sm font-black hover:underline"
           >
             <Pencil className="w-4 h-4" />
             Edit description
@@ -281,31 +253,20 @@ export function LocationCard({
         )}
 
         {locked ? (
-          <div
-            className="
-              inline-flex items-center gap-2
-              px-4 py-2 rounded-full
-              bg-emerald-500 text-white
-              font-black text-sm
-            "
+          <button
+            onClick={unlockLocation}
+            className="px-5 py-2 rounded-full font-black text-sm bg-yellow-400 text-black hover:scale-105 transition"
           >
-            <Check className="w-4 h-4" />
-            Locked
-          </div>
+            <Unlock className="w-4 h-4 inline mr-1" />
+            Unlock
+          </button>
         ) : (
           <button
             onClick={lockLocation}
-            className="
-              inline-flex items-center gap-2
-              px-5 py-2 rounded-full
-              font-black text-sm
-              bg-gradient-to-r from-black to-neutral-800
-              text-white
-              hover:scale-105 transition
-            "
+            className="px-5 py-2 rounded-full font-black text-sm bg-black text-white hover:scale-105 transition"
           >
-            <Lock className="w-4 h-4" />
-            Lock location
+            <Lock className="w-4 h-4 inline mr-1" />
+            Lock
           </button>
         )}
       </div>

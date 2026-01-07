@@ -43,10 +43,10 @@ export default async function StoryHubPage(props: PageProps) {
     story={{
       id: story.id,
       title: story.title,
-      updatedAt: story.updatedAt ?? story.createdAt ?? new Date(),
+      // updatedAt: story.updatedAt ?? story.createdAt ?? new Date(),
     }}
     hub={hub}
-    mode={mode}
+    // mode={mode}
   />
 
   );

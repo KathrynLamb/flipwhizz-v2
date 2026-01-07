@@ -111,12 +111,14 @@ export default function InitialStyleDesignEditor({
   const [sampleUrl, setSampleUrl] = useState(style.sampleIllustrationUrl || sampleImage);
   const [generationProgress, setGenerationProgress] = useState("");
   const [isSampleOpen, setIsSampleOpen] = useState(false);
+  const [activeGenerationId, setActiveGenerationId] = useState()
 
   const needsPayment = storyStatus === "awaiting_payment";
   const canContinue = storyStatus === "awaiting_generation_choice";
 
 
   console.log('stort status', storyStatus)
+  console.log('style', style)
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -203,7 +205,7 @@ export default function InitialStyleDesignEditor({
 
     references.push(...buildCharacterReferences(characters));
 
-    await fetch("/api/style/generate", {
+    const res = await fetch("/api/style/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -212,8 +214,12 @@ export default function InitialStyleDesignEditor({
         leftText,
         rightText,
         references,
+        force: true, // 👈 THIS
       }),
     });
+
+    const { generationId } = await res.json();
+    setActiveGenerationId(generationId);
 
     setGenerationProgress("Gathering references...");
 
@@ -226,10 +232,23 @@ export default function InitialStyleDesignEditor({
       if (pollCount === 6) setGenerationProgress("Adding details...");
       if (pollCount === 9) setGenerationProgress("Almost there...");
 
+      if (pollCount > 60) {
+        clearInterval(poll);
+        setIsGeneratingSample(false);
+        setGenerationProgress("");
+        throw new Error("Sample generation timed out");
+      }
+      
+
       const res = await fetch(`/api/stories/${style.storyId}/style-poll`);
       if (!res.ok) return;
 
       const data = await res.json();
+
+      if (data.sampleUrl && data.generationId === activeGenerationId) {
+        setSampleUrl(data.sampleUrl);
+      }
+      
       if (data.sampleUrl) {
         clearInterval(poll);
         setSampleUrl(data.sampleUrl);
@@ -240,9 +259,11 @@ export default function InitialStyleDesignEditor({
   }
 
   async function regenerateSample() {
+    setMode("view");          // 🔑 ensure allowed
     setSampleUrl(null);
     await generateSample();
   }
+  
 
   /* ======================================================
      STATUS-DRIVEN VIEWS

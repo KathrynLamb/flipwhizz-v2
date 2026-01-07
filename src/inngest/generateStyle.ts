@@ -1,8 +1,8 @@
 import { inngest } from "./client";
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { eq } from "drizzle-orm";
-import { storyStyleGuide } from "@/db/schema";
+import { GoogleGenAI } from "@google/genai";
+import { eq, asc } from "drizzle-orm";
 import { db } from "@/db";
+import { storyPages, storyStyleGuide } from "@/db/schema";
 import { v2 as cloudinary } from "cloudinary";
 import { Readable } from "node:stream";
 import { v4 as uuid } from "uuid";
@@ -22,31 +22,20 @@ const client = new GoogleGenAI({
   apiVersion: "v1alpha",
 });
 
+const MODEL = "gemini-3-pro-image-preview";
+
 /* ------------------------------------------------------------------
    HELPERS
 ------------------------------------------------------------------ */
 
 async function fetchImageAsBase64(url: string) {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Failed to fetch: ${res.statusText}`);
-
-    const buffer = Buffer.from(await res.arrayBuffer());
-    return {
-      data: buffer.toString("base64"),
-      mimeType: res.headers.get("content-type") || "image/jpeg",
-    };
-  } catch (err) {
-    console.error("❌ Failed to fetch image:", url, err);
-    return null;
-  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+  const buffer = Buffer.from(await res.arrayBuffer());
+  return { data: buffer.toString("base64"), mimeType: "image/jpeg" };
 }
 
-async function saveImageToStorage(
-  base64: string,
-  mimeType: string,
-  storyId: string
-): Promise<string> {
+async function uploadImage(base64: string, storyId: string) {
   const buffer = Buffer.from(base64, "base64");
 
   const result: any = await new Promise((resolve, reject) => {
@@ -65,195 +54,148 @@ async function saveImageToStorage(
   return result.secure_url as string;
 }
 
-function extractInlineImage(result: any) {
-  const parts = result.candidates?.[0]?.content?.parts ?? [];
+function extractImage(result: any) {
+  const parts = result?.candidates?.[0]?.content?.parts ?? [];
   const imagePart = parts.find((p: any) => p.inlineData?.data);
-
-  return imagePart?.inlineData
-    ? {
-        data: imagePart.inlineData.data,
-        mimeType: imagePart.inlineData.mimeType,
-      }
-    : null;
-}
-
-// ✅ FIXED: Now correctly checks mode and uses description field
-function buildCharacterSection(references: any[]): string {
-  return references
-    .filter((r) => r.type === "character")
-    .map((r) => {
-      if (r.mode === "description" && r.description) {
-        return `- ${r.label}: ${r.description}`;
-      }
-      if (r.mode === "image") {
-        return `- ${r.label}: (use attached reference image)`;
-      }
-      return `- ${r.label}: (no details provided)`;
-    })
-    .join("\n");
+  return imagePart?.inlineData ?? null;
 }
 
 /* ------------------------------------------------------------------
-   STYLE SAMPLE GENERATION JOB
+   SAMPLE SPREAD GENERATOR
 ------------------------------------------------------------------ */
 
 export const generateStyleSample = inngest.createFunction(
-  {
-    id: "generate-style-sample",
-    concurrency: 1,
-  },
+  { id: "generate-style-sample", concurrency: 1 },
   { event: "style/generate.sample" },
   async ({ event, step }) => {
-    const {
-      storyId,
-      description,
-      leftText,
-      rightText,
-      references = [],
-    } = event.data;
+    const { storyId, references = [], force = false } = event.data;
 
-    console.log("🎨 Starting style sample generation for:", storyId);
-    console.log("📦 Received references:", JSON.stringify(references, null, 2));
+    if (!storyId) throw new Error("Missing storyId");
+
+    console.log("🎨 SAMPLE SPREAD for story:", storyId);
 
     /* --------------------------------------------------
-       IDEMPOTENCY GUARD
+       LOAD STORY TEXT (FIRST 2 PAGES)
+    -------------------------------------------------- */
+
+    const pages = await db.query.storyPages.findMany({
+      where: eq(storyPages.storyId, storyId),
+      orderBy: asc(storyPages.pageNumber),
+      limit: 2,
+    });
+
+    if (!pages.length) throw new Error("No story pages found");
+
+    const leftText = pages[0]?.text ?? "";
+    const rightText = pages[1]?.text ?? "";
+
+    /* --------------------------------------------------
+       INVALIDATE EXISTING SAMPLE (IF FORCED)
     -------------------------------------------------- */
 
     const existing = await db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),
     });
 
-    if (existing?.sampleIllustrationUrl) {
-      console.log("⏭️ Sample already exists, skipping generation");
-      return {
-        success: true,
-        skipped: true,
-        url: existing.sampleIllustrationUrl,
-      };
+    if (existing?.sampleIllustrationUrl && !force) {
+      console.log("⏭️ Sample already exists");
+      return { skipped: true, url: existing.sampleIllustrationUrl };
+    }
+
+    if (force) {
+      await db
+        .update(storyStyleGuide)
+        .set({ sampleIllustrationUrl: null })
+        .where(eq(storyStyleGuide.storyId, storyId));
     }
 
     /* --------------------------------------------------
-       BUILD PROMPT CONTENT
+       BUILD MULTIMODAL PROMPT
     -------------------------------------------------- */
 
-    const characterDescriptions = buildCharacterSection(references);
-    console.log("👥 Character descriptions:", characterDescriptions);
+    const parts: any[] = [];
 
-    const savedUrl = await step.run("generate-style-sample-image", async () => {
-      const prompt = `
+    // 🔒 Attach references FIRST (this matters)
+    for (const ref of references) {
+      if (!ref.url) continue;
+
+      const img = await fetchImageAsBase64(ref.url);
+
+      parts.push({
+        text:
+          ref.type === "style"
+            ? "PRIMARY ART STYLE REFERENCE. Follow this style exactly."
+            : `CHARACTER / LOCATION REFERENCE: ${ref.label}`,
+      });
+
+      parts.push({ inlineData: img });
+    }
+
+    // 📖 Main prompt
+    parts.push({
+      text: `
 You are a professional children's book illustrator.
 
 TASK:
-Create a single high-quality illustration of an open book (double-page spread) lying flat.
+Create ONE COMPLETE DOUBLE-PAGE SPREAD for a children's picture book.
 
-STYLE:
-Use the provided ART STYLE reference as the primary visual guide.
-Illustration must be painterly and illustrative — NOT photorealistic.
+THIS IS A REPRESENTATIVE SAMPLE.
+It must be identical in quality and layout to final book pages.
 
-SCENE DESCRIPTION:
-${description}
+MANDATORY REQUIREMENTS:
+- Render the story text INTO the image
+- Left page text on the left half
+- Right page text on the right half
+- ONE wide image (2:1 ratio)
+- Do NOT place text on the center fold
+- Typography must be child-readable
 
-CHARACTERS:
-${characterDescriptions || "(no character text provided — rely on images if present)"}
+LEFT PAGE TEXT:
+${leftText}
 
-TEXT LAYOUT:
-- Left Page: "${leftText}"
-- Right Page: "${rightText}"
+RIGHT PAGE TEXT:
+${rightText}
 
-IMPORTANT:
-- Follow the attached reference images exactly when provided
-- Do NOT invent character appearances
-- Maintain consistency and warmth suitable for children
-`;
-
-      const parts: any[] = [{ text: prompt }];
-
-      /* ----------------------------------------------
-         ATTACH ALL EXPLICIT IMAGE REFERENCES
-      ---------------------------------------------- */
-
-      // ✅ FIXED: Now correctly handles both style and character references
-      for (const ref of references) {
-        // Check if this is an image-based reference (style or character with image mode)
-        const isStyleImage = ref.type === "style" && ref.url;
-        const isCharacterImage = ref.type === "character" && ref.mode === "image" && ref.url;
-
-        if (!isStyleImage && !isCharacterImage) continue;
-
-        console.log(`🖼️ Fetching image for ${ref.type}: ${ref.label}`);
-        const img = await fetchImageAsBase64(ref.url);
-        
-        if (!img) {
-          console.warn(`⚠️ Failed to fetch image for ${ref.label}`);
-          continue;
-        }
-
-        const label =
-          ref.type === "style"
-            ? "ART STYLE REFERENCE IMAGE"
-            : `CHARACTER REFERENCE IMAGE (${ref.label})`;
-
-        console.log(`✅ Attaching ${label}`);
-        parts.push({ text: `\n[${label}]:` });
-        parts.push({ inlineData: img });
-      }
-
-      console.log(`📝 Total parts in prompt: ${parts.length} (1 text + ${parts.length - 1} images)`);
-
-      /* ----------------------------------------------
-         GEMINI IMAGE GENERATION
-      ---------------------------------------------- */
-
-      const response = await client.models.generateContent({
-        model: "gemini-3-pro-image-preview",
-        contents: [{ role: "user", parts }],
-        config: {
-          responseModalities: ["TEXT", "IMAGE"],
-          safetySettings: [
-            {
-              category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-              category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-              category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-              category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-          ],
-        },
-      });
-
-      const output = extractInlineImage(response);
-      if (!output) {
-        throw new Error("Gemini returned no image output");
-      }
-
-      console.log("🎉 Image generated successfully, saving to Cloudinary...");
-      return saveImageToStorage(output.data, output.mimeType, storyId);
+STYLE RULES:
+- Follow reference images exactly
+- Do not invent character appearances
+- Warm, whimsical, painterly children's book illustration
+`,
     });
 
     /* --------------------------------------------------
-       PERSIST RESULT
+       GENERATE IMAGE
     -------------------------------------------------- */
 
-    await step.run("persist-style-sample", async () => {
-      await db
-        .update(storyStyleGuide)
-        .set({
-          sampleIllustrationUrl: savedUrl,
-          updatedAt: new Date(),
-        })
-        .where(eq(storyStyleGuide.storyId, storyId));
+    const imageUrl = await step.run("generate-sample-spread", async () => {
+      console.log("🤖 Generating sample spread with Gemini…");
+
+      const response = await client.models.generateContent({
+        model: MODEL,
+        contents: [{ role: "user", parts }],
+        config: { responseModalities: ["IMAGE"] },
+      });
+
+      const image = extractImage(response);
+      if (!image) throw new Error("No image returned from Gemini");
+
+      return uploadImage(image.data, storyId);
     });
 
-    console.log("✅ Style sample generation complete:", savedUrl);
-    return { success: true, url: savedUrl };
+    /* --------------------------------------------------
+       SAVE RESULT
+    -------------------------------------------------- */
+
+    await db
+      .update(storyStyleGuide)
+      .set({
+        sampleIllustrationUrl: imageUrl,
+        updatedAt: new Date(),
+      })
+      .where(eq(storyStyleGuide.storyId, storyId));
+
+    console.log("✅ Sample spread saved:", imageUrl);
+
+    return { success: true, url: imageUrl };
   }
 );
