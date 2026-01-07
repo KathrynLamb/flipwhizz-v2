@@ -344,13 +344,15 @@ export default function InitialStyleDesignEditor({
         variants={fadeUp}
         className="pt-20 pb-12 px-6 text-center"
       >
-        <h1 className="text-5xl md:text-6xl font-black mb-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 bg-clip-text text-transparent">
-          Design Your Story's Look
+     <div className="mb-6">
+        <h1 className="text-3xl font-black">
+          Design
         </h1>
-        <p className="text-xl text-stone-600 max-w-2xl mx-auto">
-          We've suggested a style based on your story. Edit it, upload a
-          reference, or generate a sample.
+        <p className="text-stone-600">
+          This sets the visual style for your entire book.
         </p>
+      </div>
+
       </motion.header>
 
       <div className="max-w-6xl mx-auto px-6 pb-20">

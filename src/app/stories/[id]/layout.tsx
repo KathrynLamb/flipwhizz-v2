@@ -56,19 +56,18 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
   }
 
   return (
-    <StoryJourneyShell
-      storyId={story.id}
-      title={story.title}
-      status={story.status ?? "planning"}
-      currentStep={stepNumberToKey(story.currentStep ?? undefined)}
-      completedSteps={stepNumbersToKeys(
-        Array.isArray(story.completedSteps)
-          ? (story.completedSteps as number[])
-          : []
-      )}
-      
-    >
-      {children}
-    </StoryJourneyShell>
+<StoryJourneyShell
+  storyId={story.id}
+  title={story.title}
+  currentStep={stepNumberToKey(story.currentStep ?? undefined)}
+  completedSteps={stepNumbersToKeys(
+    Array.isArray(story.completedSteps)
+      ? story.completedSteps
+      : []
+  )}
+>
+  {children}
+</StoryJourneyShell>
+
   );
 }

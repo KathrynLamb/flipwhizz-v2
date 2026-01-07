@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
-  CheckCircle,
   Sparkles,
   Users,
   MapPin,
@@ -15,13 +14,13 @@ import {
 import { StatCard } from '@/app/stories/[id]/hub/components/StatCard';
 
 /* ======================================================
-   ANIMATIONS (MATCH DESIGN PAGE)
+   ANIMATION TOKENS
 ====================================================== */
 
 const easeOut: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 const fadeUp = {
-  hidden: { opacity: 0, y: 28 },
+  hidden: { opacity: 0, y: 24 },
   visible: {
     opacity: 1,
     y: 0,
@@ -30,11 +29,11 @@ const fadeUp = {
 };
 
 const scaleIn = {
-  hidden: { opacity: 0, scale: 0.94 },
+  hidden: { opacity: 0, scale: 0.96 },
   visible: {
     opacity: 1,
     scale: 1,
-    transition: { duration: 0.5, ease: easeOut },
+    transition: { duration: 0.45, ease: easeOut },
   },
 };
 
@@ -73,12 +72,11 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
   const router = useRouter();
 
   const writeComplete = hub.steps.write.complete;
-  const extractComplete =
+  const hasCast =
     hub.steps.extract.characters > 0 ||
     hub.steps.extract.locations > 0;
 
   const designUnlocked = hub.steps.design.unlocked;
-  const designComplete = hub.steps.design.complete;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-fuchsia-50 to-amber-50">
@@ -96,15 +94,16 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
           <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-violet-100">
             <div className="w-2 h-2 rounded-full bg-violet-500" />
             <span className="text-sm font-bold text-violet-900">
-              {hub.progressPercent}% Complete
+              {hub.progressPercent}% complete
             </span>
           </div>
         </div>
       </div>
 
       {/* CONTENT */}
-      <div className="pt-28 pb-20 px-6">
-        <div className="max-w-6xl mx-auto space-y-14">
+      <div className="pt-28 pb-24 px-6">
+        <div className="max-w-5xl mx-auto space-y-16">
+
           {/* HERO */}
           <motion.div
             initial="hidden"
@@ -112,81 +111,94 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
             variants={fadeUp}
             className="text-center"
           >
-            <h1 className="text-6xl md:text-7xl font-black mb-4 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+            <h1 className="text-6xl md:text-7xl font-black mb-6 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
               {story.title}
             </h1>
-            <p className="text-xl text-stone-600 font-medium">
-              Your story is coming to life ✨
+
+            <p className="text-xl text-stone-600 font-medium max-w-2xl mx-auto">
+              You’re building this one step at a time.  
+              Everything you need is already here — just follow the flow.
             </p>
           </motion.div>
 
-          {/* STEP 1 */}
-          <GlassStep
-            icon={CheckCircle}
-            title="Write Your Story"
-            subtitle="The foundation of your book"
-            complete={writeComplete}
+          {/* SECTION: WHERE YOU ARE */}
+          <GlassSection
+            title="You’re off to a strong start"
+            subtitle="Here’s what we’ve got so far"
           >
-            <p className="font-semibold text-stone-700">
-              {hub.steps.write.pageCount} pages written
+            <p className="text-stone-700 font-semibold">
+              Your story text is written and saved safely.
             </p>
-          </GlassStep>
 
-          {/* STEP 2 */}
-          <GlassStep
-            icon={Sparkles}
-            title="Review What We Found"
-            subtitle="Meet your cast and world"
-            complete={extractComplete}
+            <p className="text-stone-600 mt-2">
+              You can always come back and tweak wording later — nothing here is final yet.
+            </p>
+
+            <p className="mt-4 font-bold text-stone-800">
+              {hub.steps.write.pageCount} pages written ✨
+            </p>
+          </GlassSection>
+
+          {/* SECTION: CAST & WORLD */}
+          <GlassSection
+            title="Meet your characters and places"
+            subtitle="We’ve pulled these directly from your story"
           >
-            <motion.div
-              variants={scaleIn}
-              initial="hidden"
-              animate="visible"
-              className="grid grid-cols-1 md:grid-cols-2 gap-6"
-            >
-              <StatCard
-                icon={<Users className="w-6 h-6" />}
-                label="Characters"
-                total={hub.steps.design.charactersTotal}
-                confirmed={hub.steps.design.charactersConfirmed}
-                onClick={() =>
-                  router.push(`/stories/${story.id}/characters`)
-                }
-              />
+            {!hasCast && (
+              <p className="text-stone-600 font-medium">
+                We’re still identifying characters and locations from your text.
+              </p>
+            )}
 
-              <StatCard
-                icon={<MapPin className="w-6 h-6" />}
-                label="Locations"
-                total={hub.steps.design.locationsTotal}
-                confirmed={hub.steps.design.locationsConfirmed}
-                onClick={() =>
-                  router.push(`/stories/${story.id}/locations`)
-                }
-              />
-            </motion.div>
-          </GlassStep>
+            {hasCast && (
+              <>
+                <p className="text-stone-600 max-w-xl mb-6">
+                  Before illustrations begin, we’ll gently lock in how key characters
+                  and locations look — so everything stays consistent throughout the book.
+                </p>
 
-          {/* STEP 3 */}
-          <GlassStep
-            icon={Palette}
-            title="Design Your Book"
-            subtitle="Lock in the visual style"
-            complete={designComplete}
+                <motion.div
+                  variants={scaleIn}
+                  initial="hidden"
+                  animate="visible"
+                  className="grid grid-cols-1 md:grid-cols-2 gap-6"
+                >
+                  <StatCard
+                    icon={<Users className="w-6 h-6" />}
+                    label="Characters"
+                    total={hub.steps.design.charactersTotal}
+                    confirmed={hub.steps.design.charactersConfirmed}
+                    onClick={() =>
+                      router.push(`/stories/${story.id}/characters`)
+                    }
+                  />
+
+                  <StatCard
+                    icon={<MapPin className="w-6 h-6" />}
+                    label="Locations"
+                    total={hub.steps.design.locationsTotal}
+                    confirmed={hub.steps.design.locationsConfirmed}
+                    onClick={() =>
+                      router.push(`/stories/${story.id}/locations`)
+                    }
+                  />
+                </motion.div>
+              </>
+            )}
+          </GlassSection>
+
+          {/* SECTION: DESIGN */}
+          <GlassSection
+            title="Choose how your book looks"
+            subtitle="This sets the visual style for everything"
           >
-            <div className="space-y-4">
-              <p className="font-semibold text-stone-700">
-                Characters locked:{' '}
-                {hub.steps.design.charactersConfirmed} /{' '}
-                {hub.steps.design.charactersTotal}
-              </p>
+            <p className="text-stone-600 max-w-xl">
+              Once your characters and locations are locked, we’ll generate a
+              real sample spread so you can see exactly what the finished book
+              will feel like.
+            </p>
 
-              <p className="font-semibold text-stone-700">
-                Locations locked:{' '}
-                {hub.steps.design.locationsConfirmed} /{' '}
-                {hub.steps.design.locationsTotal}
-              </p>
-
+            <div className="mt-6">
               {designUnlocked ? (
                 <motion.button
                   whileHover={{ scale: 1.05 }}
@@ -202,29 +214,34 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
                     shadow-xl
                   "
                 >
-                  Enter Design Studio
-                  <Sparkles className="w-5 h-5" />
+                  Open Design Studio
+                  <Palette className="w-5 h-5" />
                 </motion.button>
               ) : (
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-100 text-amber-900 font-bold">
                   <Lock className="w-4 h-4" />
-                  Lock characters & locations first
+                  Lock characters & locations to continue
                 </div>
               )}
             </div>
-          </GlassStep>
+          </GlassSection>
 
-          {/* STEP 4 */}
-          <GlassStep
-            icon={Zap}
-            title="Art Studio"
-            subtitle="Generate illustrations"
+          {/* SECTION: WHAT COMES NEXT */}
+          <GlassSection
+            title="What happens next?"
+            subtitle="No rush — this unlocks when you’re ready"
             muted
           >
-            <p className="text-stone-500 font-medium">
-              Available after design is locked
+            <p className="text-stone-500 font-medium max-w-xl">
+              After design is confirmed, you’ll move into the Art Studio —
+              where full illustrations are generated and your book truly comes alive.
             </p>
-          </GlassStep>
+
+            <div className="flex items-center gap-3 mt-4 text-stone-400 font-bold">
+              <Zap className="w-4 h-4" />
+              Art Studio unlocks automatically
+            </div>
+          </GlassSection>
         </div>
       </div>
     </div>
@@ -232,54 +249,40 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
 }
 
 /* ======================================================
-   GLASS STEP
+   GLASS SECTION
 ====================================================== */
 
-function GlassStep({
-  icon: Icon,
+function GlassSection({
   title,
   subtitle,
-  complete,
   muted,
   children,
-}: any) {
+}: {
+  title: string;
+  subtitle: string;
+  muted?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <motion.div
+    <motion.section
       variants={scaleIn}
       initial="hidden"
       animate="visible"
       className={`
         bg-white/90 backdrop-blur-xl
-        rounded-3xl p-8 shadow-2xl
-        border border-white
+        rounded-3xl p-8 md:p-10
+        shadow-2xl border border-white
         ${muted ? 'opacity-60' : ''}
       `}
     >
-      <div className="flex items-center gap-4 mb-6">
-        <div
-          className={`
-            w-14 h-14 rounded-2xl flex items-center justify-center
-            ${
-              complete
-                ? 'bg-emerald-500 text-white'
-                : 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white'
-            }
-          `}
-        >
-          <Icon className="w-7 h-7" />
-        </div>
+      <h2 className="text-3xl font-black text-stone-800 mb-2">
+        {title}
+      </h2>
+      <p className="text-stone-500 font-medium mb-6">
+        {subtitle}
+      </p>
 
-        <div>
-          <h2 className="text-3xl font-black text-stone-800">
-            {title}
-          </h2>
-          <p className="text-stone-600 font-medium">
-            {subtitle}
-          </p>
-        </div>
-      </div>
-
-      <div className="ml-[72px]">{children}</div>
-    </motion.div>
+      {children}
+    </motion.section>
   );
 }
