@@ -728,13 +728,15 @@ export default function InitialStyleDesignEditor({
       ) : (
         <button
           onClick={() =>
-            (window.location.href = `/stories/${style.storyId}/studio`)
+            (window.location.href = `/checkout?storyId=${style.storyId}`)
+  
+
           }
           className="w-full px-8 py-5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-black text-lg shadow-xl hover:shadow-2xl hover:scale-105 transition-all"
         >
           <span className="flex items-center justify-center gap-3">
             <ArrowRight className="w-5 h-5" />
-            Continue to Studio
+            “Generate Full Book (£29.99)”
           </span>
         </button>
       )}

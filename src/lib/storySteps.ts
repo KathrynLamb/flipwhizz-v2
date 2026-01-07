@@ -4,6 +4,7 @@ export const STEP_ORDER = [
     "write",
     "extract",
     "design",
+    "locations",
     "studio",
     "print",
   ] as const;

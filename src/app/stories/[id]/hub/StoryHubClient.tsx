@@ -80,25 +80,7 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-fuchsia-50 to-amber-50">
-      {/* TOP BAR */}
-      <div className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur border-b border-white">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <button
-            onClick={() => router.push('/projects')}
-            className="flex items-center gap-2 text-stone-600 hover:text-black font-medium"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            Library
-          </button>
 
-          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-violet-100">
-            <div className="w-2 h-2 rounded-full bg-violet-500" />
-            <span className="text-sm font-bold text-violet-900">
-              {hub.progressPercent}% complete
-            </span>
-          </div>
-        </div>
-      </div>
 
       {/* CONTENT */}
       <div className="pt-28 pb-24 px-6">

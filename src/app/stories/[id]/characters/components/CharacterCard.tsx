@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Upload, Sparkles, Pencil, Lock, Check, Unlock } from 'lucide-react';
+import { Upload, Sparkles, Pencil, Lock, Unlock } from 'lucide-react';
 
 type Character = {
   id: string;
@@ -58,9 +58,9 @@ export function CharacterCard({
 
   const displayImage = localPreview || imageUrl;
 
-  /* ---------------------------------------------------
+  /* ---------------------------------------------
      IMAGE UPLOAD
-  --------------------------------------------------- */
+  --------------------------------------------- */
 
   function isHeic(file: File) {
     return (
@@ -76,12 +76,9 @@ export function CharacterCard({
 
     if (!isHeic(file)) {
       setLocalPreview(URL.createObjectURL(file));
-    } else {
-      setLocalPreview(null);
     }
 
     setUploading(true);
-
     try {
       const fd = new FormData();
       fd.append('file', file);
@@ -93,7 +90,7 @@ export function CharacterCard({
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error();
 
       setImageUrl(data.url);
       setLocalPreview(null);
@@ -104,10 +101,6 @@ export function CharacterCard({
       setUploading(false);
     }
   }
-
-  /* ---------------------------------------------------
-     AI IMAGE
-  --------------------------------------------------- */
 
   async function useAiImage() {
     if (locked) return;
@@ -131,13 +124,8 @@ export function CharacterCard({
     }
   }
 
-  /* ---------------------------------------------------
-     DESCRIPTION
-  --------------------------------------------------- */
-
   async function saveDescription() {
     setEditingDesc(false);
-
     await fetch('/api/characters/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -148,14 +136,8 @@ export function CharacterCard({
     });
   }
 
-  /* ---------------------------------------------------
-     LOCK / UNLOCK
-  --------------------------------------------------- */
-
   async function lockCharacter() {
-    const ok = confirm(
-      'Lock this character?\n\nTheir appearance and description will be frozen.'
-    );
+    const ok = confirm('Lock this character? Their appearance will be frozen.');
     if (!ok) return;
 
     await fetch('/api/characters/lock', {
@@ -169,9 +151,7 @@ export function CharacterCard({
   }
 
   async function unlockCharacter() {
-    const ok = confirm(
-      'Unlock this character?\n\nYou will be able to edit them again.'
-    );
+    const ok = confirm('Unlock this character for editing?');
     if (!ok) return;
 
     await fetch('/api/characters/unlock', {
@@ -184,16 +164,35 @@ export function CharacterCard({
   }
 
   return (
-    <div className="group relative bg-white border-[3px] border-black rounded-[28px] p-5 transition-all hover:shadow-2xl">
+    <div className="
+      group relative
+      bg-white
+      border-[2px] border-black
+      rounded-2xl
+      p-4
+      transition-all
+      hover:shadow-xl
+    ">
 
-      {/* IMAGE TILE */}
+      {/* IMAGE */}
       <div
-        className={`relative aspect-square rounded-2xl bg-gradient-to-br ${gradient} mb-4 overflow-hidden flex items-center justify-center`}
+        className={`
+          relative aspect-[4/5]
+          rounded-xl
+          bg-gradient-to-br ${gradient}
+          overflow-hidden
+          mb-3
+          flex items-center justify-center
+        `}
       >
         {displayImage ? (
-          <img src={displayImage} alt={character.name} className="w-full h-full object-cover" />
+          <img
+            src={displayImage}
+            alt={character.name}
+            className="w-full h-full object-cover"
+          />
         ) : (
-          <div className="text-7xl font-black text-white/30">
+          <div className="text-6xl font-black text-white/30">
             {character.name.charAt(0)}
           </div>
         )}
@@ -205,23 +204,33 @@ export function CharacterCard({
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(e) => e.target.files && handleUpload(e.target.files[0])}
+              onChange={(e) =>
+                e.target.files && handleUpload(e.target.files[0])
+              }
             />
 
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-white font-black"
-            >
-              <Upload className="w-7 h-7 mb-1" />
-              Upload reference
-            </button>
+            {/* Overlay actions */}
+            <div className="
+              absolute inset-0
+              bg-black/40
+              opacity-0 group-hover:opacity-100
+              transition
+              flex items-center justify-center gap-3
+            ">
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="px-4 py-2 rounded-full bg-white text-black text-xs font-black"
+              >
+                Upload
+              </button>
 
-            <button
-              onClick={useAiImage}
-              className="absolute top-3 right-3 rounded-full px-3 py-1 text-xs font-black bg-white text-black border-2 border-black hover:scale-105 transition"
-            >
-              AI ✨
-            </button>
+              <button
+                onClick={useAiImage}
+                className="px-4 py-2 rounded-full bg-black text-white text-xs font-black"
+              >
+                AI ✨
+              </button>
+            </div>
           </>
         )}
 
@@ -233,15 +242,25 @@ export function CharacterCard({
       </div>
 
       {/* NAME */}
-      <h3 className="text-2xl font-black mb-2 text-black">{character.name}</h3>
+      <h3 className="text-lg font-black mb-1 leading-tight">
+        {character.name}
+      </h3>
 
-      {/* TRAITS */}
+      {/* TRAITS (single line max) */}
       {traits.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-3">
-          {traits.map((t, i) => (
+        <div className="flex gap-2 mb-2 overflow-hidden">
+          {traits.slice(0, 3).map((t, i) => (
             <span
               key={i}
-              className={`${TRAIT_COLORS[i % TRAIT_COLORS.length]} text-white px-3 py-1 rounded-full text-xs font-black`}
+              className={`
+                ${TRAIT_COLORS[i % TRAIT_COLORS.length]}
+                text-white
+                px-2 py-0.5
+                rounded-full
+                text-[11px]
+                font-black
+                whitespace-nowrap
+              `}
             >
               {t}
             </span>
@@ -255,43 +274,46 @@ export function CharacterCard({
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
           onBlur={saveDescription}
-          className="w-full rounded-xl p-3 mb-3 text-sm font-medium border-[3px] border-black"
+          className="w-full rounded-lg p-2 text-sm border-2 border-black mb-2"
           rows={3}
           autoFocus
         />
       ) : (
-        <p className="text-sm text-slate-700 mb-3 leading-relaxed">
-          {desc || <span className="italic text-slate-400">No description yet</span>}
+        <p className="text-sm text-slate-700 mb-2 leading-snug line-clamp-2">
+          {desc || (
+            <span className="italic text-slate-400">
+              No description yet
+            </span>
+          )}
         </p>
       )}
 
-      {/* ACTION BAR */}
-      <div className="flex items-center justify-between gap-3 mt-2">
+      {/* ACTION ROW */}
+      <div className="flex items-center justify-between mt-1">
 
         {!locked && (
           <button
             onClick={() => setEditingDesc(true)}
-            className="flex items-center gap-1 text-sm font-black hover:underline"
+            className="text-xs font-black underline"
           >
-            <Pencil className="w-4 h-4" />
-            Edit description
+            Edit
           </button>
         )}
 
         {locked ? (
           <button
             onClick={unlockCharacter}
-            className="px-5 py-2 rounded-full font-black text-sm bg-yellow-400 text-black hover:scale-105 transition"
+            className="px-3 py-1 rounded-full bg-yellow-400 text-black text-xs font-black"
           >
-            <Unlock className="w-4 h-4 inline mr-1" />
+            <Unlock className="w-3 h-3 inline mr-1" />
             Unlock
           </button>
         ) : (
           <button
             onClick={lockCharacter}
-            className="px-5 py-2 rounded-full font-black text-sm bg-black text-white hover:scale-105 transition"
+            className="px-3 py-1 rounded-full bg-black text-white text-xs font-black"
           >
-            <Lock className="w-4 h-4 inline mr-1" />
+            <Lock className="w-3 h-3 inline mr-1" />
             Lock
           </button>
         )}

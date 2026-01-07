@@ -45,6 +45,7 @@ export default async function StoryPagesPage({
   return (
     <StoryReaderClient
       title={story.title}
+      id={story.id}
       pages={pages.map(p => ({
         id: p.id,
         pageNumber: p.pageNumber,

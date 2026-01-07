@@ -54,7 +54,7 @@ export default function MobileStoryEditor() {
   return (
     <div className="fixed inset-0 bg-[#FAF9F6] flex flex-col font-sans overflow-hidden">
       
-      --- MINIMAL HEADER ---
+      {/* --- MINIMAL HEADER --- */}
       <nav className="flex-none px-6 py-4 flex items-center justify-between border-b border-stone-200/40 bg-white/50 backdrop-blur-md">
         <button onClick={() => router.push(`/stories/${storyId}`)} className="text-[#4635B1]"><ChevronLeft /></button>
         <div className="text-center">
