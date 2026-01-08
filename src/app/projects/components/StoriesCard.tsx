@@ -31,49 +31,49 @@ const STATUS_CONFIG: Record<string, {
     label: "Draft",
     icon: BookOpen,
     href: id => `/stories/${id}/hub`,
-    badge: "bg-amber-200 text-black",
+    badge: "bg-amber-100 text-amber-800",
   },
   extracting: {
     label: "Finding characters",
     icon: Sparkles,
     href: id => `/stories/${id}/hub`,
-    badge: "bg-purple-200 text-black",
+    badge: "bg-fuchsia-100 text-fuchsia-700",
   },
   world_ready: {
     label: "Characters",
     icon: Users2,
     href: id => `/stories/${id}/characters`,
-    badge: "bg-indigo-200 text-black",
+    badge: "bg-indigo-100 text-indigo-700",
   },
   style_ready: {
     label: "Style",
     icon: Palette,
     href: id => `/stories/${id}/design`,
-    badge: "bg-sky-200 text-black",
+    badge: "bg-sky-100 text-sky-700",
   },
   awaiting_payment: {
     label: "Unlock art",
     icon: Lock,
     href: id => `/stories/${id}/checkout`,
-    badge: "bg-rose-200 text-black",
+    badge: "bg-rose-100 text-rose-700",
   },
   generating: {
     label: "Illustrating",
     icon: Paintbrush,
     href: id => `/stories/${id}/studio`,
-    badge: "bg-indigo-200 text-black",
+    badge: "bg-violet-100 text-violet-700",
   },
   publishing: {
     label: "Printing",
     icon: Loader2,
     href: () => "#",
-    badge: "bg-stone-200 text-black",
+    badge: "bg-stone-100 text-stone-700",
   },
   completed: {
     label: "Complete",
     icon: PackageCheck,
     href: id => `/orders/${id}`,
-    badge: "bg-emerald-200 text-black",
+    badge: "bg-emerald-100 text-emerald-700",
   },
 };
 
@@ -85,43 +85,68 @@ export default function StoriesCard({ story }: { story: Story }) {
     <div
       className="
         group relative
-        bg-white border-4 border-black rounded-3xl
+        bg-white
+        rounded-[1rem]
+        border border-slate-200
         overflow-hidden
-        hover:scale-[1.02] transition-transform
-        hover:shadow-2xl
+        shadow-[0_20px_40px_-20px_rgba(0,0,0,0.25)]
+        transition
+        hover:-translate-y-1
+        hover:shadow-[0_30px_70px_-25px_rgba(168,85,247,0.45)]
       "
     >
       {/* COVER */}
-      <div className="relative aspect-[4/3] bg-gradient-to-br from-stone-100 to-stone-200">
+      <div className="relative aspect-[4/3] overflow-hidden">
         {story.coverImageUrl ? (
           <img
             src={story.coverImageUrl}
             alt={story.title}
-            className="absolute inset-0 h-full w-full object-cover"
+            className="
+              absolute inset-0 h-full w-full object-cover
+              transition-transform duration-500
+              group-hover:scale-[1.05]
+            "
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <BookOpen className="w-16 h-16 text-black/20" />
+          <div className="
+            absolute inset-0
+            flex items-center justify-center
+            bg-gradient-to-br from-pink-100 via-violet-100 to-blue-100
+          ">
+            <BookOpen className="w-16 h-16 text-violet-400" />
           </div>
         )}
 
         {/* STATUS BADGE */}
-        <div className="absolute top-3 left-3">
-          <span className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${config.badge}`}>
-            <StatusIcon className="w-3 h-3" />
+        <div className="absolute top-4 left-4">
+          <span
+            className={`
+              inline-flex items-center gap-1.5
+              px-3 py-1.5
+              rounded-full
+              text-xs font-semibold
+              backdrop-blur
+              ${config.badge}
+            `}
+          >
+            <StatusIcon className="w-3.5 h-3.5" />
             {config.label}
           </span>
         </div>
       </div>
 
       {/* CONTENT */}
-      <div className="p-5 flex flex-col gap-3">
-        <h3 className="font-black text-xl leading-tight line-clamp-2">
+      <div className="p-6 flex flex-col gap-4">
+        <h3 className="
+          font-black text-xl leading-tight
+          line-clamp-2
+          text-slate-900
+        ">
           {story.title || "Untitled story"}
         </h3>
 
-        <p className="text-xs text-gray-500 flex items-center gap-1">
-          <Clock className="w-3 h-3" />
+        <p className="text-xs text-slate-500 flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5" />
           {story.updatedAt
             ? `Updated ${new Date(story.updatedAt).toLocaleDateString()}`
             : "Just created"}
@@ -131,9 +156,14 @@ export default function StoriesCard({ story }: { story: Story }) {
           href={config.href(story.id)}
           className="
             mt-2 inline-flex items-center justify-center
-            rounded-xl bg-black text-white
-            py-3 text-sm font-bold
-            hover:scale-105 transition
+            rounded-full
+            bg-gradient-to-r from-pink-500 via-violet-500 to-blue-500
+            px-6 py-3
+            text-sm font-black text-white
+            shadow-md
+            transition
+            hover:scale-[1.04]
+            hover:shadow-lg
           "
         >
           Open story

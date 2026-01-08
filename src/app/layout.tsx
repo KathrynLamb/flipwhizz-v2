@@ -1,17 +1,25 @@
+// src/app/layout.tsx
+
+import type { Metadata } from "next";
 import { NextAuthProvider } from "@/components/next-auth-provider";
 import "./globals.css";
-// import { NextAuthProvider } from "@/components/next-auth-provider";
 
-export const metadata = {
-  title: "Flip Whizz",
+export const metadata: Metadata = {
+  title: "FlipWhizz",
   description: "AI-powered story builder",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
       <body>
-        <NextAuthProvider>{children}</NextAuthProvider>
+        <NextAuthProvider>
+          {children}
+        </NextAuthProvider>
       </body>
     </html>
   );
