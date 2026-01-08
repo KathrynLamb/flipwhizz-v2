@@ -157,7 +157,7 @@ export default function StoriesCard({ story }: { story: Story }) {
           className="
             mt-2 inline-flex items-center justify-center
             rounded-full
-            bg-gradient-to-r from-pink-500 via-violet-500 to-blue-500
+            bg-gradient-to-r from-pink-500 to-purple-400
             px-6 py-3
             text-sm font-black text-white
             shadow-md

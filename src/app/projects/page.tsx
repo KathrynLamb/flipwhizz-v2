@@ -67,12 +67,12 @@ export default async function ProjectsIndexPage() {
       </div>
 
       {/* Header */}
-      <header className="relative z-10 border-b border-gray-200 bg-white/90 backdrop-blur-sm">
+      <header className="relative z-10 border-b border-gray-200 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent leading-tight backdrop-blur-sm">
         <div className="mx-auto max-w-7xl py-2 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-1 group">
             <div className="relative">
               <Image
-                src="/flipwhizz_logo.png"
+                src="/Flipwhizz_logo.png"
                 alt="FlipWhizz"
                 width={120}
                 height={120}
@@ -80,7 +80,7 @@ export default async function ProjectsIndexPage() {
                 className="group-hover:scale-110 transition-transform"
               />
             </div>
-            <span className="text-2xl font-black tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+            <span className="text-2xl font-black tracking-tight bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">
               FlipWhizz
             </span>
           </Link>
@@ -90,7 +90,7 @@ export default async function ProjectsIndexPage() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative z-10 px-6 pt-4 pb-4">
+      <section className="relative z-10 px-6 pt-4 pb-4 bg-white">
         <div className="mx-auto max-w-7xl">
           {/* <div className="inline-flex items-center gap-2 mb-8">
             {[...Array(3)].map((_, i) => (
@@ -112,7 +112,7 @@ export default async function ProjectsIndexPage() {
       </section>
 
       {/* Content Section */}
-      <section className="relative z-10 px-6 pb-32">
+      <section className="relative z-10 px-6 pb-32 bg-white">
         <div className="mx-auto max-w-7xl">
           {userStories.length === 0 ? (
             <div className="relative">
