@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Stars, Wand2, Check } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AuthorLetter from '@/app/stories/components/AuthorLetter';
+import MobileStoryLayout from '@/app/stories/components/MobileStoryLayout';
 
 /* ======================================================
    TYPES
@@ -58,6 +59,8 @@ export default function StoryReaderClient({
   /** 🔑 hydration safety */
   const [mounted, setMounted] = useState(false);
   const [authorLetter, setAuthorLetter] = useState<AuthorLetterApiResponse | null>(null);
+ 
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
 useEffect(() => {
   fetch(`/api/stories/${id}/author-letter`, {
@@ -104,13 +107,20 @@ if (!mounted) {
   return null;
 }
 
+// const isMobile =
+//   typeof window !== 'undefined' && window.innerWidth < 768;
 
-
-
-  return (
+  return isMobile ? (
+    <MobileStoryLayout
+      page={<PageCard page={pages[index]} />}
+      authorLetter={adaptedAuthorLetter}
+      onAccept={() => setEditMode('accepted')}
+      onEdit={() => setEditMode('editing')}
+    />
+  ) : (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-fuchsia-50 to-amber-50">
       <div className="max-w-7xl mx-auto px-6 py-10">
-
+  
         {/* TITLE */}
         <h1
           className={`
@@ -123,14 +133,11 @@ if (!mounted) {
         >
           {title}
         </h1>
-
+  
         {/* MAIN GRID */}
         <div className="grid lg:grid-cols-[1fr_420px] gap-8 items-start">
-
-          {/* ==================================================
-              LEFT: BOOK SPREAD
-          ================================================== */}
-
+  
+          {/* LEFT: BOOK SPREAD */}
           {mounted && (
             <AnimatePresence mode="wait">
               <motion.div
@@ -138,74 +145,65 @@ if (!mounted) {
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
-
-              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-              className="
-                bg-white rounded-[2.75rem]
-                shadow-[0_30px_80px_-30px_rgba(0,0,0,0.25)]
-                px-8 py-10
-              "
-            >
-              <div className="grid gap-8 md:grid-cols-2">
-                <PageCard page={spreads[index][0]} />
-                <PageCard page={spreads[index][1]} />
-              </div>
-
-              {/* NAV */}
-              <div className="mt-10 flex items-center justify-between border-t border-stone-100 pt-6">
-                <button
-                  disabled={index === 0}
-                  onClick={() => setIndex(i => i - 1)}
-                  className="
-                    px-5 py-2 rounded-full
-                    font-bold text-sm
-                    bg-stone-100 text-stone-700
-                    hover:bg-stone-200
-                    disabled:opacity-30
-                  "
-                >
-                  ← Previous
-                </button>
-
-                <button
-                  disabled={index === spreads.length - 1}
-                  onClick={() => setIndex(i => i + 1)}
-                  className="
-                    px-5 py-2 rounded-full
-                    font-bold text-sm
-                    bg-gradient-to-r from-violet-600 to-fuchsia-600
-                    text-white
-                    hover:scale-[1.04]
-                    transition
-                    disabled:opacity-30
-                  "
-                >
-                  Next →
-                </button>
-              </div>
-            </motion.div>
-          </AnimatePresence>
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="
+                  bg-white rounded-[2.75rem]
+                  shadow-[0_30px_80px_-30px_rgba(0,0,0,0.25)]
+                  px-8 py-10
+                "
+              >
+                <div className="grid gap-8 md:grid-cols-2">
+                  <PageCard page={spreads[index][0]} />
+                  <PageCard page={spreads[index][1]} />
+                </div>
+  
+                {/* NAV */}
+                <div className="mt-10 flex items-center justify-between border-t border-stone-100 pt-6">
+                  <button
+                    disabled={index === 0}
+                    onClick={() => setIndex(i => i - 1)}
+                    className="
+                      px-5 py-2 rounded-full
+                      font-bold text-sm
+                      bg-stone-100 text-stone-700
+                      hover:bg-stone-200
+                      disabled:opacity-30
+                    "
+                  >
+                    ← Previous
+                  </button>
+  
+                  <button
+                    disabled={index === spreads.length - 1}
+                    onClick={() => setIndex(i => i + 1)}
+                    className="
+                      px-5 py-2 rounded-full
+                      font-bold text-sm
+                      bg-gradient-to-r from-violet-600 to-fuchsia-600
+                      text-white
+                      hover:scale-[1.04]
+                      transition
+                      disabled:opacity-30
+                    "
+                  >
+                    Next →
+                  </button>
+                </div>
+              </motion.div>
+            </AnimatePresence>
           )}
-          {/* ==================================================
-              RIGHT: AUTHOR COLLAB PANEL
-          ================================================== */}
+  
+          {/* RIGHT: AUTHOR COLLAB PANEL */}
           <div className="sticky top-8 space-y-6">
-
-            {/* AUTHOR LETTER */}
-
-            {/* NOTE TO AI: this author letter should be coming from the ai cowriter about the actual draft and inviting edits adn feedback or just proceed if the user is happy with is.  */}
-            
+  
             {adaptedAuthorLetter && (
-                <AuthorLetter
-                  data={adaptedAuthorLetter}
-                  onRespond={() => setEditMode("editing")}
-                  onContinue={() => setEditMode("accepted")}
-                />
-              )}
-
-
-
-            {/* DECISION */}
+              <AuthorLetter
+                data={adaptedAuthorLetter}
+                onRespond={() => setEditMode('editing')}
+                onContinue={() => setEditMode('accepted')}
+              />
+            )}
+  
             {editMode === 'undecided' && (
               <div className="bg-white rounded-3xl shadow-lg p-6 space-y-3">
                 <button
@@ -219,7 +217,7 @@ if (!mounted) {
                 >
                   Accept this as-is
                 </button>
-
+  
                 <button
                   onClick={() => setEditMode('editing')}
                   className="
@@ -233,18 +231,16 @@ if (!mounted) {
                 </button>
               </div>
             )}
-
-            {/* REWRITE */}
+  
             {editMode === 'editing' && (
               <div className="bg-white rounded-3xl shadow-xl p-6 space-y-4">
                 <h4 className="font-bold text-stone-800">
                   How should this change?
                 </h4>
-
+  
                 <textarea
                   value={rewriteInstruction}
                   onChange={(e) => setRewriteInstruction(e.target.value)}
-                  placeholder="e.g. Make it funnier, shorten it, add more emotion…"
                   className="
                     w-full min-h-[120px]
                     rounded-2xl border border-stone-200
@@ -253,7 +249,7 @@ if (!mounted) {
                     resize-none
                   "
                 />
-
+  
                 <button
                   disabled={!rewriteInstruction.trim()}
                   className="
@@ -268,17 +264,9 @@ if (!mounted) {
                   <Wand2 className="w-5 h-5" />
                   Rewrite this spread
                 </button>
-
-                <button
-                  onClick={() => setEditMode('undecided')}
-                  className="text-xs text-stone-500 underline text-center w-full"
-                >
-                  Go back
-                </button>
               </div>
             )}
-
-            {/* CONFIRM */}
+  
             <button
               onClick={() => router.push(`/stories/${id}/hub`)}
               disabled={editMode === 'editing'}
@@ -300,8 +288,7 @@ if (!mounted) {
       </div>
     </div>
   );
-}
-
+            }  
 /* ======================================================
    HELPERS
 ====================================================== */
