@@ -1,7 +1,14 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Upload, Sparkles, Pencil, Lock, Unlock } from 'lucide-react';
+import {
+  Trash2,
+  Upload,
+  Sparkles,
+  Pencil,
+  Lock,
+  Unlock,
+} from 'lucide-react';
 
 type Character = {
   id: string;
@@ -31,11 +38,9 @@ const TRAIT_COLORS = [
 ];
 
 export function CharacterCard({
-  storyId,
   character,
   index,
 }: {
-  storyId: string;
   character: Character;
   index: number;
 }) {
@@ -51,6 +56,7 @@ export function CharacterCard({
   const [editingDesc, setEditingDesc] = useState(false);
   const [desc, setDesc] = useState(character.description ?? '');
   const [locked, setLocked] = useState(character.locked);
+  const [deleting, setDeleting] = useState(false);
 
   const traits = character.personalityTraits
     ? character.personalityTraits.split(',').map(t => t.trim())
@@ -58,9 +64,7 @@ export function CharacterCard({
 
   const displayImage = localPreview || imageUrl;
 
-  /* ---------------------------------------------
-     IMAGE UPLOAD
-  --------------------------------------------- */
+  /* ---------------- IMAGE UPLOAD ---------------- */
 
   function isHeic(file: File) {
     return (
@@ -137,8 +141,7 @@ export function CharacterCard({
   }
 
   async function lockCharacter() {
-    const ok = confirm('Lock this character? Their appearance will be frozen.');
-    if (!ok) return;
+    if (!confirm('Lock this character? Their appearance will be frozen.')) return;
 
     await fetch('/api/characters/lock', {
       method: 'POST',
@@ -151,8 +154,7 @@ export function CharacterCard({
   }
 
   async function unlockCharacter() {
-    const ok = confirm('Unlock this character for editing?');
-    if (!ok) return;
+    if (!confirm('Unlock this character for editing?')) return;
 
     await fetch('/api/characters/unlock', {
       method: 'POST',
@@ -163,22 +165,34 @@ export function CharacterCard({
     setLocked(false);
   }
 
-  return (
-    <div className="
-      group relative
-      bg-white
-      border-[2px] border-black
-      rounded-2xl
-      p-4
-      transition-all
-      hover:shadow-xl
-    ">
+  async function deleteCharacter() {
+    if (!confirm(`Delete ${character.name}? This cannot be undone.`)) return;
 
+    setDeleting(true);
+    try {
+      await fetch(`/api/characters/${character.id}`, { method: 'DELETE' });
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div
+      className="
+        group relative
+        bg-white
+        border-[3px] border-black
+        rounded-3xl
+        p-4
+        hover:shadow-2xl
+        transition
+      "
+    >
       {/* IMAGE */}
       <div
         className={`
           relative aspect-[4/5]
-          rounded-xl
+          rounded-2xl
           bg-gradient-to-br ${gradient}
           overflow-hidden
           mb-3
@@ -209,18 +223,18 @@ export function CharacterCard({
               }
             />
 
-            {/* Overlay actions */}
             <div className="
               absolute inset-0
               bg-black/40
               opacity-0 group-hover:opacity-100
               transition
-              flex items-center justify-center gap-3
+              flex items-center justify-center gap-2
             ">
               <button
                 onClick={() => fileRef.current?.click()}
                 className="px-4 py-2 rounded-full bg-white text-black text-xs font-black"
               >
+                <Upload className="w-3 h-3 inline mr-1" />
                 Upload
               </button>
 
@@ -228,7 +242,8 @@ export function CharacterCard({
                 onClick={useAiImage}
                 className="px-4 py-2 rounded-full bg-black text-white text-xs font-black"
               >
-                AI ✨
+                <Sparkles className="w-3 h-3 inline mr-1" />
+                AI
               </button>
             </div>
           </>
@@ -242,11 +257,11 @@ export function CharacterCard({
       </div>
 
       {/* NAME */}
-      <h3 className="text-lg font-black mb-1 leading-tight">
+      <h3 className="text-lg font-black mb-1">
         {character.name}
       </h3>
 
-      {/* TRAITS (single line max) */}
+      {/* TRAITS */}
       {traits.length > 0 && (
         <div className="flex gap-2 mb-2 overflow-hidden">
           {traits.slice(0, 3).map((t, i) => (
@@ -259,7 +274,6 @@ export function CharacterCard({
                 rounded-full
                 text-[11px]
                 font-black
-                whitespace-nowrap
               `}
             >
               {t}
@@ -274,12 +288,12 @@ export function CharacterCard({
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
           onBlur={saveDescription}
-          className="w-full rounded-lg p-2 text-sm border-2 border-black mb-2"
+          className="w-full rounded-xl p-2 text-sm border-2 border-black mb-2"
           rows={3}
           autoFocus
         />
       ) : (
-        <p className="text-sm text-slate-700 mb-2 leading-snug line-clamp-2">
+        <p className="text-sm text-slate-700 mb-2 line-clamp-2">
           {desc || (
             <span className="italic text-slate-400">
               No description yet
@@ -290,33 +304,50 @@ export function CharacterCard({
 
       {/* ACTION ROW */}
       <div className="flex items-center justify-between mt-1">
-
         {!locked && (
           <button
             onClick={() => setEditingDesc(true)}
-            className="text-xs font-black underline"
+            className="text-xs font-black underline flex items-center gap-1"
           >
+            <Pencil className="w-3 h-3" />
             Edit
           </button>
         )}
 
-        {locked ? (
+        <div className="flex gap-2">
+          {locked ? (
+            <button
+              onClick={unlockCharacter}
+              className="px-3 py-1 rounded-full bg-yellow-400 text-black text-xs font-black"
+            >
+              <Unlock className="w-3 h-3 inline mr-1" />
+              Unlock
+            </button>
+          ) : (
+            <button
+              onClick={lockCharacter}
+              className="px-3 py-1 rounded-full bg-black text-white text-xs font-black"
+            >
+              <Lock className="w-3 h-3 inline mr-1" />
+              Lock
+            </button>
+          )}
+
           <button
-            onClick={unlockCharacter}
-            className="px-3 py-1 rounded-full bg-yellow-400 text-black text-xs font-black"
+            onClick={deleteCharacter}
+            disabled={deleting}
+            className="
+              w-8 h-8
+              rounded-full
+              border-2 border-black
+              flex items-center justify-center
+              hover:bg-red-500 hover:text-white
+            "
+            title="Delete character"
           >
-            <Unlock className="w-3 h-3 inline mr-1" />
-            Unlock
+            <Trash2 className="w-4 h-4" />
           </button>
-        ) : (
-          <button
-            onClick={lockCharacter}
-            className="px-3 py-1 rounded-full bg-black text-white text-xs font-black"
-          >
-            <Lock className="w-3 h-3 inline mr-1" />
-            Lock
-          </button>
-        )}
+        </div>
       </div>
     </div>
   );

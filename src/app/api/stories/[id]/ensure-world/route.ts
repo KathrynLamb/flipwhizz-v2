@@ -17,14 +17,11 @@ export async function POST(
 ) {
   const { id: storyId } = await params;
 
-  console.log("🔵 ensure-world called for story:", storyId);
-
-  /* --------------------------------------------------
-     1️⃣ Load core story + pages (hard requirement)
-  -------------------------------------------------- */
+  console.log("🔵 ensure-world called:", storyId);
 
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
+    columns: { id: true, status: true },
   });
 
   if (!story) {
@@ -38,31 +35,37 @@ export async function POST(
   });
 
   if (pages.length === 0) {
-    return NextResponse.json(
-      { error: "Story has no pages" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Story has no pages" }, { status: 400 });
   }
 
-  /* --------------------------------------------------
-     2️⃣ Inspect current world state
-  -------------------------------------------------- */
+  // If already running, don’t trigger again.
+  // if (story.status === "extracting_running") {
+  //   return NextResponse.json({
+  //     status: "processing",
+  //     message: "Extraction already running",
+  //   });
+  // }
+
+  const pageIds = pages.map((p) => p.id);
 
   const [charJoins, locJoins, presence, styleGuide] = await Promise.all([
     db.query.storyCharacters.findMany({
       where: eq(storyCharacters.storyId, storyId),
+      columns: { storyId: true },
     }),
     db.query.storyLocations.findMany({
       where: eq(storyLocations.storyId, storyId),
+      columns: { storyId: true },
     }),
-    db.query.storyPageCharacters.findMany({
-      where: inArray(
-        storyPageCharacters.pageId,
-        pages.map((p) => p.id)
-      ),
-    }),
+    pageIds.length
+      ? db.query.storyPageCharacters.findMany({
+          where: inArray(storyPageCharacters.pageId, pageIds),
+          columns: { id: true },
+        })
+      : Promise.resolve([]),
     db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),
+      columns: { summary: true },
     }),
   ]);
 
@@ -71,46 +74,36 @@ export async function POST(
   const hasPresence = presence.length > 0;
   const hasStyleText = !!styleGuide?.summary;
 
-  console.log("📊 Current state:", {
+  const missingWorld = !hasCharacters || !hasLocations || !hasPresence;
+
+  console.log("📊 ensure-world state:", {
+    status: story.status,
     hasCharacters,
     hasLocations,
     hasPresence,
     hasStyleText,
   });
 
-  /* --------------------------------------------------
-     3️⃣ Dispatch ONLY what is missing (idempotent)
-  -------------------------------------------------- */
+  if (missingWorld || !hasStyleText) {
+    // IMPORTANT: set status to extracting so the Inngest job can CLAIM
+    await db
+      .update(stories)
+      .set({ status: "extracting", updatedAt: new Date() })
+      .where(eq(stories.id, storyId));
 
-  let jobsDispatched = false;
+    if (missingWorld) {
+      console.log("🚀 Dispatching story/extract-world");
+      await inngest.send({ name: "story/extract-world", data: { storyId } });
+    }
 
-  if (!hasCharacters || !hasLocations || !hasPresence) {
-    console.log("🚀 Dispatching extract-world job...");
-    await inngest.send({
-      name: "story/extract-world",
-      data: { storyId },
-    });
-    jobsDispatched = true;
-  }
+    if (!hasStyleText) {
+      console.log("🚀 Dispatching story/generate.style.text");
+      await inngest.send({ name: "story/generate.style.text", data: { storyId } });
+    }
 
-  if (!hasStyleText) {
-    console.log("🚀 Dispatching style generation job...");
-    await inngest.send({
-      name: "story/generate.style.text",
-      data: { storyId },
-    });
-    jobsDispatched = true;
-  }
-
-  /* --------------------------------------------------
-     4️⃣ Return immediately with status
-  -------------------------------------------------- */
-
-  if (jobsDispatched) {
-    console.log("✅ Jobs dispatched, returning...");
     return NextResponse.json({
       status: "processing",
-      message: "World extraction jobs dispatched",
+      message: "Jobs dispatched",
       hasCharacters,
       hasLocations,
       hasPresence,
@@ -118,10 +111,9 @@ export async function POST(
     });
   }
 
-  console.log("✅ World already complete!");
   return NextResponse.json({
     status: "complete",
-    message: "World already exists",
+    message: "World already complete",
     hasCharacters,
     hasLocations,
     hasPresence,

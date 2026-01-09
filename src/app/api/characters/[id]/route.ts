@@ -1,4 +1,4 @@
-// characters/[id]/route
+// app/api/characters/[id]/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
@@ -11,7 +11,6 @@ export async function PATCH(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
-    // ✅ MUST await params in App Router
     const { id: characterId } = await ctx.params;
     const body = await req.json();
 
@@ -40,6 +39,33 @@ export async function PATCH(
     console.error("[CHARACTER PATCH ERROR]", err);
     return NextResponse.json(
       { error: "Failed to update character" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  req: Request,
+  ctx: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: characterId } = await ctx.params;
+
+    console.log("Deleting character:", characterId);
+
+    // Delete the character from the database
+    await db
+      .delete(characters)
+      .where(eq(characters.id, characterId));
+
+    return NextResponse.json({ 
+      success: true,
+      message: "Character deleted successfully" 
+    });
+  } catch (err) {
+    console.error("[CHARACTER DELETE ERROR]", err);
+    return NextResponse.json(
+      { error: "Failed to delete character" },
       { status: 500 }
     );
   }

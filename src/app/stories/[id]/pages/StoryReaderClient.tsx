@@ -268,7 +268,7 @@ if (!mounted) {
             )}
   
             <button
-              onClick={() => router.push(`/stories/${id}/hub`)}
+              onClick={() => router.push(`/stories/${id}/extract`)}
               disabled={editMode === 'editing'}
               className="
                 w-full py-4 rounded-full

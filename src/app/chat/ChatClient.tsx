@@ -368,6 +368,8 @@ import {
   Zap,
   BookOpen
 } from "lucide-react";
+import Link from "next/link";
+import Image from "next/image";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
@@ -497,17 +499,25 @@ export default function ChatPage() {
     <div className="min-h-screen bg-white">
       
       {/* Top Bar */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <button
-            onClick={() => router.push("/projects")}
-            className="flex items-center gap-2 text-gray-600 hover:text-black transition-colors font-medium"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Projects</span>
-          </button>
-
-          <div className="flex items-center gap-2 px-4 py-2 bg-purple-100 rounded-full">
+      <header className="relative z-10 border-b border-gray-200 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent leading-tight backdrop-blur-sm">
+        <div className="mx-auto max-w-7xl py-2 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-1 group">
+            <div className="relative">
+              <Image
+                src="/Flipwhizz_logo.png"
+                alt="FlipWhizz"
+                width={120}
+                height={120}
+                priority
+                className="group-hover:scale-110 transition-transform"
+              />
+            </div>
+            <span className="text-2xl font-black tracking-tight bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">
+              FlipWhizz
+            </span>
+          </Link>
+        </div>
+        <div className="flex items-center gap-2 px-4 py-2 bg-purple-100 rounded-full">
             {isSyncing ? (
               <>
                 <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
@@ -520,8 +530,7 @@ export default function ChatPage() {
               </>
             )}
           </div>
-        </div>
-      </div>
+      </header>
 
       <div className="pt-24 pb-32 px-6">
         <div className="max-w-4xl mx-auto">

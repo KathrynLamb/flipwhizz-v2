@@ -1,4 +1,6 @@
 import { notFound, redirect } from "next/navigation";
+import { headers } from "next/headers";
+
 import { db } from "@/db";
 import {
   stories,
@@ -28,6 +30,9 @@ export default async function DesignPage({
 
   const { id: storyId } = await params;
 
+
+  
+
   /* -------------------------------------------------
      STORY
   -------------------------------------------------- */
@@ -48,12 +53,58 @@ export default async function DesignPage({
     limit: 2,
   });
 
+
+
+
+
+  async function ensurePagePresence(
+    storyId: string,
+    pageNumbers: number[]
+  ) {
+    if (!pageNumbers.length) return;
+  
+    const h = await headers(); // ✅ MUST await
+  
+    const host =
+      h.get("x-forwarded-host") ??
+      h.get("host");
+  
+    if (!host) {
+      console.warn("No host header available, skipping page presence");
+      return;
+    }
+  
+    const protocol =
+      process.env.NODE_ENV === "development"
+        ? "http"
+        : "https";
+  
+    const url = `${protocol}://${host}/api/stories/${storyId}/page-presence?pages=${pageNumbers.join(",")}`;
+  
+    await fetch(url, {
+      cache: "no-store",
+    });
+  }
+  
+  
+  
+
+  // 🔐 GUARANTEE PAGE PRESENCE EXISTS (fallback-safe)
+await ensurePagePresence(
+  storyId,
+  pages.map((p) => p.pageNumber)
+);
+
+
   if (pages.length === 0) {
     redirect(`/stories/${storyId}/view`);
   }
 
   const leftText = pages[0]?.text ?? "";
   const rightText = pages[1]?.text ?? "";
+
+
+
 
   /* -------------------------------------------------
      STYLE GUIDE + REFERENCES
@@ -174,9 +225,14 @@ const clientStyle: ClientStyleGuide = {
     referenceImageUrl: l.referenceImageUrl ?? null,
   }));
 
+  const hadPresence =
+  characterEntities.length > 0 || locationEntities.length > 0;
+
   /* -------------------------------------------------
      RENDER
   -------------------------------------------------- */
+
+
 
   return (
     <main>
@@ -188,6 +244,7 @@ const clientStyle: ClientStyleGuide = {
         locations={locationEntities}
         storyStatus={story.status as any}
         sampleImage={guide?.sampleIllustrationUrl}
+        presenceReady={hadPresence}
       />
     </main>
   );

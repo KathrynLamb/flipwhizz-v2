@@ -90,7 +90,8 @@ export default function InitialStyleDesignEditor({
   characters,
   locations,
   storyStatus,
-  sampleImage
+  sampleImage,
+  presenceReady,
 }: {
   style: ClientStyleGuide;
   leftText: string;
@@ -99,6 +100,7 @@ export default function InitialStyleDesignEditor({
   locations: Entity[];
   storyStatus: StoryStatus;
   sampleImage: string | null | undefined;
+  presenceReady?: boolean;
 }) {
   /* ---------------- STATE ---------------- */
 

@@ -68,7 +68,6 @@ export default function CharactersClient({
             {characters.map((char, idx) => (
               <CharacterCard
                 key={char.id}
-                storyId={storyId}
                 character={char}
                 index={idx}
               />
