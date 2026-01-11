@@ -1,60 +1,33 @@
+// src/app/api/inngest/route.ts
 import { serve } from "inngest/next";
-import { inngest } from "@/inngest/client";
-import { globalRewriteJob, extractWorldJob } from "@/inngest/functions";
-import { generateStyleSample } from "@/inngest/generateStyle"; // 👈 Import new function
-import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateSpreads"; // Import new
-import { generateBookCovers, generateSingleCover, generateWrapAroundCover } from "@/inngest/generateBookCovers";
+import { inngest } from "@/inngest/client"; // ✅ MUST be your client.ts
 
+import { globalRewriteJob, extractWorldJob } from "@/inngest/functions";
+import { buildSpreadsJob } from "@/inngest/buildSpreads";
+
+import { generateStyleSample } from "@/inngest/generateStyle";
+import {
+  generateBookSpreads,
+  generateSingleSpread,
+} from "@/inngest/generateSpreads";
+import {
+  generateBookCovers,
+  generateSingleCover,
+  generateWrapAroundCover,
+} from "@/inngest/generateBookCovers";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [
     globalRewriteJob,
     extractWorldJob,
+    buildSpreadsJob,
+
     generateStyleSample,
-    generateBookSpreads, // The Manager
-    generateSingleSpread, 
+    generateBookSpreads,
+    generateSingleSpread,
     generateBookCovers,
     generateSingleCover,
     generateWrapAroundCover,
   ],
 });
-
-
-// import { serve } from "inngest/next";
-// import { inngest } from "@/inngest/client";
-
-// // Import existing functions
-// import { 
-//   generateBookSpreads, 
-//   generateSingleSpread 
-// } from "@/inngest/generateSpreads";
-
-// import { generateStyleSample } from "@/inngest/generateStyleSample";
-// import { extractWorldJob } from "@/inngest/extractWorld";
-// import { globalRewriteJob } from "@/inngest/globalRewrite";
-
-// // Import NEW cover functions
-// import { 
-//   generateBookCovers, 
-//   generateSingleCover,
-//   generateWrapAroundCover 
-// } from "@/inngest/generateCovers";
-
-// // Register ALL functions
-// export const { GET, POST, PUT } = serve({
-//   client: inngest,
-//   functions: [
-//     // Existing functions
-//     extractWorldJob,
-//     generateBookSpreads,
-//     generateSingleSpread,
-//     generateStyleSample,
-//     globalRewriteJob,
-    
-//     // NEW cover functions
-//     generateBookCovers,
-//     generateSingleCover,
-//     generateWrapAroundCover,
-//   ],
-// });

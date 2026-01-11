@@ -265,40 +265,52 @@ export const styleGuideImages = pgTable("style_guide_images", {
 
 export const storyPageCharacters = pgTable("story_page_characters", {
   id: uuid("id").primaryKey().defaultRandom(),
+
   pageId: uuid("page_id")
     .references(() => storyPages.id, { onDelete: "cascade" })
     .notNull(),
+
   characterId: uuid("character_id")
     .references(() => characters.id, { onDelete: "cascade" })
     .notNull(),
+
+  // 🔴 LEGACY COLUMN — MUST EXIST
+  canonical: boolean("canonical").default(true),
+
   source: varchar("source", { length: 20 }).default("ai"),
-  
-  // NEW: Character state on this page
-  emotionalState: varchar("emotional_state", { length: 60 }), // happy, scared, angry, determined, etc.
-  action: text("action"), // What the character is doing on this page
-  prominence: varchar("prominence", { length: 20 }), // primary, secondary, background
-  
+
+  emotionalState: varchar("emotional_state", { length: 60 }),
+  action: text("action"),
+  prominence: varchar("prominence", { length: 20 }),
+
   createdAt: timestamp("created_at").defaultNow(),
 });
+
 
 /* ==================== PAGE LOCATION PRESENCE (enhanced) ==================== */
 
 export const storyPageLocations = pgTable("story_page_locations", {
   id: uuid("id").primaryKey().defaultRandom(),
+
   pageId: uuid("page_id")
     .references(() => storyPages.id, { onDelete: "cascade" })
     .notNull(),
+
   locationId: uuid("location_id")
     .references(() => locations.id, { onDelete: "cascade" })
     .notNull(),
+
+  // 🔴 LEGACY COLUMN — MUST EXIST
+  canonical: boolean("canonical").default(true),
+
   source: varchar("source", { length: 20 }).default("ai"),
-  
-  // NEW: Location state on this page
-  specificArea: varchar("specific_area", { length: 100 }), // "the kitchen", "front gate", etc.
-  visualFocus: text("visual_focus"), // What aspect of location to emphasize visually
-  
+
+  specificArea: varchar("specific_area", { length: 100 }),
+  visualFocus: text("visual_focus"),
+
   createdAt: timestamp("created_at").defaultNow(),
 });
+
 
 /* ==================== NARRATIVE BEATS ==================== */
 
@@ -422,4 +434,25 @@ export const orders = pgTable("orders", {
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+
+export const storySpreads = pgTable("story_spreads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+
+  storyId: uuid("story_id")
+    .references(() => stories.id, { onDelete: "cascade" })
+    .notNull(),
+
+  spreadIndex: integer("spread_index").notNull(), // 1-based
+  sceneSummary: text("scene_summary"),
+
+
+  leftPageId: uuid("left_page_id")
+    .references(() => storyPages.id, { onDelete: "set null" }),
+
+  rightPageId: uuid("right_page_id")
+    .references(() => storyPages.id, { onDelete: "set null" }),
+
+  createdAt: timestamp("created_at").defaultNow(),
 });

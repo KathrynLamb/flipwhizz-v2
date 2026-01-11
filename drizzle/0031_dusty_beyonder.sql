@@ -1,0 +1,1 @@
+ALTER TABLE "story_spreads" ADD COLUMN "scene_summary" text;

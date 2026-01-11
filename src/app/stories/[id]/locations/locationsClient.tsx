@@ -37,10 +37,21 @@ export default function LocationsClient({
   const [confirming, setConfirming] = useState(false);
 
   const [mounted, setMounted] = useState(false);
+  const [locationsLocal, setLocationsLocal] = useState(locations);
+
+useEffect(() => {
+  setLocationsLocal(locations);
+}, [locations]);
+
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  function handleDelete(id: string) {
+    setLocationsLocal(prev => prev.filter(l => l.id !== id));
+  }
+  
 
   if (!mounted) {
     // IMPORTANT: render a stable placeholder
@@ -99,14 +110,16 @@ export default function LocationsClient({
 
           {/* Character Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-            {locations.map((location, idx) => (
-                <LocationCard
-                key={location.id} 
+            {locationsLocal.map((location, idx) => (
+              <LocationCard
+                key={location.id}
                 location={location}
                 index={idx}
+                onDelete={handleDelete}
               />
             ))}
           </div>
+
 
           {/* Confirmation Section */}
           {!storyConfirmed ? (
@@ -128,27 +141,30 @@ export default function LocationsClient({
                   </p>
                   
                   <button
-                    disabled={confirming}
-                    onClick={async () => {
-                      setConfirming(true);
-                      await fetch(
-                        `/api/stories/${storyId}/confirm-characters`,
-                        { method: "POST" }
-                      );
-                      router.refresh();
-                    }}
-                    className="
-                      bg-black text-white
-                      text-xl font-black
-                      px-12 py-5 rounded-2xl
-                      hover:scale-110 transition-transform
-                      active:scale-95
-                      shadow-xl hover:shadow-2xl
-                      disabled:opacity-60 disabled:hover:scale-100
-                    "
-                  >
-                    {confirming ? 'Locking...' : 'Lock Characters! 🔒'}
-                  </button>
+                      disabled={confirming}
+                      onClick={async () => {
+                        setConfirming(true);
+
+                        await fetch(
+                          `/api/stories/${storyId}/confirm-locations`,
+                          { method: "POST" }
+                        );
+
+                        router.refresh();
+                      }}
+                      className="
+                        bg-black text-white
+                        text-xl font-black
+                        px-12 py-5 rounded-2xl
+                        hover:scale-110 transition-transform
+                        active:scale-95
+                        shadow-xl hover:shadow-2xl
+                        disabled:opacity-60 disabled:hover:scale-100
+                      "
+                    >
+                      {confirming ? "Locking..." : "Lock Locations 🔒"}
+                    </button>
+
                 </div>
               </div>
             </div>
@@ -157,7 +173,7 @@ export default function LocationsClient({
               <div className="text-7xl mb-6 animate-bounce">🎉</div>
               
               <h2 className="text-5xl font-black mb-4 text-white">
-                Characters Locked!
+                Locations Locked!
               </h2>
               
               <p className="text-xl text-white/90 mb-8 font-bold">
@@ -165,7 +181,7 @@ export default function LocationsClient({
               </p>
               
               <button
-                onClick={() => router.push(`/stories/${storyId}/hub`)}
+                onClick={() => router.push(`/stories/${storyId}/design`)}
                 className="
                   bg-white text-black
                   text-xl font-black
@@ -175,7 +191,7 @@ export default function LocationsClient({
                   shadow-xl
                 "
               >
-                Continue to Story Hub →
+                Continue to Design Hub →
               </button>
             </div>
           )}

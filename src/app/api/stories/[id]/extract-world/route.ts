@@ -1,14 +1,21 @@
-// src/app/api/stories/[id]/extract-world/route.ts
 import { NextResponse } from "next/server";
 import { inngest } from "@/inngest/client";
 
-export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(
+  req: Request,
+  context: { params: Promise<{ id: string }> }
+) {
   const { id: storyId } = await context.params;
 
   await inngest.send({
     name: "story/extract-world",
-    data: { storyId }
+    data: { storyId },
   });
 
-  return NextResponse.json({ ok: true, message: "Extraction started" });
+  
+
+  return NextResponse.json({
+    ok: true,
+    message: "World extraction started",
+  });
 }

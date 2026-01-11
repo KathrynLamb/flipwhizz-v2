@@ -19,6 +19,10 @@ export async function POST(
 
   console.log("🔵 ensure-world called:", storyId);
 
+  /* -------------------------------------------------
+     1. Load story (authoritative state)
+  -------------------------------------------------- */
+
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
     columns: { id: true, status: true },
@@ -28,6 +32,10 @@ export async function POST(
     return NextResponse.json({ error: "Story not found" }, { status: 404 });
   }
 
+  /* -------------------------------------------------
+     2. Pages must exist
+  -------------------------------------------------- */
+
   const pages = await db.query.storyPages.findMany({
     where: eq(storyPages.storyId, storyId),
     orderBy: asc(storyPages.pageNumber),
@@ -35,46 +43,51 @@ export async function POST(
   });
 
   if (pages.length === 0) {
-    return NextResponse.json({ error: "Story has no pages" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Story has no pages" },
+      { status: 400 }
+    );
   }
-
-  // If already running, don’t trigger again.
-  // if (story.status === "extracting_running") {
-  //   return NextResponse.json({
-  //     status: "processing",
-  //     message: "Extraction already running",
-  //   });
-  // }
 
   const pageIds = pages.map((p) => p.id);
 
-  const [charJoins, locJoins, presence, styleGuide] = await Promise.all([
+  /* -------------------------------------------------
+     3. Check existing world (NO side effects)
+  -------------------------------------------------- */
+
+  const [
+    characterLinks,
+    locationLinks,
+    pagePresence,
+    styleGuide,
+  ] = await Promise.all([
     db.query.storyCharacters.findMany({
       where: eq(storyCharacters.storyId, storyId),
       columns: { storyId: true },
     }),
+
     db.query.storyLocations.findMany({
       where: eq(storyLocations.storyId, storyId),
       columns: { storyId: true },
     }),
+
     pageIds.length
       ? db.query.storyPageCharacters.findMany({
           where: inArray(storyPageCharacters.pageId, pageIds),
           columns: { id: true },
         })
       : Promise.resolve([]),
+
     db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),
       columns: { summary: true },
     }),
   ]);
 
-  const hasCharacters = charJoins.length > 0;
-  const hasLocations = locJoins.length > 0;
-  const hasPresence = presence.length > 0;
-  const hasStyleText = !!styleGuide?.summary;
-
-  const missingWorld = !hasCharacters || !hasLocations || !hasPresence;
+  const hasCharacters = characterLinks.length > 0;
+  const hasLocations = locationLinks.length > 0;
+  const hasPresence = pagePresence.length > 0;
+  const hasStyleText = Boolean(styleGuide?.summary);
 
   console.log("📊 ensure-world state:", {
     status: story.status,
@@ -84,26 +97,26 @@ export async function POST(
     hasStyleText,
   });
 
-  if (missingWorld || !hasStyleText) {
-    // IMPORTANT: set status to extracting so the Inngest job can CLAIM
-    await db
-      .update(stories)
-      .set({ status: "extracting", updatedAt: new Date() })
-      .where(eq(stories.id, storyId));
+  /* -------------------------------------------------
+     4. Decide what is missing
+  -------------------------------------------------- */
 
-    if (missingWorld) {
-      console.log("🚀 Dispatching story/extract-world");
-      await inngest.send({ name: "story/extract-world", data: { storyId } });
-    }
+  const needsWorld =
+    !hasCharacters || !hasLocations || !hasPresence;
 
-    if (!hasStyleText) {
-      console.log("🚀 Dispatching story/generate.style.text");
-      await inngest.send({ name: "story/generate.style.text", data: { storyId } });
-    }
+  const needsStyle = !hasStyleText;
 
+  const needsExtraction = needsWorld || needsStyle;
+
+  /* -------------------------------------------------
+     5. Nothing missing → fetch only
+  -------------------------------------------------- */
+
+  if (!needsExtraction) {
     return NextResponse.json({
-      status: "processing",
-      message: "Jobs dispatched",
+      status: "complete",
+      mode: "fetching",
+      message: "World already complete",
       hasCharacters,
       hasLocations,
       hasPresence,
@@ -111,12 +124,49 @@ export async function POST(
     });
   }
 
+  /* -------------------------------------------------
+     6. Claim extraction (single-writer rule)
+  -------------------------------------------------- */
+
+  if (story.status !== "extracting") {
+    await db
+      .update(stories)
+      .set({ status: "extracting", updatedAt: new Date() })
+      .where(eq(stories.id, storyId));
+  }
+
+  /* -------------------------------------------------
+     7. Dispatch ONLY what is missing
+  -------------------------------------------------- */
+
+  if (needsWorld) {
+    console.log("🚀 Dispatching story/extract-world");
+    await inngest.send({
+      name: "story/extract-world",
+      data: { storyId },
+    });
+  }
+
+  if (needsStyle) {
+    console.log("🚀 Dispatching story/generate.style.text");
+    await inngest.send({
+      name: "story/generate.style.text",
+      data: { storyId },
+    });
+  }
+
+  /* -------------------------------------------------
+     8. Explicit extracting response
+  -------------------------------------------------- */
+
   return NextResponse.json({
-    status: "complete",
-    message: "World already complete",
+    status: "processing",
+    mode: "extracting",
     hasCharacters,
     hasLocations,
     hasPresence,
     hasStyleText,
+    needsWorld,
+    needsStyle,
   });
 }

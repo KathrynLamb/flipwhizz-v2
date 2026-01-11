@@ -33,9 +33,11 @@ const HOVER_EMOJIS = ['🏰', '🌳', '🏔️', '🏖️', '🌆', '🎪', '�
 export function LocationCard({
   location,
   index,
+  onDelete,
 }: {
   location: Location;
   index: number;
+  onDelete?: (id: string) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const gradient = GRADIENTS[index % GRADIENTS.length];
@@ -160,11 +162,23 @@ export function LocationCard({
   async function deleteLocation() {
     if (!confirm(`Delete ${location.name}? This cannot be undone.`)) return;
 
+    // Optimistic update
+    if (onDelete) {
+      onDelete(location.id);
+    }
+
     setDeleting(true);
     try {
-      await fetch(`/api/locations/${location.id}`, {
+      const res = await fetch(`/api/locations/${location.id}`, {
         method: 'DELETE',
       });
+
+      if (!res.ok) {
+        alert('Failed to delete location');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete location');
     } finally {
       setDeleting(false);
     }
@@ -330,9 +344,10 @@ export function LocationCard({
             className="
               w-8 h-8
               rounded-full
-              border-2 border-black
+              border-2 border-black/10
               flex items-center justify-center
               hover:bg-red-500 hover:text-white
+              disabled:opacity-50
             "
             title="Delete location"
           >

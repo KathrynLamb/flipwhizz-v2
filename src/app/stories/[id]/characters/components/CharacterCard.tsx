@@ -1,14 +1,8 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import {
-  Trash2,
-  Upload,
-  Sparkles,
-  Pencil,
-  Lock,
-  Unlock,
-} from 'lucide-react';
+import { useRef, useState } from "react";
+import { Star, Trash2, Upload, Sparkles, Pencil, Lock, Unlock } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 type Character = {
   id: string;
@@ -16,36 +10,49 @@ type Character = {
   description: string | null;
   appearance: string | null;
   personalityTraits: string | null;
-  referenceImageUrl: string | null;
   portraitImageUrl: string | null;
+  referenceImageUrl: string | null;
   locked: boolean;
 };
 
 const GRADIENTS = [
-  'from-yellow-400 to-orange-500',
-  'from-pink-400 to-rose-500',
-  'from-purple-400 to-indigo-500',
-  'from-cyan-400 to-blue-500',
-  'from-lime-400 to-green-500',
+  "from-yellow-400 to-orange-500",
+  "from-pink-400 to-rose-500",
+  "from-purple-400 to-indigo-500",
+  "from-cyan-400 to-blue-500",
+  "from-lime-400 to-green-500",
 ];
 
 const TRAIT_COLORS = [
-  'bg-pink-500',
-  'bg-purple-500',
-  'bg-blue-500',
-  'bg-green-500',
-  'bg-yellow-500',
+  "bg-pink-500",
+  "bg-purple-500",
+  "bg-blue-500",
+  "bg-green-500",
+  "bg-yellow-500",
 ];
 
+const HOVER_EMOJIS = ['⚡', '💫', '🎨', '✨', '🌟', '💥', '🚀', '🔥'];
+
 export function CharacterCard({
+  storyId,
   character,
   index,
+  onDelete,
 }: {
+  storyId: string;
   character: Character;
   index: number;
+  onDelete?: (id: string) => void;
 }) {
+  const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+
+
+  console.log("character", character)
+  
   const gradient = GRADIENTS[index % GRADIENTS.length];
+  const hoverEmoji = HOVER_EMOJIS[index % HOVER_EMOJIS.length];
+  const nameGradientClass = `bg-gradient-to-r ${gradient} bg-clip-text text-transparent`;
 
   const [uploading, setUploading] = useState(false);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
@@ -59,7 +66,7 @@ export function CharacterCard({
   const [deleting, setDeleting] = useState(false);
 
   const traits = character.personalityTraits
-    ? character.personalityTraits.split(',').map(t => t.trim())
+    ? character.personalityTraits.split(",").map(t => t.trim())
     : [];
 
   const displayImage = localPreview || imageUrl;
@@ -166,39 +173,62 @@ export function CharacterCard({
   }
 
   async function deleteCharacter() {
-    if (!confirm(`Delete ${character.name}? This cannot be undone.`)) return;
-
+    const confirmed = window.confirm(
+      `Delete ${character.name}? This action cannot be undone.`
+    );
+    
+    if (!confirmed) return;
+    
+    // Optimistic update
+    if (onDelete) {
+      onDelete(character.id);
+    }
+    
     setDeleting(true);
+    
     try {
-      await fetch(`/api/characters/${character.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/characters/${character.id}`, {
+        method: 'DELETE',
+      });
+      
+      if (!res.ok) {
+        alert('Failed to delete character');
+        if (!onDelete) {
+          router.refresh();
+        }
+      } else if (!onDelete) {
+        router.refresh();
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete character');
+      if (!onDelete) {
+        router.refresh();
+      }
     } finally {
       setDeleting(false);
     }
   }
 
   return (
-    <div
-      className="
-        group relative
-        bg-white
-        border-[3px] border-black
-        rounded-3xl
-        p-4
-        hover:shadow-2xl
-        transition
-      "
-    >
+    <div className="
+      group relative
+      bg-white
+      border-[3px] border-black
+      rounded-3xl
+      p-4
+      hover:shadow-2xl
+      transition
+    ">
       {/* IMAGE */}
-      <div
-        className={`
-          relative aspect-[4/5]
-          rounded-2xl
-          bg-gradient-to-br ${gradient}
-          overflow-hidden
-          mb-3
-          flex items-center justify-center
-        `}
-      >
+      <div className={`
+        relative aspect-[4/5]
+        rounded-2xl
+        bg-gradient-to-br ${gradient}
+        overflow-hidden
+        mb-3
+        flex items-center justify-center
+      `}>
         {displayImage ? (
           <img
             src={displayImage}
@@ -210,6 +240,13 @@ export function CharacterCard({
             {character.name.charAt(0)}
           </div>
         )}
+
+        {/* Floating emoji on hover */}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+          <div className="text-5xl group-hover:animate-bounce">
+            {hoverEmoji}
+          </div>
+        </div>
 
         {!locked && (
           <>
@@ -257,7 +294,7 @@ export function CharacterCard({
       </div>
 
       {/* NAME */}
-      <h3 className="text-lg font-black mb-1">
+      <h3 className={`text-lg mb-1 font-black tracking-tight ${nameGradientClass}`}>
         {character.name}
       </h3>
 
@@ -288,7 +325,7 @@ export function CharacterCard({
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
           onBlur={saveDescription}
-          className="w-full rounded-xl p-2 text-sm border-2 border-black mb-2"
+          className="w-full rounded-xl p-2 text-sm text-slate-500 border-2 border-black mb-2"
           rows={3}
           autoFocus
         />
@@ -307,9 +344,9 @@ export function CharacterCard({
         {!locked && (
           <button
             onClick={() => setEditingDesc(true)}
-            className="text-xs font-black underline flex items-center gap-1"
+            className="text-xs text-violet-400 hover:underline flex items-center gap-1"
           >
-            <Pencil className="w-3 h-3" />
+            <Pencil className="w-3 h-3 text-violet-400" />
             Edit
           </button>
         )}
@@ -326,7 +363,7 @@ export function CharacterCard({
           ) : (
             <button
               onClick={lockCharacter}
-              className="px-3 py-1 rounded-full bg-black text-white text-xs font-black"
+              className="px-3 py-1 rounded-full bg-violet-500 text-white text-xs font-black"
             >
               <Lock className="w-3 h-3 inline mr-1" />
               Lock
@@ -339,9 +376,10 @@ export function CharacterCard({
             className="
               w-8 h-8
               rounded-full
-              border-2 border-black
+              border-2 border-black/10
               flex items-center justify-center
               hover:bg-red-500 hover:text-white
+              disabled:opacity-50
             "
             title="Delete character"
           >

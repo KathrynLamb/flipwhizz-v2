@@ -1,9 +1,8 @@
 import { notFound, redirect } from "next/navigation";
-import { headers } from "next/headers";
-
 import { db } from "@/db";
 import {
   stories,
+  storySpreads,
   storyPages,
   storyStyleGuide,
   storyPageCharacters,
@@ -12,7 +11,7 @@ import {
   locations,
   styleGuideImages,
 } from "@/db/schema";
-import { eq, inArray, asc } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import InitialStyleDesignEditor, {
   ClientStyleGuide,
@@ -21,17 +20,17 @@ import InitialStyleDesignEditor, {
 
 export default async function DesignPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ spread?: string }>;
 }) {
   /* -------------------------------------------------
      PARAMS
   -------------------------------------------------- */
 
   const { id: storyId } = await params;
-
-
-  
+  const { spread } = (await searchParams) ?? {};
 
   /* -------------------------------------------------
      STORY
@@ -40,145 +39,49 @@ export default async function DesignPage({
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
   });
-  console.log("story", story)
+
   if (!story) return notFound();
 
   /* -------------------------------------------------
-     PAGES (FIRST SPREAD ONLY)
+     SPREADS
   -------------------------------------------------- */
+
+  const rawSpreads = await db
+    .select()
+    .from(storySpreads)
+    .where(eq(storySpreads.storyId, storyId))
+    .orderBy(storySpreads.spreadIndex);
+
+  if (rawSpreads.length === 0) {
+    redirect(`/stories/${storyId}/extract`);
+  }
+
+  const spreadIndex =
+    spread && !Number.isNaN(Number(spread))
+      ? Math.max(0, Math.min(rawSpreads.length - 1, Number(spread)))
+      : Math.floor(rawSpreads.length / 2);
+
+  /* -------------------------------------------------
+     PAGES (ALL)
+  -------------------------------------------------- */
+
+  const allPageIds = rawSpreads.flatMap((s) =>
+    [s.leftPageId, s.rightPageId].filter(Boolean)
+  ) as string[];
 
   const pages = await db.query.storyPages.findMany({
-    where: eq(storyPages.storyId, storyId),
-    orderBy: asc(storyPages.pageNumber),
-    limit: 2,
+    where: inArray(storyPages.id, allPageIds),
   });
 
-
-
-
-
-  async function ensurePagePresence(
-    storyId: string,
-    pageNumbers: number[]
-  ) {
-    if (!pageNumbers.length) return;
-  
-    const h = await headers(); // ✅ MUST await
-  
-    const host =
-      h.get("x-forwarded-host") ??
-      h.get("host");
-  
-    if (!host) {
-      console.warn("No host header available, skipping page presence");
-      return;
-    }
-  
-    const protocol =
-      process.env.NODE_ENV === "development"
-        ? "http"
-        : "https";
-  
-    const url = `${protocol}://${host}/api/stories/${storyId}/page-presence?pages=${pageNumbers.join(",")}`;
-  
-    await fetch(url, {
-      cache: "no-store",
-    });
-  }
-  
-  
-  
-
-  // 🔐 GUARANTEE PAGE PRESENCE EXISTS (fallback-safe)
-await ensurePagePresence(
-  storyId,
-  pages.map((p) => p.pageNumber)
-);
-
-
-  if (pages.length === 0) {
-    redirect(`/stories/${storyId}/view`);
-  }
-
-  const leftText = pages[0]?.text ?? "";
-  const rightText = pages[1]?.text ?? "";
-
-
-
+  const pageById = Object.fromEntries(pages.map((p) => [p.id, p]));
 
   /* -------------------------------------------------
-     STYLE GUIDE + REFERENCES
+     PAGE → CHARACTERS
   -------------------------------------------------- */
 
-//   // const guide = await db.query.storyStyleGuide.findFirst({
-//   //   where: eq(storyStyleGuide.storyId, storyId),
-//   //   with: {
-//   //     referenceImages: true,
-//   //   },
-//   // });
-
-//   const guide = await db.query.storyStyleGuide.findFirst({
-//     where: eq(storyStyleGuide.storyId, storyId),
-//   });
-
-
-
-// const images = guide
-// ? await db.query.styleGuideImages.findMany({
-//     where: eq(styleGuideImages.styleGuideId, guide.id),
-//   })
-// : [];
-
-
-//   console.log("guide", guide)
-//   console.log("sampleIll", guide?.sampleIllustrationUrl)
-
-//   const styleImage =
-//     guide?.referenceImages?.find((img) => img.type === "style")?.url ?? null;
-
-//   const clientStyle: ClientStyleGuide = {
-//     id: guide?.id ?? "new",
-//     storyId,
-//     summary: guide?.summary ?? "",
-//     styleGuideImage: styleImage,
-//     negativePrompt: guide?.negativePrompt ?? "",
-//     sampleIllustrationUrl: guide?.sampleIllustrationUrl ?? null,
-//   };
-
-/* -------------------------------------------------
-   STYLE GUIDE + REFERENCES
--------------------------------------------------- */
-
-const guide = await db.query.storyStyleGuide.findFirst({
-  where: eq(storyStyleGuide.storyId, storyId),
-});
-
-const images = guide
-  ? await db.query.styleGuideImages.findMany({
-      where: eq(styleGuideImages.styleGuideId, guide.id),
-    })
-  : [];
-
-const styleImage =
-  images.find((img) => img.type === "style")?.url ?? null;
-
-const clientStyle: ClientStyleGuide = {
-  id: guide?.id ?? "new",
-  storyId,
-  summary: guide?.summary ?? "",
-  styleGuideImage: styleImage,
-  negativePrompt: guide?.negativePrompt ?? "",
-  sampleIllustrationUrl: guide?.sampleIllustrationUrl ?? null,
-};
-
-  /* -------------------------------------------------
-     CHARACTERS (FROM FIRST SPREAD)
-  -------------------------------------------------- */
-
-  const pageIds = pages.map((p) => p.id);
-
-  const characterRows = await db
+  const pageCharacters = await db
     .select({
+      pageId: storyPageCharacters.pageId,
       id: characters.id,
       name: characters.name,
       description: characters.description,
@@ -188,23 +91,27 @@ const clientStyle: ClientStyleGuide = {
     .innerJoin(
       characters,
       eq(storyPageCharacters.characterId, characters.id)
-    )
-    .where(inArray(storyPageCharacters.pageId, pageIds))
-    .groupBy(characters.id);
+    );
 
-  const characterEntities: Entity[] = characterRows.map((c) => ({
-    id: c.id,
-    name: c.name,
-    description: c.description ?? "",
-    referenceImageUrl: c.referenceImageUrl ?? null,
-  }));
+  const charactersByPage = new Map<string, Entity[]>();
+  for (const row of pageCharacters) {
+    const arr = charactersByPage.get(row.pageId) ?? [];
+    arr.push({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? "",
+      referenceImageUrl: row.referenceImageUrl ?? null,
+    });
+    charactersByPage.set(row.pageId, arr);
+  }
 
   /* -------------------------------------------------
-     LOCATIONS (FROM FIRST SPREAD)
+     PAGE → LOCATIONS
   -------------------------------------------------- */
 
-  const locationRows = await db
+  const pageLocations = await db
     .select({
+      pageId: storyPageLocations.pageId,
       id: locations.id,
       name: locations.name,
       description: locations.description,
@@ -214,37 +121,90 @@ const clientStyle: ClientStyleGuide = {
     .innerJoin(
       locations,
       eq(storyPageLocations.locationId, locations.id)
-    )
-    .where(inArray(storyPageLocations.pageId, pageIds))
-    .groupBy(locations.id);
+    );
 
-  const locationEntities: Entity[] = locationRows.map((l) => ({
-    id: l.id,
-    name: l.name,
-    description: l.description ?? "",
-    referenceImageUrl: l.referenceImageUrl ?? null,
-  }));
+  const locationsByPage = new Map<string, Entity[]>();
+  for (const row of pageLocations) {
+    const arr = locationsByPage.get(row.pageId) ?? [];
+    arr.push({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? "",
+      referenceImageUrl: row.referenceImageUrl ?? null,
+    });
+    locationsByPage.set(row.pageId, arr);
+  }
 
-  const hadPresence =
-  characterEntities.length > 0 || locationEntities.length > 0;
+  /* -------------------------------------------------
+     BUILD SpreadUI[]
+  -------------------------------------------------- */
+
+  const spreads = rawSpreads.map((s) => {
+    const pageIds = [s.leftPageId, s.rightPageId].filter(Boolean) as string[];
+
+    const characters = Array.from(
+      new Map(
+        pageIds
+          .flatMap((id) => charactersByPage.get(id) ?? [])
+          .map((c) => [c.id, c])
+      ).values()
+    );
+
+    const locations = Array.from(
+      new Map(
+        pageIds
+          .flatMap((id) => locationsByPage.get(id) ?? [])
+          .map((l) => [l.id, l])
+      ).values()
+    );
+
+    return {
+      leftText: pageById[s.leftPageId!]?.text ?? "",
+      rightText: pageById[s.rightPageId!]?.text ?? "",
+      sceneSummary: s.sceneSummary ?? null,
+      characters,
+      locations,
+    };
+  });
+
+  /* -------------------------------------------------
+     STYLE GUIDE
+  -------------------------------------------------- */
+
+  const guide = await db.query.storyStyleGuide.findFirst({
+    where: eq(storyStyleGuide.storyId, storyId),
+  });
+
+  const images = guide
+    ? await db.query.styleGuideImages.findMany({
+        where: eq(styleGuideImages.styleGuideId, guide.id),
+      })
+    : [];
+
+  const styleImage =
+    images.find((img) => img.type === "style")?.url ?? null;
+
+  const clientStyle: ClientStyleGuide = {
+    id: guide?.id ?? "new",
+    storyId,
+    summary: guide?.summary ?? "",
+    styleGuideImage: styleImage,
+    negativePrompt: guide?.negativePrompt ?? "",
+    sampleIllustrationUrl: guide?.sampleIllustrationUrl ?? null,
+  };
 
   /* -------------------------------------------------
      RENDER
   -------------------------------------------------- */
 
-
-
   return (
     <main>
       <InitialStyleDesignEditor
         style={clientStyle}
-        leftText={leftText}
-        rightText={rightText}
-        characters={characterEntities}
-        locations={locationEntities}
+        spreads={spreads}
+        initialSpreadIndex={spreadIndex}
         storyStatus={story.status as any}
         sampleImage={guide?.sampleIllustrationUrl}
-        presenceReady={hadPresence}
       />
     </main>
   );

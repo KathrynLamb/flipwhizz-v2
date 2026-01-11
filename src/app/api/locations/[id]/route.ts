@@ -14,10 +14,14 @@ import { inngest } from "@/inngest/client";
 /**
  * ensure-world
  *
- * This route is a SAFE, IDEMPOTENT trigger.
- * It will only dispatch extraction when the story
- * is explicitly in `extracting` state.
+ * POST  → idempotent dispatcher
+ * DELETE → hard reset world state (characters, locations, presence, style)
  */
+
+/* ============================================================
+   POST — ENSURE / DISPATCH
+============================================================ */
+
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -25,10 +29,6 @@ export async function POST(
   const { id: storyId } = await params;
 
   console.log("🔵 ensure-world called for story:", storyId);
-
-  /* --------------------------------------------------
-     1️⃣ Load story
-  -------------------------------------------------- */
 
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
@@ -38,18 +38,7 @@ export async function POST(
     return NextResponse.json({ error: "Story not found" }, { status: 404 });
   }
 
-  /**
-   * CRITICAL GATE
-   * We only dispatch extraction when the story
-   * is explicitly marked as `extracting`.
-   *
-   * Any other state means:
-   * - job already running
-   * - job already finished
-   * - user moved on
-   */
   if (story.status !== "extracting") {
-    console.log("⏭️ Extraction not requested. Current status:", story.status);
     return NextResponse.json({
       status: "skipped",
       message: "World extraction not required",
@@ -57,14 +46,10 @@ export async function POST(
     });
   }
 
-  /* --------------------------------------------------
-     2️⃣ Load pages (hard requirement)
-  -------------------------------------------------- */
-
   const pages = await db.query.storyPages.findMany({
     where: eq(storyPages.storyId, storyId),
     orderBy: asc(storyPages.pageNumber),
-    columns: { id: true, pageNumber: true },
+    columns: { id: true },
   });
 
   if (pages.length === 0) {
@@ -73,10 +58,6 @@ export async function POST(
       { status: 400 }
     );
   }
-
-  /* --------------------------------------------------
-     3️⃣ Inspect existing world state
-  -------------------------------------------------- */
 
   const [characters, locations, presence, styleGuide] = await Promise.all([
     db.query.storyCharacters.findMany({
@@ -96,26 +77,9 @@ export async function POST(
     }),
   ]);
 
-  const hasCharacters = characters.length > 0;
-  const hasLocations = locations.length > 0;
-  const hasPresence = presence.length > 0;
-  const hasStyleText = Boolean(styleGuide?.summary);
-
-  console.log("📊 ensure-world state check:", {
-    hasCharacters,
-    hasLocations,
-    hasPresence,
-    hasStyleText,
-  });
-
-  /* --------------------------------------------------
-     4️⃣ Dispatch missing jobs
-  -------------------------------------------------- */
-
   let dispatched = false;
 
-  if (!hasCharacters || !hasLocations || !hasPresence) {
-    console.log("🚀 Dispatching story/extract-world");
+  if (!characters.length || !locations.length || !presence.length) {
     await inngest.send({
       name: "story/extract-world",
       data: { storyId },
@@ -123,8 +87,7 @@ export async function POST(
     dispatched = true;
   }
 
-  if (!hasStyleText) {
-    console.log("🚀 Dispatching story/generate.style.text");
+  if (!styleGuide?.summary) {
     await inngest.send({
       name: "story/generate.style.text",
       data: { storyId },
@@ -132,19 +95,57 @@ export async function POST(
     dispatched = true;
   }
 
-  /* --------------------------------------------------
-     5️⃣ Return immediately (never wait)
-  -------------------------------------------------- */
+  return NextResponse.json({
+    status: dispatched ? "processing" : "complete",
+  });
+}
 
-  if (dispatched) {
-    return NextResponse.json({
-      status: "processing",
-      message: "World jobs dispatched",
-    });
-  }
+/* ============================================================
+   DELETE — HARD RESET WORLD
+============================================================ */
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id: storyId } = await params;
+
+  console.log("🧨 RESETTING world for story:", storyId);
+
+  const pages = await db.query.storyPages.findMany({
+    where: eq(storyPages.storyId, storyId),
+    columns: { id: true },
+  });
+
+  await db.transaction(async (tx) => {
+    // Presence (page-level)
+    if (pages.length) {
+      await tx.delete(storyPageCharacters).where(
+        inArray(
+          storyPageCharacters.pageId,
+          pages.map((p) => p.id)
+        )
+      );
+    }
+
+    // Globals
+    await tx.delete(storyCharacters).where(eq(storyCharacters.storyId, storyId));
+    await tx.delete(storyLocations).where(eq(storyLocations.storyId, storyId));
+    await tx.delete(storyStyleGuide).where(eq(storyStyleGuide.storyId, storyId));
+
+    // Reset story flags
+    await tx
+      .update(stories)
+      .set({
+        status: "draft",
+        storyConfirmed: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(stories.id, storyId));
+  });
 
   return NextResponse.json({
-    status: "complete",
-    message: "World already exists",
+    status: "reset",
+    message: "World data deleted successfully",
   });
 }
