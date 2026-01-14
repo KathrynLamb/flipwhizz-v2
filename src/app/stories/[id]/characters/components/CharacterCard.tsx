@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from "react";
-import { Star, Trash2, Upload, Sparkles, Pencil, Lock, Unlock } from "lucide-react";
+import { Trash2, Upload, Sparkles, Pencil, Lock, Unlock } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 type Character = {
@@ -31,8 +31,6 @@ const TRAIT_COLORS = [
   "bg-yellow-500",
 ];
 
-const HOVER_EMOJIS = ['⚡', '💫', '🎨', '✨', '🌟', '💥', '🚀', '🔥'];
-
 export function CharacterCard({
   storyId,
   character,
@@ -51,7 +49,6 @@ export function CharacterCard({
   console.log("character", character)
   
   const gradient = GRADIENTS[index % GRADIENTS.length];
-  const hoverEmoji = HOVER_EMOJIS[index % HOVER_EMOJIS.length];
   const nameGradientClass = `bg-gradient-to-r ${gradient} bg-clip-text text-transparent`;
 
   const [uploading, setUploading] = useState(false);
@@ -242,11 +239,6 @@ export function CharacterCard({
         )}
 
         {/* Floating emoji on hover */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-          <div className="text-5xl group-hover:animate-bounce">
-            {hoverEmoji}
-          </div>
-        </div>
 
         {!locked && (
           <>

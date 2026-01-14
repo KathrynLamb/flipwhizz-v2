@@ -36,6 +36,33 @@ export default function CharactersClient({
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [charactersLocal, setCharactersLocal] = useState(characters);
+  const [isPurchased, setIsPurchased] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!storyId) return;
+  
+    let cancelled = false;
+  
+    async function checkPurchase() {
+      const res = await fetch(`/api/stories/${storyId}/purchase-status`);
+      if (!res.ok) return;
+  
+      const data = await res.json();
+
+      console.log("Purchasre DATA => ", data)
+      if (!cancelled) {
+        setIsPurchased(data.purchased);
+      }
+    }
+  
+    checkPurchase();
+  
+    return () => {
+      cancelled = true;
+    };
+  }, [storyId]);
+  
 
   function handleDelete(id: string) {
     setCharactersLocal(prev => prev.filter(c => c.id !== id));
@@ -44,6 +71,11 @@ export default function CharactersClient({
 useEffect(() => {
   setCharactersLocal(characters);
 }, [characters]);
+
+
+function generateAIAvatars(){
+  
+}
 
 
   return (
@@ -66,6 +98,17 @@ useEffect(() => {
               {charactersLocal.length} ready ✨
             </p>
           </div>
+
+        {isPurchased  && (
+            <button
+            onClick={generateAIAvatars}
+            className="btn-primary"
+          >
+              generate all character avatars. 
+          </button>
+        )
+        } 
+
 
           {/* GRID */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mt-2">
@@ -145,6 +188,8 @@ useEffect(() => {
           )}
         </div>
       </div>
+
+
     </div>
   );
 }

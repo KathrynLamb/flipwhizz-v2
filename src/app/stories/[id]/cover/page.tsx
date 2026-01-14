@@ -2,6 +2,7 @@ import CoverDesignWrapper from "@/app/stories/[id]/cover/CoverDesignWrapper";
 import { stories } from "@/db/schema";
 import { db } from "@/db";
 import { eq } from "drizzle-orm";
+import CoverDesignPage from "@/app/stories/[id]/cover/CoverDesignPage";
 
 export const dynamic = "force-dynamic";
 
@@ -21,10 +22,15 @@ export default async function Page({ params }: Props) {
   }
 
   return (
-    <CoverDesignWrapper
-      storyId={story.id}
-      projectId={story.projectId}
-      story={story}
-    />
+    // <CoverDesignWrapper
+    //   storyId={story.id}
+    //   projectId={story.projectId}
+    //   story={story}
+    // />
+    <CoverDesignPage
+    storyId={story.id}
+    storyTitle={story.title}
+
+  />
   );
 }

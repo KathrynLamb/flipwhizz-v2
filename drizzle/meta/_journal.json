@@ -232,6 +232,20 @@
       "when": 1768142770272,
       "tag": "0032_brief_shen",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1768316732865,
+      "tag": "0033_illegal_millenium_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1768321380071,
+      "tag": "0034_volatile_rhino",
+      "breakpoints": true
     }
   ]
 }

@@ -1,212 +1,4 @@
-// import { inngest } from "./client";
-// import { GoogleGenAI } from "@google/genai";
-// import { eq, asc } from "drizzle-orm";
-// import { db } from "@/db";
-// import { storyPages, storyStyleGuide } from "@/db/schema";
-// import { v2 as cloudinary } from "cloudinary";
-// import { Readable } from "node:stream";
-// import { v4 as uuid } from "uuid";
-
-// /* ------------------------------------------------------------------
-//    CONFIG
-// ------------------------------------------------------------------ */
-
-// cloudinary.config({
-//   cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-//   api_key: process.env.CLOUDINARY_API_KEY!,
-//   api_secret: process.env.CLOUDINARY_API_SECRET!,
-// });
-
-// const client = new GoogleGenAI({
-//   apiKey: process.env.GEMINI_API_KEY!,
-//   apiVersion: "v1alpha",
-// });
-
-// // Using the same model you requested for consistency
-// const MODEL = "gemini-3-pro-image-preview";
-
-// /* ------------------------------------------------------------------
-//    HELPERS
-// ------------------------------------------------------------------ */
-
-// async function fetchImageAsBase64(url: string) {
-//   try {
-//     const res = await fetch(url);
-//     if (!res.ok) throw new Error(`Failed to fetch ${url}`);
-//     const buffer = Buffer.from(await res.arrayBuffer());
-//     return { data: buffer.toString("base64"), mimeType: "image/jpeg" };
-//   } catch (e) {
-//     console.error("Failed to fetch reference image:", url);
-//     return null;
-//   }
-// }
-
-// async function uploadImage(base64: string, storyId: string) {
-//   const buffer = Buffer.from(base64, "base64");
-
-//   const result: any = await new Promise((resolve, reject) => {
-//     const stream = cloudinary.uploader.upload_stream(
-//       {
-//         folder: `flipwhizz/style-samples/${storyId}`,
-//         filename_override: uuid(),
-//         resource_type: "image",
-//       },
-//       (err, res) => (err ? reject(err) : resolve(res))
-//     );
-
-//     Readable.from(buffer).pipe(stream);
-//   });
-
-//   return result.secure_url as string;
-// }
-
-// function extractImage(result: any) {
-//   const candidate = result?.candidates?.[0];
-//   const parts = candidate?.content?.parts ?? [];
-//   const imagePart = parts.find((p: any) => p.inlineData?.data);
-  
-//   if (imagePart?.inlineData) {
-//     return imagePart.inlineData;
-//   }
-
-//   // Debugging Safety Blocks
-//   if (candidate?.finishReason && candidate.finishReason !== "STOP") {
-//     console.error("⚠️ Gemini Blocked. Reason:", candidate.finishReason);
-//     if (candidate.safetyRatings) {
-//       console.error("⚠️ Safety Ratings:", JSON.stringify(candidate.safetyRatings, null, 2));
-//     }
-//   }
-
-//   return null;
-// }
-
-// /* ------------------------------------------------------------------
-//    MAIN EXPORT: generateStyleSample
-// ------------------------------------------------------------------ */
-
-// export const generateStyleSample = inngest.createFunction(
-//   { id: "generate-style-sample", concurrency: 1 },
-//   { event: "style/generate.sample" },
-//   async ({ event, step }) => {
-//     const { storyId, references = [], force = false } = event.data;
-
-//     if (!storyId) throw new Error("Missing storyId");
-
-//     /* --------------------------------------------------
-//        LOAD STORY TEXT (FIRST 2 PAGES)
-//     -------------------------------------------------- */
-
-//     const pages = await db.query.storyPages.findMany({
-//       where: eq(storyPages.storyId, storyId),
-//       orderBy: asc(storyPages.pageNumber),
-//       limit: 2,
-//     });
-
-//     if (!pages.length) throw new Error("No story pages found");
-
-//     const leftText = pages[0]?.text ?? "";
-//     const rightText = pages[1]?.text ?? "";
-
-//     /* --------------------------------------------------
-//        CHECK EXISTING
-//     -------------------------------------------------- */
-
-//     const existing = await db.query.storyStyleGuide.findFirst({
-//       where: eq(storyStyleGuide.storyId, storyId),
-//     });
-
-//     if (existing?.sampleIllustrationUrl && !force) {
-//       return { skipped: true, url: existing.sampleIllustrationUrl };
-//     }
-
-//     if (force) {
-//       await db
-//         .update(storyStyleGuide)
-//         .set({ sampleIllustrationUrl: null })
-//         .where(eq(storyStyleGuide.storyId, storyId));
-//     }
-
-//     /* --------------------------------------------------
-//        BUILD PROMPT
-//     -------------------------------------------------- */
-
-//     const parts: any[] = [];
-
-//     // Attach references
-//     for (const ref of references) {
-//       if (!ref.url) continue;
-//       const img = await fetchImageAsBase64(ref.url);
-//       if (img) {
-//         parts.push({
-//           text: ref.type === "style"
-//             ? "PRIMARY ART STYLE REFERENCE. Follow this style exactly."
-//             : `CHARACTER REFERENCE: ${ref.label}`,
-//         });
-//         parts.push({ inlineData: img });
-//       }
-//     }
-
-//     // Main prompt
-//     parts.push({
-//       text: `
-// You are a professional children's book illustrator.
-// TASK: Create ONE COMPLETE DOUBLE-PAGE SPREAD (2:1 aspect ratio).
-
-// LEFT PAGE TEXT: "${leftText}"
-// RIGHT PAGE TEXT: "${rightText}"
-
-// REQUIREMENTS:
-// 1. Render the text clearly into the image (Typography).
-// 2. Follow the art style of the reference images provided.
-// 3. Left text on left side, Right text on right side.
-// `,
-//     });
-
-//     /* --------------------------------------------------
-//        GENERATE
-//     -------------------------------------------------- */
-
-//     const imageUrl = await step.run("generate-sample-spread", async () => {
-//       console.log(`🤖 Generating sample with ${MODEL}…`);
-
-//       const response = await client.models.generateContent({
-//         model: MODEL,
-//         contents: [{ role: "user", parts }],
-//         config: { 
-//           responseModalities: ["IMAGE"],
-//           // CRITICAL SAFETY SETTINGS
-//           safetySettings: [
-//             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-//             { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-//             { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-//             { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
-//             { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "BLOCK_ONLY_HIGH" }
-//           ]
-//         },
-//       });
-
-//       const image = extractImage(response);
-//       if (!image) throw new Error("No image returned from Gemini (likely safety block)");
-
-//       return uploadImage(image.data, storyId);
-//     });
-
-//     /* --------------------------------------------------
-//        SAVE
-//     -------------------------------------------------- */
-
-//     await db
-//       .update(storyStyleGuide)
-//       .set({
-//         sampleIllustrationUrl: imageUrl,
-//         updatedAt: new Date(),
-//       })
-//       .where(eq(storyStyleGuide.storyId, storyId));
-
-//     return { success: true, url: imageUrl };
-//   }
-// );
-
+// inngest/generateStyle.ts
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { eq, asc } from "drizzle-orm";
@@ -216,200 +8,260 @@ import { v2 as cloudinary } from "cloudinary";
 import { Readable } from "node:stream";
 import { v4 as uuid } from "uuid";
 
-/* ------------------------------------------------------------------
-   CONFIG
------------------------------------------------------------------- */
-
+// --- CONFIG ---
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
   api_key: process.env.CLOUDINARY_API_KEY!,
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
-const client = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY!,
-  apiVersion: "v1alpha",
-});
+const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-const MODEL = "gemini-3-pro-image-preview";
+const IMAGE_MODEL = "gemini-3-pro-image-preview"; // Nano Banana Pro
+const VISION_MODEL = "gemini-2.0-flash-lite-preview"; 
 
-/* ------------------------------------------------------------------
-   HELPERS
------------------------------------------------------------------- */
+// --- HELPERS ---
 
 async function fetchImageAsBase64(url: string) {
   try {
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+    if (!res.ok) throw new Error("Fetch failed");
     const buffer = Buffer.from(await res.arrayBuffer());
     return { data: buffer.toString("base64"), mimeType: "image/jpeg" };
   } catch (e) {
-    console.error("Failed to fetch reference image:", url);
+    console.error("❌ Failed to download reference:", url);
     return null;
   }
 }
 
 async function uploadImage(base64: string, storyId: string) {
   const buffer = Buffer.from(base64, "base64");
-
   const result: any = await new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: `flipwhizz/style-samples/${storyId}`,
-        filename_override: uuid(),
-        resource_type: "image",
-      },
+      { folder: `flipwhizz/style-samples/${storyId}`, filename_override: uuid(), resource_type: "image" },
       (err, res) => (err ? reject(err) : resolve(res))
     );
-
     Readable.from(buffer).pipe(stream);
   });
-
-  return result.secure_url as string;
+  return result.secure_url;
 }
 
 function extractImage(result: any) {
-  const candidate = result?.candidates?.[0];
-  const parts = candidate?.content?.parts ?? [];
-  const imagePart = parts.find((p: any) => p.inlineData?.data);
+  // Gemini 3 Pro "Thinking" mode might return thoughts first.
+  // We need to find the part that is actually an image.
+  const parts = result?.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find((p: any) => p.inlineData);
   
-  if (imagePart?.inlineData) {
-    return imagePart.inlineData;
-  }
+  if (imgPart) return imgPart.inlineData;
 
-  // Debugging Safety Blocks
-  if (candidate?.finishReason && candidate.finishReason !== "STOP") {
-    console.error("⚠️ Gemini Blocked. Reason:", candidate.finishReason);
-    if (candidate.safetyRatings) {
-      console.error("⚠️ Safety Ratings:", JSON.stringify(candidate.safetyRatings, null, 2));
-    }
-  }
-
+  const finishReason = result?.candidates?.[0]?.finishReason;
+  if (finishReason) console.warn("⚠️ No image found. Reason:", finishReason);
+  
   return null;
 }
 
-/* ------------------------------------------------------------------
-   MAIN EXPORT: generateStyleSample
------------------------------------------------------------------- */
+/**
+ * 👁️ VISION HELPER: Describe an image if we can't use it directly
+ */
+async function getVisionDescription(imgData: any, label: string) {
+  try {
+    const prompt = `Describe the visual appearance of this person/location for an illustrator. Be specific about features, clothing, and mood.`;
+    const visionRes = await client.models.generateContent({
+      model: VISION_MODEL,
+      contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: imgData }] }],
+    });
+    return visionRes.candidates?.[0]?.content?.parts?.[0]?.text || `A visual reference of ${label}`;
+  } catch (e) {
+    return `A visual reference of ${label}`;
+  }
+}
+
+/**
+ * 🧠 POLICY CHECKER: Checks if an image is a "Public Figure"
+ */
+async function analyzeReference(imgData: any, label: string, type: string) {
+  console.log(`🔍 Checking policy for: ${label}`);
+  
+  // If it's a location, it's almost always safe to use as an image
+  if (type === 'location' || type === 'background') {
+    return { type: "image", content: imgData, label };
+  }
+
+  try {
+    const prompt = `
+      Analyze this image. 
+      Is this a recognizable public figure (celebrity, athlete, politician)? 
+      Reply with JSON: {"isPublicFigure": boolean}
+    `;
+
+    const visionRes = await client.models.generateContent({
+      model: VISION_MODEL,
+      contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: imgData }] }],
+      config: { responseMimeType: "application/json" }
+    });
+
+    const jsonText = visionRes.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    const analysis = JSON.parse(jsonText);
+
+    // 🚨 PUBLIC FIGURE = FORCE TEXT (To prevent Identity Block)
+    if (analysis.isPublicFigure) {
+      console.warn(`⚠️ ${label} is a Public Figure. Converting to text description.`);
+      const desc = await getVisionDescription(imgData, label);
+      return { type: "text", content: desc, label };
+    }
+
+    // ✅ PRIVATE PERSON = KEEP IMAGE (Nano Banana Pro supports up to 5 humans)
+    console.log(`✅ ${label} is acceptable visual reference.`);
+    return { type: "image", content: imgData, label };
+
+  } catch (e) {
+    // On error, default to image and hope for the best
+    return { type: "image", content: imgData, label };
+  }
+}
+
+// --- MAIN FUNCTION ---
 
 export const generateStyleSample = inngest.createFunction(
   { id: "generate-style-sample", concurrency: 1 },
   { event: "style/generate.sample" },
   async ({ event, step }) => {
-    const { storyId, references = [], force = false } = event.data;
-
+    const { storyId, references = [], force = false, description } = event.data;
     if (!storyId) throw new Error("Missing storyId");
 
-    /* --------------------------------------------------
-       LOAD STORY TEXT (FIRST 2 PAGES)
-    -------------------------------------------------- */
+    const stylePrompt = description || "Whimsical, painterly children's book illustration";
+    let leftText = event.data.leftText || "";
+    let rightText = event.data.rightText || "";
 
-    const pages = await db.query.storyPages.findMany({
-      where: eq(storyPages.storyId, storyId),
-      orderBy: asc(storyPages.pageNumber),
-      limit: 2,
-    });
-
-    if (!pages.length) throw new Error("No story pages found");
-
-    const leftText = pages[0]?.text ?? "";
-    const rightText = pages[1]?.text ?? "";
-
-    /* --------------------------------------------------
-       CHECK EXISTING
-    -------------------------------------------------- */
-
-    const existing = await db.query.storyStyleGuide.findFirst({
-      where: eq(storyStyleGuide.storyId, storyId),
-    });
-
-    if (existing?.sampleIllustrationUrl && !force) {
-      return { skipped: true, url: existing.sampleIllustrationUrl };
+    if (!leftText && !rightText) {
+      const pages = await db.query.storyPages.findMany({
+        where: eq(storyPages.storyId, storyId),
+        orderBy: asc(storyPages.pageNumber),
+        limit: 2,
+      });
+      leftText = pages[0]?.text ?? "";
+      rightText = pages[1]?.text ?? "";
     }
 
-    if (force) {
-      await db
-        .update(storyStyleGuide)
-        .set({ sampleIllustrationUrl: null })
-        .where(eq(storyStyleGuide.storyId, storyId));
-    }
+    // ---------------------------------------------------------
+    // 1. PREPARE & ANALYZE REFERENCES
+    // ---------------------------------------------------------
+    
+    // We do this UP FRONT to sort out the "Public Figure" issue (Juninho)
+    // while keeping the "Private Figure" (Keith) as a high-fidelity image.
+    
+    const preparedRefs = await step.run("prepare-references", async () => {
+      const processed = [];
+      for (const ref of references) {
+        if (ref.url) {
+          const img = await fetchImageAsBase64(ref.url);
+          if (img) {
+            // Check if it's a celebrity (Juninho) or a private person (Keith)
+            const result = await analyzeReference(
+              { data: img.data, mimeType: img.mimeType }, 
+              ref.label, 
+              ref.type || 'character'
+            );
+            processed.push(result);
+          }
+        }
+      }
+      return processed;
+    });
 
-    /* --------------------------------------------------
-       BUILD PROMPT
-    -------------------------------------------------- */
+    // ---------------------------------------------------------
+    // 2. CONSTRUCT PROMPT (PRO MODE)
+    // ---------------------------------------------------------
 
     const parts: any[] = [];
 
-    // Attach references
-    for (const ref of references) {
-      if (!ref.url) continue;
-      const img = await fetchImageAsBase64(ref.url);
-      if (img) {
-        parts.push({
-          text: ref.type === "style"
-            ? "PRIMARY ART STYLE REFERENCE. Follow this style exactly."
-            : `CHARACTER REFERENCE: ${ref.label}`,
-        });
-        parts.push({ inlineData: img });
-      }
+    // A. Attach Visual References (Images)
+    // "Nano Banana Pro" supports up to 5 humans / 6 objects.
+    preparedRefs.filter(r => r.type === "image").forEach(r => {
+      parts.push({ text: `VISUAL REFERENCE (${r.label}):` });
+      parts.push({ inlineData: r.content });
+    });
+
+    // B. Attach Text Descriptions (Converted Celebrities)
+    const textRefs = preparedRefs.filter(r => r.type === "text");
+    if (textRefs.length > 0) {
+      parts.push({ 
+        text: `CHARACTER DESCRIPTIONS (Generate based on these traits):\n${textRefs.map(r => `- ${r.label}: ${r.content}`).join("\n")}` 
+      });
     }
 
-    // Main prompt
+    // C. The Main Instruction
+    // Explicitly requesting text rendering as per docs
     parts.push({
       text: `
-You are a professional children's book illustrator.
-TASK: Create ONE COMPLETE DOUBLE-PAGE SPREAD (2:1 aspect ratio).
-
-LEFT PAGE TEXT: "${leftText}"
-RIGHT PAGE TEXT: "${rightText}"
-
-REQUIREMENTS:
-1. Render the text clearly into the image (Typography).
-2. Follow the art style of the reference images provided.
-3. Left text on left side, Right text on right side.
-`,
+        You are a professional children's book illustrator.
+        
+        TASK: Create a wide double-page spread (16:9).
+        STYLE: ${stylePrompt}
+        
+        SCENE CONTENT:
+        - Integrate the Visual References provided.
+        - Render the story text clearly into the layout.
+        
+        LEFT PAGE TEXT:
+        "${leftText.trim()}"
+        
+        RIGHT PAGE TEXT:
+        "${rightText.trim()}"
+      `
     });
 
-    /* --------------------------------------------------
-       GENERATE
-    -------------------------------------------------- */
+    // ---------------------------------------------------------
+    // 3. GENERATE (HIGH FIDELITY)
+    // ---------------------------------------------------------
 
-    const imageUrl = await step.run("generate-sample-spread", async () => {
-      console.log(`🤖 Generating sample with ${MODEL}…`);
+    const generatedImage = await step.run("generate-pro", async () => {
+      console.log(`🎨 Generating with ${IMAGE_MODEL}...`);
+      
+      try {
+        const response = await client.models.generateContent({
+          model: IMAGE_MODEL,
+          contents: [{ role: "user", parts }],
+          config: {
+            // 🚀 KEY FIX: Explicitly set Aspect Ratio and Size
+            // The docs require this for high-res output and non-square images.
+            imageConfig: {
+              aspectRatio: "16:9", 
+              imageSize: "2K"      // Uppercase 'K' is mandatory per docs
+            },
+            // We ask for IMAGE only to get the final result, 
+            // but we can look for thoughts in the logging if needed.
+            responseModalities: ["IMAGE"], 
+            safetySettings: [
+              { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+              { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+              { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+              { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+            ]
+          },
+        });
 
-      const response = await client.models.generateContent({
-        model: MODEL,
-        contents: [{ role: "user", parts }],
-        config: { 
-          responseModalities: ["IMAGE"],
-          // ✅ FIXED: Use the Enum values instead of raw strings
-          safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-          ]
-        },
-      });
-
-      const image = extractImage(response);
-      if (!image) throw new Error("No image returned from Gemini (likely safety block)");
-
-      return uploadImage(image.data, storyId);
+        return extractImage(response);
+      } catch (e: any) {
+        console.error("Gemini Generation Error:", e);
+        throw new Error(e.message || "Generation failed");
+      }
     });
 
-    /* --------------------------------------------------
-       SAVE
-    -------------------------------------------------- */
+    // ---------------------------------------------------------
+    // 4. SAVE
+    // ---------------------------------------------------------
 
-    await db
-      .update(storyStyleGuide)
-      .set({
-        sampleIllustrationUrl: imageUrl,
-        updatedAt: new Date(),
-      })
+    if (!generatedImage) throw new Error("No image returned from Gemini.");
+
+    const uploadedUrl = await step.run("upload-result", () => 
+      uploadImage(generatedImage.data, storyId)
+    );
+
+    await db.update(storyStyleGuide)
+      .set({ sampleIllustrationUrl: uploadedUrl, updatedAt: new Date() })
       .where(eq(storyStyleGuide.storyId, storyId));
 
-    return { success: true, url: imageUrl };
+    return { success: true, url: uploadedUrl };
   }
 );

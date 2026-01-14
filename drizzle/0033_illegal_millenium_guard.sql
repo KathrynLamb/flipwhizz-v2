@@ -1,0 +1,1 @@
+ALTER TABLE "characters" ADD COLUMN "full_body_image_url" text;

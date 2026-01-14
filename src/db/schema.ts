@@ -149,7 +149,10 @@ export const characters = pgTable("characters", {
   lockedAt: timestamp("locked_at"),
   
   portraitImageUrl: text("portrait_image_url"),
+  fullBodyImageUrl: text("full_body_image_url"),
+
   referenceImageUrl: text("reference_image_url"),
+
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -386,6 +389,29 @@ export const pageEntities = pgTable("page_entities", {
     .notNull(),
   entityType: varchar("entity_type", { length: 20 }).notNull(),
   entityId: uuid("entity_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Add this to src/db/schema.ts
+
+export const bookCovers = pgTable("book_covers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storyId: uuid("story_id")
+    .references(() => stories.id, { onDelete: "cascade" })
+    .notNull(),
+  
+  // The generated image
+  imageUrl: text("image_url").notNull(),
+  
+  // The specific prompt used for this version (crucial for debugging/regenerating)
+  promptUsed: text("prompt_used"),
+  
+  // Link back to the Inngest job or batch ID
+  generationId: text("generation_id"),
+  
+  // Is this the one the user currently has active?
+  isSelected: boolean("is_selected").default(false).notNull(),
+  
   createdAt: timestamp("created_at").defaultNow(),
 });
 
