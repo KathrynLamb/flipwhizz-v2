@@ -247,6 +247,7 @@ if (!mounted) {
                     px-4 py-3 text-sm
                     focus:outline-none focus:ring-2 focus:ring-violet-400
                     resize-none
+                    text-slate-700
                   "
                 />
   

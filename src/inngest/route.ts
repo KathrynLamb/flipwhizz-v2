@@ -4,13 +4,9 @@ import { inngest } from "@/inngest/client";
 import { extractWorldJob, globalRewriteJob } from "@/inngest/functions";
 import { buildSpreadsJob } from "@/inngest/buildSpreads";
 import { generateStyleSample } from "@/inngest/generateStyle";
-// import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateSpreads";
 import { generateBookCovers } from "@/inngest/generateBookCovers";
-// import { globalRewriteJob, extractWorldJob } from "@/inngest/functions";
-// import { buildSpreadsJob } from "@/inngest/buildSpreads";
-// import { generateStyleSample } from "@/inngest/generateStyle";
-// import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateSpreads";
-// import { generateBookCovers } from "@/inngest/generateBookCovers";
+import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateSpreads";
+
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -19,8 +15,8 @@ export const { GET, POST, PUT } = serve({
     extractWorldJob,
     buildSpreadsJob,
     generateStyleSample,
-    // generateBookSpreads,
-    // generateSingleSpread,
+    generateBookSpreads,
+    generateSingleSpread,
     generateBookCovers,
   ],
 });
