@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Send, Loader2, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import AuthorLetter from '@/app/stories/components/AuthorLetter';
 import MobileStoryLayout from '@/app/stories/components/MobileStoryLayout';
 
 /* ======================================================
@@ -17,20 +16,11 @@ type StoryPage = {
 };
 
 export type AuthorLetterApiResponse = {
-  letter: string;
-  whatICenteredOn: string[];
-  thingsYouMightTweak: string[];
-  invitation: string;
-};
-
-export type AuthorLetterUI = {
   opening: string;
   intention: string[];
   optionalTweaks: string[];
   invitation: string;
 };
-
-type EditMode = 'undecided' | 'accepted' | 'editing';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -56,7 +46,6 @@ export default function StoryReaderClient({
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [index, setIndex] = useState(0);
-  const [editMode, setEditMode] = useState<EditMode>('undecided');
   const [mounted, setMounted] = useState(false);
   const [authorLetter, setAuthorLetter] = useState<AuthorLetterApiResponse | null>(null);
   
@@ -72,6 +61,7 @@ export default function StoryReaderClient({
     setMounted(true);
   }, []);
 
+  // Load author letter and initialize chat
   useEffect(() => {
     fetch(`/api/stories/${id}/author-letter`, {
       method: "POST",
@@ -82,12 +72,28 @@ export default function StoryReaderClient({
       .then((res) => {
         if (
           res &&
-          typeof res.letter === "string" &&
-          Array.isArray(res.whatICenteredOn) &&
-          Array.isArray(res.thingsYouMightTweak) &&
+          typeof res.opening === "string" &&
+          Array.isArray(res.intention) &&
+          Array.isArray(res.optionalTweaks) &&
           typeof res.invitation === "string"
         ) {
           setAuthorLetter(res);
+          
+          // Format author letter as first chat message
+          const letterMessage = formatAuthorLetterAsMessage(res);
+          
+          const initialMessage: Message = {
+            role: 'assistant',
+            content: letterMessage,
+            timestamp: new Date(),
+          };
+          
+          setMessages([initialMessage]);
+          
+          // Initialize conversation history for API
+          setConversationHistory([
+            { role: 'assistant', content: letterMessage }
+          ]);
         }
       })
       .catch(console.error);
@@ -96,13 +102,6 @@ export default function StoryReaderClient({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  const adaptedAuthorLetter = authorLetter && {
-    opening: authorLetter.letter,
-    intention: authorLetter.whatICenteredOn ?? [],
-    optionalTweaks: authorLetter.thingsYouMightTweak ?? [],
-    invitation: authorLetter.invitation,
-  };
 
   const handleSendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -160,40 +159,69 @@ export default function StoryReaderClient({
     }
   };
 
-  const handleApplyEdit = async () => {
+  const applyEditsToStory = async () => {
     setIsLoading(true);
+    
     try {
-      const response = await fetch(`/api/stories/${id}/rewrite-spread`, {
+      // Build instruction from conversation history
+      const instruction = conversationHistory
+        .filter(msg => msg.role === 'user')
+        .map(msg => msg.content)
+        .join('\n\n');
+
+      const response = await fetch(`/api/stories/${id}/global-rewrite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          spreadIndex: index,
-          conversationHistory,
-          pages: spreads[index],
+          instruction: instruction || 'Apply the discussed changes to the story.',
         }),
       });
 
       const data = await response.json();
 
-      if (data.success && data.updatedPages) {
-        // Update local state with new pages
-        window.location.reload(); // Simple refresh, or implement optimistic update
+      if (data.ok) {
+        // Successfully rewrote the story
+        window.location.reload(); // Reload to show updated pages
+      } else {
+        console.error('Rewrite failed:', data.error);
+        alert(`Failed to apply edits: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Edit error:', error);
+      alert('Failed to apply edits. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
+
+  const handleConfirmStory = async () => {
+    // 🔍 Derive story intent (non-blocking, best-effort)
+    try {
+      fetch(`/api/stories/${id}/derive-intent`, {
+        method: "POST",
+      }).catch(() => {});
+    } catch {
+      // Intentionally ignored
+    }
+  
+    // 🚀 Continue immediately
+    router.push(`/stories/${id}/extract`);
+  };
+  
 
   if (!mounted) return null;
 
   return isMobile ? (
     <MobileStoryLayout
       page={<PageCard page={pages[index]} />}
-      authorLetter={adaptedAuthorLetter}
-      onAccept={() => setEditMode('accepted')}
-      onEdit={() => setEditMode('editing')}
+      authorLetter={authorLetter && {
+        opening: authorLetter.opening,
+        intention: authorLetter.intention ?? [],
+        optionalTweaks: authorLetter.optionalTweaks ?? [],
+        invitation: authorLetter.invitation,
+      }}
+      onAccept={() => router.push(`/stories/${id}/extract`)}
+      onEdit={() => {}} // Mobile keeps separate flow for now
     />
   ) : (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-fuchsia-50 to-amber-50">
@@ -243,132 +271,104 @@ export default function StoryReaderClient({
             </motion.div>
           </AnimatePresence>
 
-          {/* RIGHT: COLLABORATIVE PANEL */}
+          {/* RIGHT: CHAT PANEL */}
           <div className="sticky top-8 space-y-6">
 
-            {adaptedAuthorLetter && editMode === 'undecided' && (
-              <AuthorLetter
-                data={adaptedAuthorLetter}
-                onRespond={() => setEditMode('editing')}
-                onContinue={() => setEditMode('accepted')}
-              />
-            )}
-
-            {editMode === 'undecided' && (
-              <div className="bg-white rounded-3xl shadow-lg p-6 space-y-3">
-                <button
-                  onClick={() => setEditMode('accepted')}
-                  className="w-full py-4 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black shadow-md hover:scale-[1.03] transition"
-                >
-                  Accept this as-is
-                </button>
-
-                <button
-                  onClick={() => setEditMode('editing')}
-                  className="w-full py-4 rounded-full border border-stone-300 text-stone-700 font-bold hover:bg-stone-50 transition"
-                >
-                  Make edits with the author
-                </button>
+            {/* CHAT INTERFACE - Always visible */}
+            <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
+              
+              {/* Chat Header */}
+              <div className="bg-gradient-to-r from-violet-600 to-fuchsia-600 px-6 py-4 flex items-center gap-3">
+                <MessageSquare className="w-5 h-5 text-white" />
+                <h3 className="font-bold text-white">Discuss Your Story</h3>
               </div>
-            )}
 
-            {/* CHAT INTERFACE */}
-            {editMode === 'editing' && (
-              <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
-                
-                {/* Chat Header */}
-                <div className="bg-gradient-to-r from-violet-600 to-fuchsia-600 px-6 py-4 flex items-center gap-3">
-                  <MessageSquare className="w-5 h-5 text-white" />
-                  <h3 className="font-bold text-white">Discuss Edits</h3>
-                </div>
-
-                {/* Messages */}
-                <div className="h-[400px] overflow-y-auto p-4 space-y-4">
-                  {messages.length === 0 && (
-                    <div className="text-center text-stone-400 py-12">
-                      <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                      <p className="text-sm">
-                        Start a conversation about changes you'd like to make to this spread.
-                      </p>
-                    </div>
-                  )}
-
-                  {messages.map((msg, i) => (
-                    <div
-                      key={i}
-                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        className={`
-                          max-w-[80%] rounded-2xl px-4 py-3 text-sm
-                          ${msg.role === 'user'
-                            ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white'
-                            : 'bg-stone-100 text-stone-800'
-                          }
-                        `}
-                      >
-                        {msg.content}
-                      </div>
-                    </div>
-                  ))}
-
-                  {isLoading && (
-                    <div className="flex justify-start">
-                      <div className="bg-stone-100 rounded-2xl px-4 py-3">
-                        <Loader2 className="w-5 h-5 text-stone-400 animate-spin" />
-                      </div>
-                    </div>
-                  )}
-
-                  <div ref={messagesEndRef} />
-                </div>
-
-                {/* Input */}
-                <div className="border-t border-stone-200 p-4">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                      placeholder="Describe the changes you'd like..."
-                      className="flex-1 rounded-full border border-stone-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
-                      disabled={isLoading}
-                    />
-                    <button
-                      onClick={handleSendMessage}
-                      disabled={!input.trim() || isLoading}
-                      className="rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white p-2 hover:scale-105 transition disabled:opacity-40"
-                    >
-                      <Send className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Apply Button */}
-                {messages.length > 0 && (
-                  <div className="border-t border-stone-200 p-4">
-                    <button
-                      onClick={handleApplyEdit}
-                      disabled={isLoading}
-                      className="w-full py-3 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold hover:scale-[1.02] transition disabled:opacity-40"
-                    >
-                      Apply Edits to This Spread
-                    </button>
+              {/* Messages */}
+              <div className="h-[400px] overflow-y-auto p-4 space-y-4">
+                {messages.length === 0 && (
+                  <div className="text-center text-stone-400 py-12">
+                    <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">
+                      Loading your author's note...
+                    </p>
                   </div>
                 )}
+
+                {messages.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`
+                        max-w-[80%] rounded-2xl px-4 py-3 text-sm
+                        ${msg.role === 'user'
+                          ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white'
+                          : 'bg-stone-100 text-stone-800'
+                        }
+                      `}
+                    >
+                      <FormattedMessage content={msg.content} isUser={msg.role === 'user'} />
+                    </div>
+                  </div>
+                ))}
+
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div className="bg-stone-100 rounded-2xl px-4 py-3">
+                      <Loader2 className="w-5 h-5 text-stone-400 animate-spin" />
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
               </div>
-            )}
+
+              {/* Input */}
+              <div className="border-t border-stone-200 p-4">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                    placeholder="Describe the changes you'd like..."
+                    className="flex-1 rounded-full border border-stone-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-700"
+                    disabled={isLoading}
+                  />
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={!input.trim() || isLoading}
+                    className="rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white p-2 hover:scale-105 transition disabled:opacity-40"
+                  >
+                    <Send className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Apply Button */}
+              {messages.length > 1 && (
+                <div className="border-t border-stone-200 p-4">
+                  <button
+                    onClick={applyEditsToStory}
+                    disabled={isLoading}
+                    className="w-full py-3 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold hover:scale-[1.02] transition disabled:opacity-40"
+                  >
+                    Apply Edits to Story
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* CONTINUE BUTTON */}
             <button
-              onClick={() => router.push(`/stories/${id}/extract`)}
-              disabled={editMode === 'editing'}
-              className="w-full py-4 rounded-full bg-[#4635B1] text-white font-black shadow-xl shadow-[#4635B1]/30 flex items-center justify-center gap-2 hover:scale-[1.03] transition disabled:opacity-40"
+              onClick={handleConfirmStory}
+              className="w-full py-4 rounded-full bg-[#4635B1] text-white font-black shadow-xl shadow-[#4635B1]/30 flex items-center justify-center gap-2 hover:scale-[1.03] transition"
             >
               <Check className="w-5 h-5 text-[#AEEA94]" />
               Confirm Story & Continue
             </button>
+
           </div>
         </div>
       </div>
@@ -407,4 +407,65 @@ function chunkIntoSpreads(pages: StoryPage[]) {
     spreads.push([pages[i], pages[i + 1]]);
   }
   return spreads;
+}
+
+function formatAuthorLetterAsMessage(letter: AuthorLetterApiResponse): string {
+  let message = letter.opening;
+  
+  if (letter.intention.length > 0) {
+    message += "\n\n**What I focused on:**";
+    letter.intention.forEach(item => {
+      message += `\n• ${item}`;
+    });
+  }
+  
+  if (letter.optionalTweaks.length > 0) {
+    message += "\n\n**Optional ideas to explore:**";
+    letter.optionalTweaks.forEach(item => {
+      message += `\n• ${item}`;
+    });
+  }
+  
+  message += "\n\n*" + letter.invitation + "*";
+  
+  return message;
+}
+
+function FormattedMessage({ content, isUser }: { content: string; isUser: boolean }) {
+  return (
+    <div className="space-y-1">
+      {content.split('\n').map((line, idx) => {
+        // Bold text **like this**
+        if (line.includes('**')) {
+          const parts = line.split('**');
+          return (
+            <div key={idx}>
+              {parts.map((part, i) => 
+                i % 2 === 1 ? <strong key={i} className="font-bold">{part}</strong> : <span key={i}>{part}</span>
+              )}
+            </div>
+          );
+        }
+        // Bullet points
+        if (line.trim().startsWith('•')) {
+          return (
+            <div key={idx} className="flex gap-2 ml-2">
+              <span>•</span>
+              <span>{line.trim().substring(1).trim()}</span>
+            </div>
+          );
+        }
+        // Italic text *like this*
+        if (line.match(/^\*(.+)\*$/)) {
+          return <div key={idx} className="italic">{line.replace(/^\*|\*$/g, '')}</div>;
+        }
+        // Regular text
+        if (line.trim()) {
+          return <div key={idx}>{line}</div>;
+        }
+        // Empty line for spacing
+        return <div key={idx} className="h-2" />;
+      })}
+    </div>
+  );
 }

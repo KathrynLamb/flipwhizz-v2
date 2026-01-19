@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { bookCovers } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-export const dynamic = "force-dynamic"; // Ensure this doesn't get cached
+export const dynamic = "force-dynamic"; // prevent caching
 
 export async function GET(req: Request) {
   try {
@@ -11,11 +11,15 @@ export async function GET(req: Request) {
     const jobId = searchParams.get("jobId");
 
     if (!jobId) {
-      return NextResponse.json({ error: "Missing jobId" }, { status: 400 });
+      console.warn("⚠️ cover/status called without jobId");
+      return NextResponse.json(
+        { error: "Missing jobId" },
+        { status: 400 }
+      );
     }
 
-    // ✅ FIX: Use db.select() instead of db.query.bookCovers
-    // This prevents crashes if the relational schema isn't perfectly configured
+    console.log("🔎 COVER STATUS CHECK jobId:", jobId);
+
     const results = await db
       .select()
       .from(bookCovers)
@@ -23,6 +27,11 @@ export async function GET(req: Request) {
       .limit(1);
 
     const cover = results[0];
+
+    console.log(
+      "📦 COVER STATUS RESULT:",
+      cover ? { id: cover.id, imageUrl: cover.imageUrl } : "none"
+    );
 
     if (!cover) {
       return NextResponse.json({
@@ -34,9 +43,10 @@ export async function GET(req: Request) {
     return NextResponse.json({
       status: "complete",
       coverUrl: cover.imageUrl,
+      coverId: cover.id,
     });
   } catch (err) {
-    console.error("Cover status error:", err);
+    console.error("❌ Cover status error:", err);
     return NextResponse.json(
       { error: "Status check failed" },
       { status: 500 }

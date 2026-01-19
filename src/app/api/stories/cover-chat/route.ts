@@ -95,15 +95,21 @@ export async function POST(req: Request) {
       .where(eq(coverChatSessions.storyId, storyId))
       .then((rows) => rows[0]);
 
-    if (!session) {
-      const sessionId = uuid();
-      await db.insert(coverChatSessions).values({
-        id: sessionId,
-        storyId,
-        createdAt: new Date(),
-      });
-      session = { id: sessionId, storyId, createdAt: new Date() };
-    }
+      if (!session) {
+        const [newSession] = await db
+          .insert(coverChatSessions)
+          .values({
+            id: uuid(),
+            storyId,
+            coverPlan: null,
+            planUpdatedAt: null,
+            createdAt: new Date(),
+          })
+          .returning();
+      
+        session = newSession;
+      }
+      
 
     // Save user message
     await db.insert(coverChatMessages).values({

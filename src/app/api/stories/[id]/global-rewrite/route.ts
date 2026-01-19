@@ -102,12 +102,14 @@ export async function POST(
 
   try {
     const { id: storyId } = await context.params;
+    console.log("Story id", storyId)
 
     if (!storyId) {
       return NextResponse.json({ error: "Missing story id" }, { status: 400 });
     }
 
     const { instruction } = await request.json();
+    console.log("instruction", instruction)
     if (!instruction?.trim()) {
       return NextResponse.json({ error: "Missing instruction" }, { status: 400 });
     }
@@ -119,6 +121,8 @@ export async function POST(
       .limit(1)
       .then((rows) => rows[0]);
 
+      console.log("Story ", story)
+
     if (!story) {
       return NextResponse.json({ error: "Story not found" }, { status: 404 });
     }
@@ -129,7 +133,10 @@ export async function POST(
       .where(eq(storyPages.storyId, storyId))
       .orderBy(asc(storyPages.pageNumber));
 
+      console.log("Pages ", pages)
+
     const pageCount = pages.length || story.length || 24;
+    console.log("Page count ", pageCount)
 
     if (pageCount > MAX_GLOBAL_REWRITE_PAGES) {
       return NextResponse.json(
@@ -208,6 +215,7 @@ RULES:
         ],
       });
     } catch (err: any) {
+
       log("Anthropic call FAILED after ms", Date.now() - modelCallStarted);
       log("Anthropic error status", err?.status);
       log("Anthropic error message", err?.message);

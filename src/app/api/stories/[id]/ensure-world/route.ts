@@ -1,3 +1,4 @@
+// src/app/api/stories/[id]/ensure-world/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import {
@@ -5,23 +6,26 @@ import {
   storyPages,
   storyCharacters,
   storyLocations,
-  storyPageCharacters,
   storyStyleGuide,
+  storySpreads,
 } from "@/db/schema";
-import { eq, inArray, asc } from "drizzle-orm";
+import { eq, asc, sql } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function POST(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
 
-  console.log("🔵 ensure-world called:", storyId);
+  if (!storyId) {
+    return NextResponse.json({ error: "Missing storyId" }, { status: 400 });
+  }
 
-  /* -------------------------------------------------
-     1. Load story (authoritative state)
-  -------------------------------------------------- */
+  console.log("🔵 ensure-world called:", storyId);
 
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
@@ -32,112 +36,107 @@ export async function POST(
     return NextResponse.json({ error: "Story not found" }, { status: 404 });
   }
 
-  /* -------------------------------------------------
-     2. Pages must exist
-  -------------------------------------------------- */
-
+  // Pages must exist
   const pages = await db.query.storyPages.findMany({
     where: eq(storyPages.storyId, storyId),
     orderBy: asc(storyPages.pageNumber),
-    columns: { id: true, pageNumber: true },
+    columns: { id: true },
   });
 
   if (pages.length === 0) {
-    return NextResponse.json(
-      { error: "Story has no pages" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Story has no pages" }, { status: 400 });
   }
 
-  const pageIds = pages.map((p) => p.id);
-
-  /* -------------------------------------------------
-     3. Check existing world (NO side effects)
-  -------------------------------------------------- */
-
-  const [
-    characterLinks,
-    locationLinks,
-    pagePresence,
-    styleGuide,
-  ] = await Promise.all([
+  // World inputs
+  const [charLinks, locLinks, style, spreadCountRow] = await Promise.all([
     db.query.storyCharacters.findMany({
       where: eq(storyCharacters.storyId, storyId),
       columns: { storyId: true },
     }),
-
     db.query.storyLocations.findMany({
       where: eq(storyLocations.storyId, storyId),
       columns: { storyId: true },
     }),
-
-    pageIds.length
-      ? db.query.storyPageCharacters.findMany({
-          where: inArray(storyPageCharacters.pageId, pageIds),
-          columns: { id: true },
-        })
-      : Promise.resolve([]),
-
     db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),
       columns: { summary: true },
     }),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(storySpreads)
+      .where(eq(storySpreads.storyId, storyId)),
   ]);
 
-  const hasCharacters = characterLinks.length > 0;
-  const hasLocations = locationLinks.length > 0;
-  const hasPresence = pagePresence.length > 0;
-  const hasStyleText = Boolean(styleGuide?.summary);
+  const hasCharacters = charLinks.length > 0;
+  const hasLocations = locLinks.length > 0;
+  const hasStyleText = Boolean(style?.summary);
+  const spreadCount = spreadCountRow?.[0]?.count ?? 0;
+  const hasSpreads = spreadCount > 0;
+
+  const needsWorld = !hasCharacters || !hasLocations;
+  const needsStyle = !hasStyleText;
+  const needsSpreads = !hasSpreads;
 
   console.log("📊 ensure-world state:", {
     status: story.status,
     hasCharacters,
     hasLocations,
-    hasPresence,
     hasStyleText,
+    spreadCount,
+    needsWorld,
+    needsStyle,
+    needsSpreads,
   });
 
-  /* -------------------------------------------------
-     4. Decide what is missing
-  -------------------------------------------------- */
+  /**
+   * ✅ If everything exists, we are DONE
+   * Status does not matter anymore
+   */
+  if (!needsWorld && !needsStyle && !needsSpreads) {
+    // Opportunistically heal bad status
+    if (story.status !== "spreads_ready") {
+      await db
+        .update(stories)
+        .set({ status: "spreads_ready", updatedAt: new Date() })
+        .where(eq(stories.id, storyId));
+    }
 
-  const needsWorld =
-    !hasCharacters || !hasLocations || !hasPresence;
-
-  const needsStyle = !hasStyleText;
-
-  const needsExtraction = needsWorld || needsStyle;
-
-  /* -------------------------------------------------
-     5. Nothing missing → fetch only
-  -------------------------------------------------- */
-
-  if (!needsExtraction) {
     return NextResponse.json({
       status: "complete",
       mode: "fetching",
-      message: "World already complete",
       hasCharacters,
       hasLocations,
-      hasPresence,
       hasStyleText,
+      hasPresence: true,
+      hasSpreads: true,
     });
   }
 
-  /* -------------------------------------------------
-     6. Claim extraction (single-writer rule)
-  -------------------------------------------------- */
-
-  if (story.status !== "extracting") {
-    await db
-      .update(stories)
-      .set({ status: "extracting", updatedAt: new Date() })
-      .where(eq(stories.id, storyId));
+  /**
+   * Prevent duplicate extraction
+   */
+  if (story.status === "extracting" || story.status === "building_spreads") {
+    return NextResponse.json({
+      status: "processing",
+      mode: story.status,
+      hasCharacters,
+      hasLocations,
+      hasStyleText,
+      hasPresence: true,
+      hasSpreads,
+      needsWorld,
+      needsStyle,
+      needsSpreads,
+    });
   }
 
-  /* -------------------------------------------------
-     7. Dispatch ONLY what is missing
-  -------------------------------------------------- */
+  /**
+   * Claim extraction/build
+   */
+  await db
+    .update(stories)
+    .set({ status: "extracting", updatedAt: new Date() })
+    .where(eq(stories.id, storyId));
 
   if (needsWorld) {
     console.log("🚀 Dispatching story/extract-world");
@@ -155,18 +154,24 @@ export async function POST(
     });
   }
 
-  /* -------------------------------------------------
-     8. Explicit extracting response
-  -------------------------------------------------- */
+  if (needsSpreads) {
+    console.log("🚀 Dispatching story/build-spreads");
+    await inngest.send({
+      name: "story/build-spreads",
+      data: { storyId },
+    });
+  }
 
   return NextResponse.json({
     status: "processing",
     mode: "extracting",
     hasCharacters,
     hasLocations,
-    hasPresence,
     hasStyleText,
+    hasPresence: true,
+    hasSpreads,
     needsWorld,
     needsStyle,
+    needsSpreads,
   });
 }

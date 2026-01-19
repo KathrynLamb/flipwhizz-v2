@@ -80,12 +80,16 @@ async function getCharacterReferences(storyId: string) {
 -------------------------------------------------- */
 
 export const generateBookCovers = inngest.createFunction(
-  { id: "generate-cover", concurrency: 1 },
+  { 
+    id: "generate-cover", 
+    concurrency: 1,
+    retries: 0, // Don't retry - user can click again
+  },
   { event: "cover/generate" }, 
   async ({ event, step }) => {
     const { storyId, storyTitle, coverBrief, jobId } = event.data;
 
-    console.log("📚 STARTING COVER JOB:", storyTitle);
+    console.log("📚 STARTING COVER JOB:", storyTitle, "JobID:", jobId);
 
     // 1. Get Character Context
     const chars = await step.run("fetch-characters", async () => {
@@ -95,7 +99,7 @@ export const generateBookCovers = inngest.createFunction(
     // 2. Refine Prompt with Claude
     const coverPrompt = await step.run("generate-cover-prompt", async () => {
       const response = await anthropicClient.messages.create({
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-20250514",
         max_tokens: 1000,
         system: `You are an expert art director.`,
         messages: [
@@ -130,7 +134,7 @@ export const generateBookCovers = inngest.createFunction(
 
     // 3. Generate Image with Gemini
     const coverImage = await step.run("generate-cover-image", async () => {
-      console.log("🤖 Sending to Gemini...");
+      console.log("🤖 Sending to Gemini... (JobID:", jobId, ")");
       
       const parts = [
         {
@@ -152,6 +156,7 @@ export const generateBookCovers = inngest.createFunction(
       ];
 
       try {
+        console.log("⏳ Waiting for Gemini response...");
         const response = await geminiClient.models.generateContent({
           model: IMAGE_MODEL,
           contents: [{ role: "user", parts }],
@@ -170,9 +175,15 @@ export const generateBookCovers = inngest.createFunction(
           },
         });
 
+        console.log("✅ Gemini responded");
         const image = extractImage(response);
-        if (!image) throw new Error("Gemini returned no image (check logs for safety reason)");
+        
+        if (!image) {
+          console.error("❌ No image in response. Full response:", JSON.stringify(response, null, 2));
+          throw new Error("Gemini returned no image (check logs for safety reason)");
+        }
 
+        console.log("✅ Image extracted successfully");
         return image;
       } catch (err: any) {
         console.error("❌ Gemini Generation Failed:", err);
@@ -184,33 +195,36 @@ export const generateBookCovers = inngest.createFunction(
     const coverUrl = await step.run("upload-and-save", async () => {
       const url = await uploadImage(coverImage.data, storyId);
       
+      console.log("💾 Saving cover with jobId:", jobId);
+      
       await db.transaction(async (tx) => {
         // Unselect previous covers
         await tx.update(bookCovers)
           .set({ isSelected: false })
           .where(eq(bookCovers.storyId, storyId));
 
-        // Insert new cover
+        // Insert new cover with the CORRECT jobId
         await tx.insert(bookCovers).values({
           id: uuid(),
           storyId,
           imageUrl: url,
           promptUsed: coverPrompt,
-          generationId: jobId,
+          generationId: jobId, // ✅ This must match the jobId from the API
           isSelected: true,
           createdAt: new Date(),
         });
 
         // Update main story pointer
         await tx.update(stories)
-          .set({ coverImageUrl: url, updatedAt: new Date() })
+          .set({ frontCoverUrl: url, updatedAt: new Date() })
           .where(eq(stories.id, storyId));
       });
       
+      console.log("✅ Cover saved with generationId:", jobId);
       return url;
     });
 
     console.log("✅ COVER COMPLETE:", coverUrl);
-    return { success: true, coverUrl };
+    return { success: true, coverUrl, jobId };
   }
 );

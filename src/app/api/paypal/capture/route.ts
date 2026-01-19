@@ -1,3 +1,4 @@
+// api/paypal/capture
 import { NextResponse } from "next/server";
 import { paypalCaptureOrder } from "@/lib/paypal";
 import { db } from "@/db";

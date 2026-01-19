@@ -10,8 +10,10 @@ import {
   storyLocations,
   projects,
   storyStyleGuide,
+  storyPageCharacters,
+  storyPageLocations,
 } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -97,6 +99,8 @@ export const extractWorldJob = inngest.createFunction(
   async ({ event }) => {
     const { storyId } = event.data;
 
+    console.log("🔵 extractWorldJob started:", storyId);
+
     await db
       .update(stories)
       .set({ status: "extracting_world", updatedAt: new Date() })
@@ -121,6 +125,8 @@ export const extractWorldJob = inngest.createFunction(
       .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
       .join("\n");
 
+    console.log("🤖 Calling Claude for world extraction...");
+
     const res = await client.messages.create({
       model: MODEL,
       max_tokens: 3500,
@@ -144,13 +150,70 @@ Extract ONLY this JSON shape:
 
     const world = extractJson(extractClaudeText(res.content));
 
+    console.log("✅ Claude response parsed:", {
+      characters: world.characters?.length ?? 0,
+      locations: world.locations?.length ?? 0,
+    });
+
     await db.transaction(async (tx) => {
+      console.log("🧹 Cleaning up old world data...");
+
+      // 1. Get existing character and location IDs
+      const oldCharacterLinks = await tx.query.storyCharacters.findMany({
+        where: eq(storyCharacters.storyId, storyId),
+        columns: { characterId: true },
+      });
+
+      const oldLocationLinks = await tx.query.storyLocations.findMany({
+        where: eq(storyLocations.storyId, storyId),
+        columns: { locationId: true },
+      });
+
+      const oldCharacterIds = oldCharacterLinks.map((c) => c.characterId);
+      const oldLocationIds = oldLocationLinks.map((l) => l.locationId);
+
+      // 2. Delete page presence first (foreign key constraints)
+// 2. Delete page presence first (foreign key constraints)
+
+// Get all page IDs for this story
+const pageIds = pages.map((p) => p.id);
+
+if (pageIds.length > 0) {
+  await tx
+    .delete(storyPageCharacters)
+    .where(inArray(storyPageCharacters.pageId, pageIds));
+
+  await tx
+    .delete(storyPageLocations)
+    .where(inArray(storyPageLocations.pageId, pageIds));
+}
+
+
+      // 3. Delete link tables
       await tx.delete(storyCharacters).where(eq(storyCharacters.storyId, storyId));
       await tx.delete(storyLocations).where(eq(storyLocations.storyId, storyId));
 
+      // 4. Delete the actual character and location records
+      if (oldCharacterIds.length > 0) {
+        await tx
+          .delete(characters)
+          .where(inArray(characters.id, oldCharacterIds));
+        console.log("🗑️ Deleted", oldCharacterIds.length, "old characters");
+      }
+
+      if (oldLocationIds.length > 0) {
+        await tx
+          .delete(locations)
+          .where(inArray(locations.id, oldLocationIds));
+        console.log("🗑️ Deleted", oldLocationIds.length, "old locations");
+      }
+
+      console.log("✨ Creating new world data...");
+
+      // 5. Insert new characters
       for (const c of world.characters ?? []) {
         const characterId = uuid();
-      
+
         await tx.insert(characters).values({
           id: characterId,
           userId: project.userId!,
@@ -160,7 +223,7 @@ Extract ONLY this JSON shape:
           createdAt: new Date(),
           updatedAt: new Date(),
         });
-      
+
         await tx.insert(storyCharacters).values({
           storyId,
           characterId,
@@ -168,10 +231,13 @@ Extract ONLY this JSON shape:
           arcSummary: null,
         });
       }
-      
+
+      console.log("✅ Created", world.characters?.length ?? 0, "new characters");
+
+      // 6. Insert new locations
       for (const l of world.locations ?? []) {
         const locationId = uuid();
-      
+
         await tx.insert(locations).values({
           id: locationId,
           userId: project.userId!,
@@ -180,7 +246,7 @@ Extract ONLY this JSON shape:
           createdAt: new Date(),
           updatedAt: new Date(),
         });
-      
+
         await tx.insert(storyLocations).values({
           storyId,
           locationId,
@@ -188,6 +254,9 @@ Extract ONLY this JSON shape:
         });
       }
 
+      console.log("✅ Created", world.locations?.length ?? 0, "new locations");
+
+      // 7. Update or insert style guide
       await tx
         .insert(storyStyleGuide)
         .values({
@@ -212,11 +281,15 @@ Extract ONLY this JSON shape:
             updatedAt: new Date(),
           },
         });
+
+      console.log("✅ Style guide updated");
     });
 
     await db
       .update(stories)
       .set({ status: "world_ready", updatedAt: new Date() })
       .where(eq(stories.id, storyId));
+
+    console.log("🎉 extractWorldJob complete:", storyId);
   }
 );

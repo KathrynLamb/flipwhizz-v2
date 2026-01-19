@@ -7,8 +7,9 @@ import {
   storyCharacters,
   storyLocations,
   storyStyleGuide,
+  storySpreads
 } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export async function GET(
 
   try {
     /* -------------------------------------------------
-       1) STORY (minimal + SAFE)
+       1) STORY (SAFE)
     -------------------------------------------------- */
     const story = await db
       .select({
@@ -33,10 +34,17 @@ export async function GET(
       .from(stories)
       .where(eq(stories.id, storyId))
       .limit(1)
-      .then((r) => r[0]);
+      .then(r => r[0]);
 
     if (!story) {
-      return NextResponse.json({ error: "Story not found" }, { status: 404 });
+      // ⚠️ polling-safe: still return JSON
+      return NextResponse.json({
+        story: null,
+        characters: [],
+        locations: [],
+        style: null,
+        pages: [],
+      });
     }
 
     /* -------------------------------------------------
@@ -94,10 +102,10 @@ export async function GET(
       .from(storyStyleGuide)
       .where(eq(storyStyleGuide.storyId, storyId))
       .limit(1)
-      .then((r) => r[0] ?? null);
+      .then(r => r[0] ?? null);
 
     /* -------------------------------------------------
-       5) PAGES (lightweight)
+       5) PAGES
     -------------------------------------------------- */
     const pages = await db
       .select({
@@ -110,16 +118,29 @@ export async function GET(
 
     return NextResponse.json({
       story,
-      characters: fetchedCharacters,
-      locations: fetchedLocations,
+      characters: fetchedCharacters ?? [],
+      locations: fetchedLocations ?? [],
       style: styleGuide,
-      pages,
+      pages: pages ?? [],
     });
   } catch (err) {
     console.error("WORLD ROUTE ERROR", err);
-    return NextResponse.json(
-      { error: "World fetch failed" },
-      { status: 500 }
-    );
+
+    const [{ count: spreadCount }] = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(storySpreads)
+  .where(eq(storySpreads.storyId, storyId));
+
+
+    // 🔑 CRITICAL: never throw during polling
+    return NextResponse.json({
+      story: null,
+      characters: [],
+      locations: [],
+      style: null,
+      pages: [],
+      spreadCount,
+      error: "world_fetch_failed",
+    });
   }
 }

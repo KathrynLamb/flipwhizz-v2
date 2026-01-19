@@ -17,8 +17,8 @@ cloudinary.config({
 
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-const IMAGE_MODEL = "gemini-3-pro-image-preview"; // Nano Banana Pro
-const VISION_MODEL = "gemini-2.0-flash-lite-preview"; 
+const IMAGE_MODEL = "gemini-3-pro-image-preview";
+const VISION_MODEL = "gemini-2.0-flash-exp";
 
 // --- HELPERS ---
 
@@ -47,76 +47,265 @@ async function uploadImage(base64: string, storyId: string) {
 }
 
 function extractImage(result: any) {
-  // Gemini 3 Pro "Thinking" mode might return thoughts first.
-  // We need to find the part that is actually an image.
   const parts = result?.candidates?.[0]?.content?.parts || [];
-  const imgPart = parts.find((p: any) => p.inlineData);
   
-  if (imgPart) return imgPart.inlineData;
+  console.log("🔍 extractImage - Analyzing response:");
+  console.log("- Total parts:", parts.length);
+  
+  if (parts.length === 0) {
+    console.error("❌ ZERO PARTS - Logging full candidate:");
+    console.error(JSON.stringify(result?.candidates?.[0], null, 2));
+  }
+  
+  console.log("- Part types:", parts.map((p: any, i: number) => {
+    const keys = Object.keys(p);
+    return `Part ${i}: ${keys.join(', ')}`;
+  }));
+  
+  // Log first few parts in detail
+  parts.slice(0, 3).forEach((part: any, i: number) => {
+    console.log(`Part ${i} detail:`, JSON.stringify({
+      hasText: !!part.text,
+      hasInlineData: !!part.inlineData,
+      hasThought: !!part.thought,
+      textPreview: part.text?.substring(0, 50)
+    }));
+  });
+  
+  // Skip thought images, find the final image
+  for (const part of parts) {
+    if (part.inlineData && !part.thought) {
+      console.log("✅ Found final image (non-thought)");
+      return part.inlineData;
+    }
+  }
+  
+  // If no non-thought image, get the last image
+  const allImages = parts.filter((p: any) => p.inlineData);
+  if (allImages.length > 0) {
+    console.log("✅ Using last image from", allImages.length, "images");
+    return allImages[allImages.length - 1].inlineData;
+  }
 
-  const finishReason = result?.candidates?.[0]?.finishReason;
-  if (finishReason) console.warn("⚠️ No image found. Reason:", finishReason);
-  
+  console.error("❌ No inlineData found in any parts");
   return null;
 }
 
 /**
- * 👁️ VISION HELPER: Describe an image if we can't use it directly
+ * 👁️ Get detailed description of a character image
  */
-async function getVisionDescription(imgData: any, label: string) {
+async function getDetailedDescription(imgData: any, label: string) {
   try {
-    const prompt = `Describe the visual appearance of this person/location for an illustrator. Be specific about features, clothing, and mood.`;
+    const prompt = `Describe this person in extreme detail for an illustrator to recreate them:
+- Physical appearance (age, build, height estimate, distinctive features)
+- Facial features (face shape, eyes, nose, mouth, hair)
+- Clothing and style
+- Expression and demeanor
+- Any unique characteristics
+
+Be specific and vivid. This will be used to generate an illustration.`;
+    
     const visionRes = await client.models.generateContent({
       model: VISION_MODEL,
-      contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: imgData }] }],
+      contents: [{ 
+        role: "user", 
+        parts: [
+          { text: prompt }, 
+          { inlineData: imgData }
+        ] 
+      }],
     });
-    return visionRes.candidates?.[0]?.content?.parts?.[0]?.text || `A visual reference of ${label}`;
+    
+    const description = visionRes.candidates?.[0]?.content?.parts?.[0]?.text || `A person named ${label}`;
+    console.log(`📝 Description for ${label} (${description.length} chars)`);
+    return description;
   } catch (e) {
-    return `A visual reference of ${label}`;
+    console.error(`❌ Failed to describe ${label}:`, e);
+    return `A character named ${label}`;
   }
 }
 
 /**
- * 🧠 POLICY CHECKER: Checks if an image is a "Public Figure"
+ * 🎨 Try generating with image references
  */
-async function analyzeReference(imgData: any, label: string, type: string) {
-  console.log(`🔍 Checking policy for: ${label}`);
+async function tryWithImages(
+  leftText: string,
+  rightText: string,
+  stylePrompt: string,
+  imageReferences: Array<{ label: string; data: any; type?: string }>,
+  retryCount = 0
+): Promise<any> {
+  console.log(`🖼️ Attempt 1: Generating with image references... (retry ${retryCount})`);
   
-  // If it's a location, it's almost always safe to use as an image
-  if (type === 'location' || type === 'background') {
-    return { type: "image", content: imgData, label };
+  const parts: any[] = [];
+  
+  // Separate style references from character/location references
+  const styleRefs = imageReferences.filter(r => r.type === 'style');
+  const entityRefs = imageReferences.filter(r => r.type !== 'style');
+  
+  // Add style references FIRST (most important for overall look)
+  for (const ref of styleRefs) {
+    parts.push({ text: `ART STYLE REFERENCE - Match this artistic style:` });
+    parts.push({ inlineData: ref.data });
   }
+  
+  // Add character/location references
+  for (const ref of entityRefs) {
+    parts.push({ text: `VISUAL REFERENCE (${ref.label}):` });
+    parts.push({ inlineData: ref.data });
+  }
+  
+  // Add main instruction
+  const styleInstruction = styleRefs.length > 0
+    ? "Match the art style shown in the reference image above. "
+    : "";
+  
+  parts.push({
+    text: `
+You are creating a professional children's book illustration.
+
+STYLE: ${stylePrompt}
+${styleInstruction}
+
+FORMAT: Wide double-page spread (16:9, 2K resolution)
+
+SCENE:
+LEFT PAGE: "${leftText.trim()}"
+RIGHT PAGE: "${rightText.trim()}"
+
+Use the visual references provided to maintain character consistency.
+Create a warm, engaging illustration suitable for ages 3-8.
+    `.trim()
+  });
+
+  console.log(`📊 Prompt: ${parts.length} parts (${styleRefs.length} style + ${entityRefs.length} entities)`);
 
   try {
-    const prompt = `
-      Analyze this image. 
-      Is this a recognizable public figure (celebrity, athlete, politician)? 
-      Reply with JSON: {"isPublicFigure": boolean}
-    `;
-
-    const visionRes = await client.models.generateContent({
-      model: VISION_MODEL,
-      contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: imgData }] }],
-      config: { responseMimeType: "application/json" }
+    const response = await client.models.generateContent({
+      model: IMAGE_MODEL,
+      contents: [{ role: "user", parts }],
+      config: {
+        responseModalities: ['IMAGE'],
+        imageConfig: {
+          aspectRatio: "16:9", 
+          imageSize: "2K"
+        },
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+        ]
+      },
     });
 
-    const jsonText = visionRes.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-    const analysis = JSON.parse(jsonText);
-
-    // 🚨 PUBLIC FIGURE = FORCE TEXT (To prevent Identity Block)
-    if (analysis.isPublicFigure) {
-      console.warn(`⚠️ ${label} is a Public Figure. Converting to text description.`);
-      const desc = await getVisionDescription(imgData, label);
-      return { type: "text", content: desc, label };
+    // Check for blocks
+    if (response?.promptFeedback?.blockReason) {
+      console.warn("⚠️ Blocked:", response.promptFeedback.blockReason);
+      return null;
     }
 
-    // ✅ PRIVATE PERSON = KEEP IMAGE (Nano Banana Pro supports up to 5 humans)
-    console.log(`✅ ${label} is acceptable visual reference.`);
-    return { type: "image", content: imgData, label };
+    const image = extractImage(response);
+    
+    // If no image but we have retries left, try again
+    if (!image && retryCount < 2) {
+      console.warn(`⚠️ Empty response, retrying... (attempt ${retryCount + 1}/2)`);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+      return tryWithImages(leftText, rightText, stylePrompt, imageReferences, retryCount + 1);
+    }
+    
+    if (image) {
+      console.log("✅ Image generation with references succeeded!");
+      return image;
+    }
 
-  } catch (e) {
-    // On error, default to image and hope for the best
-    return { type: "image", content: imgData, label };
+    console.warn("⚠️ No image in response after retries");
+    return null;
+  } catch (e: any) {
+    console.warn("⚠️ Image generation with references failed:", e.message);
+    return null;
+  }
+}
+
+/**
+ * 📝 Fallback: Generate with text descriptions only
+ */
+async function tryWithTextDescriptions(
+  leftText: string,
+  rightText: string,
+  stylePrompt: string,
+  characterDescriptions: string,
+  retryCount = 0
+): Promise<any> {
+  console.log(`📝 Attempt 2: Generating with text descriptions... (retry ${retryCount})`);
+
+  const fullPrompt = `
+You are creating a professional children's book illustration.
+
+STYLE: ${stylePrompt}
+
+FORMAT: Wide double-page spread (16:9, 2K resolution)
+
+SCENE:
+LEFT PAGE: "${leftText.trim()}"
+RIGHT PAGE: "${rightText.trim()}"
+
+${characterDescriptions ? `\nCHARACTERS:\n${characterDescriptions}\n` : ''}
+
+Create a warm, engaging illustration suitable for ages 3-8.
+  `.trim();
+
+  console.log("📊 Prompt length:", fullPrompt.length, "characters");
+
+  try {
+    const response = await client.models.generateContent({
+      model: IMAGE_MODEL,
+      contents: fullPrompt,
+      config: {
+        responseModalities: ['IMAGE'],
+        imageConfig: {
+          aspectRatio: "16:9", 
+          imageSize: "2K"
+        },
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+        ]
+      },
+    });
+
+    console.log("📥 Text generation response received");
+    console.log("- Has candidates:", !!response?.candidates?.[0]);
+    console.log("- Prompt feedback:", JSON.stringify(response?.promptFeedback));
+
+    if (response?.promptFeedback?.blockReason) {
+      console.error("❌ Text fallback blocked:", response.promptFeedback.blockReason);
+      console.error("❌ Full prompt feedback:", JSON.stringify(response.promptFeedback, null, 2));
+      return null;
+    }
+
+    const image = extractImage(response);
+    
+    // If no image but we have retries left, try again
+    if (!image && retryCount < 2) {
+      console.warn(`⚠️ Empty response, retrying... (attempt ${retryCount + 1}/2)`);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+      return tryWithTextDescriptions(leftText, rightText, stylePrompt, characterDescriptions, retryCount + 1);
+    }
+    
+    if (image) {
+      console.log("✅ Text-only generation succeeded!");
+      return image;
+    }
+
+    console.error("❌ No image extracted from text response after retries");
+    return null;
+  } catch (e: any) {
+    console.error("❌ Text-only generation exception:", e.message);
+    console.error("❌ Stack:", e.stack);
+    throw e;
   }
 }
 
@@ -126,7 +315,7 @@ export const generateStyleSample = inngest.createFunction(
   { id: "generate-style-sample", concurrency: 1 },
   { event: "style/generate.sample" },
   async ({ event, step }) => {
-    const { storyId, references = [], force = false, description } = event.data;
+    const { storyId, references = [], description } = event.data;
     if (!storyId) throw new Error("Missing storyId");
 
     const stylePrompt = description || "Whimsical, painterly children's book illustration";
@@ -143,124 +332,107 @@ export const generateStyleSample = inngest.createFunction(
       rightText = pages[1]?.text ?? "";
     }
 
+    console.log("🎨 Starting generation for story:", storyId);
+    console.log("- References:", references.length);
+    console.log("- Strategy: Try images first, fallback to text");
+
     // ---------------------------------------------------------
-    // 1. PREPARE & ANALYZE REFERENCES
+    // 1. FETCH REFERENCE IMAGES
     // ---------------------------------------------------------
     
-    // We do this UP FRONT to sort out the "Public Figure" issue (Juninho)
-    // while keeping the "Private Figure" (Keith) as a high-fidelity image.
-    
-    const preparedRefs = await step.run("prepare-references", async () => {
-      const processed = [];
+    const imageReferences = await step.run("fetch-references", async () => {
+      const refs: Array<{ label: string; data: any; type?: string }> = [];
+      
+      // 1. Get style guide image from database if it exists
+      const styleGuide = await db.query.storyStyleGuide.findFirst({
+        where: eq(storyStyleGuide.storyId, storyId)
+      });
+      
+      if (styleGuide?.styleGuideImage) {
+        console.log("📸 Found style guide image in database");
+        const img = await fetchImageAsBase64(styleGuide.styleGuideImage);
+        if (img) {
+          refs.push({
+            label: "Art Style",
+            data: { data: img.data, mimeType: img.mimeType },
+            type: "style"
+          });
+        }
+      }
+      
+      // 2. Get character and location references from event payload
       for (const ref of references) {
         if (ref.url) {
           const img = await fetchImageAsBase64(ref.url);
           if (img) {
-            // Check if it's a celebrity (Juninho) or a private person (Keith)
-            const result = await analyzeReference(
-              { data: img.data, mimeType: img.mimeType }, 
-              ref.label, 
-              ref.type || 'character'
-            );
-            processed.push(result);
+            refs.push({
+              label: ref.label,
+              data: { data: img.data, mimeType: img.mimeType },
+              type: ref.type || 'character'
+            });
           }
         }
       }
-      return processed;
-    });
-
-    // ---------------------------------------------------------
-    // 2. CONSTRUCT PROMPT (PRO MODE)
-    // ---------------------------------------------------------
-
-    const parts: any[] = [];
-
-    // A. Attach Visual References (Images)
-    // "Nano Banana Pro" supports up to 5 humans / 6 objects.
-    preparedRefs.filter(r => r.type === "image").forEach(r => {
-      parts.push({ text: `VISUAL REFERENCE (${r.label}):` });
-      parts.push({ inlineData: r.content });
-    });
-
-    // B. Attach Text Descriptions (Converted Celebrities)
-    const textRefs = preparedRefs.filter(r => r.type === "text");
-    if (textRefs.length > 0) {
-      parts.push({ 
-        text: `CHARACTER DESCRIPTIONS (Generate based on these traits):\n${textRefs.map(r => `- ${r.label}: ${r.content}`).join("\n")}` 
-      });
-    }
-
-    // C. The Main Instruction
-    // Explicitly requesting text rendering as per docs
-    parts.push({
-      text: `
-        You are a professional children's book illustrator.
-        
-        TASK: Create a wide double-page spread (16:9).
-        STYLE: ${stylePrompt}
-        
-        SCENE CONTENT:
-        - Integrate the Visual References provided.
-        - Render the story text clearly into the layout.
-        
-        LEFT PAGE TEXT:
-        "${leftText.trim()}"
-        
-        RIGHT PAGE TEXT:
-        "${rightText.trim()}"
-      `
-    });
-
-    // ---------------------------------------------------------
-    // 3. GENERATE (HIGH FIDELITY)
-    // ---------------------------------------------------------
-
-    const generatedImage = await step.run("generate-pro", async () => {
-      console.log(`🎨 Generating with ${IMAGE_MODEL}...`);
       
-      try {
-        const response = await client.models.generateContent({
-          model: IMAGE_MODEL,
-          contents: [{ role: "user", parts }],
-          config: {
-            // 🚀 KEY FIX: Explicitly set Aspect Ratio and Size
-            // The docs require this for high-res output and non-square images.
-            imageConfig: {
-              aspectRatio: "16:9", 
-              imageSize: "2K"      // Uppercase 'K' is mandatory per docs
-            },
-            // We ask for IMAGE only to get the final result, 
-            // but we can look for thoughts in the logging if needed.
-            responseModalities: ["IMAGE"], 
-            safetySettings: [
-              { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-              { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-              { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-              { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            ]
-          },
-        });
+      console.log(`✅ Fetched ${refs.length} reference images (${refs.filter(r => r.type === 'style').length} style + ${refs.filter(r => r.type !== 'style').length} entities)`);
+      return refs;
+    });
 
-        return extractImage(response);
-      } catch (e: any) {
-        console.error("Gemini Generation Error:", e);
-        throw new Error(e.message || "Generation failed");
+    // ---------------------------------------------------------
+    // 2. TRY WITH IMAGES FIRST (Higher Fidelity)
+    // ---------------------------------------------------------
+    
+    const generatedImage = await step.run("generate-image", async () => {
+      let result: any = null;
+      
+      if (imageReferences.length > 0) {
+        result = await tryWithImages(leftText, rightText, stylePrompt, imageReferences);
+      } else {
+        console.log("⏭️ No references, skipping image attempt");
       }
+
+      // ---------------------------------------------------------
+      // 3. FALLBACK: TEXT DESCRIPTIONS
+      // ---------------------------------------------------------
+      
+      if (!result) {
+        console.log("🔄 Images failed or blocked, trying text descriptions...");
+        
+        const characterDescriptions: string[] = [];
+        
+        for (const ref of imageReferences) {
+          const desc = await getDetailedDescription(ref.data, ref.label);
+          characterDescriptions.push(`${ref.label}: ${desc}`);
+        }
+
+        result = await tryWithTextDescriptions(
+          leftText, 
+          rightText, 
+          stylePrompt, 
+          characterDescriptions.join("\n\n")
+        );
+      }
+      
+      return result;
     });
 
     // ---------------------------------------------------------
     // 4. SAVE
     // ---------------------------------------------------------
 
-    if (!generatedImage) throw new Error("No image returned from Gemini.");
+    if (!generatedImage) {
+      throw new Error("Both image and text generation attempts failed");
+    }
 
-    const uploadedUrl = await step.run("upload-result", () => 
+    const uploadedUrl = await step.run("upload", () => 
       uploadImage(generatedImage.data, storyId)
     );
 
     await db.update(storyStyleGuide)
       .set({ sampleIllustrationUrl: uploadedUrl, updatedAt: new Date() })
       .where(eq(storyStyleGuide.storyId, storyId));
+
+    console.log("🎉 Success! Image uploaded:", uploadedUrl);
 
     return { success: true, url: uploadedUrl };
   }

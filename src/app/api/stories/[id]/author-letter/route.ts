@@ -19,6 +19,12 @@ type AuthorLetterResponse = {
   invitation: string;
 };
 
+type ClaudeResponse = {
+  letter: string;
+  whatICenteredOn: string[];
+  thingsYouMightTweak: string[];
+  invitation: string;
+};
 
 /* ======================================================
    PROMPT BUILDERS
@@ -37,7 +43,7 @@ TONE:
 - Assume the draft may be accepted as-is
 
 STRICT RULES:
-- Total response under 120 words
+- Total response under 80 words
 - No repetition
 - No literary analysis
 - No plot summary
@@ -129,34 +135,43 @@ export async function POST(req: Request) {
       .replace(/```$/i, "")
       .trim();
 
-    let parsed: AuthorLetterResponse;
+    let parsed: ClaudeResponse;
 
     try {
       parsed = JSON.parse(cleaned);
     } catch {
       console.error("❌ Invalid JSON from Claude:", rawText);
       return NextResponse.json(
-        { error: "Invalid author letter payload" },
+        { error: "Invalid author letter payload", debug: rawText.slice(0, 200) },
         { status: 400 }
       );
     }
 
-    // Final validation
-// 🔒 Final shape validation (NEW SHAPE)
-if (
-  typeof parsed.opening !== "string" ||
-  !Array.isArray(parsed.intention) ||
-  !Array.isArray(parsed.optionalTweaks) ||
-  typeof parsed.invitation !== "string"
-) {
-  return NextResponse.json(
-    { error: "Malformed author letter payload" },
-    { status: 400 }
-  );
-}
+    // Validate Claude's response shape
+    if (
+      typeof parsed.letter !== "string" ||
+      !Array.isArray(parsed.whatICenteredOn) ||
+      !Array.isArray(parsed.thingsYouMightTweak) ||
+      typeof parsed.invitation !== "string"
+    ) {
+      console.error("❌ Malformed response from Claude:", parsed);
+      return NextResponse.json(
+        { error: "Malformed author letter payload" },
+        { status: 400 }
+      );
+    }
 
+    // Transform to client-expected shape
+    const response: AuthorLetterResponse = {
+      opening: parsed.letter,
+      intention: parsed.whatICenteredOn,
+      optionalTweaks: parsed.thingsYouMightTweak,
+      invitation: parsed.invitation,
+    };
 
-    return NextResponse.json(parsed);
+    console.log("✅ Author letter generated successfully");
+
+    return NextResponse.json(response);
   } catch (err) {
     console.error("[author-letter]", err);
     return NextResponse.json(

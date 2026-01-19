@@ -8,7 +8,8 @@ import {
   integer,
   uuid,
   boolean,
-  jsonb
+  jsonb,
+  index
 } from "drizzle-orm/pg-core";
 
 /* ==================== USERS ==================== */
@@ -394,30 +395,89 @@ export const pageEntities = pgTable("page_entities", {
 
 // Add this to src/db/schema.ts
 
-export const bookCovers = pgTable("book_covers", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  storyId: uuid("story_id")
-    .references(() => stories.id, { onDelete: "cascade" })
-    .notNull(),
-  
-  // The generated image
-  imageUrl: text("image_url").notNull(),
-  
-  // The specific prompt used for this version (crucial for debugging/regenerating)
-  promptUsed: text("prompt_used"),
-  
-  // Link back to the Inngest job or batch ID
-  generationId: text("generation_id"),
-  
-  // Is this the one the user currently has active?
-  isSelected: boolean("is_selected").default(false).notNull(),
-  
-  createdAt: timestamp("created_at").defaultNow(),
-});
+export const bookCovers = pgTable(
+  "book_covers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    storyId: uuid("story_id")
+      .references(() => stories.id, { onDelete: "cascade" })
+      .notNull(),
+
+    /* ---------------- CORE IMAGE ---------------- */
+
+    imageUrl: text("image_url").notNull(),
+
+    // Full prompt used to generate THIS image
+    promptUsed: text("prompt_used"),
+
+    generationId: text("generation_id"),
+
+    isSelected: boolean("is_selected").default(false).notNull(),
+
+    /* ---------------- TEXT CONTENT ---------------- */
+
+    titleText: varchar("title_text", { length: 200 }),
+    subtitleText: varchar("subtitle_text", { length: 200 }),
+    authorText: varchar("author_text", { length: 200 }),
+
+    backCoverText: text("back_cover_text"),
+    tagline: varchar("tagline", { length: 200 }),
+
+    /* ---------------- DESIGN INTENT ---------------- */
+
+    // Character IDs intentionally visible on the cover
+    charactersShown: jsonb("characters_shown")
+      .$type<string[]>() // character IDs
+      .default([]),
+
+    // Location IDs intentionally referenced on the cover
+    locationsShown: jsonb("locations_shown")
+      .$type<string[]>()
+      .default([]),
+
+    // Snapshot of style at time of generation
+    styleSnapshot: jsonb("style_snapshot"),
+    /*
+      {
+        artStyle,
+        colorPalette,
+        visualThemes,
+        negativePrompt
+      }
+    */
+
+    /* ---------------- LAYOUT / COMPOSITION ---------------- */
+
+    layoutNotes: text("layout_notes"),
+    /*
+      e.g.
+      - Front: Sophia riding upside-down on sheep
+      - Back: Woolton village skyline, space for blurb
+      - Spine: vertical title, sheep tail overlapping
+    */
+
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (t) => ({
+    generationIdx: index("book_covers_generation_idx").on(t.generationId),
+    storyIdx: index("book_covers_story_idx").on(t.storyId),
+  })
+);
+
 
 export const coverChatSessions = pgTable("cover_chat_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
-  storyId: uuid("story_id").notNull().references(() => stories.id, { onDelete: "cascade" }),
+  storyId: uuid("story_id")
+    .notNull()
+    .references(() => stories.id, { onDelete: "cascade" }),
+
+  // ✅ NEW: latest structured plan (json)
+  coverPlan: jsonb("cover_plan"),
+
+  // ✅ NEW: plan updated time
+  planUpdatedAt: timestamp("plan_updated_at"),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -481,4 +541,108 @@ export const storySpreads = pgTable("story_spreads", {
     .references(() => storyPages.id, { onDelete: "set null" }),
 
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+
+export const storyIntent = pgTable("story_intent", {
+  id: uuid("id").primaryKey(),
+  storyId: uuid("story_id")
+    .references(() => stories.id, { onDelete: "cascade" })
+    .notNull()
+    .unique(),
+
+  primaryPurpose: text("primary_purpose").notNull(),
+  intendedRecipient: text("intended_recipient").notNull(),
+
+  emotionalTone: jsonb("emotional_tone")
+    .$type<string[]>()
+    .notNull(),
+
+  occasion: text("occasion"),
+
+  permanenceLevel: text("permanence_level")
+    .$type<"playful" | "keepsake" | "legacy">()
+    .notNull(),
+
+  thingsToEmphasise: jsonb("things_to_emphasise")
+    .$type<string[]>()
+    .notNull(),
+
+  thingsToAvoid: jsonb("things_to_avoid")
+    .$type<string[]>()
+    .notNull(),
+
+  authorPerspective: text("author_perspective"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const storySpreadPresence = pgTable("story_spread_presence", {
+  id: uuid("id").primaryKey().defaultRandom(),
+
+  spreadId: uuid("spread_id")
+    .references(() => storySpreads.id, { onDelete: "cascade" })
+    .notNull()
+    .unique(),
+
+  // 🔑 Claude’s decision (locked)
+  primaryLocationId: uuid("primary_location_id")
+    .references(() => locations.id, { onDelete: "set null" }),
+
+  characters: jsonb("characters").$type<{
+    characterId: string;
+    role: "primary" | "secondary";
+    confidence: number; // 0–1
+    reason: string;
+  }[]>(),
+
+  excludedCharacters: jsonb("excluded_characters").$type<{
+    characterId: string;
+    reason: string;
+  }[]>(),
+
+  reasoning: text("reasoning"),
+
+  source: varchar("source", { length: 20 }).default("claude"),
+
+  locked: boolean("locked").default(false),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const storySpreadScene = pgTable("story_spread_scene", {
+  id: uuid("id").primaryKey().defaultRandom(),
+
+  spreadId: uuid("spread_id")
+    .references(() => storySpreads.id, { onDelete: "cascade" })
+    .notNull()
+    .unique(),
+
+  // Human-readable description
+  sceneSummary: text("scene_summary").notNull(),
+
+  // This is what Gemini will receive
+  illustrationPrompt: text("illustration_prompt").notNull(),
+
+  compositionNotes: jsonb("composition_notes")
+    .$type<string[]>()
+    .default([]),
+
+  mood: varchar("mood", { length: 80 }),
+
+  doNotInclude: jsonb("do_not_include")
+    .$type<string[]>()
+    .default([]),
+
+  // Safety + continuity
+  negativePrompt: text("negative_prompt"),
+
+  source: varchar("source", { length: 20 }).default("claude"),
+
+  locked: boolean("locked").default(false),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });

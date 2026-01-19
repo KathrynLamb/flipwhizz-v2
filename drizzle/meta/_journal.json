@@ -246,6 +246,34 @@
       "when": 1768321380071,
       "tag": "0034_volatile_rhino",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1768669907965,
+      "tag": "0035_rare_diamondback",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1768747149065,
+      "tag": "0036_fantastic_supernaut",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1768747877813,
+      "tag": "0037_overconfident_maddog",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1768842568957,
+      "tag": "0038_chilly_overlord",
+      "breakpoints": true
     }
   ]
 }

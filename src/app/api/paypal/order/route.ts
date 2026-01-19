@@ -1,4 +1,4 @@
-
+// api/paypal/order
 import { NextResponse } from "next/server";
 import { paypalCreateOrder } from "@/lib/paypal";
 
