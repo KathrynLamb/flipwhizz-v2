@@ -41,7 +41,7 @@ export default async function StudioPage({
       <StudioEditor 
         story={story} 
         initialPages={pages} 
-        styleGuide={styleGuide}
+        // styleGuide={styleGuide}
         initialMode={mode === 'live' ? 'live' : 'edit'}
       />
     </main>
