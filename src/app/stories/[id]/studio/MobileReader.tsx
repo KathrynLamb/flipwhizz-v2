@@ -65,6 +65,8 @@ export default function MobileReader({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const spreads = useMemo(() => buildSpreads(pages), [pages]);
+  const overviewScrollRef = useRef<HTMLDivElement>(null);
+
 
   const [index, setIndex] = useState(0);
   const [showUI, setShowUI] = useState(true);
@@ -72,6 +74,34 @@ export default function MobileReader({
   const [viewportWidth, setViewportWidth] = useState<number | null>(null);
 
   const x = useMotionValue(0);
+
+  useEffect(() => {
+    if (!showOverview) return;
+  
+    const container = overviewScrollRef.current;
+    if (!container) return;
+  
+    const active = container.querySelector<HTMLElement>(
+      `[data-index="${index}"]`
+    );
+  
+    if (!active) return;
+  
+    // Scroll so the active item is nicely visible (not hard-top)
+    const containerRect = container.getBoundingClientRect();
+    const activeRect = active.getBoundingClientRect();
+  
+    const offset =
+      activeRect.top -
+      containerRect.top -
+      container.clientHeight / 3;
+  
+    container.scrollBy({
+      top: offset,
+      behavior: "smooth",
+    });
+  }, [showOverview, index]);
+  
 
   /* ------------------------------ Measure width ---------------------------- */
 
@@ -166,7 +196,9 @@ export default function MobileReader({
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 bg-black text-white overflow-hidden"
+      className={`fixed inset-0 bg-black text-white ${
+        showOverview ? "overflow-y-auto" : "overflow-hidden"
+      }`}
       style={{
         paddingTop: "env(safe-area-inset-top)",
         paddingBottom: "env(safe-area-inset-bottom)",
@@ -178,7 +210,7 @@ export default function MobileReader({
       <motion.div
         className="flex h-full"
         style={{ x }}
-        drag="x"
+        drag={showOverview ? false : "x"}
         dragConstraints={{
           left: -((spreads.length - 1) * viewportWidth),
           right: 0,
@@ -251,10 +283,14 @@ export default function MobileReader({
             </button>
           </header>
 
-          <div className="p-4 grid grid-cols-2 gap-4 overflow-y-auto pb-24">
+          <div
+            ref={overviewScrollRef}
+            className="p-4 grid grid-cols-2 gap-4 overflow-y-auto pb-24 overscroll-contain touch-pan-y"
+            >
             {spreads.map((s, i) => (
               <button
                 key={s.id}
+                data-index={i}
                 onClick={() => {
                   snapTo(i);
                   setShowOverview(false);

@@ -81,7 +81,7 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
       subtitle: `${hub.steps.write.pageCount} pages`,
       complete: hub.steps.write.complete,
       locked: false,
-      path: `/stories/${story.id}/write`,
+      path: `/stories/${story.id}/pages`,
     },
     {
       number: 2,
