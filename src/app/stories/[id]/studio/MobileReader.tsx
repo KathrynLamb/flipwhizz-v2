@@ -1,12 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ChevronLeft,
-  LayoutGrid,
-  X,
-  Loader2,
-} from "lucide-react";
+import { ChevronLeft, LayoutGrid, X, Loader2 } from "lucide-react";
 import { motion, useMotionValue, animate } from "framer-motion";
 import { useRouter } from "next/navigation";
 
@@ -81,15 +76,32 @@ export default function MobileReader({
   /* ------------------------------ Measure width ---------------------------- */
 
   useEffect(() => {
-    function measure() {
-      const w = containerRef.current?.offsetWidth || window.innerWidth;
+    const measure = () => {
+      const el = containerRef.current;
+      const w = el?.getBoundingClientRect().width ?? window.innerWidth;
       setViewportWidth(w);
+      // snap instantly to correct position (prevents "black" due to mismatch)
       animate(x, -index * w, { duration: 0 });
-    }
+    };
 
     measure();
+
+    // ResizeObserver is more reliable than window resize on mobile safari
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(measure)
+        : null;
+
+    if (ro && containerRef.current) ro.observe(containerRef.current);
+
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+      ro?.disconnect();
+    };
   }, [index, x]);
 
   /* ------------------------------ Navigation -------------------------------- */
@@ -151,14 +163,16 @@ export default function MobileReader({
 
   const spread = spreads[index];
 
-  /* -------------------------------------------------------------------------- */
-  /*                                   Render                                   */
-  /* -------------------------------------------------------------------------- */
-
   return (
     <div
       ref={containerRef}
       className="fixed inset-0 bg-black text-white overflow-hidden"
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingLeft: "env(safe-area-inset-left)",
+        paddingRight: "env(safe-area-inset-right)",
+      }}
     >
       {/* ============================ SWIPE TRACK ============================ */}
       <motion.div
@@ -171,12 +185,15 @@ export default function MobileReader({
         }}
         dragElastic={0.08}
         onDragEnd={onDragEnd}
-        onTap={() => setShowUI(v => !v)}
+        onTap={() => setShowUI((v) => !v)}
       >
         {spreads.map((s) => (
           <div
             key={s.id}
-            className="w-screen h-full flex items-center justify-center px-4 landscape:px-16"
+            // ✅ critical: prevent flexbox shrinking
+            className="flex-none shrink-0 h-full flex items-center justify-center px-4 landscape:px-16"
+            // ✅ critical: make slide width match the measurement we use for x
+            style={{ width: viewportWidth }}
           >
             <div className="bg-black rounded-xl shadow-2xl overflow-hidden max-w-[1100px] w-full h-full landscape:h-[90%] flex items-center justify-center">
               {s.imageUrl ? (
@@ -186,6 +203,7 @@ export default function MobileReader({
                     s.rightPage ? `–${s.rightPage.pageNumber}` : ""
                   }`}
                   className="max-w-full max-h-full object-contain"
+                  draggable={false}
                 />
               ) : (
                 <Loader2 className="w-10 h-10 animate-spin text-white/60" />
@@ -252,6 +270,8 @@ export default function MobileReader({
                   <img
                     src={s.imageUrl}
                     className="w-full aspect-[3/4] object-contain bg-black"
+                    alt=""
+                    draggable={false}
                   />
                 ) : (
                   <div className="w-full aspect-[3/4] flex items-center justify-center text-xs text-white/40 bg-black">
