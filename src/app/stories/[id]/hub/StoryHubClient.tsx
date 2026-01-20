@@ -8,11 +8,11 @@ import {
   Users,
   MapPin,
   Palette,
-  Lock,
   Check,
   Wand2,
   BookOpen,
   Image as ImageIcon,
+  Lock,
 } from 'lucide-react';
 
 /* ======================================================
@@ -26,7 +26,7 @@ const fadeUp = {
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
-    transition: { duration: 0.5, ease: easeOut, delay: i * 0.08 },
+    transition: { duration: 0.5, ease: easeOut, delay: i * 0.1 },
   }),
 };
 
@@ -64,21 +64,48 @@ type StoryHubClientProps = {
 export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
   const router = useRouter();
 
-  const writeComplete = hub.steps.write.complete;
-  const extractComplete =
-    hub.steps.extract.characters > 0 && hub.steps.extract.locations > 0;
-  const designComplete = hub.steps.design.complete;
-
-  const currentStep = !writeComplete
-    ? 1
-    : !extractComplete
-    ? 2
-    : !designComplete
-    ? 3
-    : 4;
+  const steps = [
+    {
+      number: 1,
+      icon: BookOpen,
+      title: 'Write Story',
+      subtitle: `${hub.steps.write.pageCount} pages`,
+      complete: hub.steps.write.complete,
+      locked: false,
+      path: `/stories/${story.id}/write`,
+    },
+    {
+      number: 2,
+      icon: Wand2,
+      title: 'Extract World',
+      subtitle: `${hub.steps.extract.characters} characters, ${hub.steps.extract.locations} places`,
+      complete:
+        hub.steps.extract.characters > 0 && hub.steps.extract.locations > 0,
+      locked: !hub.steps.write.complete,
+      path: `/stories/${story.id}/extract`,
+    },
+    {
+      number: 3,
+      icon: Palette,
+      title: 'Design Characters',
+      subtitle: `${hub.steps.design.charactersConfirmed}/${hub.steps.design.charactersTotal} confirmed`,
+      complete: hub.steps.design.complete,
+      locked: !hub.steps.design.unlocked,
+      path: `/stories/${story.id}/characters`,
+    },
+    {
+      number: 4,
+      icon: ImageIcon,
+      title: 'Create Art',
+      subtitle: 'Generate illustrations',
+      complete: false,
+      locked: !hub.steps.design.complete,
+      path: `/stories/${story.id}/art`,
+    },
+  ];
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-br from-violet-50 via-fuchsia-50 to-blue-50 flex flex-col">
+    <div className="h-screen overflow-hidden bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 flex flex-col">
       {/* HEADER */}
       <header className="flex-shrink-0 bg-white/80 backdrop-blur-xl border-b border-gray-200/50 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -93,7 +120,7 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 shadow-lg"
+            className="flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 shadow-lg"
           >
             <Sparkles className="w-4 h-4 text-white" />
             <span className="text-sm font-black text-white">
@@ -104,198 +131,110 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
       </header>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 overflow-hidden px-6 py-6 md:py-10">
-        <div className="max-w-7xl mx-auto h-full flex flex-col">
+      <main className="flex-1 overflow-hidden px-6 py-8">
+        <div className="max-w-6xl mx-auto h-full flex flex-col">
           {/* TITLE */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: easeOut }}
-            className="text-center mb-8 md:mb-10 flex-shrink-0"
+            className="text-center mb-10 flex-shrink-0"
           >
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-black mb-3 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent leading-tight">
+            <h1 className="text-4xl md:text-6xl font-black mb-3 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent leading-tight">
               {story.title}
             </h1>
-            <p className="text-sm md:text-base lg:text-lg text-stone-600 font-semibold">
-              Your story's journey from words to wonderful
+            <p className="text-sm md:text-base text-stone-600 font-medium">
+              Follow your story's journey to completion
             </p>
           </motion.div>
 
-          {/* FLOW DIAGRAM */}
-          <div className="flex-1 flex items-center justify-center min-h-0 mb-6">
-            {/* DESKTOP & TABLET: 2x2 GRID */}
-            <div className="hidden sm:block w-full max-w-6xl">
-              <div className="grid grid-cols-2 gap-x-8 gap-y-6">
-                {/* ROW 1 */}
-                <div className="relative">
-                  <FlowCard
-                    step={1}
-                    currentStep={currentStep}
-                    icon={BookOpen}
-                    title="Write Story"
-                    description={`${hub.steps.write.pageCount} pages`}
-                    complete={writeComplete}
-                    onClick={() => router.push(`/stories/${story.id}/write`)}
-                    index={0}
+          {/* JOURNEY TRACK */}
+          <div className="flex-1 flex items-center justify-center">
+            {/* DESKTOP: Horizontal Track */}
+            <div className="hidden md:block w-full">
+              <div className="relative">
+                {/* Progress Track */}
+                <div className="absolute top-20 left-0 right-0 h-1 bg-gray-200 rounded-full">
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full"
+                    initial={{ width: '0%' }}
+                    animate={{ width: `${(hub.progressPercent / 100) * 100}%` }}
+                    transition={{ duration: 1, ease: easeOut, delay: 0.5 }}
                   />
-                  <HorizontalArrow complete={writeComplete} />
                 </div>
 
-                <FlowCard
-                  step={2}
-                  currentStep={currentStep}
-                  icon={Wand2}
-                  title="Extract World"
-                  description={`${hub.steps.extract.characters} characters, ${hub.steps.extract.locations} places`}
-                  complete={extractComplete}
-                  locked={!writeComplete}
-                  onClick={() =>
-                    writeComplete && router.push(`/stories/${story.id}/extract`)
-                  }
-                  index={1}
-                />
-
-                {/* ROW 2 */}
-                <div className="relative">
-                  <FlowCard
-                    step={3}
-                    currentStep={currentStep}
-                    icon={Palette}
-                    title="Design Characters"
-                    description={`${hub.steps.design.charactersConfirmed}/${hub.steps.design.charactersTotal} confirmed`}
-                    complete={designComplete}
-                    locked={!hub.steps.design.unlocked}
-                    onClick={() =>
-                      hub.steps.design.unlocked &&
-                      router.push(`/stories/${story.id}/characters`)
-                    }
-                    index={2}
-                  />
-                  <HorizontalArrow complete={designComplete} />
+                {/* Steps */}
+                <div className="relative grid grid-cols-4 gap-8">
+                  {steps.map((step, index) => (
+                    <StepCard
+                      key={step.number}
+                      {...step}
+                      index={index}
+                      onClick={() =>
+                        !step.locked && router.push(step.path)
+                      }
+                    />
+                  ))}
                 </div>
-
-                <FlowCard
-                  step={4}
-                  currentStep={currentStep}
-                  icon={ImageIcon}
-                  title="Create Art"
-                  description="Generate illustrations"
-                  complete={false}
-                  locked={!designComplete}
-                  onClick={() =>
-                    designComplete && router.push(`/stories/${story.id}/art`)
-                  }
-                  index={3}
-                />
               </div>
-
-              {/* VERTICAL CONNECTOR */}
-              <VerticalConnector complete={extractComplete} />
             </div>
 
-            {/* MOBILE: VERTICAL FLOW */}
-            <div className="sm:hidden w-full max-w-sm space-y-3">
-              <FlowCard
-                step={1}
-                currentStep={currentStep}
-                icon={BookOpen}
-                title="Write Story"
-                description={`${hub.steps.write.pageCount} pages`}
-                complete={writeComplete}
-                onClick={() => router.push(`/stories/${story.id}/write`)}
-                index={0}
-                mobile
-              />
+            {/* MOBILE: Vertical Track */}
+            <div className="md:hidden w-full max-w-md">
+              <div className="relative">
+                {/* Progress Track */}
+                <div className="absolute top-0 bottom-0 left-12 w-1 bg-gray-200 rounded-full">
+                  <motion.div
+                    className="w-full bg-gradient-to-b from-emerald-400 to-emerald-600 rounded-full"
+                    initial={{ height: '0%' }}
+                    animate={{ height: `${(hub.progressPercent / 100) * 100}%` }}
+                    transition={{ duration: 1, ease: easeOut, delay: 0.5 }}
+                  />
+                </div>
 
-              <MobileArrow complete={writeComplete} />
-
-              <FlowCard
-                step={2}
-                currentStep={currentStep}
-                icon={Wand2}
-                title="Extract World"
-                description={`${hub.steps.extract.characters} characters, ${hub.steps.extract.locations} places`}
-                complete={extractComplete}
-                locked={!writeComplete}
-                onClick={() =>
-                  writeComplete && router.push(`/stories/${story.id}/extract`)
-                }
-                index={1}
-                mobile
-              />
-
-              <MobileArrow complete={extractComplete} />
-
-              <FlowCard
-                step={3}
-                currentStep={currentStep}
-                icon={Palette}
-                title="Design Characters"
-                description={`${hub.steps.design.charactersConfirmed}/${hub.steps.design.charactersTotal} confirmed`}
-                complete={designComplete}
-                locked={!hub.steps.design.unlocked}
-                onClick={() =>
-                  hub.steps.design.unlocked &&
-                  router.push(`/stories/${story.id}/characters`)
-                }
-                index={2}
-                mobile
-              />
-
-              <MobileArrow complete={designComplete} />
-
-              <FlowCard
-                step={4}
-                currentStep={currentStep}
-                icon={ImageIcon}
-                title="Create Art"
-                description="Generate illustrations"
-                complete={false}
-                locked={!designComplete}
-                onClick={() =>
-                  designComplete && router.push(`/stories/${story.id}/art`)
-                }
-                index={3}
-                mobile
-              />
+                {/* Steps */}
+                <div className="relative space-y-8">
+                  {steps.map((step, index) => (
+                    <StepCardMobile
+                      key={step.number}
+                      {...step}
+                      index={index}
+                      onClick={() =>
+                        !step.locked && router.push(step.path)
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* BOTTOM STATS */}
+          {/* QUICK STATS */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5, duration: 0.5 }}
-            className="flex-shrink-0"
+            transition={{ delay: 0.6 }}
+            className="flex-shrink-0 mt-8"
           >
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-5xl mx-auto">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <QuickStat
                 icon={Users}
                 value={hub.steps.design.charactersTotal}
                 label="Characters"
-                color="text-purple-600"
-                onClick={() => router.push(`/stories/${story.id}/characters`)}
               />
               <QuickStat
                 icon={MapPin}
                 value={hub.steps.design.locationsTotal}
                 label="Locations"
-                color="text-pink-600"
-                onClick={() => router.push(`/stories/${story.id}/locations`)}
               />
               <QuickStat
                 icon={BookOpen}
                 value={hub.steps.write.pageCount}
                 label="Pages"
-                color="text-blue-600"
-                onClick={() => router.push(`/stories/${story.id}/write`)}
               />
               <QuickStat
                 icon={Palette}
                 value={hub.steps.design.styleReady ? '✓' : '—'}
                 label="Style"
-                color="text-fuchsia-600"
-                onClick={() => router.push(`/stories/${story.id}/design`)}
               />
             </div>
           </motion.div>
@@ -306,34 +245,28 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
 }
 
 /* ======================================================
-   FLOW CARD
+   STEP CARD (Desktop)
 ====================================================== */
 
-function FlowCard({
-  step,
-  currentStep,
+function StepCard({
+  number,
   icon: Icon,
   title,
-  description,
+  subtitle,
   complete,
   locked,
-  onClick,
   index,
-  mobile,
+  onClick,
 }: {
-  step: number;
-  currentStep: number;
+  number: number;
   icon: any;
   title: string;
-  description: string;
+  subtitle: string;
   complete?: boolean;
   locked?: boolean;
-  onClick: () => void;
   index: number;
-  mobile?: boolean;
+  onClick: () => void;
 }) {
-  const isActive = step === currentStep;
-
   return (
     <motion.button
       custom={index}
@@ -342,119 +275,100 @@ function FlowCard({
       animate="visible"
       onClick={onClick}
       disabled={locked}
-      whileHover={!locked ? { scale: 1.02, y: -2 } : {}}
+      whileHover={!locked ? { y: -8, scale: 1.02 } : {}}
       whileTap={!locked ? { scale: 0.98 } : {}}
       className={`
-        relative text-left w-full
-        rounded-3xl p-6
+        relative text-center
+        bg-white rounded-3xl p-6
         border-4 transition-all duration-300
         ${
           locked
-            ? 'bg-white/50 border-gray-300 cursor-not-allowed'
+            ? 'border-gray-200 cursor-not-allowed opacity-60'
             : complete
-            ? 'bg-white border-emerald-400 shadow-xl'
-            : isActive
-            ? 'bg-white border-purple-400 shadow-2xl'
-            : 'bg-white border-gray-300 hover:border-purple-300 shadow-lg'
+            ? 'border-emerald-400 shadow-xl shadow-emerald-500/20'
+            : 'border-purple-300 shadow-xl hover:shadow-2xl hover:border-purple-400'
         }
       `}
     >
-      {/* CORNER BADGE */}
-      <div
-        className={`
-          absolute -top-3 -left-3 w-10 h-10 rounded-full flex items-center justify-center text-white font-black shadow-lg
-          ${
-            complete
-              ? 'bg-gradient-to-br from-emerald-400 to-emerald-600'
-              : 'bg-gradient-to-br from-purple-500 to-pink-500'
-          }
-        `}
-      >
-        {complete ? <Check className="w-6 h-6" strokeWidth={3} /> : step}
-      </div>
+      {/* Icon on Track */}
+      <div className="absolute -top-16 left-1/2 -translate-x-1/2">
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{
+            type: 'spring',
+            stiffness: 200,
+            damping: 15,
+            delay: 0.3 + index * 0.1,
+          }}
+          className={`
+            w-20 h-20 rounded-full flex items-center justify-center shadow-2xl
+            ${
+              complete
+                ? 'bg-gradient-to-br from-emerald-400 to-emerald-600'
+                : locked
+                ? 'bg-gray-300'
+                : 'bg-gradient-to-br from-purple-500 to-pink-500'
+            }
+          `}
+        >
+          {complete ? (
+            <Check className="w-10 h-10 text-white" strokeWidth={3} />
+          ) : locked ? (
+            <Lock className="w-8 h-8 text-gray-500" />
+          ) : (
+            <Icon className="w-9 h-9 text-white" strokeWidth={2.5} />
+          )}
+        </motion.div>
 
-      {/* LOCK */}
-      {locked && (
-        <div className="absolute -top-3 -right-3 w-10 h-10 rounded-full bg-gray-400 flex items-center justify-center shadow-lg">
-          <Lock className="w-5 h-5 text-white" />
+        {/* Step Number Badge */}
+        <div
+          className={`
+            absolute -top-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center font-black text-xs shadow-lg
+            ${
+              complete
+                ? 'bg-emerald-600 text-white'
+                : 'bg-gradient-to-br from-purple-600 to-pink-600 text-white'
+            }
+          `}
+        >
+          {number}
         </div>
-      )}
-
-      {/* ACTIVE GLOW */}
-      {isActive && !complete && !locked && (
-        <>
-          <motion.div
-            className="absolute inset-0 rounded-3xl bg-purple-400/20"
-            animate={{
-              scale: [1, 1.02, 1],
-              opacity: [0.3, 0.5, 0.3],
-            }}
-            transition={{
-              duration: 2,
-              repeat: Infinity,
-              ease: 'easeInOut',
-            }}
-          />
-          <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-purple-400 to-pink-400 opacity-30 blur-xl" />
-        </>
-      )}
-
-      {/* ICON */}
-      <div
-        className={`
-          relative w-16 h-16 rounded-2xl flex items-center justify-center mb-4
-          ${
-            complete
-              ? 'bg-gradient-to-br from-emerald-400 to-emerald-600'
-              : isActive
-              ? 'bg-gradient-to-br from-purple-500 to-pink-500'
-              : locked
-              ? 'bg-gray-300'
-              : 'bg-gradient-to-br from-violet-400 to-fuchsia-500'
-          }
-        `}
-      >
-        <Icon
-          className={`w-8 h-8 ${locked ? 'text-gray-500' : 'text-white'}`}
-          strokeWidth={2.5}
-        />
       </div>
 
-      {/* CONTENT */}
-      <div className="relative">
+      {/* Content */}
+      <div className="mt-8">
         <h3
-          className={`text-xl md:text-2xl font-black mb-1 ${
+          className={`text-xl font-black mb-2 ${
             locked ? 'text-gray-400' : 'text-gray-900'
           }`}
         >
           {title}
         </h3>
         <p
-          className={`text-sm md:text-base font-semibold ${
+          className={`text-sm font-semibold ${
             locked ? 'text-gray-400' : 'text-gray-600'
           }`}
         >
-          {description}
+          {subtitle}
         </p>
 
-        {/* STATUS */}
-        <div className="mt-3">
-          {complete && (
+        {/* Status */}
+        <div className="mt-4">
+          {complete ? (
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm">
-              <Check className="w-4 h-4" strokeWidth={3} />
+              <Check className="w-4 h-4" />
               Complete
             </div>
-          )}
-          {isActive && !complete && !locked && (
-            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-100 text-purple-700 font-bold text-sm">
-              <Sparkles className="w-4 h-4" />
-              In Progress
-            </div>
-          )}
-          {locked && (
+          ) : locked ? (
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-200 text-gray-500 font-bold text-sm">
               <Lock className="w-3.5 h-3.5" />
               Locked
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-100 text-purple-700 font-bold text-sm">
+              <Sparkles className="w-4 h-4" />
+              Ready
             </div>
           )}
         </div>
@@ -464,95 +378,132 @@ function FlowCard({
 }
 
 /* ======================================================
-   HORIZONTAL ARROW (for 2x2 grid)
+   STEP CARD (Mobile)
 ====================================================== */
 
-function HorizontalArrow({ complete }: { complete?: boolean }) {
+function StepCardMobile({
+  number,
+  icon: Icon,
+  title,
+  subtitle,
+  complete,
+  locked,
+  index,
+  onClick,
+}: {
+  number: number;
+  icon: any;
+  title: string;
+  subtitle: string;
+  complete?: boolean;
+  locked?: boolean;
+  index: number;
+  onClick: () => void;
+}) {
   return (
-    <div className="absolute top-1/2 -right-4 translate-x-full -translate-y-1/2 w-8 z-10">
-      <svg width="32" height="80" viewBox="0 0 32 80" className="overflow-visible">
-        <motion.path
-          d="M 4 40 L 28 40"
-          stroke={complete ? '#10b981' : '#d1d5db'}
-          strokeWidth="4"
-          strokeLinecap="round"
-          fill="none"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-        />
-        <motion.path
-          d="M 22 34 L 28 40 L 22 46"
-          stroke={complete ? '#10b981' : '#d1d5db'}
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 0.3, delay: 0.6 }}
-        />
-      </svg>
-    </div>
-  );
-}
+    <motion.button
+      custom={index}
+      variants={fadeUp}
+      initial="hidden"
+      animate="visible"
+      onClick={onClick}
+      disabled={locked}
+      whileTap={!locked ? { scale: 0.98 } : {}}
+      className={`
+        relative text-left w-full
+        bg-white rounded-3xl p-5 ml-20
+        border-4 transition-all
+        ${
+          locked
+            ? 'border-gray-200 cursor-not-allowed opacity-60'
+            : complete
+            ? 'border-emerald-400 shadow-lg'
+            : 'border-purple-300 shadow-lg'
+        }
+      `}
+    >
+      {/* Icon on Track */}
+      <div className="absolute -left-24 top-1/2 -translate-y-1/2">
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{
+            type: 'spring',
+            stiffness: 200,
+            damping: 15,
+            delay: 0.3 + index * 0.1,
+          }}
+          className={`
+            w-16 h-16 rounded-full flex items-center justify-center shadow-xl
+            ${
+              complete
+                ? 'bg-gradient-to-br from-emerald-400 to-emerald-600'
+                : locked
+                ? 'bg-gray-300'
+                : 'bg-gradient-to-br from-purple-500 to-pink-500'
+            }
+          `}
+        >
+          {complete ? (
+            <Check className="w-8 h-8 text-white" strokeWidth={3} />
+          ) : locked ? (
+            <Lock className="w-6 h-6 text-gray-500" />
+          ) : (
+            <Icon className="w-7 h-7 text-white" strokeWidth={2.5} />
+          )}
+        </motion.div>
 
-/* ======================================================
-   VERTICAL CONNECTOR (between rows)
-====================================================== */
+        {/* Step Number */}
+        <div
+          className={`
+            absolute -top-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center font-black text-xs shadow-lg
+            ${
+              complete
+                ? 'bg-emerald-600 text-white'
+                : 'bg-gradient-to-br from-purple-600 to-pink-600 text-white'
+            }
+          `}
+        >
+          {number}
+        </div>
+      </div>
 
-function VerticalConnector({ complete }: { complete?: boolean }) {
-  return (
-    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 w-1 h-6 -my-3">
-      <svg width="4" height="24" viewBox="0 0 4 24" className="mx-auto">
-        <motion.line
-          x1="2"
-          y1="0"
-          x2="2"
-          y2="24"
-          stroke={complete ? '#10b981' : '#d1d5db'}
-          strokeWidth="4"
-          strokeLinecap="round"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 0.4, delay: 0.4 }}
-        />
-      </svg>
-    </div>
-  );
-}
+      {/* Content */}
+      <h3
+        className={`text-lg font-black mb-1 ${
+          locked ? 'text-gray-400' : 'text-gray-900'
+        }`}
+      >
+        {title}
+      </h3>
+      <p
+        className={`text-sm font-semibold ${
+          locked ? 'text-gray-400' : 'text-gray-600'
+        }`}
+      >
+        {subtitle}
+      </p>
 
-/* ======================================================
-   MOBILE ARROW
-====================================================== */
-
-function MobileArrow({ complete }: { complete?: boolean }) {
-  return (
-    <div className="flex justify-center py-1">
-      <svg width="24" height="32" viewBox="0 0 24 32">
-        <motion.path
-          d="M 12 4 L 12 28"
-          stroke={complete ? '#10b981' : '#d1d5db'}
-          strokeWidth="4"
-          strokeLinecap="round"
-          fill="none"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 0.3, delay: 0.2 }}
-        />
-        <motion.path
-          d="M 6 22 L 12 28 L 18 22"
-          stroke={complete ? '#10b981' : '#d1d5db'}
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 0.2, delay: 0.4 }}
-        />
-      </svg>
-    </div>
+      {/* Status */}
+      <div className="mt-3">
+        {complete ? (
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs">
+            <Check className="w-3.5 h-3.5" />
+            Complete
+          </div>
+        ) : locked ? (
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-200 text-gray-500 font-bold text-xs">
+            <Lock className="w-3 h-3" />
+            Locked
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 font-bold text-xs">
+            <Sparkles className="w-3.5 h-3.5" />
+            Ready
+          </div>
+        )}
+      </div>
+    </motion.button>
   );
 }
 
@@ -564,27 +515,18 @@ function QuickStat({
   icon: Icon,
   value,
   label,
-  color,
-  onClick,
 }: {
   icon: any;
   value: number | string;
   label: string;
-  color: string;
-  onClick?: () => void;
 }) {
   return (
-    <motion.button
-      whileHover={{ scale: 1.03, y: -2 }}
-      whileTap={{ scale: 0.97 }}
-      onClick={onClick}
-      className="bg-white/90 backdrop-blur-xl rounded-2xl p-4 border-2 border-white shadow-lg hover:shadow-xl transition-all text-center"
-    >
-      <Icon className={`w-6 h-6 ${color} mx-auto mb-2`} strokeWidth={2.5} />
-      <div className="text-3xl font-black text-gray-900 mb-1">{value}</div>
+    <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-4 border-2 border-white shadow-lg text-center">
+      <Icon className="w-5 h-5 text-purple-600 mx-auto mb-2" strokeWidth={2.5} />
+      <div className="text-2xl md:text-3xl font-black text-gray-900">{value}</div>
       <div className="text-xs font-bold text-gray-600 uppercase tracking-wide">
         {label}
       </div>
-    </motion.button>
+    </div>
   );
 }
