@@ -28,27 +28,26 @@ type Spread = {
 };
 
 /* -------------------------------------------------------------------------- */
-/*                              Helpers                                       */
+/*                                   Helpers                                  */
 /* -------------------------------------------------------------------------- */
 
 function buildSpreads(pages: Page[]): Spread[] {
-    const spreads: Spread[] = [];
-  
-    for (let i = 0; i < pages.length; i += 2) {
-      const left = pages[i];
-      const right = pages[i + 1] ?? null;
-  
-      spreads.push({
-        id: `spread-${left.id}`,
-        imageUrl: left.imageUrl || right?.imageUrl || null, // ✅ FIX
-        leftPage: left,
-        rightPage: right,
-      });
-    }
-  
-    return spreads;
+  const spreads: Spread[] = [];
+
+  for (let i = 0; i < pages.length; i += 2) {
+    const left = pages[i];
+    const right = pages[i + 1] ?? null;
+
+    spreads.push({
+      id: `spread-${left.id}`,
+      imageUrl: left.imageUrl || right?.imageUrl || null,
+      leftPage: left,
+      rightPage: right,
+    });
   }
-  
+
+  return spreads;
+}
 
 function prefetchImage(src?: string | null) {
   if (!src) return;
@@ -75,57 +74,59 @@ export default function MobileReader({
   const [index, setIndex] = useState(0);
   const [showUI, setShowUI] = useState(true);
   const [showOverview, setShowOverview] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState<number | null>(null);
 
   const x = useMotionValue(0);
 
-  /* ------------------------------ Layout helpers --------------------------- */
+  /* ------------------------------ Measure width ---------------------------- */
 
-  function width() {
-    return containerRef.current?.offsetWidth || window.innerWidth;
-  }
+  useEffect(() => {
+    function measure() {
+      const w = containerRef.current?.offsetWidth || window.innerWidth;
+      setViewportWidth(w);
+      animate(x, -index * w, { duration: 0 });
+    }
+
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [index, x]);
+
+  /* ------------------------------ Navigation -------------------------------- */
 
   function clamp(i: number) {
     return Math.max(0, Math.min(i, spreads.length - 1));
   }
 
   function snapTo(i: number) {
+    if (viewportWidth == null) return;
+
     const next = clamp(i);
     setIndex(next);
 
-    animate(x, -next * width(), {
+    animate(x, -next * viewportWidth, {
       type: "spring",
       stiffness: 280,
       damping: 34,
     });
   }
 
-  /* ------------------------------ Drag handling ---------------------------- */
-
   function onDragEnd(_: any, info: any) {
-    const w = width();
+    if (viewportWidth == null) return;
+
     const offset = info.offset.x;
     const velocity = info.velocity.x;
 
-    if (offset < -w * 0.15 || velocity < -500) {
+    if (offset < -viewportWidth * 0.15 || velocity < -500) {
       snapTo(index + 1);
-    } else if (offset > w * 0.15 || velocity > 500) {
+    } else if (offset > viewportWidth * 0.15 || velocity > 500) {
       snapTo(index - 1);
     } else {
       snapTo(index);
     }
   }
 
-  /* ------------------------------ Sync on resize --------------------------- */
-
-  useEffect(() => {
-    function handleResize() {
-      animate(x, -index * width(), { duration: 0 });
-    }
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [index]);
-
-  /* ------------------------------ Auto-hide UI ------------------------------ */
+  /* ------------------------------ UI behaviour ----------------------------- */
 
   useEffect(() => {
     if (!showUI || showOverview) return;
@@ -139,6 +140,14 @@ export default function MobileReader({
     prefetchImage(spreads[index - 1]?.imageUrl);
     prefetchImage(spreads[index + 1]?.imageUrl);
   }, [index, spreads]);
+
+  if (viewportWidth == null) {
+    return (
+      <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-white/60" />
+      </div>
+    );
+  }
 
   const spread = spreads[index];
 
@@ -157,7 +166,7 @@ export default function MobileReader({
         style={{ x }}
         drag="x"
         dragConstraints={{
-          left: -((spreads.length - 1) * width()),
+          left: -((spreads.length - 1) * viewportWidth),
           right: 0,
         }}
         dragElastic={0.08}
@@ -225,41 +234,37 @@ export default function MobileReader({
           </header>
 
           <div className="p-4 grid grid-cols-2 gap-4 overflow-y-auto pb-24">
-            {spreads.map((s, i) => {
-              const isActive = i === index;
+            {spreads.map((s, i) => (
+              <button
+                key={s.id}
+                onClick={() => {
+                  snapTo(i);
+                  setShowOverview(false);
+                  setShowUI(false);
+                }}
+                className={`relative rounded-lg overflow-hidden border ${
+                  i === index
+                    ? "border-white ring-2 ring-white"
+                    : "border-white/10 hover:border-white/30"
+                }`}
+              >
+                {s.imageUrl ? (
+                  <img
+                    src={s.imageUrl}
+                    className="w-full aspect-[3/4] object-contain bg-black"
+                  />
+                ) : (
+                  <div className="w-full aspect-[3/4] flex items-center justify-center text-xs text-white/40 bg-black">
+                    Pending
+                  </div>
+                )}
 
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => {
-                    snapTo(i);
-                    setShowOverview(false);
-                    setShowUI(false);
-                  }}
-                  className={`relative rounded-lg overflow-hidden border ${
-                    isActive
-                      ? "border-white ring-2 ring-white"
-                      : "border-white/10 hover:border-white/30"
-                  }`}
-                >
-                  {s.imageUrl ? (
-                    <img
-                      src={s.imageUrl}
-                      className="w-full aspect-[3/4] object-contain bg-black"
-                    />
-                  ) : (
-                    <div className="w-full aspect-[3/4] flex items-center justify-center text-xs text-white/40 bg-black">
-                      Pending
-                    </div>
-                  )}
-
-                  <span className="absolute bottom-2 right-2 text-[10px] bg-black/70 px-2 py-1 rounded-full font-bold">
-                    {s.leftPage.pageNumber}
-                    {s.rightPage && `–${s.rightPage.pageNumber}`}
-                  </span>
-                </button>
-              );
-            })}
+                <span className="absolute bottom-2 right-2 text-[10px] bg-black/70 px-2 py-1 rounded-full font-bold">
+                  {s.leftPage.pageNumber}
+                  {s.rightPage && `–${s.rightPage.pageNumber}`}
+                </span>
+              </button>
+            ))}
           </div>
         </div>
       )}
