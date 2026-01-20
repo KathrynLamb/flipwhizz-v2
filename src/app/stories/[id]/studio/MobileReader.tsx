@@ -32,22 +32,23 @@ type Spread = {
 /* -------------------------------------------------------------------------- */
 
 function buildSpreads(pages: Page[]): Spread[] {
-  const spreads: Spread[] = [];
-
-  for (let i = 0; i < pages.length; i += 2) {
-    const left = pages[i];
-    const right = pages[i + 1] ?? null;
-
-    spreads.push({
-      id: `spread-${left.id}`,
-      imageUrl: left.imageUrl, // spread image lives on left page
-      leftPage: left,
-      rightPage: right,
-    });
+    const spreads: Spread[] = [];
+  
+    for (let i = 0; i < pages.length; i += 2) {
+      const left = pages[i];
+      const right = pages[i + 1] ?? null;
+  
+      spreads.push({
+        id: `spread-${left.id}`,
+        imageUrl: left.imageUrl || right?.imageUrl || null, // ✅ FIX
+        leftPage: left,
+        rightPage: right,
+      });
+    }
+  
+    return spreads;
   }
-
-  return spreads;
-}
+  
 
 function prefetchImage(src?: string | null) {
   if (!src) return;
