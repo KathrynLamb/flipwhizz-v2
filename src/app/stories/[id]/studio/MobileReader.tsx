@@ -33,9 +33,14 @@ export default function MobileReader({
 }) {
   const router = useRouter();
   const [index, setIndex] = useState(0);
+  const [displayIndex, setDisplayIndex] = useState(0);
+  const [direction, setDirection] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  
   const [showUI, setShowUI] = useState(true);
   const [showOverview, setShowOverview] = useState(false);
-  const [direction, setDirection] = useState(0);
+
 
 
 
@@ -79,55 +84,51 @@ export default function MobileReader({
     return () => clearTimeout(t);
   }, [showUI]);
 
-  const page = pages[index];
+  const page = pages[displayIndex];
+
 
   function paginate(newDirection: number) {
-    const newIndex = index + newDirection;
-    if (newIndex < 0 || newIndex >= pages.length) return;
+    const nextIndex = index + newDirection;
+    if (nextIndex < 0 || nextIndex >= pages.length) return;
+
+    if (isAnimating) return;
+        setIsAnimating(true);       
+  
     setDirection(newDirection);
-    setIndex(newIndex);
+    setDisplayIndex(index);     // freeze outgoing card
+    setIndex(nextIndex);        // advance logical index
   }
   
-
   return (
     <div className="fixed inset-0 bg-black text-white">
       {/* Page */}
       <div className="absolute inset-0 flex items-center justify-center bg-black">
   <AnimatePresence initial={false} custom={direction}>
-    <motion.div
-      key={page.id}
-      custom={direction}
-      variants={variants}
-      initial="enter"
-      animate="center"
-      exit="exit"
-      transition={{
-        x: { type: "spring", stiffness: 320, damping: 32 },
-        opacity: { duration: 0.2 },
-        scale: { duration: 0.2 },
-      }}
-      drag="x"
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.15}
-      onDragEnd={(_, info) => {
-        if (info.offset.x < -swipeConfidenceThreshold) {
-          paginate(1);
-        } else if (info.offset.x > swipeConfidenceThreshold) {
-          paginate(-1);
-        }
-      }}
-      onClick={() => setShowUI((v) => !v)}
-      className="
-        relative
-        w-full
-        h-full
-        flex
-        items-center
-        justify-center
-        px-4
-        landscape:px-16
-      "
-    >
+  <motion.div
+  key={displayIndex}
+  custom={direction}
+  variants={variants}
+  initial="enter"
+  animate="center"
+  exit="exit"
+  onAnimationComplete={() => {
+    setDisplayIndex(index);
+    setIsAnimating(false);
+  }}
+  transition={{
+    x: { type: "spring", stiffness: 320, damping: 32 },
+    opacity: { duration: 0.2 },
+    scale: { duration: 0.2 },
+  }}
+  drag="x"
+  dragConstraints={{ left: 0, right: 0 }}
+  dragElastic={0.15}
+  onDragEnd={(_, info) => {
+    if (info.offset.x < -80) paginate(1);
+    else if (info.offset.x > 80) paginate(-1);
+  }}
+>
+
       {/* CARD */}
       <div
         className="
