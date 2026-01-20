@@ -1,28 +1,63 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   LayoutGrid,
-  Download,
-  Loader2,
   X,
+  Loader2,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, useMotionValue, animate } from "framer-motion";
 import { useRouter } from "next/navigation";
 
-function prefetchImage(src: string) {
-    if (!src) return;
-    const img = new Image();
-    img.src = src;
-  }
-  
+/* -------------------------------------------------------------------------- */
+/*                                    Types                                   */
+/* -------------------------------------------------------------------------- */
 
 type Page = {
   id: string;
   pageNumber: number;
   imageUrl: string | null;
 };
+
+type Spread = {
+  id: string;
+  imageUrl: string | null;
+  leftPage: Page;
+  rightPage: Page | null;
+};
+
+/* -------------------------------------------------------------------------- */
+/*                              Helpers                                       */
+/* -------------------------------------------------------------------------- */
+
+function buildSpreads(pages: Page[]): Spread[] {
+  const spreads: Spread[] = [];
+
+  for (let i = 0; i < pages.length; i += 2) {
+    const left = pages[i];
+    const right = pages[i + 1] ?? null;
+
+    spreads.push({
+      id: `spread-${left.id}`,
+      imageUrl: left.imageUrl, // spread image lives on left page
+      leftPage: left,
+      rightPage: right,
+    });
+  }
+
+  return spreads;
+}
+
+function prefetchImage(src?: string | null) {
+  if (!src) return;
+  const img = new Image();
+  img.src = src;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                Mobile Reader                               */
+/* -------------------------------------------------------------------------- */
 
 export default function MobileReader({
   story,
@@ -32,233 +67,201 @@ export default function MobileReader({
   pages: Page[];
 }) {
   const router = useRouter();
-  const [index, setIndex] = useState(0);
-  const [displayIndex, setDisplayIndex] = useState(0);
-  const [direction, setDirection] = useState(0);
-  const [isAnimating, setIsAnimating] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  
+  const spreads = useMemo(() => buildSpreads(pages), [pages]);
+
+  const [index, setIndex] = useState(0);
   const [showUI, setShowUI] = useState(true);
   const [showOverview, setShowOverview] = useState(false);
 
+  const x = useMotionValue(0);
 
+  /* ------------------------------ Layout helpers --------------------------- */
 
-
-// CARD SWIPPING CONSTANTS
-  const swipeConfidenceThreshold = 80;
-
-    const variants = {
-    enter: (direction: number) => ({
-        x: direction > 0 ? "100%" : "-100%",
-        opacity: 0,
-        scale: 0.96,
-    }),
-    center: {
-        x: 0,
-        opacity: 1,
-        scale: 1,
-    },
-    exit: (direction: number) => ({
-        x: direction < 0 ? "100%" : "-100%",
-        opacity: 0,
-        scale: 0.96,
-    }),
-    };
-    useEffect(() => {
-        const prev = pages[index - 1]?.imageUrl;
-        const next = pages[index + 1]?.imageUrl;
-      
-        if (prev) prefetchImage(prev);
-        if (next) prefetchImage(next);
-      }, [index, pages]);
-      
-
-  useEffect(() => {
-    if (showOverview) setShowUI(false);
-  }, [showOverview]);
-  
-
-  useEffect(() => {
-    if (!showUI) return;
-    const t = setTimeout(() => setShowUI(false), 2000);
-    return () => clearTimeout(t);
-  }, [showUI]);
-
-  const page = pages[displayIndex];
-
-
-  function paginate(newDirection: number) {
-    const nextIndex = index + newDirection;
-    if (nextIndex < 0 || nextIndex >= pages.length) return;
-
-    if (isAnimating) return;
-        setIsAnimating(true);       
-  
-    setDirection(newDirection);
-    setDisplayIndex(index);     // freeze outgoing card
-    setIndex(nextIndex);        // advance logical index
+  function width() {
+    return containerRef.current?.offsetWidth || window.innerWidth;
   }
-  
+
+  function clamp(i: number) {
+    return Math.max(0, Math.min(i, spreads.length - 1));
+  }
+
+  function snapTo(i: number) {
+    const next = clamp(i);
+    setIndex(next);
+
+    animate(x, -next * width(), {
+      type: "spring",
+      stiffness: 280,
+      damping: 34,
+    });
+  }
+
+  /* ------------------------------ Drag handling ---------------------------- */
+
+  function onDragEnd(_: any, info: any) {
+    const w = width();
+    const offset = info.offset.x;
+    const velocity = info.velocity.x;
+
+    if (offset < -w * 0.15 || velocity < -500) {
+      snapTo(index + 1);
+    } else if (offset > w * 0.15 || velocity > 500) {
+      snapTo(index - 1);
+    } else {
+      snapTo(index);
+    }
+  }
+
+  /* ------------------------------ Sync on resize --------------------------- */
+
+  useEffect(() => {
+    function handleResize() {
+      animate(x, -index * width(), { duration: 0 });
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [index]);
+
+  /* ------------------------------ Auto-hide UI ------------------------------ */
+
+  useEffect(() => {
+    if (!showUI || showOverview) return;
+    const t = setTimeout(() => setShowUI(false), 2200);
+    return () => clearTimeout(t);
+  }, [showUI, showOverview]);
+
+  /* ------------------------------ Prefetching ------------------------------ */
+
+  useEffect(() => {
+    prefetchImage(spreads[index - 1]?.imageUrl);
+    prefetchImage(spreads[index + 1]?.imageUrl);
+  }, [index, spreads]);
+
+  const spread = spreads[index];
+
+  /* -------------------------------------------------------------------------- */
+  /*                                   Render                                   */
+  /* -------------------------------------------------------------------------- */
+
   return (
-    <div className="fixed inset-0 bg-black text-white">
-      {/* Page */}
-      <div className="absolute inset-0 flex items-center justify-center bg-black">
-  <AnimatePresence initial={false} custom={direction}>
-  <motion.div
-  key={displayIndex}
-  custom={direction}
-  variants={variants}
-  initial="enter"
-  animate="center"
-  exit="exit"
-  onAnimationComplete={() => {
-    setDisplayIndex(index);
-    setIsAnimating(false);
-  }}
-  transition={{
-    x: { type: "spring", stiffness: 320, damping: 32 },
-    opacity: { duration: 0.2 },
-    scale: { duration: 0.2 },
-  }}
-  drag="x"
-  dragConstraints={{ left: 0, right: 0 }}
-  dragElastic={0.15}
-  onDragEnd={(_, info) => {
-    if (info.offset.x < -80) paginate(1);
-    else if (info.offset.x > 80) paginate(-1);
-  }}
->
-
-      {/* CARD */}
-      <div
-        className="
-          bg-black
-          rounded-xl
-          shadow-2xl
-          overflow-hidden
-          max-w-[1000px]
-          w-full
-          h-full
-          landscape:h-[90%]
-          flex
-          items-center
-          justify-center
-        "
-      >
-        {page.imageUrl ? (
-          <img
-            src={page.imageUrl}
-            alt={`Page ${page.pageNumber}`}
-            className="max-w-full max-h-full object-contain"
-          />
-        ) : (
-          <Loader2 className="w-10 h-10 animate-spin text-white/60" />
-        )}
-      </div>
-    </motion.div>
-  </AnimatePresence>
-</div>
-
-
-      {/* UI */}
-      <AnimatePresence>
-        {showUI && (
-          <motion.header
-            initial={{ y: -80 }}
-            animate={{ y: 0 }}
-            exit={{ y: -80 }}
-            className="absolute top-0 inset-x-0 h-16 px-4 flex items-center justify-between bg-black/70"
-          >
-            <button onClick={() => router.push("/dashboard")}>
-              <ChevronLeft />
-            </button>
-
-            <div className="text-sm">
-              Page {page.pageNumber} / {pages.length}
-            </div>
-
-            <button
-                    onClick={() => setShowOverview(true)}
-                    className="p-2 rounded-full hover:bg-white/10"
-                    >
-                    <LayoutGrid />
-                    </button>
-
-          </motion.header>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-  {showOverview && (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="absolute inset-0 z-50 bg-black"
+    <div
+      ref={containerRef}
+      className="fixed inset-0 bg-black text-white overflow-hidden"
     >
-      {/* HEADER */}
-      <header className="h-16 px-4 flex items-center justify-between border-b border-white/10">
-        <h2 className="text-sm font-bold tracking-wide">All Pages</h2>
-        <button
-          onClick={() => setShowOverview(false)}
-          className="p-2 rounded-full hover:bg-white/10"
-        >
-          <X />
-        </button>
-      </header>
-
-      {/* GRID */}
-      <div className="p-4 grid grid-cols-2 gap-4 overflow-y-auto pb-24">
-        {pages.map((p, i) => {
-          const isActive = i === index;
-
-          return (
-            <button
-              key={p.id}
-              onClick={() => {
-                setIndex(i);
-                setShowOverview(false);
-                setShowUI(false);
-              }}
-              className={`relative rounded-lg overflow-hidden border transition-all
-                ${
-                  isActive
-                    ? "border-white ring-2 ring-white"
-                    : "border-white/10 hover:border-white/30"
-                }`}
-            >
-              {/* THUMB */}
-              {p.imageUrl ? (
+      {/* ============================ SWIPE TRACK ============================ */}
+      <motion.div
+        className="flex h-full"
+        style={{ x }}
+        drag="x"
+        dragConstraints={{
+          left: -((spreads.length - 1) * width()),
+          right: 0,
+        }}
+        dragElastic={0.08}
+        onDragEnd={onDragEnd}
+        onTap={() => setShowUI(v => !v)}
+      >
+        {spreads.map((s) => (
+          <div
+            key={s.id}
+            className="w-screen h-full flex items-center justify-center px-4 landscape:px-16"
+          >
+            <div className="bg-black rounded-xl shadow-2xl overflow-hidden max-w-[1100px] w-full h-full landscape:h-[90%] flex items-center justify-center">
+              {s.imageUrl ? (
                 <img
-                  src={p.imageUrl}
-                  className="w-full aspect-[3/4] object-contain bg-black"
-                  alt={`Page ${p.pageNumber}`}
+                  src={s.imageUrl}
+                  alt={`Pages ${s.leftPage.pageNumber}${
+                    s.rightPage ? `–${s.rightPage.pageNumber}` : ""
+                  }`}
+                  className="max-w-full max-h-full object-contain"
                 />
               ) : (
-                <div className="w-full aspect-[3/4] flex items-center justify-center text-xs text-white/40 bg-black">
-                  Pending
-                </div>
+                <Loader2 className="w-10 h-10 animate-spin text-white/60" />
               )}
+            </div>
+          </div>
+        ))}
+      </motion.div>
 
-              {/* PAGE NUMBER */}
-              <span className="absolute bottom-2 right-2 text-[10px] bg-black/70 px-2 py-1 rounded-full font-bold">
-                {p.pageNumber}
-              </span>
+      {/* ============================== TOP UI =============================== */}
+      {showUI && !showOverview && (
+        <div className="absolute top-0 inset-x-0 h-16 px-4 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent">
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="p-2 rounded-full hover:bg-white/10"
+          >
+            <ChevronLeft />
+          </button>
 
-              {/* ACTIVE LABEL */}
-              {isActive && (
-                <span className="absolute top-2 left-2 text-[10px] bg-white text-black px-2 py-1 rounded-full font-bold">
-                  Current
-                </span>
-              )}
+          <div className="text-xs font-medium text-white/70">
+            Pages {spread.leftPage.pageNumber}
+            {spread.rightPage && `–${spread.rightPage.pageNumber}`} /{" "}
+            {pages.length}
+          </div>
+
+          <button
+            onClick={() => setShowOverview(true)}
+            className="p-2 rounded-full hover:bg-white/10"
+          >
+            <LayoutGrid />
+          </button>
+        </div>
+      )}
+
+      {/* ============================== OVERVIEW ============================== */}
+      {showOverview && (
+        <div className="absolute inset-0 z-50 bg-black">
+          <header className="h-16 px-4 flex items-center justify-between border-b border-white/10">
+            <h2 className="text-sm font-bold">All Spreads</h2>
+            <button
+              onClick={() => setShowOverview(false)}
+              className="p-2 rounded-full hover:bg-white/10"
+            >
+              <X />
             </button>
-          );
-        })}
-      </div>
-    </motion.div>
-  )}
-</AnimatePresence>
+          </header>
 
+          <div className="p-4 grid grid-cols-2 gap-4 overflow-y-auto pb-24">
+            {spreads.map((s, i) => {
+              const isActive = i === index;
+
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => {
+                    snapTo(i);
+                    setShowOverview(false);
+                    setShowUI(false);
+                  }}
+                  className={`relative rounded-lg overflow-hidden border ${
+                    isActive
+                      ? "border-white ring-2 ring-white"
+                      : "border-white/10 hover:border-white/30"
+                  }`}
+                >
+                  {s.imageUrl ? (
+                    <img
+                      src={s.imageUrl}
+                      className="w-full aspect-[3/4] object-contain bg-black"
+                    />
+                  ) : (
+                    <div className="w-full aspect-[3/4] flex items-center justify-center text-xs text-white/40 bg-black">
+                      Pending
+                    </div>
+                  )}
+
+                  <span className="absolute bottom-2 right-2 text-[10px] bg-black/70 px-2 py-1 rounded-full font-bold">
+                    {s.leftPage.pageNumber}
+                    {s.rightPage && `–${s.rightPage.pageNumber}`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
