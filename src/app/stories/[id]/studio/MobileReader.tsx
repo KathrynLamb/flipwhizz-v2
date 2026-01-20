@@ -11,6 +11,13 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 
+function prefetchImage(src: string) {
+    if (!src) return;
+    const img = new Image();
+    img.src = src;
+  }
+  
+
 type Page = {
   id: string;
   pageNumber: number;
@@ -28,6 +35,38 @@ export default function MobileReader({
   const [index, setIndex] = useState(0);
   const [showUI, setShowUI] = useState(true);
   const [showOverview, setShowOverview] = useState(false);
+  const [direction, setDirection] = useState(0);
+
+
+
+// CARD SWIPPING CONSTANTS
+  const swipeConfidenceThreshold = 80;
+
+    const variants = {
+    enter: (direction: number) => ({
+        x: direction > 0 ? "100%" : "-100%",
+        opacity: 0,
+        scale: 0.96,
+    }),
+    center: {
+        x: 0,
+        opacity: 1,
+        scale: 1,
+    },
+    exit: (direction: number) => ({
+        x: direction < 0 ? "100%" : "-100%",
+        opacity: 0,
+        scale: 0.96,
+    }),
+    };
+    useEffect(() => {
+        const prev = pages[index - 1]?.imageUrl;
+        const next = pages[index + 1]?.imageUrl;
+      
+        if (prev) prefetchImage(prev);
+        if (next) prefetchImage(next);
+      }, [index, pages]);
+      
 
   useEffect(() => {
     if (showOverview) setShowUI(false);
@@ -42,31 +81,83 @@ export default function MobileReader({
 
   const page = pages[index];
 
+  function paginate(newDirection: number) {
+    const newIndex = index + newDirection;
+    if (newIndex < 0 || newIndex >= pages.length) return;
+    setDirection(newDirection);
+    setIndex(newIndex);
+  }
+  
+
   return (
     <div className="fixed inset-0 bg-black text-white">
       {/* Page */}
-      <motion.div
-        key={page.id}
-        className="absolute inset-0 flex items-center justify-center"
-        drag="x"
-        dragConstraints={{ left: 0, right: 0 }}
-        onDragEnd={(_, info) => {
-          if (info.offset.x < -80 && index < pages.length - 1)
-            setIndex(index + 1);
-          if (info.offset.x > 80 && index > 0)
-            setIndex(index - 1);
-        }}
-        onClick={() => setShowUI(v => !v)}
+      <div className="absolute inset-0 flex items-center justify-center bg-black">
+  <AnimatePresence initial={false} custom={direction}>
+    <motion.div
+      key={page.id}
+      custom={direction}
+      variants={variants}
+      initial="enter"
+      animate="center"
+      exit="exit"
+      transition={{
+        x: { type: "spring", stiffness: 320, damping: 32 },
+        opacity: { duration: 0.2 },
+        scale: { duration: 0.2 },
+      }}
+      drag="x"
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.15}
+      onDragEnd={(_, info) => {
+        if (info.offset.x < -swipeConfidenceThreshold) {
+          paginate(1);
+        } else if (info.offset.x > swipeConfidenceThreshold) {
+          paginate(-1);
+        }
+      }}
+      onClick={() => setShowUI((v) => !v)}
+      className="
+        relative
+        w-full
+        h-full
+        flex
+        items-center
+        justify-center
+        px-4
+        landscape:px-16
+      "
+    >
+      {/* CARD */}
+      <div
+        className="
+          bg-black
+          rounded-xl
+          shadow-2xl
+          overflow-hidden
+          max-w-[1000px]
+          w-full
+          h-full
+          landscape:h-[90%]
+          flex
+          items-center
+          justify-center
+        "
       >
         {page.imageUrl ? (
           <img
             src={page.imageUrl}
+            alt={`Page ${page.pageNumber}`}
             className="max-w-full max-h-full object-contain"
           />
         ) : (
           <Loader2 className="w-10 h-10 animate-spin text-white/60" />
         )}
-      </motion.div>
+      </div>
+    </motion.div>
+  </AnimatePresence>
+</div>
+
 
       {/* UI */}
       <AnimatePresence>
