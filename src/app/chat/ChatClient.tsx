@@ -43,7 +43,8 @@ export default function ChatPage() {
         const storyRes = await fetch(`/api/stories/by-project?projectId=${projectId}`);
         const storyData = await storyRes.json();
         if (storyData.storyId) {
-          router.push(`/stories/${storyData.storyId}/hub`);
+          // router.push(`/stories/${storyData.storyId}/hub`);
+          router.push(`/stories/${storyData.storyId}/pages`);
         }
       } catch (err) {
         console.error("Studio sync failed:", err);
@@ -121,7 +122,8 @@ export default function ChatPage() {
   
       if (data.storyId) {
         setStoryId(data.storyId);
-        router.push(`/stories/${data.storyId}/hub`);
+        // router.push(`/stories/${data.storyId}/hub`);
+        router.push(`/stories/${data.storyId}/pages`);
       }
     } catch (err) {
       console.error("Story creation failed:", err);
