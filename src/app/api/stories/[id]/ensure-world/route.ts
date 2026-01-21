@@ -8,6 +8,8 @@ import {
   storyLocations,
   storyStyleGuide,
   storySpreads,
+  storySpreadPresence,
+  storySpreadScene,
 } from "@/db/schema";
 import { eq, asc, sql } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
@@ -25,7 +27,9 @@ export async function POST(
     return NextResponse.json({ error: "Missing storyId" }, { status: 400 });
   }
 
-  console.log("🔵 ensure-world called:", storyId);
+  /* --------------------------------------------------
+     1. LOAD STORY + PAGES
+  -------------------------------------------------- */
 
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
@@ -36,7 +40,6 @@ export async function POST(
     return NextResponse.json({ error: "Story not found" }, { status: 404 });
   }
 
-  // Pages must exist
   const pages = await db.query.storyPages.findMany({
     where: eq(storyPages.storyId, storyId),
     orderBy: asc(storyPages.pageNumber),
@@ -47,16 +50,26 @@ export async function POST(
     return NextResponse.json({ error: "Story has no pages" }, { status: 400 });
   }
 
-  // World inputs
-  const [charLinks, locLinks, style, spreadCountRow] = await Promise.all([
-    db.query.storyCharacters.findMany({
-      where: eq(storyCharacters.storyId, storyId),
-      columns: { storyId: true },
-    }),
-    db.query.storyLocations.findMany({
-      where: eq(storyLocations.storyId, storyId),
-      columns: { storyId: true },
-    }),
+  /* --------------------------------------------------
+     2. COUNT CURRENT STATE (AUTHORITATIVE)
+  -------------------------------------------------- */
+
+  const [
+    characterCountRow,
+    locationCountRow,
+    style,
+    spreadCountRow,
+    presenceCountRow,
+    sceneCountRow,
+  ] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(storyCharacters)
+      .where(eq(storyCharacters.storyId, storyId)),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(storyLocations)
+      .where(eq(storyLocations.storyId, storyId)),
     db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),
       columns: { summary: true },
@@ -65,113 +78,125 @@ export async function POST(
       .select({ count: sql<number>`count(*)` })
       .from(storySpreads)
       .where(eq(storySpreads.storyId, storyId)),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(storySpreadPresence)
+      .innerJoin(
+        storySpreads,
+        eq(storySpreadPresence.spreadId, storySpreads.id)
+      )
+      .where(eq(storySpreads.storyId, storyId)),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(storySpreadScene)
+      .innerJoin(
+        storySpreads,
+        eq(storySpreadScene.spreadId, storySpreads.id)
+      )
+      .where(eq(storySpreads.storyId, storyId)),
   ]);
 
-  const hasCharacters = charLinks.length > 0;
-  const hasLocations = locLinks.length > 0;
-  const hasStyleText = Boolean(style?.summary);
-  const spreadCount = spreadCountRow?.[0]?.count ?? 0;
-  const hasSpreads = spreadCount > 0;
+  const characterCount = characterCountRow[0].count;
+  const locationCount = locationCountRow[0].count;
+  const spreadCount = spreadCountRow[0].count;
+  const presenceCount = presenceCountRow[0].count;
+  const sceneCount = sceneCountRow[0].count;
 
-  const needsWorld = !hasCharacters || !hasLocations;
-  const needsStyle = !hasStyleText;
-  const needsSpreads = !hasSpreads;
+  const hasWorld =
+    characterCount > 0 &&
+    locationCount > 0 &&
+    Boolean(style?.summary);
 
-  console.log("📊 ensure-world state:", {
-    status: story.status,
-    hasCharacters,
-    hasLocations,
-    hasStyleText,
-    spreadCount,
-    needsWorld,
-    needsStyle,
-    needsSpreads,
-  });
+  const hasSceneAuthority =
+    spreadCount > 0 &&
+    presenceCount === spreadCount &&
+    sceneCount === spreadCount;
 
-  /**
-   * ✅ If everything exists, we are DONE
-   * Status does not matter anymore
-   */
-  if (!needsWorld && !needsStyle && !needsSpreads) {
-    // Opportunistically heal bad status
-    if (story.status !== "spreads_ready") {
+  /* --------------------------------------------------
+     3. STRICT PHASE ORCHESTRATION (NO FALLTHROUGH)
+  -------------------------------------------------- */
+
+  // PHASE 1 — Extract world
+  if (!hasWorld) {
+    if (story.status !== "extracting") {
       await db
         .update(stories)
-        .set({ status: "spreads_ready", updatedAt: new Date() })
+        .set({ status: "extracting", updatedAt: new Date() })
         .where(eq(stories.id, storyId));
+
+      await inngest.send({
+        name: "story/extract-world",
+        data: { storyId },
+      });
     }
 
     return NextResponse.json({
-      status: "complete",
-      mode: "fetching",
-      hasCharacters,
-      hasLocations,
-      hasStyleText,
-      hasPresence: true,
-      hasSpreads: true,
+      status: "processing",
+      mode: "extracting",
     });
   }
 
-  /**
-   * Prevent duplicate extraction
-   */
-  if (story.status === "extracting" || story.status === "building_spreads") {
+  // PHASE 2 — Build spreads
+  if (spreadCount === 0) {
+    if (story.status !== "building_spreads") {
+      await db
+        .update(stories)
+        .set({ status: "building_spreads", updatedAt: new Date() })
+        .where(eq(stories.id, storyId));
+
+      await inngest.send({
+        name: "story/build-spreads",
+        data: { storyId },
+      });
+    }
+
     return NextResponse.json({
       status: "processing",
-      mode: story.status,
-      hasCharacters,
-      hasLocations,
-      hasStyleText,
-      hasPresence: true,
-      hasSpreads,
-      needsWorld,
-      needsStyle,
-      needsSpreads,
+      mode: "building_spreads",
     });
   }
 
-  /**
-   * Claim extraction/build
-   */
-  await db
-    .update(stories)
-    .set({ status: "extracting", updatedAt: new Date() })
-    .where(eq(stories.id, storyId));
-
-  if (needsWorld) {
-    console.log("🚀 Dispatching story/extract-world");
-    await inngest.send({
-      name: "story/extract-world",
-      data: { storyId },
+  // 🚫 HARD BLOCK — NEVER advance while spreads are building
+  if (story.status === "building_spreads") {
+    return NextResponse.json({
+      status: "processing",
+      mode: "building_spreads",
     });
   }
 
-  if (needsStyle) {
-    console.log("🚀 Dispatching story/generate.style.text");
-    await inngest.send({
-      name: "story/generate.style.text",
-      data: { storyId },
+  // PHASE 3 — Decide scene authority
+  if (!hasSceneAuthority) {
+    if (story.status !== "deciding_scenes") {
+      await db
+        .update(stories)
+        .set({ status: "deciding_scenes", updatedAt: new Date() })
+        .where(eq(stories.id, storyId));
+
+      await inngest.send({
+        name: "story/decide-spread-scenes",
+        data: { storyId },
+      });
+    }
+
+    return NextResponse.json({
+      status: "processing",
+      mode: "deciding_scenes",
     });
   }
 
-  if (needsSpreads) {
-    console.log("🚀 Dispatching story/build-spreads");
-    await inngest.send({
-      name: "story/build-spreads",
-      data: { storyId },
-    });
+  /* --------------------------------------------------
+     4. COMPLETE
+  -------------------------------------------------- */
+
+  if (story.status !== "scenes_ready") {
+    await db
+      .update(stories)
+      .set({ status: "scenes_ready", updatedAt: new Date() })
+      .where(eq(stories.id, storyId));
   }
 
   return NextResponse.json({
-    status: "processing",
-    mode: "extracting",
-    hasCharacters,
-    hasLocations,
-    hasStyleText,
-    hasPresence: true,
-    hasSpreads,
-    needsWorld,
-    needsStyle,
-    needsSpreads,
+    status: "complete",
+    mode: "ready",
   });
 }

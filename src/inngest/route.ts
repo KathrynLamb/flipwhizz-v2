@@ -2,12 +2,12 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
 import { extractWorldJob, globalRewriteJob } from "@/inngest/functions";
-// import { buildSpreadsJob } from "@/inngest/buildSpreads.phaseA";
 import { generateStyleSample } from "@/inngest/generateStyle";
 import { generateBookCovers } from "@/inngest/generateBookCovers";
 import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateSpreads";
-import { buildSpreadsPhaseA } from "@/inngest/buildSpreads.phaseA";
 import { generateSpreadImages } from "@/inngest/generateSpreadImages.phaseB";
+import { decideSpreadScenes } from "@/inngest/decideSpreadScenes";
+import { buildSpreads } from "@/inngest/buildSpreads";
 
 
 export const { GET, POST, PUT } = serve({
@@ -15,12 +15,13 @@ export const { GET, POST, PUT } = serve({
   functions: [
     globalRewriteJob,
     extractWorldJob,
-    // buildSpreadsJob,
-    buildSpreadsPhaseA,
+    decideSpreadScenes,
     generateStyleSample,
     generateBookSpreads,
     generateSingleSpread,
     generateBookCovers,
     generateSpreadImages, 
+    buildSpreads, 
+    
   ],
 });

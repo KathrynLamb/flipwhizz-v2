@@ -592,7 +592,7 @@ export const storySpreadPresence = pgTable("story_spread_presence", {
 
   characters: jsonb("characters").$type<{
     characterId: string;
-    role: "primary" | "secondary";
+    role: "primary" | "secondary" | "background";
     confidence: number; // 0–1
     reason: string;
   }[]>(),
