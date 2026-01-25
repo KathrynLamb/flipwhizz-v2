@@ -107,8 +107,7 @@ STYLE:
 - Soft, hand-painted
 - Gentle, warm
 - NOT photorealistic
-- NOT Pixar
-- NOT chibi
+
 
 Character name: ${character.name}
 Description: ${character.description ?? ""}
@@ -139,7 +138,7 @@ Description: ${character.description ?? ""}
 
     await db
       .update(characters)
-      .set({ referenceImageUrl: imageUrl })
+      .set({ portraitImageUrl: imageUrl })
       .where(eq(characters.id, id));
 
     return NextResponse.json({ imageUrl });

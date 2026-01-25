@@ -52,6 +52,7 @@ export const stories = pgTable("stories", {
   storyConfirmed: boolean("story_confirmed").default(false).notNull(),
   paymentStatus: text("payment_status").default("pending"),
   paymentId: text("payment_id"),
+  imageChatId: text("image_chat_id"),
   frontCoverPrompt: text("front_cover_prompt"),
   backCoverPrompt: text("back_cover_prompt"),
   frontCoverUrl: text("front_cover_url"),

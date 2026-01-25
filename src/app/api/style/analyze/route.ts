@@ -37,6 +37,7 @@ Goal:
 - Do NOT name copyrighted franchises, studios, artists, or specific works.
 - Do NOT mention any recognizable characters or brand names.
 - Focus only on visual properties: palette, linework, rendering, textures, lighting, composition, mood.
+- Do NOT infer the artist, origin, culture, or era unless visually explicit.
 - Output must be suitable as a prompt to generate NEW original art "inspired by" the style, not copying.
 
 Return JSON with:
@@ -59,12 +60,14 @@ riskFlags examples:
       model: "gemini-3-pro-preview", // text/vision model (NOT image model)
       contents: [
         {
+          role: "user",
           parts: [
             { text: prompt },
             { inlineData: img },
           ],
         },
       ],
+      
       config: {
         responseMimeType: "application/json",
       },
@@ -73,7 +76,14 @@ riskFlags examples:
     
 
     const text = response.text ?? "";
-    const json = JSON.parse(text);
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      console.error("Raw Gemini response:", text);
+      throw new Error("Gemini returned invalid JSON");
+    }
+    
 
     return NextResponse.json({ success: true, ...json });
   } catch (err: any) {

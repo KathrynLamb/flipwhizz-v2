@@ -1,36 +1,32 @@
-// src/app/api/inngest/route.ts
 import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
 
-// Core
+// Core narrative
 import { globalRewriteJob, extractWorldJob } from "@/inngest/functions";
-
-// World / structure
 import { buildSpreads } from "@/inngest/buildSpreads";
 import { decideSpreadScenes } from "@/inngest/decideSpreadScenes";
 
 // Visuals
 import { generateStyleSample } from "@/inngest/generateStyle";
-import { generateSpreadImages } from "@/inngest/generateSpreadImages.phaseB";
-import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateSpreads";
+import { generateBookSpreads } from "@/inngest/generateSpreads";
+import { generateSingleSpread } from "@/inngest/generateSingleSpread";
+import { reviseSingleSpread } from "@/inngest/reviseSingleSpread";
 import { generateBookCovers } from "@/inngest/generateBookCovers";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [
-    // Core
+    // Core pipeline
     globalRewriteJob,
     extractWorldJob,
-
-    // REQUIRED ORDER
     buildSpreads,
     decideSpreadScenes,
 
     // Visuals
     generateStyleSample,
-    generateSpreadImages,
     generateBookSpreads,
     generateSingleSpread,
+    reviseSingleSpread,
     generateBookCovers,
   ],
 });

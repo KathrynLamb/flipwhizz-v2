@@ -1,0 +1,1 @@
+ALTER TABLE "stories" ADD COLUMN "image_chat_id" text;
