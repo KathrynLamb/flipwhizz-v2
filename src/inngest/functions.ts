@@ -101,10 +101,22 @@ export const extractWorldJob = inngest.createFunction(
 
     console.log("🔵 extractWorldJob started:", storyId);
 
-    await db
-      .update(stories)
-      .set({ status: "extracting_world", updatedAt: new Date() })
-      .where(eq(stories.id, storyId));
+    const locked = await db
+    .update(stories)
+    .set({
+      status: "extracting_world",
+      updatedAt: new Date(),
+    })
+    .where(
+      eq(stories.id, storyId)
+    )
+    .returning({ id: stories.id });
+  
+  if (locked.length === 0) {
+    console.log("⏭️ extractWorldJob skipped — already running:", storyId);
+    return;
+  }
+  
 
     const story = await db.query.stories.findFirst({
       where: eq(stories.id, storyId),
@@ -211,26 +223,52 @@ if (pageIds.length > 0) {
       console.log("✨ Creating new world data...");
 
       // 5. Insert new characters
-      for (const c of world.characters ?? []) {
-        const characterId = uuid();
+// --------------------------------------------------
+// 5️⃣ Insert new characters (DEDUPED, SAFE)
+// --------------------------------------------------
 
-        await tx.insert(characters).values({
-          id: characterId,
-          userId: project.userId!,
-          name: cap(c.name, 80)!,
-          description: cap(c.description, 500),
-          appearance: cap(c.appearance, 500),
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
+// Deduplicate characters by normalized name
+const uniqueCharacters = new Map<string, any>();
 
-        await tx.insert(storyCharacters).values({
-          storyId,
-          characterId,
-          role: cap(c.role, 40),
-          arcSummary: null,
-        });
-      }
+for (const c of world.characters ?? []) {
+  const rawName = typeof c?.name === "string" ? c.name.trim() : "";
+  if (!rawName) continue;
+
+  const key = rawName.toLowerCase();
+
+  // Skip duplicates returned by Claude
+  if (uniqueCharacters.has(key)) continue;
+
+  uniqueCharacters.set(key, c);
+}
+
+for (const c of uniqueCharacters.values()) {
+  const characterId = uuid();
+
+  await tx.insert(characters).values({
+    id: characterId,
+    userId: project.userId!,
+    name: cap(c.name, 80)!,
+    description: cap(c.description, 500),
+    appearance: cap(c.appearance, 500),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  await tx.insert(storyCharacters).values({
+    storyId,
+    characterId,
+    role: cap(c.role, 40),
+    arcSummary: null,
+  });
+}
+
+console.log(
+  "✅ Created",
+  uniqueCharacters.size,
+  "unique characters (deduped)"
+);
+
 
       console.log("✅ Created", world.characters?.length ?? 0, "new characters");
 

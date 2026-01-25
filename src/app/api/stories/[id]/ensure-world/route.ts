@@ -118,7 +118,8 @@ export async function POST(
 
   // PHASE 1 — Extract world
   if (!hasWorld) {
-    if (story.status !== "extracting") {
+    if (story.status !== "extracting" && story.status !== "extracting_world") {
+
       await db
         .update(stories)
         .set({ status: "extracting", updatedAt: new Date() })

@@ -20,23 +20,27 @@ export async function POST(
 
   console.log("🔴 Re-extract requested for:", storyId);
 
-  /* -------------------- Verify story -------------------- */
-
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
-    columns: { id: true },
+    columns: { id: true, status: true },
   });
 
   if (!story) {
     return NextResponse.json({ error: "Story not found" }, { status: 404 });
   }
 
-  /* -------------------- Clear world data -------------------- */
+  // 🛑 HARD LOCK — prevents duplicate extraction jobs
+  if (story.status === "extracting") {
+    console.log("⏭️ Extraction already running, skipping");
+    return NextResponse.json({
+      ok: true,
+      message: "Extraction already in progress",
+    });
+  }
 
   await db.transaction(async (tx) => {
     console.log("🧹 Clearing existing world data…");
 
-    // 1️⃣ Get all page IDs for this story
     const pages = await tx
       .select({ id: storyPages.id })
       .from(storyPages)
@@ -44,7 +48,6 @@ export async function POST(
 
     const pageIds = pages.map((p) => p.id);
 
-    // 2️⃣ Delete page-level character presence
     if (pageIds.length > 0) {
       await tx
         .delete(storyPageCharacters)
@@ -55,33 +58,15 @@ export async function POST(
         .where(inArray(storyPageLocations.pageId, pageIds));
     }
 
-    // 3️⃣ Delete story-level character + location links
-    await tx
-      .delete(storyCharacters)
-      .where(eq(storyCharacters.storyId, storyId));
+    await tx.delete(storyCharacters).where(eq(storyCharacters.storyId, storyId));
+    await tx.delete(storyLocations).where(eq(storyLocations.storyId, storyId));
+    await tx.delete(storyStyleGuide).where(eq(storyStyleGuide.storyId, storyId));
 
-    await tx
-      .delete(storyLocations)
-      .where(eq(storyLocations.storyId, storyId));
-
-    // 4️⃣ Delete style guide
-    await tx
-      .delete(storyStyleGuide)
-      .where(eq(storyStyleGuide.storyId, storyId));
-
-    // 5️⃣ Reset story status
     await tx
       .update(stories)
-      .set({
-        status: "extracting",
-        updatedAt: new Date(),
-      })
+      .set({ status: "extracting", updatedAt: new Date() })
       .where(eq(stories.id, storyId));
-
-    console.log("✅ World data cleared successfully");
   });
-
-  /* -------------------- Trigger fresh extraction -------------------- */
 
   await inngest.send({
     name: "story/extract-world",
@@ -100,3 +85,4 @@ export async function POST(
     message: "World data cleared and extraction restarted",
   });
 }
+

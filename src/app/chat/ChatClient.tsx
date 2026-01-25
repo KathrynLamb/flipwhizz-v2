@@ -28,6 +28,32 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  async function waitForPagesAndNavigate(storyId: string) {
+    const maxAttempts = 30; // ~30 seconds
+    const delay = 1000;
+  
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const res = await fetch(`/api/stories/${storyId}/pages`);
+        const data = await res.json();
+
+        if (Array.isArray(data) && data.length > 0) {
+          router.push(`/stories/${storyId}/pages`);
+          return;
+        }
+        
+      } catch (err) {
+        console.warn("Waiting for pages…", err);
+      }
+  
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  
+    console.error("Timed out waiting for pages");
+  }
+
+  console.log(' in chat ')
+
   // Initial Load
   useEffect(() => {
     async function initializeStudio() {
@@ -35,6 +61,8 @@ export default function ChatPage() {
 
       try {
         const chatRes = await fetch(`/api/chat/history?projectId=${projectId}`);
+        console.log('CHAT RES', chatRes);
+
         const chatData = await chatRes.json();
         if (chatData.messages) {
           setMessages(chatData.messages);
@@ -43,8 +71,7 @@ export default function ChatPage() {
         const storyRes = await fetch(`/api/stories/by-project?projectId=${projectId}`);
         const storyData = await storyRes.json();
         if (storyData.storyId) {
-          // router.push(`/stories/${storyData.storyId}/hub`);
-          router.push(`/stories/${storyData.storyId}/pages`);
+          await waitForPagesAndNavigate(storyData.storyId);
         }
       } catch (err) {
         console.error("Studio sync failed:", err);
@@ -122,8 +149,7 @@ export default function ChatPage() {
   
       if (data.storyId) {
         setStoryId(data.storyId);
-        // router.push(`/stories/${data.storyId}/hub`);
-        router.push(`/stories/${data.storyId}/pages`);
+        await waitForPagesAndNavigate(data.storyId);
       }
     } catch (err) {
       console.error("Story creation failed:", err);
@@ -131,6 +157,7 @@ export default function ChatPage() {
       setStoryCreating(false);
     }
   }
+  
   
   if (!projectId) return (
     <div className="flex h-screen items-center justify-center bg-white">
