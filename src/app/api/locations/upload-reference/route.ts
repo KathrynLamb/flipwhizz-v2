@@ -5,6 +5,7 @@ import { v4 as uuid } from "uuid";
 import { db } from "@/db";
 import { locations } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { adminStorage } from "@/lib/firebase-admin";
 
 export const runtime = "nodejs";
 
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
       buffer = await convertHeic(buffer);
     }
 
-    const bucket = admin.storage().bucket();
+    const bucket = adminStorage;
     const filename = `reference/locations/${locationId}/${uuid()}.jpg`;
     const fileRef = bucket.file(filename);
 

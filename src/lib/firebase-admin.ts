@@ -1,16 +1,25 @@
-// src/lib/firebase-admin.ts
 import admin from "firebase-admin";
+
+const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
+const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
+const rawPrivateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+const storageBucket = process.env.FIREBASE_ADMIN_STORAGE_BUCKET;
+
+if (!projectId || !clientEmail || !rawPrivateKey || !storageBucket) {
+  throw new Error("Missing Firebase Admin environment variables");
+}
 
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+      projectId,
+      clientEmail,
+      privateKey: rawPrivateKey.replace(/\\n/g, "\n"),
     }),
-    storageBucket: process.env.FIREBASE_ADMIN_STORAGE_BUCKET,
+    storageBucket,
   });
 }
 
 export const adminStorage = admin.storage().bucket();
+
 export default admin;
