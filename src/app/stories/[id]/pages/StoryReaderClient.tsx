@@ -55,6 +55,8 @@ export default function StoryReaderClient({
   const [isLoading, setIsLoading] = useState(false);
   const [conversationHistory, setConversationHistory] = useState<any[]>([]);
 
+  const [viewMode, setViewMode] = useState()
+
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
   useEffect(() => {
@@ -212,17 +214,21 @@ export default function StoryReaderClient({
   if (!mounted) return null;
 
   return isMobile ? (
-    <MobileStoryLayout
-      page={<PageCard page={pages[index]} />}
-      authorLetter={authorLetter && {
-        opening: authorLetter.opening,
-        intention: authorLetter.intention ?? [],
-        optionalTweaks: authorLetter.optionalTweaks ?? [],
-        invitation: authorLetter.invitation,
-      }}
-      onAccept={() => router.push(`/stories/${id}/extract`)}
-      onEdit={() => {}} // Mobile keeps separate flow for now
-    />
+<MobileStoryLayout
+    story={{ id, title }}
+    pages={pages}
+    authorNote={authorLetter ? {
+      summary: authorLetter.opening,
+      focusedOn: authorLetter.intention,
+      optionalIdeas: authorLetter.optionalTweaks
+    } : undefined}
+    onConfirm={handleConfirmStory}
+    onEdit={() => {
+      // For mobile, we'll just navigate to a chat/edit page
+      // Or you could implement a mobile editing UI here
+      router.push(`/stories/${id}/edit`);
+    }}
+  />
   ) : (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-fuchsia-50 to-amber-50">
       <div className="max-w-7xl mx-auto px-6 py-10">

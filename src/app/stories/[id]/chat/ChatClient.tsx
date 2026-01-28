@@ -17,8 +17,6 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-
-
   // Auto-scroll on new message
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -47,6 +45,48 @@ export default function ChatPage() {
     }
     loadExistingStory();
   }, [projectId]);
+
+  // Auto-navigate when story is ready
+useEffect(() => {
+  if (!storyId) return;
+  
+  let cancelled = false;
+  let pollCount = 0;
+  const maxPolls = 60; // 3 minutes max (60 * 3 seconds)
+
+  const interval = setInterval(async () => {
+    if (cancelled || pollCount >= maxPolls) {
+      clearInterval(interval);
+      return;
+    }
+
+    pollCount++;
+
+    try {
+      const res = await fetch(`/api/stories/${storyId}`, {
+        cache: "no-store",
+      });
+
+      if (!res.ok) return;
+
+      const story = await res.json();
+
+      // Check if pages are ready
+      if (story.status === "pages_ready" || story.status === "complete") {
+        clearInterval(interval);
+        // Navigate to the story pages
+        window.location.href = `/stories/${storyId}/pages`;
+      }
+    } catch (err) {
+      console.warn("Polling error:", err);
+    }
+  }, 3000); // Poll every 3 seconds
+
+  return () => {
+    cancelled = true;
+    clearInterval(interval);
+  };
+}, [storyId]);
 
   async function createStoryFromChat() {
     if (!projectId || storyCreating) return;
