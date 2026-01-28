@@ -33,7 +33,7 @@ type SpreadDecision = z.infer<typeof SpreadDecisionSchema>;
 
 
 /* ======================================================
-   SCHEMA (Updated to allow "background")
+   SCHEMA (Updated to allow "background" + flexible excludedCharacters)
 ====================================================== */
 
 const SpreadDecisionSchema = z.object({
@@ -52,11 +52,15 @@ const SpreadDecisionSchema = z.object({
       })
     ),
 
+    // FIX: Allow both string (just ID) and object format
     excludedCharacters: z.array(
-      z.object({
-        characterId: z.string(),
-        reason: z.string().optional(),
-      })
+      z.union([
+        z.string(), // Allow just character ID
+        z.object({
+          characterId: z.string(),
+          reason: z.string().optional(),
+        })
+      ])
     ).optional().default([]),
 
     reasoning: z.string().optional(),
@@ -271,10 +275,21 @@ ${JSON.stringify(batch, null, 2)}
               confidence: c.confidence ?? 0.8,
               reason: c.reason ?? "Inferred by story context",
             })),
-            excludedCharacters: (s.presence.excludedCharacters ?? []).map(ec => ({
-              characterId: ec.characterId,
-              reason: ec.reason ?? "Not present in this scene",
-            })),
+            // FIX: Handle both string and object format for excludedCharacters
+            excludedCharacters: (s.presence.excludedCharacters ?? []).map(ec => {
+              // If it's just a string (character ID), wrap it
+              if (typeof ec === 'string') {
+                return {
+                  characterId: ec,
+                  reason: "Not present in this scene",
+                };
+              }
+              // Otherwise it's already an object
+              return {
+                characterId: ec.characterId,
+                reason: ec.reason ?? "Not present in this scene",
+              };
+            }),
             
             reasoning: s.presence.reasoning ?? "",
             source: "claude",

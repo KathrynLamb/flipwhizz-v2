@@ -8,10 +8,11 @@ import { decideSpreadScenes } from "@/inngest/decideSpreadScenes";
 
 // Visuals
 import { generateStyleSample } from "@/inngest/generateStyle";
-import { generateBookSpreads } from "@/inngest/generateSpreads";
-import { generateSingleSpread } from "@/inngest/generateSingleSpread";
+// import { generateSingleSpread } from "@/inngest/generateSingleSpread";
 import { reviseSingleSpread } from "@/inngest/reviseSingleSpread";
 import { generateBookCovers } from "@/inngest/generateBookCovers";
+import { generateBookSpreads } from "@/inngest/generateBookSpreads";
+import { generateSingleSpread } from "@/inngest/generateSpreadImages.phaseB";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -24,9 +25,10 @@ export const { GET, POST, PUT } = serve({
 
     // Visuals
     generateStyleSample,
-    generateBookSpreads,
     generateSingleSpread,
     reviseSingleSpread,
     generateBookCovers,
+
+    generateBookSpreads
   ],
 });

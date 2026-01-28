@@ -1,3 +1,4 @@
+// api/stories/[id]/start-generation
 import { inngest } from "@/inngest/client";
 import { NextResponse } from "next/server";
 

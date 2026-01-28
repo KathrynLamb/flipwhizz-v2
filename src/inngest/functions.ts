@@ -101,22 +101,27 @@ export const extractWorldJob = inngest.createFunction(
 
     console.log("🔵 extractWorldJob started:", storyId);
 
+    /* --------------------------------------------------
+       0️⃣ HARD LOCK (prevents duplicate runs)
+    -------------------------------------------------- */
+
     const locked = await db
-    .update(stories)
-    .set({
-      status: "extracting_world",
-      updatedAt: new Date(),
-    })
-    .where(
-      eq(stories.id, storyId)
-    )
-    .returning({ id: stories.id });
-  
-  if (locked.length === 0) {
-    console.log("⏭️ extractWorldJob skipped — already running:", storyId);
-    return;
-  }
-  
+      .update(stories)
+      .set({
+        status: "extracting",
+        updatedAt: new Date(),
+      })
+      .where(eq(stories.id, storyId))
+      .returning({ id: stories.id });
+
+    if (locked.length === 0) {
+      console.log("⏭️ extractWorldJob skipped — already running:", storyId);
+      return;
+    }
+
+    /* --------------------------------------------------
+       1️⃣ Load story + pages
+    -------------------------------------------------- */
 
     const story = await db.query.stories.findFirst({
       where: eq(stories.id, storyId),
@@ -136,6 +141,10 @@ export const extractWorldJob = inngest.createFunction(
     const text = pages
       .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
       .join("\n");
+
+    /* --------------------------------------------------
+       2️⃣ Call Claude
+    -------------------------------------------------- */
 
     console.log("🤖 Calling Claude for world extraction...");
 
@@ -162,15 +171,30 @@ Extract ONLY this JSON shape:
 
     const world = extractJson(extractClaudeText(res.content));
 
-    console.log("✅ Claude response parsed:", {
+    console.log("✅ Claude parsed:", {
       characters: world.characters?.length ?? 0,
       locations: world.locations?.length ?? 0,
     });
 
-    await db.transaction(async (tx) => {
-      console.log("🧹 Cleaning up old world data...");
+    /* --------------------------------------------------
+       3️⃣ Transaction: wipe + rebuild world
+    -------------------------------------------------- */
 
-      // 1. Get existing character and location IDs
+    await db.transaction(async (tx) => {
+      console.log("🧹 Clearing existing world data…");
+
+      const pageIds = pages.map((p) => p.id);
+
+      if (pageIds.length > 0) {
+        await tx
+          .delete(storyPageCharacters)
+          .where(inArray(storyPageCharacters.pageId, pageIds));
+
+        await tx
+          .delete(storyPageLocations)
+          .where(inArray(storyPageLocations.pageId, pageIds));
+      }
+
       const oldCharacterLinks = await tx.query.storyCharacters.findMany({
         where: eq(storyCharacters.storyId, storyId),
         columns: { characterId: true },
@@ -184,95 +208,66 @@ Extract ONLY this JSON shape:
       const oldCharacterIds = oldCharacterLinks.map((c) => c.characterId);
       const oldLocationIds = oldLocationLinks.map((l) => l.locationId);
 
-      // 2. Delete page presence first (foreign key constraints)
-// 2. Delete page presence first (foreign key constraints)
-
-// Get all page IDs for this story
-const pageIds = pages.map((p) => p.id);
-
-if (pageIds.length > 0) {
-  await tx
-    .delete(storyPageCharacters)
-    .where(inArray(storyPageCharacters.pageId, pageIds));
-
-  await tx
-    .delete(storyPageLocations)
-    .where(inArray(storyPageLocations.pageId, pageIds));
-}
-
-
-      // 3. Delete link tables
       await tx.delete(storyCharacters).where(eq(storyCharacters.storyId, storyId));
       await tx.delete(storyLocations).where(eq(storyLocations.storyId, storyId));
 
-      // 4. Delete the actual character and location records
       if (oldCharacterIds.length > 0) {
-        await tx
-          .delete(characters)
-          .where(inArray(characters.id, oldCharacterIds));
+        await tx.delete(characters).where(inArray(characters.id, oldCharacterIds));
         console.log("🗑️ Deleted", oldCharacterIds.length, "old characters");
       }
 
       if (oldLocationIds.length > 0) {
-        await tx
-          .delete(locations)
-          .where(inArray(locations.id, oldLocationIds));
+        await tx.delete(locations).where(inArray(locations.id, oldLocationIds));
         console.log("🗑️ Deleted", oldLocationIds.length, "old locations");
       }
 
-      console.log("✨ Creating new world data...");
+      /* --------------------------------------------------
+         4️⃣ Insert NEW characters (DEDUPED)
+      -------------------------------------------------- */
 
-      // 5. Insert new characters
-// --------------------------------------------------
-// 5️⃣ Insert new characters (DEDUPED, SAFE)
-// --------------------------------------------------
+      const uniqueCharacters = new Map<string, any>();
 
-// Deduplicate characters by normalized name
-const uniqueCharacters = new Map<string, any>();
+      for (const c of world.characters ?? []) {
+        const rawName = typeof c?.name === "string" ? c.name.trim() : "";
+        if (!rawName) continue;
 
-for (const c of world.characters ?? []) {
-  const rawName = typeof c?.name === "string" ? c.name.trim() : "";
-  if (!rawName) continue;
+        const key = rawName.toLowerCase();
+        if (uniqueCharacters.has(key)) continue;
 
-  const key = rawName.toLowerCase();
+        uniqueCharacters.set(key, c);
+      }
 
-  // Skip duplicates returned by Claude
-  if (uniqueCharacters.has(key)) continue;
+      for (const c of uniqueCharacters.values()) {
+        const characterId = uuid();
 
-  uniqueCharacters.set(key, c);
-}
+        await tx.insert(characters).values({
+          id: characterId,
+          userId: project.userId!,
+          name: cap(c.name, 80)!,
+          description: cap(c.description, 500),
+          appearance: cap(c.appearance, 500),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
 
-for (const c of uniqueCharacters.values()) {
-  const characterId = uuid();
+        await tx.insert(storyCharacters).values({
+          storyId,
+          characterId,
+          role: cap(c.role, 40),
+          arcSummary: null,
+        });
+      }
 
-  await tx.insert(characters).values({
-    id: characterId,
-    userId: project.userId!,
-    name: cap(c.name, 80)!,
-    description: cap(c.description, 500),
-    appearance: cap(c.appearance, 500),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+      console.log(
+        "✅ Created",
+        uniqueCharacters.size,
+        "unique characters (deduped)"
+      );
 
-  await tx.insert(storyCharacters).values({
-    storyId,
-    characterId,
-    role: cap(c.role, 40),
-    arcSummary: null,
-  });
-}
+      /* --------------------------------------------------
+         5️⃣ Insert locations
+      -------------------------------------------------- */
 
-console.log(
-  "✅ Created",
-  uniqueCharacters.size,
-  "unique characters (deduped)"
-);
-
-
-      console.log("✅ Created", world.characters?.length ?? 0, "new characters");
-
-      // 6. Insert new locations
       for (const l of world.locations ?? []) {
         const locationId = uuid();
 
@@ -294,7 +289,10 @@ console.log(
 
       console.log("✅ Created", world.locations?.length ?? 0, "new locations");
 
-      // 7. Update or insert style guide
+      /* --------------------------------------------------
+         6️⃣ Style guide (upsert)
+      -------------------------------------------------- */
+
       await tx
         .insert(storyStyleGuide)
         .values({
@@ -322,6 +320,10 @@ console.log(
 
       console.log("✅ Style guide updated");
     });
+
+    /* --------------------------------------------------
+       7️⃣ FINAL STATUS
+    -------------------------------------------------- */
 
     await db
       .update(stories)
