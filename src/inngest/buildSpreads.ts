@@ -10,7 +10,7 @@ export const buildSpreads = inngest.createFunction(
     concurrency: { limit: 1, key: "event.data.storyId" },
     retries: 3,
   },
-  { event: "story/build.spreads" },
+  { event: "story/build-spreads" },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
 

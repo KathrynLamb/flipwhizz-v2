@@ -119,6 +119,7 @@ export const decideSpreadScenes = inngest.createFunction(
     concurrency: { limit: 1, key: "event.data.storyId" },
     timeouts: { start: "10m", finish: "20m" },
   },
+
   { event: "story/decide-spread-scenes" },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
