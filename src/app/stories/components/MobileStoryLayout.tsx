@@ -625,37 +625,62 @@ export default function MobileStoryLayout({
     }
   }
 
-  async function applyEdits() {
-    setIsLoading(true);
+// Update the applyEdits function in your MobileStoryLayout.tsx component
 
-    try {
-      const instruction = conversationHistory
-        .filter((msg) => msg.role === "user")
-        .map((msg) => msg.content)
-        .join("\n\n");
+async function applyEdits() {
+  setIsLoading(true);
 
-      const response = await fetch(`/api/stories/${story.id}/global-rewrite`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          instruction: instruction || "Apply the discussed changes to the story.",
-        }),
-      });
+  try {
+    const instruction = conversationHistory
+      .filter((msg) => msg.role === "user")
+      .map((msg) => msg.content)
+      .join("\n\n");
 
-      const data = await response.json();
+    console.log("🔄 Applying edits with instruction:", instruction);
 
-      if (data.ok) {
+    const response = await fetch(`/api/stories/${story.id}/global-rewrite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instruction: instruction || "Apply the discussed changes to the story.",
+      }),
+    });
+
+    console.log("📡 Response status:", response.status, response.ok);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: "Network error" }));
+      console.error("❌ Server error:", errorData);
+      alert(`Failed to apply edits: ${errorData.error || "Server error"}`);
+      setIsLoading(false);
+      return;
+    }
+
+    const data = await response.json();
+    console.log("✅ Response data:", data);
+
+    if (data.ok) {
+      // Show success message before reload
+      const successMsg = document.createElement('div');
+      successMsg.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#10b981;color:white;padding:20px 40px;border-radius:12px;font-weight:bold;z-index:9999;box-shadow:0 10px 40px rgba(0,0,0,0.3);';
+      successMsg.textContent = '✓ Changes applied! Reloading...';
+      document.body.appendChild(successMsg);
+      
+      // Wait a moment before reload so user sees success
+      setTimeout(() => {
         window.location.reload();
-      } else {
-        alert(`Failed to apply edits: ${data.error || "Unknown error"}`);
-      }
-    } catch (error) {
-      console.error("Edit error:", error);
-      alert("Failed to apply edits. Please try again.");
-    } finally {
+      }, 1500);
+    } else {
+      console.error("❌ Unexpected response:", data);
+      alert(`Failed to apply edits: ${data.error || "Unknown error"}`);
       setIsLoading(false);
     }
+  } catch (error) {
+    console.error("❌ Edit error:", error);
+    alert(`Failed to apply edits: ${error instanceof Error ? error.message : "Network error"}`);
+    setIsLoading(false);
   }
+}
 
   /* -------------------------------- Actions -------------------------------- */
 
