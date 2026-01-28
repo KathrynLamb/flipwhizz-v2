@@ -36,6 +36,38 @@ cloudinary.config({
 
 /* ---------------- Helpers ---------------- */
 
+async function getImagePart(urlOrBase64: string) {
+  try {
+    if (!urlOrBase64) return null;
+
+    // 1. If it's already a Data URI (Base64)
+    if (urlOrBase64.startsWith("data:image")) {
+      const base64Data = urlOrBase64.split(",")[1];
+      return {
+        inlineData: {
+          data: base64Data,
+          mimeType: "image/jpeg",
+        },
+      };
+    }
+
+    // 2. If it's a remote URL (Cloudinary/S3)
+    const res = await fetch(urlOrBase64);
+    if (!res.ok) throw new Error(`Failed to fetch: ${res.statusText}`);
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    return {
+      inlineData: {
+        data: buffer.toString("base64"),
+        mimeType: "image/jpeg",
+      },
+    };
+  } catch (e) {
+    console.error("❌ Failed to process reference image", e);
+    return null;
+  }
+}
+
 function extractInlineImage(result: any) {
   const parts = result?.candidates?.[0]?.content?.parts ?? [];
   return parts.find((p: any) => p.inlineData?.data)?.inlineData ?? null;
@@ -144,6 +176,7 @@ ${visualDesc}
 ${stylePrompt}
 
 REQUIREMENTS:
+${location.referenceImageUrl ? "- Use the attached reference image as the PRIMARY visual reference for architecture, colors, and style." : ""}
 - Wide or medium establishing shot
 - Coherent, navigable spatial layout (paths, landmarks, entrances)
 - Atmospheric lighting
@@ -153,11 +186,28 @@ REQUIREMENTS:
 - NO characters (environment only)
 `.trim();
 
-    /* ---------- 4. Generate Image ---------- */
+    /* ---------- 4. Prepare Gemini Contents (Text + Optional Image) ---------- */
+    
+    const parts: any[] = [{ text: prompt }];
+
+    // If a reference image exists (user upload), attach it
+    if (location.referenceImageUrl) {
+      console.log("📷 Found reference image, attaching to prompt...");
+      const imagePart = await getImagePart(location.referenceImageUrl);
+      if (imagePart) {
+        parts.push(imagePart);
+        // Add specific instruction for the image part
+        parts.push({ 
+          text: "Use this image as a visual reference for the location's architecture, colors, and overall aesthetic." 
+        });
+      }
+    }
+
+    /* ---------- 5. Generate Image ---------- */
 
     const response = await gemini.models.generateContent({
       model: MODEL,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: [{ role: "user", parts }],
       config: {
         responseModalities: ["IMAGE"],
         imageConfig: {
@@ -174,7 +224,7 @@ REQUIREMENTS:
       throw new Error("Gemini did not return an image");
     }
 
-    /* ---------- 5. Upload to Cloudinary ---------- */
+    /* ---------- 6. Upload to Cloudinary ---------- */
 
     const imageUrl = await uploadToCloudinary(
       image.data,
@@ -182,12 +232,12 @@ REQUIREMENTS:
       locationId
     );
 
-    /* ---------- 6. Save ---------- */
+    /* ---------- 7. Save ---------- */
 
     await db
       .update(locations)
       .set({
-        referenceImageUrl: imageUrl, // ✅ correct semantic field
+        portraitImageUrl: imageUrl, // This is the AI-generated portrait
         updatedAt: new Date(),
       })
       .where(eq(locations.id, locationId));

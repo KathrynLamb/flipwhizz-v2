@@ -51,7 +51,7 @@ export async function POST(req: Request) {
       buffer = await convertHeic(buffer);
     }
 
-    const bucket = adminStorage;
+    const bucket = adminStorage();
     const filename = `reference/locations/${locationId}/${uuid()}.jpg`;
     const fileRef = bucket.file(filename);
 

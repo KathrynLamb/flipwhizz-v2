@@ -11,7 +11,7 @@ export async function uploadPdfToFirebase(
   buffer: Buffer,
   storyId: string
 ): Promise<string> {
-  const bucket = adminStorage;
+  const bucket = adminStorage();
 
   const filePath = `flipwhizz/pdfs/${storyId}/complete-${Date.now()}.pdf`;
   const file = bucket.file(filePath);

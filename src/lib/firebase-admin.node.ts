@@ -3,25 +3,30 @@ import admin from "firebase-admin";
 const base64 = process.env.FIREBASE_ADMIN_CREDENTIALS_BASE64;
 const storageBucket = process.env.FIREBASE_ADMIN_STORAGE_BUCKET;
 
-if (!base64) {
-  throw new Error("Missing FIREBASE_ADMIN_CREDENTIALS_BASE64");
+// Only initialize if we have credentials (not during build)
+if (base64 && storageBucket && !admin.apps.length) {
+  try {
+    const credentials = JSON.parse(
+      Buffer.from(base64, "base64").toString("utf-8")
+    );
+
+    admin.initializeApp({
+      credential: admin.credential.cert(credentials),
+      storageBucket: storageBucket,
+    });
+    
+    console.log("✅ Firebase Admin initialized");
+  } catch (error) {
+    console.error("❌ Failed to initialize Firebase Admin:", error);
+  }
 }
 
-if (!storageBucket) {
-  throw new Error("Missing FIREBASE_ADMIN_STORAGE_BUCKET");
-}
+// Export functions that check if Firebase is initialized
+export const adminStorage = () => {
+  if (!admin.apps.length) {
+    throw new Error("Firebase Admin not initialized");
+  }
+  return admin.storage().bucket();
+};
 
-const credentials = JSON.parse(
-  Buffer.from(base64, "base64").toString("utf-8")
-);
-
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(credentials),
-    storageBucket: storageBucket, // Use the env var directly
-  });
-}
-
-export const adminStorage = admin.storage().bucket();
 export default admin;
-
