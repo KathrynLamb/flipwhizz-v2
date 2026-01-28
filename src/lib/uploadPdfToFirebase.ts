@@ -1,5 +1,7 @@
+export const runtime = "nodejs";
+
 import { v4 as uuidv4 } from "uuid";
-import { adminStorage } from "@/lib/firebase-admin";
+import { adminStorage } from "@/lib/firebase-admin.node";
 
 /**
  * Upload a completed story PDF to Firebase Storage

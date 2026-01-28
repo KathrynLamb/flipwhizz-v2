@@ -1,12 +1,14 @@
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
-import admin from "@/lib/firebase-admin";
+import admin from "@/lib/firebase-admin.node";
 import { v4 as uuid } from "uuid";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { adminStorage } from "@/lib/firebase-admin";
+import { adminStorage } from "@/lib/firebase-admin.node";
 
-export const runtime = "nodejs";
+
 
 /* ---------- HEIC HELPERS ---------- */
 
