@@ -4,14 +4,26 @@ import { stories, storySpreads } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 
+function log(step: string, data?: any) {
+  const ts = new Date().toISOString();
+  if (data !== undefined) {
+    console.log(`🧱 [ensure-spreads] ${ts} ${step}`, data);
+  } else {
+    console.log(`🧱 [ensure-spreads] ${ts} ${step}`);
+  }
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
 
+  log("POST called", { storyId });
+
   try {
-    // Load story and check spreads
+    log("loading story + existing spreads");
+
     const [story, existingSpreads] = await Promise.all([
       db.query.stories.findFirst({
         where: eq(stories.id, storyId),
@@ -23,89 +35,127 @@ export async function POST(
       }),
     ]);
 
+    log("db query results", {
+      storyFound: Boolean(story),
+      storyStatus: story?.status,
+      spreadsFound: existingSpreads.length,
+    });
+
     if (!story) {
+      log("story not found – aborting");
       return NextResponse.json({ error: "Story not found" }, { status: 404 });
     }
 
-    // If spreads exist and story is marked ready, we're done
+    /* --------------------------------------------------
+       CASE 1: spreads already exist AND marked ready
+    -------------------------------------------------- */
     if (existingSpreads.length > 0 && story.status === "spreads_ready") {
-      return NextResponse.json({ 
+      log("spreads already exist and story already ready – returning");
+      return NextResponse.json({
         status: "ready",
         spreadsExist: true,
       });
     }
 
-    // If spreads exist but status is wrong, fix it
+    /* --------------------------------------------------
+       CASE 2: spreads exist but status wrong
+    -------------------------------------------------- */
     if (existingSpreads.length > 0 && story.status !== "spreads_ready") {
+      log("spreads exist but status incorrect – fixing status");
+
       await db
         .update(stories)
         .set({ status: "spreads_ready", updatedAt: new Date() })
         .where(eq(stories.id, storyId));
 
-      return NextResponse.json({ 
+      log("status fixed to spreads_ready");
+
+      return NextResponse.json({
         status: "ready",
         spreadsExist: true,
         statusFixed: true,
       });
     }
 
-    // If currently building, return building status
+    /* --------------------------------------------------
+       CASE 3: already building
+    -------------------------------------------------- */
     if (story.status === "building_spreads") {
+      log("already building spreads – returning early");
       return NextResponse.json({ status: "building_spreads" });
     }
 
-    // If error state, reset and try again
+    /* --------------------------------------------------
+       CASE 4: error → retry
+    -------------------------------------------------- */
     if (story.status === "error") {
+      log("story in error state – resetting + re-triggering");
+
       await db
         .update(stories)
         .set({ status: "building_spreads", updatedAt: new Date() })
         .where(eq(stories.id, storyId));
 
-      await inngest.send({
+      log("status set to building_spreads (retry)");
+
+      log("sending inngest event (retry)");
+      const sendResult = await inngest.send({
         name: "story/build.spreads",
         data: { storyId },
       });
 
-      return NextResponse.json({ 
+      log("inngest.send result (retry)", sendResult);
+
+      return NextResponse.json({
         status: "building_spreads",
         retry: true,
       });
     }
 
-    // Start building spreads
+    /* --------------------------------------------------
+       CASE 5: fresh start
+    -------------------------------------------------- */
+    log("starting fresh spread build");
+
     await db
       .update(stories)
       .set({ status: "building_spreads", updatedAt: new Date() })
       .where(eq(stories.id, storyId));
 
-      console.log("[ensure-spreads] sending event", {
-        storyId,
-        status: story.status,
-      });
-      
-      const result = await inngest.send({
-        name: "story/build.spreads",
-        data: { storyId },
-      });
-      
-      console.log("[ensure-spreads] event sent", result);
+    log("status set to building_spreads");
+
+    log("sending inngest event");
+    const sendResult = await inngest.send({
+      name: "story/build.spreads",
+      data: { storyId },
+    });
+
+    log("inngest.send result", sendResult);
+
+    log("returning building_spreads response");
 
     return NextResponse.json({ status: "building_spreads" });
   } catch (error) {
-    console.error("[ensure-spreads] Error:", error);
-    
-    // Try to set error status
+    log("🔥 UNCAUGHT ERROR", error);
+
     try {
+      log("attempting to set story status = error");
+
       await db
         .update(stories)
         .set({ status: "error", updatedAt: new Date() })
         .where(eq(stories.id, storyId));
+
+      log("status set to error");
     } catch (updateError) {
-      console.error("[ensure-spreads] Failed to update error status:", updateError);
+      log("❌ failed to update error status", updateError);
     }
-    
+
     return NextResponse.json(
-      { error: "Failed to ensure spreads", details: String(error) },
+      {
+        error: "Failed to ensure spreads",
+        details: String(error),
+      },
       { status: 500 }
     );
   }
