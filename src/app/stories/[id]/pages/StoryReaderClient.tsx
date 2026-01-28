@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Send, Loader2, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import MobileStoryLayout from '@/app/stories/components/MobileStoryLayout';
+import StoryHeader from '@/app/stories/[id]/pages/components/StoryHeader';
+import StoryFooter from '@/app/stories/[id]/pages/components/StoryFooter';
 
 /* ======================================================
    TYPES
@@ -68,7 +70,11 @@ export default function StoryReaderClient({
     fetch(`/api/stories/${id}/author-letter`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, pages }),
+      body: JSON.stringify({ 
+        title, 
+        pages, 
+        storyId: id
+      }),
     })
       .then(res => res.json())
       .then((res) => {
@@ -215,28 +221,27 @@ export default function StoryReaderClient({
 
   return isMobile ? (
 <MobileStoryLayout
-    story={{ id, title }}
-    pages={pages}
-    authorNote={authorLetter ? {
-      summary: authorLetter.opening,
-      focusedOn: authorLetter.intention,
-      optionalIdeas: authorLetter.optionalTweaks
-    } : undefined}
-    onConfirm={handleConfirmStory}
-    onEdit={() => {
-      // For mobile, we'll just navigate to a chat/edit page
-      // Or you could implement a mobile editing UI here
-      router.push(`/stories/${id}/edit`);
-    }}
+  story={{ id, title }}
+  pages={pages}
+  authorNote={authorLetter ? {
+    summary: authorLetter.opening,
+    focusedOn: authorLetter.intention,
+    optionalIdeas: authorLetter.optionalTweaks
+  } : undefined}
+  onConfirm={handleConfirmStory}
   />
   ) : (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-fuchsia-50 to-amber-50">
+  <StoryHeader
+    title="Grandma Goes Downhill"
+    subtitle="Review Your Story"
+  />
       <div className="max-w-7xl mx-auto px-6 py-10">
         
         {/* TITLE */}
-        <h1 className="text-center mb-10 text-4xl md:text-5xl font-black bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+        {/* <h1 className="text-center mb-10 text-4xl md:text-5xl font-black bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
           {title}
-        </h1>
+        </h1> */}
 
         {/* MAIN GRID */}
         <div className="grid lg:grid-cols-[1fr_420px] gap-8 items-start">
@@ -378,6 +383,15 @@ export default function StoryReaderClient({
           </div>
         </div>
       </div>
+          <StoryFooter
+              currentStep={1}
+              totalSteps={3}
+              primaryAction={{
+                label: "Confirm & Continue",
+                onClick: handleConfirmStory,
+                icon: <Check className="w-5 h-5" />,
+        }}
+      />
     </div>
   );
 }

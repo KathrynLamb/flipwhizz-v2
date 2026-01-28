@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { db } from "@/db";
+import { stories } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
 export const runtime = "nodejs";
@@ -100,9 +103,10 @@ ${excerpt}
 
 export async function POST(req: Request) {
   try {
-    const { title, pages } = await req.json();
+    const body = await req.json();
+    const { title, pages, storyId } = body;
 
-    console.log("author-letter input:", { title, pageCount: pages?.length });
+    console.log("author-letter input:", { title, pageCount: pages?.length, storyId });
 
     if (!title || !Array.isArray(pages) || pages.length === 0) {
       return NextResponse.json(
@@ -110,6 +114,26 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    // 1. Check if author letter already exists in DB (if storyId provided)
+    if (storyId) {
+      const story = await db.query.stories.findFirst({
+        where: eq(stories.id, storyId),
+        columns: { 
+          id: true, 
+          authorLetter: true
+        },
+      });
+
+      // 2. If exists, return it
+      if (story?.authorLetter) {
+        console.log("📖 Returning cached author letter from database");
+        return NextResponse.json(story.authorLetter);
+      }
+    }
+
+    // 3. Otherwise, generate new letter
+    console.log("✨ Generating new author letter...");
 
     const completion = await client.messages.create({
       model: "claude-sonnet-4-20250514",
@@ -168,6 +192,19 @@ export async function POST(req: Request) {
       optionalTweaks: parsed.thingsYouMightTweak,
       invitation: parsed.invitation,
     };
+
+    // 4. Save to database (if storyId provided)
+    if (storyId) {
+      await db
+        .update(stories)
+        .set({ 
+          authorLetter: response,
+          updatedAt: new Date() 
+        })
+        .where(eq(stories.id, storyId));
+
+      console.log("💾 Saved author letter to database");
+    }
 
     console.log("✅ Author letter generated successfully");
 

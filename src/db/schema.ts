@@ -62,6 +62,15 @@ export const stories = pgTable("stories", {
   orderStatus: text("order_status").default("not_ready"), 
   currentStep: integer("current_step").default(1),
   completedSteps: jsonb("completed_steps").default('[]'),
+
+    // ADD THIS LINE:
+    authorLetter: jsonb("author_letter").$type<{
+      opening: string;
+      intention: string[];
+      optionalTweaks: string[];
+      invitation: string;
+    }>(),
+    
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
