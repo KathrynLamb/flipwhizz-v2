@@ -36,9 +36,10 @@ export default function StudioShell({
   if (isMobile) {
     return (
       <MobileReader
-        story={story}
-        pages={pages}
-      />
+      story={story}
+      pages={pages}
+      mode="edit"
+    />
     );
   }
 
