@@ -7,6 +7,8 @@ if (!base64) {
   throw new Error("Missing FIREBASE_ADMIN_CREDENTIALS_BASE64");
 }
 
+
+
 if (!storageBucket) {
   throw new Error("Missing FIREBASE_STORAGE_BUCKET");
 }
@@ -23,4 +25,5 @@ if (!admin.apps.length) {
 }
 
 export const adminStorage = admin.storage().bucket(storageBucket);
+console.log("🔥 Firebase bucket:", adminStorage.name);
 export default admin;
