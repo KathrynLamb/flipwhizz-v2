@@ -70,7 +70,7 @@ export const stories = pgTable("stories", {
       optionalTweaks: string[];
       invitation: string;
     }>(),
-    
+
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -139,6 +139,39 @@ export const pageImages = pgTable("page_images", {
   seed: text("seed"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+
+
+/* ==================== Story Edit Chat ==================== */
+
+export const storyEditSessions = pgTable("story_edit_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  
+  storyId: uuid("story_id")
+    .references(() => stories.id, { onDelete: "cascade" })
+    .notNull()
+    .unique(), // One active edit session per story
+  
+  lastMessageAt: timestamp("last_message_at").defaultNow(),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const storyEditMessages = pgTable("story_edit_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  
+  sessionId: uuid("session_id")
+    .references(() => storyEditSessions.id, { onDelete: "cascade" })
+    .notNull(),
+  
+  role: varchar("role", { length: 20 }).notNull(), // 'user' | 'assistant'
+  content: text("content").notNull(),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+
 
 /* ==================== CHARACTERS ==================== */
 
