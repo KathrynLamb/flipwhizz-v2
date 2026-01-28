@@ -1,4 +1,3 @@
-
 // src/app/api/inngest/route.ts
 import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
@@ -10,12 +9,9 @@ import { decideSpreadScenes } from "@/inngest/decideSpreadScenes";
 
 // Visual generation
 import { generateStyleSample } from "@/inngest/generateStyle";
-
-// import { generateSingleSpread } from "@/inngest/generateSingleSpread";
+import { generateSingleSpread } from "@/inngest/generateSpreadImages.phaseB";
 import { reviseSingleSpread } from "@/inngest/reviseSingleSpread";
 import { generateBookCovers } from "@/inngest/generateBookCovers";
-import { generateBookSpreads } from "@/inngest/generateBookSpreads";
-import { generateSingleSpread } from "@/inngest/generateSpreadImages.phaseB";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -31,7 +27,5 @@ export const { GET, POST, PUT } = serve({
     generateSingleSpread,
     reviseSingleSpread,
     generateBookCovers,
-
-    generateBookSpreads,
   ],
 });
