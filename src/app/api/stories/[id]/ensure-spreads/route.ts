@@ -78,10 +78,17 @@ export async function POST(
       .set({ status: "building_spreads", updatedAt: new Date() })
       .where(eq(stories.id, storyId));
 
-    await inngest.send({
-      name: "story/build.spreads",
-      data: { storyId },
-    });
+      console.log("[ensure-spreads] sending event", {
+        storyId,
+        status: story.status,
+      });
+      
+      const result = await inngest.send({
+        name: "story/build.spreads",
+        data: { storyId },
+      });
+      
+      console.log("[ensure-spreads] event sent", result);
 
     return NextResponse.json({ status: "building_spreads" });
   } catch (error) {
