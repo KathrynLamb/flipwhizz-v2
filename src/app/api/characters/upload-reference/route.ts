@@ -56,13 +56,20 @@ export async function POST(req: Request) {
     const bucket = adminStorage;
     const filename = `reference/characters/${characterId}/${uuid()}.jpg`;
     const fileRef = bucket.file(filename);
-
+    
     await fileRef.save(buffer, {
-      contentType: "image/jpeg",
-      public: true,
+      metadata: {
+        contentType: "image/jpeg",
+      },
+      resumable: false,
     });
-
+    
+    await fileRef.makePublic();
+    
     const url = `https://storage.googleapis.com/${bucket.name}/${filename}`;
+    
+    console.log("REFERENCE IMAGE URL:", url);
+
 
     // ✅ Save reference ONLY (invalidate portrait)
     await db
@@ -76,7 +83,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, url });
   } catch (err) {
-    console.error("CHARACTER UPLOAD ERROR", err);
+    console.error("CHARACTER UPLOAD ERROR", {
+      message: err instanceof Error ? err.message : err,
+      stack: err instanceof Error ? err.stack : null,
+    });
+    
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }
 }
