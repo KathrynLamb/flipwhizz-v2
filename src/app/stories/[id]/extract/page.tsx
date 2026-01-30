@@ -12,7 +12,6 @@ import {
   RefreshCcw,
   ArrowLeft,
   Layers,
-  Wand2,
   Book,
   Zap,
   AlertCircle,
@@ -74,7 +73,6 @@ export default function ExtractWorldPage() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const errorCount = useRef(0);
-  const ensureSpreadsCalled = useRef(false);
 
   async function loadWorld(): Promise<WorldPayload | null> {
     if (!storyId) return null;
@@ -108,24 +106,6 @@ export default function ExtractWorldPage() {
     }
   }
 
-  async function ensureSpreads() {
-    if (!storyId || ensureSpreadsCalled.current) return;
-    ensureSpreadsCalled.current = true;
-    
-    try {
-      const res = await fetch(`/api/stories/${storyId}/ensure-spreads`, {
-        method: "POST",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      console.log("🧱 ensure-spreads response:", data);
-    } catch (err) {
-      console.error("❌ ensure-spreads failed:", err);
-      setError("Failed to build story structure. Please try again.");
-      setStage("error");
-    }
-  }
-
   /* ======================================================
      BOOTSTRAP + POLLING
   ====================================================== */
@@ -135,8 +115,7 @@ export default function ExtractWorldPage() {
     let cancelled = false;
 
     async function bootstrap() {
-      await ensureWorld();
-      await ensureSpreads();
+      await ensureWorld(); // This now handles everything: extract + spreads + scenes
       if (cancelled) return;
 
       pollRef.current = setInterval(async () => {
@@ -197,7 +176,6 @@ export default function ExtractWorldPage() {
     setError(null);
     setStage("extracting");
     errorCount.current = 0;
-    ensureSpreadsCalled.current = false;
     await fetch(`/api/stories/${storyId}/extract-world`, { method: "POST" });
     window.location.reload();
   }
@@ -207,7 +185,6 @@ export default function ExtractWorldPage() {
     setError(null);
     setStage("fetching");
     errorCount.current = 0;
-    ensureSpreadsCalled.current = false;
     window.location.reload();
   }
 

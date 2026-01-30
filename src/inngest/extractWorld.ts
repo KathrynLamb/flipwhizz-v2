@@ -1,4 +1,4 @@
-// inngest/functions.ts
+// inngest/extractWorld.ts
 import { inngest } from "./client";
 import { db } from "@/db";
 import {
@@ -12,6 +12,7 @@ import {
   storyStyleGuide,
   storyPageCharacters,
   storyPageLocations,
+  storyWorkflowProgress,
 } from "@/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
@@ -48,81 +49,64 @@ function extractJson(raw: string) {
   return JSON.parse(json);
 }
 
-export const globalRewriteJob = inngest.createFunction(
-  { id: "global-rewrite-job", retries: 1 },
-  { event: "story/global-rewrite" },
-  async ({ event }) => {
-    const { storyId } = event.data;
-
-    const pages = await db.query.storyPages.findMany({
-      where: eq(storyPages.storyId, storyId),
-      orderBy: asc(storyPages.pageNumber),
-    });
-
-    const text = pages
-      .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
-      .join("\n");
-
-    const res = await client.messages.create({
-      model: MODEL,
-      max_tokens: 4000,
-      system:
-        "Rewrite into the same number of pages. Output ONLY JSON: { pages: [{ page, text }] }",
-      messages: [{ role: "user", content: text }],
-    });
-
-    const parsed = extractJson(extractClaudeText(res.content));
-
-    await db.transaction(async (tx) => {
-      await tx.delete(storyPages).where(eq(storyPages.storyId, storyId));
-      await tx.insert(storyPages).values(
-        parsed.pages.map((p: any, i: number) => ({
-          id: uuid(),
-          storyId,
-          pageNumber: p.page ?? i + 1,
-          text: String(p.text ?? ""),
-          createdAt: new Date(),
-        }))
-      );
-
-      await tx
-        .update(stories)
-        .set({ status: "done", updatedAt: new Date() })
-        .where(eq(stories.id, storyId));
-    });
-  }
-);
-
 export const extractWorldJob = inngest.createFunction(
-  { id: "extract-world-job", retries: 2 },
+  { 
+    id: "extract-world-job", 
+    retries: 2,
+    concurrency: { limit: 1, key: "event.data.storyId" }
+  },
   { event: "story/extract-world" },
   async ({ event, step }) => {
     const { storyId } = event.data;
 
-    console.log("🔵 extractWorldJob started:", storyId);
+    console.log("🔵 [extract-world] Starting for story:", storyId);
 
     /* --------------------------------------------------
-       0️⃣ HARD LOCK (prevents duplicate runs)
+       STEP 1: Check if already completed (idempotency)
     -------------------------------------------------- */
 
-    const locked = await step.run("acquire-lock", async () => {
-      return db
-        .update(stories)
-        .set({
-          status: "extracting",
-          updatedAt: new Date(),
-        })
-        .where(eq(stories.id, storyId))
-        .returning({ id: stories.id });
+    const progress = await step.run("check-progress", async () => {
+      return db.query.storyWorkflowProgress.findFirst({
+        where: eq(storyWorkflowProgress.storyId, storyId),
+      });
     });
 
-    if (locked.length === 0) {
-      console.log("⏭️ extractWorldJob skipped — already running:", storyId);
-      return;
+    if (progress?.worldExtracted) {
+      console.log("⏭️ [extract-world] Already completed, skipping");
+      
+      // Still trigger next phase if spreads not built
+      if (!progress.spreadsBuilt) {
+        await step.run("trigger-build-spreads", async () => {
+          await inngest.send({
+            name: "story/build-spreads",
+            data: { storyId },
+          });
+        });
+      }
+      
+      return { ok: true, skipped: true };
     }
 
     /* --------------------------------------------------
-       1️⃣ Load story + pages
+       STEP 2: Acquire lock to prevent duplicate runs
+    -------------------------------------------------- */
+
+    await step.run("acquire-lock", async () => {
+      if (progress) {
+        await db
+          .update(storyWorkflowProgress)
+          .set({ extractingWorld: true, updatedAt: new Date() })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
+      } else {
+        await db.insert(storyWorkflowProgress).values({
+          storyId,
+          extractingWorld: true,
+        });
+      }
+    });
+
+    /* --------------------------------------------------
+       STEP 3: Load story data
     -------------------------------------------------- */
 
     const data = await step.run("load-story-data", async () => {
@@ -141,6 +125,8 @@ export const extractWorldJob = inngest.createFunction(
         orderBy: asc(storyPages.pageNumber),
       });
 
+      if (pages.length === 0) throw new Error("No pages found");
+
       return { story, project, pages };
     });
 
@@ -149,11 +135,11 @@ export const extractWorldJob = inngest.createFunction(
       .join("\n");
 
     /* --------------------------------------------------
-       2️⃣ Call Claude
+       STEP 4: Call Claude to extract world
     -------------------------------------------------- */
 
     const world = await step.run("extract-world-from-claude", async () => {
-      console.log("🤖 Calling Claude for world extraction...");
+      console.log("🤖 [extract-world] Calling Claude API...");
 
       const res = await client.messages.create({
         model: MODEL,
@@ -178,7 +164,7 @@ Extract ONLY this JSON shape:
 
       const parsed = extractJson(extractClaudeText(res.content));
 
-      console.log("✅ Claude parsed:", {
+      console.log("✅ [extract-world] Claude returned:", {
         characters: parsed.characters?.length ?? 0,
         locations: parsed.locations?.length ?? 0,
       });
@@ -187,12 +173,12 @@ Extract ONLY this JSON shape:
     });
 
     /* --------------------------------------------------
-       3️⃣ Transaction: wipe + rebuild world
+       STEP 5: Save world data to database
     -------------------------------------------------- */
 
     await step.run("persist-world-data", async () => {
       await db.transaction(async (tx) => {
-        console.log("🧹 Clearing existing world data…");
+        console.log("🧹 [extract-world] Clearing old world data...");
 
         const pageIds = data.pages.map((p) => p.id);
 
@@ -224,18 +210,13 @@ Extract ONLY this JSON shape:
 
         if (oldCharacterIds.length > 0) {
           await tx.delete(characters).where(inArray(characters.id, oldCharacterIds));
-          console.log("🗑️ Deleted", oldCharacterIds.length, "old characters");
         }
 
         if (oldLocationIds.length > 0) {
           await tx.delete(locations).where(inArray(locations.id, oldLocationIds));
-          console.log("🗑️ Deleted", oldLocationIds.length, "old locations");
         }
 
-        /* --------------------------------------------------
-           4️⃣ Insert NEW characters (DEDUPED)
-        -------------------------------------------------- */
-
+        // Insert NEW characters (deduped)
         const uniqueCharacters = new Map<string, any>();
 
         for (const c of world.characters ?? []) {
@@ -269,16 +250,9 @@ Extract ONLY this JSON shape:
           });
         }
 
-        console.log(
-          "✅ Created",
-          uniqueCharacters.size,
-          "unique characters (deduped)"
-        );
+        console.log(`✅ [extract-world] Created ${uniqueCharacters.size} characters`);
 
-        /* --------------------------------------------------
-           5️⃣ Insert locations
-        -------------------------------------------------- */
-
+        // Insert locations
         for (const l of world.locations ?? []) {
           const locationId = uuid();
 
@@ -298,12 +272,9 @@ Extract ONLY this JSON shape:
           });
         }
 
-        console.log("✅ Created", world.locations?.length ?? 0, "new locations");
+        console.log(`✅ [extract-world] Created ${world.locations?.length ?? 0} locations`);
 
-        /* --------------------------------------------------
-           6️⃣ Style guide (upsert)
-        -------------------------------------------------- */
-
+        // Style guide (upsert)
         await tx
           .insert(storyStyleGuide)
           .values({
@@ -329,38 +300,35 @@ Extract ONLY this JSON shape:
             },
           });
 
-        console.log("✅ Style guide updated");
+        console.log("✅ [extract-world] Style guide saved");
       });
     });
 
     /* --------------------------------------------------
-       7️⃣ Update status to world_ready
+       STEP 6: Mark phase complete and trigger next phase
     -------------------------------------------------- */
 
-    await step.run("mark-world-ready", async () => {
+    await step.run("mark-complete-and-trigger-next", async () => {
       await db
-        .update(stories)
-        .set({ status: "world_ready", updatedAt: new Date() })
-        .where(eq(stories.id, storyId));
+        .update(storyWorkflowProgress)
+        .set({
+          worldExtracted: true,
+          worldExtractedAt: new Date(),
+          extractingWorld: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(storyWorkflowProgress.storyId, storyId));
 
-      console.log("✅ World extraction complete");
-    });
+      console.log("✅ [extract-world] Phase complete, triggering build-spreads");
 
-    /* --------------------------------------------------
-       8️⃣ AUTO-TRIGGER SPREAD BUILDING (NEW!)
-    -------------------------------------------------- */
-
-    await step.run("trigger-build-spreads", async () => {
       await inngest.send({
         name: "story/build-spreads",
         data: { storyId },
       });
-
-      console.log("🚀 Triggered build-spreads");
     });
 
-    console.log("🎉 extractWorldJob complete:", storyId);
+    console.log("🎉 [extract-world] Complete for story:", storyId);
 
-    return { ok: true };
+    return { ok: true, phase: "world_extracted" };
   }
 );

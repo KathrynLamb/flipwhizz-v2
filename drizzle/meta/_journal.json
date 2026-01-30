@@ -281,6 +281,13 @@
       "when": 1769342390180,
       "tag": "0039_nebulous_molten_man",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1769740654787,
+      "tag": "0040_demonic_shard",
+      "breakpoints": true
     }
   ]
 }

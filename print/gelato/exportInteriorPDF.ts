@@ -15,8 +15,11 @@ export async function exportInteriorPDF(
 
   const html = renderInteriorHTML(pages);
 
-  await page.setContent(html, { waitUntil: "networkidle0" });
-
+  await page.setContent(html, { 
+    waitUntil: "domcontentloaded", // Don't wait for all network requests
+    timeout: 60000 // 60 seconds instead of 30
+  });
+  
   await page.pdf({
     path: outPath,
     printBackground: true,

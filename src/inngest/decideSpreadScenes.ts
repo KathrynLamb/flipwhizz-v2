@@ -1,4 +1,5 @@
-import { inngest } from "./client";
+// inngest/decideSpreadScenes.ts
+import { inngest } from "@/inngest/client";
 import { db } from "@/db";
 import {
   stories,
@@ -8,9 +9,9 @@ import {
   locations,
   storyCharacters,
   storyLocations,
-  storyIntent,
   storySpreadPresence,
   storySpreadScene,
+  storyWorkflowProgress,
 } from "@/db/schema";
 import type { InferInsertModel } from "drizzle-orm";
 
@@ -31,9 +32,8 @@ const anthropic = new Anthropic({
 
 type SpreadDecision = z.infer<typeof SpreadDecisionSchema>;
 
-
 /* ======================================================
-   SCHEMA (Updated to allow "background" + flexible excludedCharacters)
+   SCHEMA
 ====================================================== */
 
 const SpreadDecisionSchema = z.object({
@@ -45,17 +45,15 @@ const SpreadDecisionSchema = z.object({
     characters: z.array(
       z.object({
         characterId: z.string(),
-        // FIX: Added "background" to the enum to prevent Zod errors
         role: z.enum(["primary", "secondary", "background"]),
         confidence: z.number().optional(),
         reason: z.string().optional(),
       })
     ),
 
-    // FIX: Allow both string (just ID) and object format
     excludedCharacters: z.array(
       z.union([
-        z.string(), // Allow just character ID
+        z.string(),
         z.object({
           characterId: z.string(),
           reason: z.string().optional(),
@@ -124,9 +122,50 @@ export const decideSpreadScenes = inngest.createFunction(
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
 
-    // 1. LOAD DATA
+    console.log("🔵 [decide-spread-scenes] Starting for story:", storyId);
+
+    /* --------------------------------------------------
+       STEP 1: Check if already completed (idempotency)
+    -------------------------------------------------- */
+
+    const progress = await step.run("check-progress", async () => {
+      return db.query.storyWorkflowProgress.findFirst({
+        where: eq(storyWorkflowProgress.storyId, storyId),
+      });
+    });
+
+    if (!progress) {
+      throw new Error("Workflow progress not found");
+    }
+
+    if (progress.scenesDecided) {
+      console.log("⏭️ [decide-spread-scenes] Already completed, skipping");
+      return { ok: true, skipped: true };
+    }
+
+    if (!progress.spreadsBuilt) {
+      throw new Error("Cannot decide scenes - spreads not built yet");
+    }
+
+    /* --------------------------------------------------
+       STEP 2: Acquire lock
+    -------------------------------------------------- */
+
+    await step.run("acquire-lock", async () => {
+      await db
+        .update(storyWorkflowProgress)
+        .set({ decidingScenes: true, updatedAt: new Date() })
+        .where(eq(storyWorkflowProgress.storyId, storyId));
+    });
+
+    /* --------------------------------------------------
+       STEP 3: Load all data
+    -------------------------------------------------- */
+
     const data = await step.run("load-world", async () => {
-      const story = await db.query.stories.findFirst({ where: eq(stories.id, storyId) });
+      const story = await db.query.stories.findFirst({ 
+        where: eq(stories.id, storyId) 
+      });
       if (!story) throw new Error("Story not found");
 
       const spreads = await db.query.storySpreads.findMany({
@@ -135,7 +174,9 @@ export const decideSpreadScenes = inngest.createFunction(
       });
       if (!spreads.length) throw new Error("No spreads found");
 
-      const pages = await db.query.storyPages.findMany({ where: eq(storyPages.storyId, storyId) });
+      const pages = await db.query.storyPages.findMany({ 
+        where: eq(storyPages.storyId, storyId) 
+      });
 
       const chars = await db.select({
           id: characters.id,
@@ -156,6 +197,8 @@ export const decideSpreadScenes = inngest.createFunction(
       return { story, spreads, pages, chars, locs };
     });
 
+    console.log(`📊 [decide-spread-scenes] Loaded ${data.spreads.length} spreads, ${data.chars.length} characters, ${data.locs.length} locations`);
+
     const spreadsForClaude = data.spreads.map((s) => {
       const left = data.pages.find((p) => p.id === s.leftPageId);
       const right = data.pages.find((p) => p.id === s.rightPageId);
@@ -166,14 +209,16 @@ export const decideSpreadScenes = inngest.createFunction(
       };
     });
 
-    // 2. PROCESS IN BATCHES
+    /* --------------------------------------------------
+       STEP 4: Process in batches with Claude
+    -------------------------------------------------- */
+
     const batches = [];
     for (let i = 0; i < spreadsForClaude.length; i += BATCH_SIZE) {
         batches.push(spreadsForClaude.slice(i, i + BATCH_SIZE));
     }
 
     const allResults: SpreadDecision[] = [];
-
 
     for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
@@ -245,7 +290,7 @@ ${JSON.stringify(batch, null, 2)}
             });
 
             const raw = prefill + extractClaudeText(res.content);
-            console.log(`[Batch ${i+1}] Raw length:`, raw.length);
+            console.log(`✅ [decide-spread-scenes] Batch ${i+1} complete`);
             
             const parsed = parseClaudeJson(raw);
             return ClaudeOutputSchema.parse(parsed);
@@ -254,7 +299,12 @@ ${JSON.stringify(batch, null, 2)}
         allResults.push(...batchResult.spreads);
     }
 
-    // 4. PERSIST
+    console.log(`✅ [decide-spread-scenes] Claude processed ${allResults.length} spreads`);
+
+    /* --------------------------------------------------
+       STEP 5: Persist scene data
+    -------------------------------------------------- */
+
     await step.run("persist-scenes", async () => {
       await db.transaction(async (tx) => {
         const spreadIds = data.spreads.map((s) => s.id);
@@ -276,31 +326,24 @@ ${JSON.stringify(batch, null, 2)}
               confidence: c.confidence ?? 0.8,
               reason: c.reason ?? "Inferred by story context",
             })),
-            // FIX: Handle both string and object format for excludedCharacters
             excludedCharacters: (s.presence.excludedCharacters ?? []).map(ec => {
-              // If it's just a string (character ID), wrap it
               if (typeof ec === 'string') {
                 return {
                   characterId: ec,
                   reason: "Not present in this scene",
                 };
               }
-              // Otherwise it's already an object
               return {
                 characterId: ec.characterId,
                 reason: ec.reason ?? "Not present in this scene",
               };
             }),
-            
             reasoning: s.presence.reasoning ?? "",
             source: "claude",
             locked: false,
           };
-          
 
-          
           await tx.insert(storySpreadPresence).values(presenceRow);
-          
           
           const sceneRow: InferInsertModel<typeof storySpreadScene> = {
             spreadId: s.spreadId,
@@ -315,21 +358,42 @@ ${JSON.stringify(batch, null, 2)}
           };
           
           await tx.insert(storySpreadScene).values(sceneRow);
-          
-          
-          
-          
         }
       });
     });
 
-    // 5. FINALISE
-    await step.run("mark-ready", async () => {
-      await db.update(stories)
-        .set({ status: "scenes_ready", updatedAt: new Date() })
+    console.log("✅ [decide-spread-scenes] Scene data persisted");
+
+    /* --------------------------------------------------
+       STEP 6: Mark phase complete (FINAL PHASE)
+    -------------------------------------------------- */
+
+    await step.run("mark-complete", async () => {
+      await db
+        .update(storyWorkflowProgress)
+        .set({
+          scenesDecided: true,
+          scenesDecidedAt: new Date(),
+          decidingScenes: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(storyWorkflowProgress.storyId, storyId));
+
+      // Update story status to ready (optional - for backwards compatibility)
+      await db
+        .update(stories)
+        .set({ status: "ready", updatedAt: new Date() })
         .where(eq(stories.id, storyId));
+
+      console.log("✅ [decide-spread-scenes] ALL PHASES COMPLETE - Story ready!");
     });
 
-    return { ok: true, count: allResults.length };
+    console.log(`🎉 [decide-spread-scenes] Complete: ${allResults.length} scenes decided`);
+
+    return { 
+      ok: true, 
+      count: allResults.length,
+      phase: "scenes_decided" 
+    };
   }
 );
