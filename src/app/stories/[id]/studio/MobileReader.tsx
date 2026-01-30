@@ -10,6 +10,10 @@ import {
   ImagePlus,
   Play,
   Download,
+  Sparkles,
+  Wand2,
+  Zap,
+  Check,
 } from "lucide-react";
 import { motion, useMotionValue, animate, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -76,43 +80,46 @@ function FeedbackModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-md">
       <motion.div
         initial={{ opacity: 0, y: 100 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 100 }}
-        className="bg-white rounded-t-2xl sm:rounded-xl shadow-2xl w-full sm:max-w-md overflow-hidden max-h-[85vh]"
+        className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden max-h-[85vh]"
       >
-        <div className="p-4 border-b border-stone-100 flex justify-between items-center bg-stone-50">
-          <h3 className="font-serif text-lg font-bold text-stone-800">
-            Redraw Spread
-          </h3>
+        <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gradient-to-b from-gray-50 to-white">
+          <div>
+            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+              <Wand2 className="w-5 h-5 text-purple-600" />
+              Redraw Spread
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Tell our AI what to change
+            </p>
+          </div>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-stone-200 rounded-full text-stone-500"
+            className="p-1.5 hover:bg-gray-200 rounded-lg text-gray-500 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="p-6">
-          <p className="text-sm text-stone-600 mb-3">
-            What should be different in the new version?
-          </p>
           <textarea
             autoFocus
-            className="w-full border border-stone-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none resize-none h-32"
-            placeholder="e.g. Make the bear look friendlier, remove the tree in the background..."
+            className="w-full border-2 border-gray-200 rounded-xl p-4 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none resize-none h-36 transition-all placeholder:text-gray-400"
+            placeholder="e.g. Make the bear friendlier, add flowers, sunset sky..."
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
             disabled={isSubmitting}
           />
         </div>
 
-        <div className="p-4 bg-stone-50 border-t border-stone-100 flex justify-end gap-3">
+        <div className="px-6 pb-6 flex gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-stone-600 hover:text-stone-900"
+            className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
             disabled={isSubmitting}
           >
             Cancel
@@ -120,14 +127,152 @@ function FeedbackModal({
           <button
             onClick={() => onSubmit(feedback)}
             disabled={isSubmitting || !feedback.trim()}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-purple-500/25 transition-all"
           >
-            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            Regenerate
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                Regenerate
+              </>
+            )}
           </button>
         </div>
       </motion.div>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                           Premium Loading State                            */
+/* -------------------------------------------------------------------------- */
+
+function PremiumLoadingState() {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-purple-900/10 via-pink-900/10 to-blue-900/10 backdrop-blur-sm">
+      {/* Animated gradient orb */}
+      <motion.div
+        animate={{
+          scale: [1, 1.3, 1],
+          opacity: [0.2, 0.4, 0.2],
+        }}
+        transition={{
+          duration: 3,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="absolute w-48 h-48 bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 rounded-full blur-3xl"
+      />
+
+      {/* Content */}
+      <div className="relative z-10 flex flex-col items-center">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{
+            duration: 3,
+            repeat: Infinity,
+            ease: "linear",
+          }}
+          className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full mb-4"
+        />
+
+        <div className="space-y-1.5 text-center">
+          <motion.p
+            animate={{ opacity: [0.6, 1, 0.6] }}
+            transition={{
+              duration: 2,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+            className="text-sm font-bold text-white"
+          >
+            AI Artists Working
+          </motion.p>
+          <p className="text-xs text-white/70">Creating illustration...</p>
+        </div>
+
+        {/* Progress dots */}
+        <div className="flex gap-2 mt-4">
+          {[0, 1, 2].map((i) => (
+            <motion.div
+              key={i}
+              animate={{
+                scale: [1, 1.5, 1],
+                opacity: [0.3, 1, 0.3],
+              }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: i * 0.2,
+              }}
+              className="w-1.5 h-1.5 bg-white rounded-full"
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                            Empty Spread State                              */
+/* -------------------------------------------------------------------------- */
+
+function EmptySpreadState({ 
+  onClick, disabled 
+}: { 
+  onClick: React.MouseEventHandler<HTMLButtonElement>;
+  disabled?: boolean 
+}) {
+  return (
+    <motion.button
+      onClick={disabled ? undefined : onClick}
+      whileTap={disabled ? {} : { scale: 0.95 }}
+      className={`absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 group transition-all ${
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+      }`}
+    >
+      <motion.div
+        animate={disabled ? {} : {
+          y: [0, -8, 0],
+        }}
+        transition={disabled ? {} : {
+          duration: 2,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="relative"
+      >
+        {/* Gradient glow */}
+        <div className={`absolute inset-0 bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 rounded-full blur-2xl transition-opacity ${
+          disabled ? "opacity-10" : "opacity-30 group-active:opacity-50"
+        }`} />
+
+        {/* Icon */}
+        <div className={`relative w-16 h-16 bg-white/10 backdrop-blur rounded-2xl border border-white/20 flex items-center justify-center transition-all ${
+          disabled ? "" : "group-active:bg-white/20"
+        }`}>
+          <ImagePlus className={`w-8 h-8 ${disabled ? "text-white/40" : "text-white/80"}`} />
+        </div>
+      </motion.div>
+
+      <div className="mt-5 space-y-1">
+        <p className={`text-sm font-bold flex items-center gap-2 justify-center ${
+          disabled ? "text-white/50" : "text-white"
+        }`}>
+          <Sparkles className="w-4 h-4" />
+          {disabled ? "Generation In Progress" : "Generate Illustration"}
+        </p>
+        <p className={`text-xs ${disabled ? "text-white/40" : "text-white/60"}`}>
+          {disabled ? "Please wait..." : "Tap to create with AI"}
+        </p>
+      </div>
+    </motion.button>
   );
 }
 
@@ -200,7 +345,6 @@ export default function MobileStudio({
 
         setPages(updatedPages);
 
-        // Remove pages that finished regenerating
         setRegeneratingIds((prev) => {
           const next = new Set(prev);
           for (const page of updatedPages) {
@@ -211,7 +355,6 @@ export default function MobileStudio({
           return next;
         });
 
-        // Stop polling when everything is done
         if (
           updatedPages.every((p) => p.imageUrl) &&
           regeneratingIds.size === 0
@@ -237,7 +380,6 @@ export default function MobileStudio({
       const el = containerRef.current;
       const w = el?.getBoundingClientRect().width ?? window.innerWidth;
       setViewportWidth(w);
-      // snap instantly to correct position
       animate(x, -index * w, { duration: 0 });
     };
 
@@ -440,6 +582,9 @@ export default function MobileStudio({
     }
   }
 
+  const completedCount = pages.filter((p) => p.imageUrl).length;
+  const totalCount = pages.length;
+
   /* --------------------------------- Render -------------------------------- */
 
   if (viewportWidth == null) {
@@ -501,7 +646,7 @@ export default function MobileStudio({
               className="flex-none shrink-0 h-full flex items-center justify-center px-4 landscape:px-16"
               style={{ width: viewportWidth }}
             >
-              <div className="bg-black rounded-xl shadow-2xl overflow-hidden max-w-[1100px] w-full h-full landscape:h-[90%] flex items-center justify-center relative">
+              <div className="bg-black rounded-2xl shadow-2xl overflow-hidden max-w-[1100px] w-full h-full landscape:h-[90%] flex items-center justify-center relative border border-white/10">
                 {hasThisImage && !isThisRegenerating ? (
                   <>
                     <img
@@ -514,42 +659,26 @@ export default function MobileStudio({
                     />
 
                     {/* Page numbers */}
-                    <div className="absolute bottom-4 left-4 bg-black/40 backdrop-blur px-3 py-1 rounded-full text-[10px] font-bold text-white pointer-events-none">
+                    <div className="absolute bottom-4 left-4 bg-white/10 backdrop-blur-xl px-3 py-1.5 rounded-full text-xs font-bold text-white pointer-events-none border border-white/10">
                       Page {s.left.pageNumber}
                     </div>
 
                     {s.right && (
-                      <div className="absolute bottom-4 right-4 bg-black/40 backdrop-blur px-3 py-1 rounded-full text-[10px] font-bold text-white pointer-events-none">
+                      <div className="absolute bottom-4 right-4 bg-white/10 backdrop-blur-xl px-3 py-1.5 rounded-full text-xs font-bold text-white pointer-events-none border border-white/10">
                         Page {s.right.pageNumber}
                       </div>
                     )}
                   </>
+                ) : isThisRegenerating ? (
+                  <PremiumLoadingState />
                 ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-stone-900">
-                    {isThisRegenerating ? (
-                      <div className="flex flex-col items-center animate-pulse">
-                        <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mb-4" />
-                        <span className="text-sm font-bold uppercase tracking-widest text-stone-400">
-                          Drawing Spread…
-                        </span>
-                      </div>
-                    ) : (
-                      <div
-                        className="cursor-pointer group/gen"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          getSingleSpread(s.left.id);
-                        }}
-                      >
-                        <div className="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center shadow-sm mb-4 mx-auto group-hover/gen:scale-110 transition-transform">
-                          <ImagePlus className="w-8 h-8 text-white/60 group-hover/gen:text-indigo-500 transition-colors" />
-                        </div>
-                        <span className="text-sm font-bold text-white/60 group-hover/gen:text-indigo-400 transition-colors">
-                          Generate Spread
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                  <EmptySpreadState
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      getSingleSpread(s.left.id);
+                    }}
+                    disabled={isStartingGlobal || isPolling}
+                  />
                 )}
               </div>
             </div>
@@ -559,24 +688,38 @@ export default function MobileStudio({
 
       {/* ============================== TOP UI =============================== */}
       {showUI && !showOverview && (
-        <div className="absolute top-0 inset-x-0 px-4 pt-2 pb-4 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/70 to-transparent">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="absolute top-0 inset-x-0 px-4 pt-2 pb-6 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/60 to-transparent"
+        >
           <button
             onClick={() => router.push("/dashboard")}
-            className="p-2 rounded-full hover:bg-white/10 active:bg-white/20"
+            className="p-2.5 rounded-xl hover:bg-white/10 active:bg-white/20 backdrop-blur"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
 
           <div className="flex flex-col items-center gap-1">
-            <div className="text-xs font-medium text-white/70">
-              Pages {spread?.left?.pageNumber}
+            <div className="text-xs font-semibold text-white/90">
+              {spread?.left?.pageNumber}
               {spread?.right && `–${spread.right.pageNumber}`} / {pages.length}
             </div>
 
             {isPolling && (
-              <span className="flex items-center gap-1 text-[10px] text-indigo-400 animate-pulse">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Working…
+              <span className="flex items-center gap-1.5 text-[10px] font-medium text-purple-400 px-2 py-1 rounded-full bg-white/10 backdrop-blur">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                    ease: "linear",
+                  }}
+                >
+                  <Sparkles className="w-3 h-3" />
+                </motion.div>
+                {totalCount - completedCount} generating
               </span>
             )}
           </div>
@@ -586,35 +729,45 @@ export default function MobileStudio({
               e.stopPropagation();
               setShowOverview(true);
             }}
-            className="p-2 rounded-full hover:bg-white/10 active:bg-white/20"
+            className="p-2.5 rounded-xl hover:bg-white/10 active:bg-white/20 backdrop-blur"
           >
             <LayoutGrid className="w-5 h-5" />
           </button>
-        </div>
+        </motion.div>
       )}
 
       {/* ========================== BOTTOM ACTION BAR ======================== */}
       {showUI && !showOverview && hasImage && !isRegenerating && (
-        <div className="absolute bottom-0 inset-x-0 px-4 pb-2 pt-4 flex items-center justify-center gap-3 bg-gradient-to-t from-black/90 via-black/70 to-transparent">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
+          className="absolute bottom-0 inset-x-0 px-4 pb-2 pt-6 flex items-center justify-center gap-3 bg-gradient-to-t from-black/90 via-black/60 to-transparent"
+        >
           <button
             onClick={(e) => {
               e.stopPropagation();
               openRegenerateModal(spread.left.id);
             }}
-            className="bg-white/10 backdrop-blur text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-white/20 active:bg-white/30 flex items-center gap-2 transition-colors"
+            className="bg-white/15 backdrop-blur-xl text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-white/25 active:bg-white/30 flex items-center gap-2 transition-colors border border-white/10"
           >
-            <RefreshCw className="w-3 h-3" />
+            <RefreshCw className="w-4 h-4" />
             Redraw
           </button>
-        </div>
+        </motion.div>
       )}
 
       {/* ============================== OVERVIEW ============================== */}
       {showOverview && (
-        <div className="absolute inset-0 z-50 bg-black flex flex-col">
+        <div className="absolute inset-0 z-50 bg-gradient-to-br from-gray-900 via-black to-gray-900 flex flex-col">
           {/* Header */}
-          <header className="flex-none h-14 px-4 flex items-center justify-between border-b border-white/10">
-            <h2 className="text-sm font-bold">All Spreads</h2>
+          <header className="flex-none px-4 py-3 flex items-center justify-between border-b border-white/10 bg-white/5 backdrop-blur-xl">
+            <div>
+              <h2 className="text-sm font-bold">All Spreads</h2>
+              <p className="text-[10px] text-white/60 mt-0.5">
+                {completedCount} of {totalCount} complete
+              </p>
+            </div>
 
             <div className="flex items-center gap-2">
               {pages.some((p) => !p.imageUrl) && !isPolling && (
@@ -624,12 +777,12 @@ export default function MobileStudio({
                     handleGenerateAll();
                   }}
                   disabled={isStartingGlobal}
-                  className="bg-indigo-600 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 hover:bg-indigo-700 active:bg-indigo-800 transition-all disabled:opacity-50"
+                  className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 hover:from-purple-700 hover:to-pink-700 active:from-purple-800 active:to-pink-800 transition-all shadow-lg shadow-purple-500/25 disabled:opacity-50"
                 >
                   {isStartingGlobal ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (
-                    <Play className="w-3 h-3 fill-current" />
+                    <Zap className="w-3.5 h-3.5 fill-current" />
                   )}
                   Generate All
                 </button>
@@ -637,7 +790,7 @@ export default function MobileStudio({
 
               <button
                 onClick={() => setShowOverview(false)}
-                className="p-2 rounded-full hover:bg-white/10 active:bg-white/20"
+                className="p-2 rounded-xl hover:bg-white/10 active:bg-white/20"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -647,7 +800,7 @@ export default function MobileStudio({
           {/* Grid */}
           <div
             ref={overviewScrollRef}
-            className="flex-1 p-4 grid grid-cols-2 gap-4 overflow-y-auto pb-24 overscroll-contain touch-pan-y"
+            className="flex-1 p-4 grid grid-cols-2 gap-3 overflow-y-auto pb-24 overscroll-contain touch-pan-y"
           >
             {spreads.map((s, i) => {
               const isThisRegenerating = regeneratingIds.has(s.left.id);
@@ -663,10 +816,10 @@ export default function MobileStudio({
                     setShowOverview(false);
                     setShowUI(false);
                   }}
-                  className={`relative rounded-lg overflow-hidden border ${
+                  className={`relative rounded-xl overflow-hidden ${
                     i === index
-                      ? "border-white ring-2 ring-white"
-                      : "border-white/10 hover:border-white/30 active:border-white/50"
+                      ? "ring-2 ring-purple-500 border-2 border-purple-500"
+                      : "border border-white/10 hover:border-white/30 active:border-white/50"
                   }`}
                 >
                   {hasThisImage && !isThisRegenerating ? (
@@ -677,19 +830,20 @@ export default function MobileStudio({
                       draggable={false}
                     />
                   ) : isThisRegenerating ? (
-                    <div className="w-full aspect-[3/4] flex flex-col items-center justify-center bg-stone-900">
-                      <Loader2 className="w-6 h-6 text-indigo-400 animate-spin mb-2" />
-                      <span className="text-[10px] text-white/40">
-                        Drawing...
+                    <div className="w-full aspect-[3/4] flex flex-col items-center justify-center bg-gradient-to-br from-purple-900/20 via-pink-900/20 to-blue-900/20">
+                      <Loader2 className="w-6 h-6 text-purple-400 animate-spin mb-2" />
+                      <span className="text-[10px] text-white/60 font-medium">
+                        Creating...
                       </span>
                     </div>
                   ) : (
-                    <div className="w-full aspect-[3/4] flex items-center justify-center text-xs text-white/40 bg-stone-900">
-                      Not Generated
+                    <div className="w-full aspect-[3/4] flex flex-col items-center justify-center text-xs text-white/40 bg-gray-900 border border-white/5">
+                      <ImagePlus className="w-6 h-6 mb-1" />
+                      <span className="text-[10px]">Not Generated</span>
                     </div>
                   )}
 
-                  <span className="absolute bottom-2 right-2 text-[10px] bg-black/70 px-2 py-1 rounded-full font-bold">
+                  <span className="absolute bottom-2 right-2 text-[10px] bg-black/70 backdrop-blur px-2 py-1 rounded-full font-bold border border-white/10">
                     {s.left.pageNumber}
                     {s.right && `–${s.right.pageNumber}`}
                   </span>
@@ -699,13 +853,13 @@ export default function MobileStudio({
           </div>
 
           {/* Bottom action bar */}
-          <div className="flex-none px-4 py-3 border-t border-white/10 bg-black/50 backdrop-blur flex justify-center gap-3">
+          <div className="flex-none px-4 py-3 border-t border-white/10 bg-white/5 backdrop-blur-xl flex justify-center gap-3">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 router.push(`/stories/${story.id}/cover`);
               }}
-              className="bg-white/10 text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-white/20 active:bg-white/30"
+              className="bg-white/10 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-white/20 active:bg-white/30 border border-white/10"
             >
               Create Cover
             </button>
@@ -716,14 +870,14 @@ export default function MobileStudio({
                 handleExportPDF();
               }}
               disabled={isExporting}
-              className="bg-white/10 text-white px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 hover:bg-white/20 active:bg-white/30 disabled:opacity-50"
+              className="bg-white/10 text-white px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 hover:bg-white/20 active:bg-white/30 disabled:opacity-50 border border-white/10"
             >
               {isExporting ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <Download className="w-3 h-3" />
+                <Download className="w-4 h-4" />
               )}
-              {isExporting ? "Exporting…" : "Export PDF"}
+              {isExporting ? "Exporting…" : "Export"}
             </button>
           </div>
         </div>

@@ -4,17 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Sparkles,
+  ArrowLeft,
   CheckCircle,
+  Loader2,
+  AlertCircle,
+  Sparkles,
   Users,
   MapPin,
   Palette,
-  RefreshCcw,
-  ArrowLeft,
-  Layers,
-  Book,
-  Zap,
-  AlertCircle,
+  BookOpen,
+  Eye,
   XCircle,
 } from "lucide-react";
 
@@ -22,36 +21,24 @@ import {
    TYPES
 ====================================================== */
 
-type WorldCharacter = { id: string; name: string; description: string | null };
-type WorldLocation = { id: string; name: string; description: string | null };
-type WorldStyle = { id: string; summary: string | null };
+type Phase = "extracting" | "building_spreads" | "deciding_scenes" | "ready";
 
-type WorldPayload = {
-  story: { id: string; status: string | null } | null;
-  characters: WorldCharacter[];
-  locations: WorldLocation[];
-  style: WorldStyle | null;
+type ProgressData = {
+  phase: Phase;
+  worldExtracted: boolean;
+  spreadsBuilt: boolean;
+  scenesDecided: boolean;
 };
 
-type Stage =
-  | "extracting"
-  | "fetching"
-  | "building_spreads"
-  | "deciding_scenes"
-  | "ready"
-  | "error";
-
-/* ======================================================
-   ANIMATION
-====================================================== */
-
-const fadeIn = {
-  hidden: { opacity: 0, y: 10 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.35 } },
+type ActivityItem = {
+  id: string;
+  text: string;
+  type: "success" | "loading" | "info";
+  timestamp: number;
 };
 
 /* ======================================================
-   PAGE
+   MOBILE-FIRST EXTRACT PAGE
 ====================================================== */
 
 export default function ExtractWorldPage() {
@@ -63,144 +50,229 @@ export default function ExtractWorldPage() {
     return typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : null;
   }, [params]);
 
-  const [stage, setStage] = useState<Stage>("fetching");
-  const [status, setStatus] = useState<string | null>(null);
+  // State
+  const [phase, setPhase] = useState<Phase>("extracting");
+  const [progress, setProgress] = useState<ProgressData>({
+    phase: "extracting",
+    worldExtracted: false,
+    spreadsBuilt: false,
+    scenesDecided: false,
+  });
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-
-  const [characters, setCharacters] = useState<WorldCharacter[]>([]);
-  const [locations, setLocations] = useState<WorldLocation[]>([]);
-  const [style, setStyle] = useState<WorldStyle | null>(null);
+  const [startTime] = useState(Date.now());
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const errorCount = useRef(0);
 
-  async function loadWorld(): Promise<WorldPayload | null> {
-    if (!storyId) return null;
-    try {
-      const res = await fetch(`/api/stories/${storyId}/world`, {
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      errorCount.current = 0; // Reset on success
-      return res.json();
-    } catch (err) {
-      console.error("Error loading world:", err);
-      errorCount.current++;
-      if (errorCount.current > 5) {
-        setError("Failed to load story data. Please refresh the page.");
-        setStage("error");
-      }
-      return null;
-    }
-  }
+  /* ======================================================
+     ADD ACTIVITY ITEM
+  ====================================================== */
 
-  async function ensureWorld() {
+  const addActivity = (text: string, type: ActivityItem["type"] = "info") => {
+    const item: ActivityItem = {
+      id: `${Date.now()}-${Math.random()}`,
+      text,
+      type,
+      timestamp: Date.now(),
+    };
+    setActivity((prev) => [item, ...prev].slice(0, 5)); // Keep last 5
+  };
+
+  /* ======================================================
+     POLL WORKFLOW STATUS
+  ====================================================== */
+
+  async function checkProgress() {
     if (!storyId) return;
+
     try {
       const res = await fetch(`/api/stories/${storyId}/ensure-world`, {
         method: "POST",
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      if (data.status === "complete") {
+        setPhase("ready");
+        setProgress({
+          phase: "ready",
+          worldExtracted: true,
+          spreadsBuilt: true,
+          scenesDecided: true,
+        });
+        addActivity("All phases complete! 🎉", "success");
+        if (pollRef.current) clearInterval(pollRef.current);
+        return;
+      }
+
+      if (data.status === "processing" && data.progress) {
+        const newProgress: ProgressData = {
+          phase: data.mode,
+          worldExtracted: data.progress.worldExtracted,
+          spreadsBuilt: data.progress.spreadsBuilt,
+          scenesDecided: data.progress.scenesDecided,
+        };
+
+        // Detect phase changes and add activity
+        if (newProgress.phase !== progress.phase) {
+          if (newProgress.phase === "building_spreads") {
+            addActivity("World extracted successfully", "success");
+            addActivity("Building page spreads...", "loading");
+          } else if (newProgress.phase === "deciding_scenes") {
+            addActivity("Spreads built successfully", "success");
+            addActivity("Planning illustrations with Claude...", "loading");
+          }
+        }
+
+        setPhase(newProgress.phase);
+        setProgress(newProgress);
+      }
+
+      errorCount.current = 0; // Reset on success
     } catch (err) {
-      console.error("Error ensuring world:", err);
+      console.error("Error checking progress:", err);
+      errorCount.current++;
+
+      if (errorCount.current > 5) {
+        setError("Unable to check progress. Please refresh the page.");
+        if (pollRef.current) clearInterval(pollRef.current);
+      }
     }
   }
 
   /* ======================================================
-     BOOTSTRAP + POLLING
+     BOOTSTRAP
   ====================================================== */
 
   useEffect(() => {
     if (!storyId) return;
-    let cancelled = false;
 
-    async function bootstrap() {
-      await ensureWorld(); // This now handles everything: extract + spreads + scenes
-      if (cancelled) return;
+    addActivity("Starting workflow...", "loading");
 
-      pollRef.current = setInterval(async () => {
-        if (cancelled) return;
+    // Initial call
+    checkProgress();
 
-        const data = await loadWorld();
-        if (!data) return;
-
-        const storyStatus = data.story?.status ?? null;
-
-        setStatus(storyStatus);
-        setCharacters(data.characters ?? []);
-        setLocations(data.locations ?? []);
-        setStyle(data.style ?? null);
-
-        /* ---------- Stage mapping ---------- */
-        if (storyStatus === "error") {
-          setStage("error");
-          setError("Something went wrong processing your story.");
-          if (pollRef.current) clearInterval(pollRef.current);
-        } else if (storyStatus === "extracting") {
-          setStage("extracting");
-        } else if (storyStatus === "building_spreads") {
-          setStage("building_spreads");
-        } else if (storyStatus === "deciding_scenes") {
-          setStage("deciding_scenes");
-        } else if (storyStatus === "scenes_ready" || storyStatus === "spreads_ready") {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setStage("ready");
-        }
-      }, 1200);
-    }
-
-    bootstrap();
+    // Poll every 1.5 seconds
+    pollRef.current = setInterval(checkProgress, 1500);
 
     return () => {
-      cancelled = true;
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [storyId]);
 
   /* ======================================================
-     AUTO-ADVANCE
+     AUTO-REDIRECT ON COMPLETE
   ====================================================== */
 
   useEffect(() => {
-    if (stage === "ready" && storyId) {
-      router.push(`/stories/${storyId}/characters`);
+    if (phase === "ready" && storyId) {
+      setTimeout(() => {
+        router.push(`/stories/${storyId}/characters`);
+      }, 2000);
     }
-  }, [stage, router, storyId]);
+  }, [phase, storyId, router]);
 
   /* ======================================================
-     ACTIONS
+     PHASE CONFIG
   ====================================================== */
 
-  async function reExtract() {
-    if (!storyId) return;
-    setError(null);
-    setStage("extracting");
-    errorCount.current = 0;
-    await fetch(`/api/stories/${storyId}/extract-world`, { method: "POST" });
-    window.location.reload();
-  }
+  const phaseConfig = {
+    extracting: {
+      title: "Building Your World",
+      subtitle: "Discovering characters, locations, and style",
+      icon: Sparkles,
+      color: "from-purple-500 to-pink-500",
+      estimate: "1-2 minutes",
+    },
+    building_spreads: {
+      title: "Structuring Your Book",
+      subtitle: "Pairing pages into double-page spreads",
+      icon: BookOpen,
+      color: "from-blue-500 to-cyan-500",
+      estimate: "30 seconds",
+    },
+    deciding_scenes: {
+      title: "Planning Illustrations",
+      subtitle: "Claude is deciding which characters appear on each spread",
+      icon: Eye,
+      color: "from-green-500 to-emerald-500",
+      estimate: "2-3 minutes",
+    },
+    ready: {
+      title: "Your World Is Ready!",
+      subtitle: "Redirecting to character design...",
+      icon: CheckCircle,
+      color: "from-emerald-500 to-green-500",
+      estimate: "",
+    },
+  };
 
-  async function retryFromError() {
-    if (!storyId) return;
-    setError(null);
-    setStage("fetching");
-    errorCount.current = 0;
-    window.location.reload();
-  }
+  const currentPhase = phaseConfig[phase];
+  const Icon = currentPhase.icon;
 
   /* ======================================================
-     PROGRESS
+     CALCULATE OVERALL PROGRESS
   ====================================================== */
 
-  const progress = useMemo(() => {
-    const steps = [
-      characters.length > 0,
-      locations.length > 0,
-      Boolean(style?.summary),
-      stage === "deciding_scenes" || stage === "ready",
+  const overallProgress = useMemo(() => {
+    const phases = [
+      progress.worldExtracted,
+      progress.spreadsBuilt,
+      progress.scenesDecided,
     ];
-    return (steps.filter(Boolean).length / steps.length) * 100;
-  }, [characters, locations, style, stage]);
+    return (phases.filter(Boolean).length / phases.length) * 100;
+  }, [progress]);
+
+  /* ======================================================
+     ELAPSED TIME
+  ====================================================== */
+
+  const [elapsedTime, setElapsedTime] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [startTime]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  /* ======================================================
+     ERROR STATE
+  ====================================================== */
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 text-center">
+          <div className="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center mb-4">
+            <XCircle className="w-8 h-8 text-red-600" />
+          </div>
+          <h1 className="text-2xl font-black text-gray-900 mb-2">
+            Something Went Wrong
+          </h1>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold rounded-full hover:scale-105 transition"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   /* ======================================================
      RENDER
@@ -208,159 +280,202 @@ export default function ExtractWorldPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200/50">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between">
+      {/* Mobile-First Header */}
+      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-gray-200/50">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
           <button
             onClick={() => router.push(`/stories/${storyId}/hub`)}
-            className="flex items-center gap-2 text-gray-600 hover:text-black font-semibold transition-colors"
+            className="flex items-center gap-2 text-gray-700 hover:text-gray-900 font-semibold text-sm transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            Back to Hub
+            <span className="hidden sm:inline">Back</span>
           </button>
-
-          <button
-            onClick={reExtract}
-            className="flex items-center gap-2 text-sm font-bold text-red-500 hover:text-red-600 transition-colors"
-          >
-            <RefreshCcw className="w-4 h-4" />
-            Re-extract
-          </button>
+          <div className="text-xs font-medium text-gray-500">
+            {formatTime(elapsedTime)}
+          </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-16 text-center">
+      {/* Main Content */}
+      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <AnimatePresence mode="wait">
-          {/* ERROR STATE */}
-          {stage === "error" && (
-            <motion.div key="error" variants={fadeIn} initial="hidden" animate="visible">
-              <div className="mx-auto w-20 h-20 rounded-full bg-red-100 flex items-center justify-center">
-                <XCircle className="w-10 h-10 text-red-600" />
-              </div>
-
-              <h1 className="mt-10 text-5xl font-black text-red-600">
-                Something Went Wrong
-              </h1>
-
-              <p className="mt-5 text-lg text-gray-600 max-w-2xl mx-auto">
-                {error || "We encountered an error processing your story."}
-              </p>
-
-              <div className="mt-10 flex gap-4 justify-center flex-wrap">
-                <button
-                  onClick={retryFromError}
-                  className="px-8 py-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-black shadow-lg hover:scale-105 transition"
-                >
-                  Try Again
-                </button>
-
-                <button
-                  onClick={() => router.push(`/stories/${storyId}/hub`)}
-                  className="px-8 py-4 rounded-full bg-white border-2 border-gray-300 text-gray-700 font-bold hover:scale-105 transition"
-                >
-                  Back to Hub
-                </button>
-              </div>
-
-              <div className="mt-8 text-sm text-gray-500">
-                Status: {status || "unknown"}
-              </div>
-            </motion.div>
-          )}
-
-          {/* PROCESSING STATES */}
-          {stage !== "ready" && stage !== "error" && (
-            <motion.div key={stage} variants={fadeIn} initial="hidden" animate="visible">
-              <StageIcon stage={stage} />
-
-              <h1 className="mt-10 text-5xl font-black bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 bg-clip-text text-transparent">
-                {stage === "extracting" && "Bringing Your Story to Life"}
-                {stage === "fetching" && "Loading Your World"}
-                {stage === "building_spreads" && "Structuring the Book"}
-                {stage === "deciding_scenes" && "Planning the Visual Story"}
-              </h1>
-
-              <p className="mt-5 text-lg text-gray-600 max-w-2xl mx-auto">
-                {stage === "extracting" &&
-                  "Discovering characters, locations, and style."}
-                {stage === "fetching" &&
-                  "Loading previously created story data."}
-                {stage === "building_spreads" &&
-                  "Pairing pages and defining story structure."}
-                {stage === "deciding_scenes" &&
-                  "Deciding which characters and locations appear on each page."}
-              </p>
-
-              {/* Progress */}
-              <div className="mt-10 max-w-md mx-auto">
-                <div className="h-3 bg-white rounded-full overflow-hidden border border-gray-200 shadow-inner">
-                  <motion.div
-                    className="h-full bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500"
-                    initial={{ width: "0%" }}
-                    animate={{ width: `${progress}%` }}
-                    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                  />
-                </div>
-                <p className="mt-2 text-sm font-semibold text-gray-500">
-                  {Math.round(progress)}% complete
-                </p>
-              </div>
-
-              {/* Status Cards */}
-              <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <StatusCard icon={Users} label="Characters" ok={characters.length > 0} />
-                <StatusCard icon={MapPin} label="Locations" ok={locations.length > 0} />
-                <StatusCard icon={Palette} label="Style" ok={Boolean(style?.summary)} />
-              </div>
-
-              {/* Debug info */}
-              <div className="mt-10 text-xs text-gray-400">
-                DB status: {status ?? "unknown"}
-              </div>
-
-              {/* Warning if stuck */}
-              {errorCount.current > 3 && (
+          <motion.div
+            key={phase}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.4 }}
+            className="space-y-8"
+          >
+            {/* Icon */}
+            <div className="flex justify-center">
+              {phase === "ready" ? (
                 <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mt-6 max-w-md mx-auto bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-4 flex items-start gap-3"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className={`w-20 h-20 rounded-full bg-gradient-to-br ${currentPhase.color} flex items-center justify-center shadow-2xl`}
                 >
-                  <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm text-left">
-                    <p className="font-bold text-yellow-900">Taking longer than expected</p>
-                    <p className="text-yellow-700 mt-1">
-                      This is unusual. Try refreshing the page or contact support if it persists.
-                    </p>
+                  <Icon className="w-10 h-10 text-white" strokeWidth={2.5} />
+                </motion.div>
+              ) : (
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                  className={`w-20 h-20 rounded-full bg-gradient-to-br ${currentPhase.color} p-1 shadow-2xl`}
+                >
+                  <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
+                    <Icon className="w-10 h-10 text-gray-800" strokeWidth={2} />
                   </div>
                 </motion.div>
               )}
-            </motion.div>
-          )}
+            </div>
 
-          {/* READY STATE */}
-          {stage === "ready" && (
-            <motion.div key="ready" variants={fadeIn} initial="hidden" animate="visible">
-              <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-2xl shadow-emerald-500/50">
-                <CheckCircle className="w-10 h-10 text-white" strokeWidth={3} />
-              </div>
-              
-              <h1 className="mt-8 text-5xl font-black bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">
-                Your World Is Ready!
+            {/* Title */}
+            <div className="text-center space-y-2">
+              <h1 className="text-3xl sm:text-4xl font-black text-gray-900">
+                {currentPhase.title}
               </h1>
-              
-              <p className="mt-4 text-lg text-gray-600 max-w-xl mx-auto">
-                We've planned where each character appears. Let's design them.
+              <p className="text-base sm:text-lg text-gray-600 max-w-md mx-auto">
+                {currentPhase.subtitle}
               </p>
+              {currentPhase.estimate && (
+                <p className="text-sm text-gray-500">
+                  Estimated: {currentPhase.estimate}
+                </p>
+              )}
+            </div>
 
-              <button
-                onClick={() => router.push(`/stories/${storyId}/characters`)}
-                className="mt-10 px-10 py-5 rounded-full bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 text-white font-black flex items-center gap-3 mx-auto shadow-2xl shadow-purple-500/30 hover:scale-105 transition"
+            {/* Progress Dots */}
+            <div className="flex justify-center items-center gap-3">
+              <PhaseStep
+                label="World"
+                complete={progress.worldExtracted}
+                active={phase === "extracting"}
+              />
+              <div className="w-8 h-0.5 bg-gray-300">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-purple-500 to-pink-500"
+                  initial={{ width: "0%" }}
+                  animate={{
+                    width: progress.worldExtracted ? "100%" : "0%",
+                  }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
+              <PhaseStep
+                label="Spreads"
+                complete={progress.spreadsBuilt}
+                active={phase === "building_spreads"}
+              />
+              <div className="w-8 h-0.5 bg-gray-300">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-blue-500 to-cyan-500"
+                  initial={{ width: "0%" }}
+                  animate={{
+                    width: progress.spreadsBuilt ? "100%" : "0%",
+                  }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
+              <PhaseStep
+                label="Scenes"
+                complete={progress.scenesDecided}
+                active={phase === "deciding_scenes"}
+              />
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-2">
+              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <motion.div
+                  className={`h-full bg-gradient-to-r ${currentPhase.color}`}
+                  initial={{ width: "0%" }}
+                  animate={{ width: `${overallProgress}%` }}
+                  transition={{ duration: 0.5, ease: "easeInOut" }}
+                />
+              </div>
+              <p className="text-center text-sm font-semibold text-gray-600">
+                {Math.round(overallProgress)}% Complete
+              </p>
+            </div>
+
+            {/* Activity Feed */}
+            {activity.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                  <h3 className="text-sm font-bold text-gray-900">
+                    Activity
+                  </h3>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  <AnimatePresence>
+                    {activity.map((item) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        className="px-4 py-3 flex items-start gap-3"
+                      >
+                        {item.type === "success" && (
+                          <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                        )}
+                        {item.type === "loading" && (
+                          <Loader2 className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5 animate-spin" />
+                        )}
+                        {item.type === "info" && (
+                          <AlertCircle className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                        )}
+                        <span className="text-sm text-gray-700 flex-1">
+                          {item.text}
+                        </span>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </div>
+            )}
+
+            {/* Info Cards (only show during processing) */}
+            {phase !== "ready" && (
+              <div className="grid grid-cols-3 gap-3">
+                <InfoCard
+                  icon={Users}
+                  label="Characters"
+                  status={progress.worldExtracted ? "done" : "pending"}
+                />
+                <InfoCard
+                  icon={MapPin}
+                  label="Locations"
+                  status={progress.worldExtracted ? "done" : "pending"}
+                />
+                <InfoCard
+                  icon={Palette}
+                  label="Style"
+                  status={progress.worldExtracted ? "done" : "pending"}
+                />
+              </div>
+            )}
+
+            {/* Warning for slow progress */}
+            {elapsedTime > 120 && phase !== "ready" && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-4 flex items-start gap-3"
               >
-                Design Your Characters
-                <Zap className="w-5 h-5" />
-              </button>
-            </motion.div>
-          )}
+                <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-bold text-yellow-900">
+                    Taking longer than usual
+                  </p>
+                  <p className="text-yellow-700 mt-1">
+                    Large stories can take 3-5 minutes. Hang tight!
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </motion.div>
         </AnimatePresence>
       </main>
     </div>
@@ -371,78 +486,76 @@ export default function ExtractWorldPage() {
    COMPONENTS
 ====================================================== */
 
-function StageIcon({ stage }: { stage: Stage }) {
-  const Icon =
-    stage === "extracting"
-      ? Sparkles
-      : stage === "fetching"
-      ? Book
-      : Layers;
-
+function PhaseStep({
+  label,
+  complete,
+  active,
+}: {
+  label: string;
+  complete: boolean;
+  active: boolean;
+}) {
   return (
-    <motion.div
-      animate={{
-        rotate: [0, 360],
-      }}
-      transition={{
-        duration: 3,
-        repeat: Infinity,
-        ease: "linear",
-      }}
-      className="w-20 h-20 mx-auto rounded-full bg-gradient-to-tr from-pink-400 via-purple-500 to-blue-500 p-1"
-    >
-      <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
-        <Icon className="w-10 h-10 text-purple-600" strokeWidth={2} />
-      </div>
-    </motion.div>
+    <div className="flex flex-col items-center gap-1">
+      <motion.div
+        animate={{
+          scale: active ? [1, 1.1, 1] : 1,
+        }}
+        transition={{
+          duration: 2,
+          repeat: active ? Infinity : 0,
+          ease: "easeInOut",
+        }}
+        className={`w-3 h-3 rounded-full ${
+          complete
+            ? "bg-gradient-to-r from-green-500 to-emerald-500"
+            : active
+            ? "bg-gradient-to-r from-blue-500 to-purple-500"
+            : "bg-gray-300"
+        }`}
+      />
+      <span
+        className={`text-xs font-medium ${
+          complete || active ? "text-gray-900" : "text-gray-400"
+        }`}
+      >
+        {label}
+      </span>
+    </div>
   );
 }
 
-function StatusCard({
+function InfoCard({
   icon: Icon,
   label,
-  ok,
+  status,
 }: {
   icon: any;
   label: string;
-  ok: boolean;
+  status: "done" | "pending";
 }) {
   return (
-    <motion.div
-      animate={
-        !ok
-          ? {
-              scale: [1, 1.02, 1],
-            }
-          : {}
-      }
-      transition={
-        !ok
-          ? {
-              duration: 2,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }
-          : {}
-      }
-      className={`rounded-2xl p-6 border-2 text-center transition-all ${
-        ok
-          ? "bg-white border-emerald-300 shadow-lg"
-          : "bg-white/60 border-gray-200 shadow-sm"
+    <div
+      className={`rounded-xl p-3 text-center transition-all ${
+        status === "done"
+          ? "bg-green-50 border-2 border-green-200"
+          : "bg-gray-50 border-2 border-gray-200"
       }`}
     >
       <Icon
-        className={`w-8 h-8 mx-auto mb-3 ${ok ? "text-emerald-500" : "text-gray-400"}`}
+        className={`w-6 h-6 mx-auto mb-1 ${
+          status === "done" ? "text-green-600" : "text-gray-400"
+        }`}
         strokeWidth={2}
       />
-      <div className="font-bold text-gray-900 mb-1">{label}</div>
-      <div className="text-sm font-semibold">
-        {ok ? (
-          <span className="text-emerald-600">Ready</span>
-        ) : (
-          <span className="text-gray-500">Working…</span>
-        )}
+      <div className="text-xs font-semibold text-gray-900">{label}</div>
+      <div
+        className={`text-xs font-medium mt-0.5 ${
+          status === "done" ? "text-green-600" : "text-gray-500"
+        }`}
+      >
+        {status === "done" ? "Ready" : "..."}
       </div>
-    </motion.div>
+    </div>
   );
 }

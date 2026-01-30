@@ -9,7 +9,7 @@ import { decideSpreadScenes } from "@/inngest/decideSpreadScenes";
 
 // Visuals
 import { generateStyleSample } from "@/inngest/generateStyle";
-import { generateSingleSpread } from "@/inngest/generateSpreadImages.phaseB";
+import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateSpreadImages.phaseB";
 import { reviseSingleSpread } from "@/inngest/reviseSingleSpread";
 import { generateBookCovers } from "@/inngest/generateBookCovers";
 
@@ -24,7 +24,8 @@ export const { GET, POST, PUT } = serve({
 
     // Visuals
     generateStyleSample,
-    generateSingleSpread,
+    generateBookSpreads,    // ✅ ADDED: Orchestrator
+    generateSingleSpread,   // ✅ Worker
     reviseSingleSpread,
     generateBookCovers,
   ],

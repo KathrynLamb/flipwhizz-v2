@@ -9,7 +9,10 @@ import {
   Play,
   ImagePlus,
   X,
-  MessageSquarePlus
+  Sparkles,
+  Wand2,
+  Zap,
+  Check,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -51,14 +54,14 @@ function groupIntoSpreads(pages: Page[]): Spread[] {
 /*                               Feedback Modal                               */
 /* -------------------------------------------------------------------------- */
 
-function FeedbackModal({ 
-  isOpen, 
-  onClose, 
-  onSubmit, 
-  isSubmitting 
-}: { 
-  isOpen: boolean; 
-  onClose: () => void; 
+function FeedbackModal({
+  isOpen,
+  onClose,
+  onSubmit,
+  isSubmitting,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
   onSubmit: (feedback: string) => void;
   isSubmitting: boolean;
 }) {
@@ -67,38 +70,46 @@ function FeedbackModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-200/50"
       >
-        <div className="p-4 border-b border-stone-100 flex justify-between items-center bg-stone-50">
-          <h3 className="font-serif text-lg font-bold text-stone-800">Redraw Spread</h3>
-          <button onClick={onClose} className="p-1 hover:bg-stone-200 rounded-full text-stone-500">
+        <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gradient-to-b from-gray-50 to-white">
+          <div>
+            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+              <Wand2 className="w-5 h-5 text-purple-600" />
+              Redraw Spread
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Tell our AI what to change
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-gray-200 rounded-lg text-gray-500 transition-colors"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
         <div className="p-6">
-          <p className="text-sm text-stone-600 mb-3">
-            What should be different in the new version?
-          </p>
           <textarea
             autoFocus
-            className="w-full border border-stone-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none resize-none h-32"
-            placeholder="e.g. Make the bear look friendlier, remove the tree in the background..."
+            className="w-full border-2 border-gray-200 rounded-xl p-4 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none resize-none h-36 transition-all placeholder:text-gray-400"
+            placeholder="e.g. Make the bear look friendlier, add more flowers, change the sky to sunset..."
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
             disabled={isSubmitting}
           />
         </div>
 
-        <div className="p-4 bg-stone-50 border-t border-stone-100 flex justify-end gap-3">
-          <button 
+        <div className="px-6 pb-6 flex gap-3">
+          <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-stone-600 hover:text-stone-900"
+            className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
             disabled={isSubmitting}
           >
             Cancel
@@ -106,14 +117,150 @@ function FeedbackModal({
           <button
             onClick={() => onSubmit(feedback)}
             disabled={isSubmitting || !feedback.trim()}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-purple-500/25 transition-all"
           >
-            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            Regenerate
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                Regenerate
+              </>
+            )}
           </button>
         </div>
       </motion.div>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                           Premium Loading State                            */
+/* -------------------------------------------------------------------------- */
+
+function PremiumLoadingState() {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
+      {/* Animated gradient orb */}
+      <motion.div
+        animate={{
+          scale: [1, 1.2, 1],
+          opacity: [0.3, 0.6, 0.3],
+        }}
+        transition={{
+          duration: 3,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="absolute w-64 h-64 bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 rounded-full blur-3xl"
+      />
+
+      {/* Content */}
+      <div className="relative z-10 flex flex-col items-center">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{
+            duration: 3,
+            repeat: Infinity,
+            ease: "linear",
+          }}
+          className="w-16 h-16 border-4 border-purple-200 border-t-purple-600 rounded-full mb-6"
+        />
+
+        <div className="space-y-2 text-center">
+          <motion.p
+            animate={{ opacity: [0.5, 1, 0.5] }}
+            transition={{
+              duration: 2,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+            className="text-sm font-bold text-gray-700"
+          >
+            AI Artists Working
+          </motion.p>
+          <p className="text-xs text-gray-500">Creating your illustration...</p>
+        </div>
+
+        {/* Progress dots */}
+        <div className="flex gap-2 mt-6">
+          {[0, 1, 2].map((i) => (
+            <motion.div
+              key={i}
+              animate={{
+                scale: [1, 1.5, 1],
+                opacity: [0.3, 1, 0.3],
+              }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: i * 0.2,
+              }}
+              className="w-2 h-2 bg-purple-600 rounded-full"
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                            Empty Spread State                              */
+/* -------------------------------------------------------------------------- */
+
+function EmptySpreadState({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <motion.button
+      onClick={disabled ? undefined : onClick}
+      whileHover={disabled ? {} : { scale: 1.02 }}
+      whileTap={disabled ? {} : { scale: 0.98 }}
+      className={`absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-gray-50 via-white to-gray-50 group transition-all ${
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+      }`}
+    >
+      <motion.div
+        animate={disabled ? {} : {
+          y: [0, -10, 0],
+        }}
+        transition={disabled ? {} : {
+          duration: 2,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="relative"
+      >
+        {/* Gradient glow */}
+        <div className={`absolute inset-0 bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 rounded-full blur-2xl transition-opacity ${
+          disabled ? "opacity-10" : "opacity-20 group-hover:opacity-40"
+        }`} />
+
+        {/* Icon */}
+        <div className={`relative w-20 h-20 bg-white rounded-2xl shadow-lg border border-gray-200 flex items-center justify-center transition-all ${
+          disabled ? "" : "group-hover:shadow-xl group-hover:border-purple-300"
+        }`}>
+          <ImagePlus className={`w-9 h-9 transition-colors ${
+            disabled ? "text-gray-300" : "text-gray-400 group-hover:text-purple-600"
+          }`} />
+        </div>
+      </motion.div>
+
+      <div className="mt-6 space-y-1.5">
+        <p className={`text-sm font-bold flex items-center gap-2 justify-center transition-colors ${
+          disabled ? "text-gray-400" : "text-gray-900 group-hover:text-purple-600"
+        }`}>
+          <Sparkles className="w-4 h-4" />
+          {disabled ? "Generation In Progress" : "Generate Illustration"}
+        </p>
+        <p className={`text-xs ${disabled ? "text-gray-400" : "text-gray-500"}`}>
+          {disabled ? "Please wait..." : "Click to create with AI"}
+        </p>
+      </div>
+    </motion.button>
   );
 }
 
@@ -157,27 +304,26 @@ export default function DesktopStudio({
 
   useEffect(() => {
     if (!isPolling) return;
-  
+
     let cancelled = false;
-  
+
     const interval = setInterval(async () => {
       if (cancelled) return;
-  
+
       try {
         const res = await fetch(`/api/stories/${story.id}/pages`, {
           cache: "no-store",
         });
-  
+
         if (!res.ok) {
           console.warn("Polling failed:", res.status);
           return;
         }
-  
+
         const updatedPages: Page[] = await res.json();
 
         setPages(updatedPages);
-        
-        // 🔑 REMOVE pages that finished regenerating
+
         setRegeneratingIds((prev) => {
           const next = new Set(prev);
           for (const page of updatedPages) {
@@ -187,16 +333,10 @@ export default function DesktopStudio({
           }
           return next;
         });
-        
-        // Stop polling only when nothing left regenerating
-        if (updatedPages.every((p) => p.imageUrl) && regeneratingIds.size === 0) {
-          setIsPolling(false);
-          setIsStartingGlobal(false);
-        }
-        
-  
-        const allDone = updatedPages.every((p) => p.imageUrl);
-        if (allDone && regeneratingIds.size === 0) {
+
+        const allDone =
+          updatedPages.every((p) => p.imageUrl) && regeneratingIds.size === 0;
+        if (allDone) {
           setIsPolling(false);
           setIsStartingGlobal(false);
         }
@@ -204,13 +344,12 @@ export default function DesktopStudio({
         console.warn("Polling fetch failed (will retry):", err);
       }
     }, 3000);
-  
+
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
   }, [isPolling, story.id, regeneratingIds.size]);
-  
 
   /* -------------------------------- Actions -------------------------------- */
 
@@ -221,23 +360,21 @@ export default function DesktopStudio({
 
   async function handleRegenerateSubmit(feedback: string) {
     if (!selectedPageId) return;
-    
+
     setIsSubmittingFeedback(true);
-    // Optimistically verify UI state
     setRegeneratingIds((prev) => new Set(prev).add(selectedPageId));
 
     try {
-      // Call the API with the feedback
       const res = await fetch(
         `/api/stories/${story.id}/pages/${selectedPageId}/regenerate`,
-        { 
-            method: "POST",
-            body: JSON.stringify({ feedback }),
-            headers: { "Content-Type": "application/json" }
+        {
+          method: "POST",
+          body: JSON.stringify({ feedback }),
+          headers: { "Content-Type": "application/json" },
         }
       );
 
-      if(!res.ok) throw new Error("API Failed");
+      if (!res.ok) throw new Error("API Failed");
 
       setIsPolling(true);
       setFeedbackModalOpen(false);
@@ -254,26 +391,23 @@ export default function DesktopStudio({
     }
   }
 
-
   async function getSingleSpread(selectedPageId: string) {
     if (!selectedPageId) return;
-    
+
     setIsSubmittingFeedback(true);
-    // Optimistically verify UI state
     setRegeneratingIds((prev) => new Set(prev).add(selectedPageId));
 
     try {
-      // Call the API with the feedback
       const res = await fetch(
         `/api/stories/${story.id}/pages/${selectedPageId}/regenerate`,
-        { 
-            method: "POST",
-            body: JSON.stringify({  }),
-            headers: { "Content-Type": "application/json" }
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+          headers: { "Content-Type": "application/json" },
         }
       );
 
-      if(!res.ok) throw new Error("API Failed");
+      if (!res.ok) throw new Error("API Failed");
 
       setIsPolling(true);
       setSelectedPageId(null);
@@ -288,7 +422,6 @@ export default function DesktopStudio({
       setIsSubmittingFeedback(false);
     }
   }
-  
 
   async function handleGenerateAll() {
     if (!confirm("Generate all missing illustrations?")) return;
@@ -323,49 +456,73 @@ export default function DesktopStudio({
     }
   }
 
+  const completedCount = pages.filter((p) => p.imageUrl).length;
+  const totalCount = pages.length;
+  const progress = (completedCount / totalCount) * 100;
+
   /* --------------------------------- Render -------------------------------- */
 
   return (
-    <div className="pb-40">
-      
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 pb-40">
       {/* FEEDBACK MODAL */}
       <AnimatePresence>
         {feedbackModalOpen && (
-            <FeedbackModal 
-                isOpen={feedbackModalOpen}
-                onClose={() => setFeedbackModalOpen(false)}
-                onSubmit={handleRegenerateSubmit}
-                isSubmitting={isSubmittingFeedback}
-            />
+          <FeedbackModal
+            isOpen={feedbackModalOpen}
+            onClose={() => setFeedbackModalOpen(false)}
+            onSubmit={handleRegenerateSubmit}
+            isSubmitting={isSubmittingFeedback}
+          />
         )}
       </AnimatePresence>
 
       {/* ============================== HEADER ============================== */}
-      <header className="sticky top-0 z-40 bg-[#FAF9F6]/95 backdrop-blur-md border-b border-stone-200 px-8 py-4 flex items-center justify-between shadow-sm">
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-gray-200/50 px-8 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-4">
           <Link
             href="/dashboard"
-            className="p-2 hover:bg-stone-200 rounded-full transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
           >
-            <ChevronLeft className="w-5 h-5 text-stone-600" />
+            <ChevronLeft className="w-5 h-5 text-gray-600" />
           </Link>
 
           <div>
-            <h1 className="font-serif text-xl text-stone-900 font-bold max-w-md truncate">
+            <h1 className="font-bold text-xl text-gray-900 max-w-md truncate">
               {story.title}
             </h1>
 
-            <div className="text-xs text-stone-500 font-medium uppercase tracking-widest flex items-center gap-2">
+            <div className="flex items-center gap-3 mt-1">
               {isPolling ? (
-                <span className="flex items-center gap-1 text-indigo-600 animate-pulse">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Artists Working…
+                <span className="flex items-center gap-2 text-xs font-medium text-purple-600">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{
+                      duration: 2,
+                      repeat: Infinity,
+                      ease: "linear",
+                    }}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </motion.div>
+                  Generating {totalCount - completedCount} spreads
                 </span>
               ) : (
-                <span className="flex items-center gap-1 text-green-600">
-                  <span className="w-2 h-2 rounded-full bg-green-500" />
-                  Studio Ready
+                <span className="flex items-center gap-2 text-xs font-medium text-green-600">
+                  <Check className="w-3.5 h-3.5" />
+                  {completedCount} of {totalCount} complete
                 </span>
+              )}
+
+              {/* Progress bar */}
+              {isPolling && (
+                <div className="w-32 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-purple-500 to-pink-500"
+                    initial={{ width: "0%" }}
+                    animate={{ width: `${progress}%` }}
+                    transition={{ duration: 0.5 }}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -376,12 +533,12 @@ export default function DesktopStudio({
             <button
               onClick={handleGenerateAll}
               disabled={isStartingGlobal}
-              className="bg-indigo-600 text-white px-5 py-2 rounded-full text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md"
+              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg shadow-purple-500/25 disabled:opacity-50"
             >
               {isStartingGlobal ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <Play className="w-4 h-4 fill-current" />
+                <Zap className="w-4 h-4 fill-current" />
               )}
               Generate All
             </button>
@@ -389,7 +546,7 @@ export default function DesktopStudio({
 
           <button
             onClick={() => router.push(`/stories/${story.id}/cover`)}
-            className="bg-stone-900 text-white px-5 py-2 rounded-full text-sm font-bold hover:bg-black transition-all shadow-md"
+            className="bg-gray-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-black transition-all shadow-lg"
           >
             Create Cover
           </button>
@@ -397,7 +554,7 @@ export default function DesktopStudio({
           <button
             onClick={handleExportPDF}
             disabled={isExporting}
-            className="bg-stone-900 text-white px-5 py-2 rounded-full text-sm font-bold flex items-center gap-2 hover:bg-black transition-all shadow-md disabled:opacity-50"
+            className="bg-gray-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-black transition-all shadow-lg disabled:opacity-50"
           >
             {isExporting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -410,19 +567,20 @@ export default function DesktopStudio({
       </header>
 
       {/* ============================== SPREADS ============================== */}
-      <div className="max-w-[1400px] mx-auto p-8 space-y-12">
+      <div className="max-w-[1400px] mx-auto p-8 space-y-8">
         {spreads.map((spread) => {
-              const isRegenerating = regeneratingIds.has(spread.left.id);
-              const hasImage = !!spread.left.imageUrl;
-
+          const isRegenerating = regeneratingIds.has(spread.left.id);
+          const hasImage = !!spread.left.imageUrl;
 
           return (
             <motion.div
               key={spread.id}
               layout
-              className="group relative bg-white rounded-xl shadow-lg border border-stone-200/50 overflow-hidden"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="group relative bg-white rounded-2xl shadow-sm border border-gray-200/50 overflow-hidden hover:shadow-xl hover:border-gray-300/50 transition-all"
             >
-              <div className="relative w-full aspect-video bg-stone-200/50 overflow-hidden">
+              <div className="relative w-full aspect-[2/1] bg-gradient-to-br from-gray-100 via-white to-gray-100 overflow-hidden">
                 {hasImage && !isRegenerating ? (
                   <>
                     <img
@@ -432,51 +590,32 @@ export default function DesktopStudio({
                     />
 
                     {/* ACTIONS OVERLAY */}
-                    <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                    <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => openRegenerateModal(spread.left.id)}
-                        className="bg-white/90 backdrop-blur text-stone-700 px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:text-indigo-600 flex items-center gap-2 transition-colors"
+                        className="bg-white/95 backdrop-blur-xl text-gray-900 px-4 py-2.5 rounded-xl text-sm font-semibold shadow-xl hover:bg-white flex items-center gap-2 transition-all border border-gray-200/50"
                       >
-                        <RefreshCw className="w-3 h-3" />
-                        Redraw Spread
+                        <RefreshCw className="w-4 h-4" />
+                        Redraw
                       </button>
                     </div>
                   </>
+                ) : isRegenerating ? (
+                  <PremiumLoadingState />
                 ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-stone-50">
-                    {isRegenerating ? (
-                      <div className="flex flex-col items-center animate-pulse">
-                        <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mb-4" />
-                        <span className="text-sm font-bold uppercase tracking-widest text-stone-400">
-                          {isRegenerating
-                            ? "Drawing Spread…"
-                            : "In Queue…"}
-                        </span>
-                      </div>
-                    ) : (
-                      <div
-                        className="cursor-pointer group/gen"
-                        // onClick={() => openRegenerateModal(spread.left.id)}
-                        onClick={() => getSingleSpread(spread.left.id)}
-                      >
-                        <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-sm mb-4 mx-auto group-hover/gen:scale-110 transition-transform">
-                          <ImagePlus className="w-8 h-8 text-stone-300 group-hover/gen:text-indigo-500 transition-colors" />
-                        </div>
-                        <span className="text-sm font-bold text-stone-400 group-hover/gen:text-indigo-600 transition-colors">
-                          Generate Spread
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                  <EmptySpreadState
+                    onClick={() => getSingleSpread(spread.left.id)}
+                    disabled={isStartingGlobal || isPolling}
+                  />
                 )}
 
                 {/* Page numbers */}
-                <div className="absolute bottom-4 left-6 bg-black/40 backdrop-blur px-3 py-1 rounded-full text-[10px] font-bold text-white pointer-events-none">
+                <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-bold text-white pointer-events-none">
                   Page {spread.left.pageNumber}
                 </div>
 
                 {spread.right && (
-                  <div className="absolute bottom-4 right-6 bg-black/40 backdrop-blur px-3 py-1 rounded-full text-[10px] font-bold text-white pointer-events-none">
+                  <div className="absolute bottom-4 right-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-bold text-white pointer-events-none">
                     Page {spread.right.pageNumber}
                   </div>
                 )}
