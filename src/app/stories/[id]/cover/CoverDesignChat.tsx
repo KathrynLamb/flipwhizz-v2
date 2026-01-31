@@ -23,13 +23,14 @@ type Story = {
   id: string;
   projectId: string;
   title: string;
-  frontCoverPrompt: string | null;
-  backCoverPrompt: string | null;
-  frontCoverUrl: string | null;
-  backCoverUrl: string | null;
+
+  // ✅ SINGLE COVER MODEL
+  coverSpreadUrl: string | null;
+
   status: string | null;
   pdfUrl: string | null;
 };
+
 
 type Props = {
   storyId: string;
@@ -63,12 +64,10 @@ export default function CoverDesignChat({
   /* ----------------------------- DERIVED STATE ---------------------------- */
 
   const hasPrompts =
-    !!localStory.frontCoverPrompt &&
-    !!localStory.backCoverPrompt;
+    !!localStory.coverSpreadUrl ;
 
   const hasCovers =
-    !!localStory.frontCoverUrl &&
-    !!localStory.backCoverUrl;
+    !!localStory.coverSpreadUrl
 
   const isGeneratingCovers =
     localStory.status === "generating_covers";
@@ -222,8 +221,7 @@ export default function CoverDesignChat({
       const data = await res.json();
 
       if (
-        data.story?.frontCoverUrl &&
-        data.story?.backCoverUrl
+        data.story?.coverSpreadUrl
       ) {
         clearInterval(interval);
         setIsPolling(false);
@@ -240,7 +238,7 @@ export default function CoverDesignChat({
   /* -------------------------------------------------------------------------- */
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-4 md:p-8">
       <style jsx global>{`
         @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
         
@@ -258,8 +256,8 @@ export default function CoverDesignChat({
         }
         
         @keyframes pulse-glow {
-          0%, 100% { box-shadow: 0 0 20px rgba(251, 146, 60, 0.3); }
-          50% { box-shadow: 0 0 40px rgba(251, 146, 60, 0.5); }
+          0%, 100% { box-shadow: 0 0 20px rgba(236, 72, 153, 0.3); }
+          50% { box-shadow: 0 0 40px rgba(236, 72, 153, 0.5); }
         }
         
         @keyframes slide-in {
@@ -288,16 +286,11 @@ export default function CoverDesignChat({
 
       <div className="cover-chat-container max-w-7xl mx-auto">
         {/* HEADER */}
-        <div className="mb-8 text-center">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-pink-500 rounded-3xl flex items-center justify-center shadow-lg float-animation">
-              <Palette className="text-white w-8 h-8" />
-            </div>
-          </div>
-          <h1 className="cover-chat-title text-5xl md:text-6xl font-bold bg-gradient-to-r from-orange-500 via-pink-500 to-purple-500 bg-clip-text text-transparent mb-3">
+        <div className="mb-8">
+          <h1 className="cover-chat-title text-5xl md:text-6xl font-bold text-pink-500 mb-3">
             Cover Design Studio
           </h1>
-          <p className="text-xl text-stone-600 font-medium">
+          <p className="text-xl text-gray-600">
             Let's create magical book covers together! ✨
           </p>
         </div>
@@ -306,18 +299,18 @@ export default function CoverDesignChat({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
           {/* CHAT COLUMN */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border-4 border-orange-100">
+            <div className="bg-white rounded-[2rem] shadow-lg overflow-hidden">
               {/* CHAT MESSAGES */}
-              <div className="h-[500px] md:h-[600px] overflow-y-auto p-6 md:p-8 space-y-6 bg-gradient-to-br from-orange-50/30 to-pink-50/30">
+              <div className="h-[500px] md:h-[600px] overflow-y-auto p-6 md:p-8 space-y-6 bg-gradient-to-br from-pink-50/50 via-purple-50/50 to-blue-50/50">
                 {messages.length === 0 && !isLoading && (
                   <div className="flex flex-col items-center justify-center h-full text-center">
-                    <div className="w-24 h-24 bg-gradient-to-br from-orange-400 to-pink-500 rounded-full flex items-center justify-center mb-6 float-animation">
+                    <div className="w-24 h-24 bg-gradient-to-br from-pink-400 to-purple-500 rounded-full flex items-center justify-center mb-6 float-animation">
                       <Sparkles className="text-white w-12 h-12" />
                     </div>
-                    <h3 className="cover-chat-title text-2xl font-bold text-stone-700 mb-2">
+                    <h3 className="cover-chat-title text-2xl font-bold text-gray-800 mb-2">
                       Ready to Create Magic?
                     </h3>
-                    <p className="text-stone-500 max-w-md">
+                    <p className="text-gray-600 max-w-md">
                       I'll help you design the perfect book covers by asking about your vision, characters, and style preferences.
                     </p>
                   </div>
@@ -331,8 +324,8 @@ export default function CoverDesignChat({
                     <div
                       className={`max-w-[85%] md:max-w-[75%] p-5 rounded-3xl ${
                         m.role === "user"
-                          ? "bg-gradient-to-br from-orange-400 to-pink-500 text-white shadow-lg"
-                          : "bg-white border-3 border-orange-100 text-stone-700 shadow-md"
+                          ? "bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-md"
+                          : "bg-white text-gray-800 shadow-sm"
                       }`}
                     >
                       <p className="leading-relaxed">{m.content}</p>
@@ -342,11 +335,11 @@ export default function CoverDesignChat({
 
                 {isLoading && (
                   <div className="flex items-center gap-3 message-bubble">
-                    <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-pink-500 rounded-full flex items-center justify-center">
+                    <div className="w-12 h-12 bg-gradient-to-br from-pink-400 to-purple-500 rounded-full flex items-center justify-center">
                       <Loader2 className="animate-spin w-5 h-5 text-white" />
                     </div>
-                    <div className="bg-white border-3 border-orange-100 rounded-3xl px-6 py-3 shadow-md">
-                      <p className="text-stone-600 font-medium">Thinking of creative ideas...</p>
+                    <div className="bg-white rounded-3xl px-6 py-3 shadow-sm">
+                      <p className="text-gray-600 font-medium">Thinking of creative ideas...</p>
                     </div>
                   </div>
                 )}
@@ -355,12 +348,12 @@ export default function CoverDesignChat({
               </div>
 
               {/* ACTION AREA */}
-              <div className="border-t-4 border-orange-100 p-6 md:p-8 bg-white">
+              <div className="border-t p-6 md:p-8 bg-white">
                 {!hasPrompts ? (
                   <button
                     onClick={finalizeCoverPlan}
                     disabled={isFinalising}
-                    className="w-full py-5 rounded-2xl bg-gradient-to-r from-orange-400 to-pink-500 text-white font-bold text-lg shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed pulse-glow"
+                    className="w-full py-5 rounded-[2rem] bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold text-lg shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isFinalising ? (
                       <span className="flex items-center justify-center gap-3">
@@ -376,9 +369,9 @@ export default function CoverDesignChat({
                   </button>
                 ) : !hasCovers ? (
                   <div className="text-center">
-                    <div className="inline-flex items-center gap-3 bg-gradient-to-r from-orange-100 to-pink-100 px-8 py-4 rounded-2xl">
-                      <Loader2 className="animate-spin w-6 h-6 text-orange-500" />
-                      <span className="text-orange-700 font-bold text-lg">
+                    <div className="inline-flex items-center gap-3 bg-gradient-to-r from-pink-100 to-purple-100 px-8 py-4 rounded-[2rem]">
+                      <Loader2 className="animate-spin w-6 h-6 text-pink-600" />
+                      <span className="text-pink-700 font-bold text-lg">
                         Generating your beautiful covers...
                       </span>
                     </div>
@@ -395,13 +388,13 @@ export default function CoverDesignChat({
                           sendMessage();
                         }
                       }}
-                      className="flex-1 border-3 border-orange-200 rounded-2xl px-6 py-4 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all text-lg"
+                      className="flex-1 border-2 border-gray-200 rounded-[2rem] px-6 py-4 focus:outline-none focus:border-pink-400 focus:ring-4 focus:ring-pink-100 transition-all text-lg"
                       placeholder="Want to make any changes?"
                     />
                     <button
                       onClick={sendMessage}
                       disabled={!input.trim() || isLoading}
-                      className="px-8 py-4 bg-gradient-to-r from-orange-400 to-pink-500 text-white rounded-2xl shadow-lg hover:shadow-xl transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-8 py-4 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-[2rem] shadow-lg hover:shadow-xl transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Send className="w-6 h-6" />
                     </button>
@@ -413,12 +406,12 @@ export default function CoverDesignChat({
 
           {/* PREVIEW SIDEBAR */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border-4 border-orange-100 p-6 md:p-8 sticky top-8">
+            <div className="bg-white rounded-[2rem] shadow-lg p-6 md:p-8 sticky top-8">
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-pink-500 rounded-2xl flex items-center justify-center">
+                <div className="w-10 h-10 bg-gradient-to-br from-pink-400 to-purple-500 rounded-2xl flex items-center justify-center">
                   <Sparkles className="w-5 h-5 text-white" />
                 </div>
-                <h3 className="cover-chat-title text-2xl font-bold text-stone-800">
+                <h3 className="cover-chat-title text-2xl font-bold text-gray-800">
                   Your Covers
                 </h3>
               </div>
@@ -430,18 +423,17 @@ export default function CoverDesignChat({
                       <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
                         <Check className="w-4 h-4 text-white" />
                       </div>
-                      <p className="font-bold text-stone-700">{story.title} Cover</p>
+                      <p className="font-bold text-gray-700">Front Cover</p>
                     </div>
                     <img 
-                      src={localStory.frontCoverUrl!} 
+                      src={localStory.coverSpreadUrl!} 
                       alt="Front cover"
-                      className="w-full rounded-2xl shadow-lg border-3 border-orange-100"
+                      className="w-full rounded-2xl shadow-md"
                     />
                   </div>
-                  
-             
+        
 
-                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-5 border-2 border-green-200">
+                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-5">
                     <p className="text-green-700 font-bold text-center">
                       🎉 Covers Complete!
                     </p>
@@ -449,29 +441,29 @@ export default function CoverDesignChat({
                 </div>
               ) : isGeneratingCovers ? (
                 <div className="space-y-4">
-                  <div className="bg-gradient-to-br from-orange-50 to-pink-50 rounded-2xl p-8 text-center border-2 border-orange-200">
-                    <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4 float-animation">
+                  <div className="bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 rounded-2xl p-8 text-center">
+                    <div className="w-16 h-16 bg-gradient-to-br from-pink-400 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 float-animation">
                       <Wand2 className="w-8 h-8 text-white" />
                     </div>
-                    <p className="text-orange-700 font-bold mb-2">Creating Magic...</p>
-                    <p className="text-sm text-stone-600">
+                    <p className="text-pink-700 font-bold mb-2">Creating Magic...</p>
+                    <p className="text-sm text-gray-600">
                       Your beautiful covers are being generated
                     </p>
                   </div>
                   
                   <div className="space-y-3">
                     {[1, 2].map((i) => (
-                      <div key={i} className="bg-stone-100 rounded-2xl h-64 animate-pulse" />
+                      <div key={i} className="bg-gradient-to-br from-pink-100 via-purple-100 to-blue-100 rounded-2xl h-64 animate-pulse" />
                     ))}
                   </div>
                 </div>
               ) : (
-                <div className="bg-gradient-to-br from-orange-50 to-pink-50 rounded-2xl p-8 text-center border-2 border-orange-200">
-                  <div className="w-16 h-16 bg-gradient-to-br from-stone-300 to-stone-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 rounded-2xl p-8 text-center">
+                  <div className="w-16 h-16 bg-gradient-to-br from-gray-300 to-gray-400 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Palette className="w-8 h-8 text-white" />
                   </div>
-                  <p className="text-stone-600 font-medium mb-2">Cover Preview</p>
-                  <p className="text-sm text-stone-500">
+                  <p className="text-gray-600 font-medium mb-2">Cover Preview</p>
+                  <p className="text-sm text-gray-500">
                     Your designs will appear here once we finalize the plan
                   </p>
                 </div>

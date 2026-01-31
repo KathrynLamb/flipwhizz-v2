@@ -1,5 +1,4 @@
-
-// api/orders/check-ready/route.ts - Check if story is ready to order
+// api/orders/check-ready/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
@@ -10,7 +9,10 @@ export async function GET(req: Request) {
   const storyId = searchParams.get("storyId");
 
   if (!storyId) {
-    return NextResponse.json({ error: "Missing storyId" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing storyId" },
+      { status: 400 }
+    );
   }
 
   const story = await db.query.stories.findFirst({
@@ -18,25 +20,36 @@ export async function GET(req: Request) {
   });
 
   if (!story) {
-    return NextResponse.json({ error: "Story not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Story not found" },
+      { status: 404 }
+    );
   }
 
   const readiness = {
     hasPdf: !!story.pdfUrl,
     hasPayment: story.paymentStatus === "paid",
-    hasCovers: !!(story.frontCoverUrl && story.backCoverUrl),
+    hasCoverSpread: !!story.coverSpreadUrl,
     isReady: false,
     missingItems: [] as string[],
   };
 
-  if (!readiness.hasPdf) readiness.missingItems.push("PDF not generated");
-  if (!readiness.hasPayment) readiness.missingItems.push("Payment required");
-  if (!readiness.hasCovers) readiness.missingItems.push("Covers not ready");
+  if (!readiness.hasPdf) {
+    readiness.missingItems.push("PDF not generated");
+  }
 
-  readiness.isReady = 
-    readiness.hasPdf && 
-    readiness.hasPayment && 
-    readiness.hasCovers;
+  if (!readiness.hasPayment) {
+    readiness.missingItems.push("Payment required");
+  }
+
+  if (!readiness.hasCoverSpread) {
+    readiness.missingItems.push("Cover not generated");
+  }
+
+  readiness.isReady =
+    readiness.hasPdf &&
+    readiness.hasPayment &&
+    readiness.hasCoverSpread;
 
   return NextResponse.json(readiness);
 }

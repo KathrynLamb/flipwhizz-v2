@@ -1,4 +1,4 @@
-// api/orders/create/route.ts - Create and submit order
+// api/orders/create/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories, orders } from "@/db/schema";
@@ -28,7 +28,6 @@ export async function POST(req: Request) {
     const body: CreateOrderRequest = await req.json();
     const { storyId, shippingAddress, userId } = body;
 
-    // Validate input
     if (!storyId || !shippingAddress || !userId) {
       return NextResponse.json(
         { error: "Missing required fields" },
@@ -36,16 +35,25 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1. Fetch and validate story
+    /* --------------------------------------------------
+       1. Load story
+    -------------------------------------------------- */
+
     const story = await db.query.stories.findFirst({
       where: eq(stories.id, storyId),
     });
 
     if (!story) {
-      return NextResponse.json({ error: "Story not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Story not found" },
+        { status: 404 }
+      );
     }
 
-    // 2. CHECK ALL REQUIREMENTS
+    /* --------------------------------------------------
+       2. Validate readiness (NEW MODEL)
+    -------------------------------------------------- */
+
     const validationErrors: string[] = [];
 
     if (!story.pdfUrl) {
@@ -56,8 +64,8 @@ export async function POST(req: Request) {
       validationErrors.push("Payment not confirmed");
     }
 
-    if (!story.frontCoverUrl || !story.backCoverUrl) {
-      validationErrors.push("Covers not generated");
+    if (!story.coverSpreadUrl) {
+      validationErrors.push("Cover not generated");
     }
 
     if (validationErrors.length > 0) {
@@ -70,35 +78,44 @@ export async function POST(req: Request) {
       );
     }
 
-    const pdfUrl = story.pdfUrl as string;
+    /* --------------------------------------------------
+       3. Create order record
+    -------------------------------------------------- */
 
-    // 3. Create order record
     const orderId = uuidv4();
-    const orderReferenceId = `ORD-${orderId.substring(0, 8)}`;
+    const orderReferenceId = `ORD-${orderId.slice(0, 8)}`;
 
     await db.insert(orders).values({
       id: orderId,
       storyId,
       userId,
-      paymentId: story.paymentId || null,
+      paymentId: story.paymentId ?? null,
       paymentStatus: "paid",
-      amount: "29.99", // Your price
+      amount: "29.99", // TODO: replace with dynamic pricing
       currency: "USD",
-      pdfUrl,
+      pdfUrl: story.pdfUrl!,
       shippingAddress: shippingAddress as any,
       status: "pending",
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
 
-    // 4. Submit to Gelato
+    /* --------------------------------------------------
+       4. Submit to Gelato
+    -------------------------------------------------- */
+
     try {
       const gelatoResponse = await createGelatoOrder({
         orderReferenceId,
         customerReferenceId: userId,
-        pdfUrl,
+        pdfUrl: story.pdfUrl!,
         shippingAddress,
       });
 
-      // 5. Update order with Gelato ID
+      /* --------------------------------------------------
+         5. Persist Gelato IDs
+      -------------------------------------------------- */
+
       await db
         .update(orders)
         .set({
@@ -110,7 +127,6 @@ export async function POST(req: Request) {
         })
         .where(eq(orders.id, orderId));
 
-      // 6. Update story status
       await db
         .update(stories)
         .set({
@@ -119,8 +135,6 @@ export async function POST(req: Request) {
         })
         .where(eq(stories.id, storyId));
 
-      console.log("✅ Gelato Order Created:", gelatoResponse);
-
       return NextResponse.json({
         success: true,
         orderId,
@@ -128,7 +142,6 @@ export async function POST(req: Request) {
         message: "Order submitted to Gelato successfully",
       });
     } catch (gelatoError) {
-      // Mark order as failed
       await db
         .update(orders)
         .set({
@@ -141,10 +154,12 @@ export async function POST(req: Request) {
     }
   } catch (error) {
     console.error("❌ Failed to create order:", error);
+
     return NextResponse.json(
       {
         error: "Failed to create order",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details:
+          error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
     );

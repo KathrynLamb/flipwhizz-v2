@@ -39,44 +39,66 @@ export const projects = pgTable("projects", {
 
 export const stories = pgTable("stories", {
   id: uuid("id").primaryKey().defaultRandom(),
+
   projectId: uuid("project_id")
     .references(() => projects.id, { onDelete: "cascade" })
     .notNull(),
+
+  /* ---------------- CORE STORY ---------------- */
+
   title: varchar("title", { length: 200 }).notNull(),
   description: text("description"),
   tone: varchar("tone", { length: 80 }),
   length: integer("length"),
   fullDraft: text("full_draft"),
-  coverImageUrl: text("cover_image_url"),
-  status: varchar("status", { length: 20 }).default("planning"),
+
+  status: varchar("status", { length: 30 }).default("planning"),
   storyConfirmed: boolean("story_confirmed").default(false).notNull(),
-  paymentStatus: text("payment_status").default("pending"),
-  paymentId: text("payment_id"),
-  imageChatId: text("image_chat_id"),
+
+  /* ---------------- COVER (PRINT CANONICAL) ---------------- */
+
+  /**
+   * ✅ SINGLE wrap-around cover image
+   * Back + Spine + Front in one image
+   * This is what exportCoverPDF uses
+   */
+  coverSpreadUrl: text("cover_spread_url"),
+
   coverPlan: jsonb("cover_plan"),
   coverPlanLocked: boolean("cover_plan_locked").default(false),
 
-  frontCoverPrompt: text("front_cover_prompt"),
-  backCoverPrompt: text("back_cover_prompt"),
-  frontCoverUrl: text("front_cover_url"),
-  backCoverUrl: text("back_cover_url"),
+  /* ---------------- AUTHOR LETTER ---------------- */
+
+  authorLetter: jsonb("author_letter").$type<{
+    opening: string;
+    intention: string[];
+    optionalTweaks: string[];
+    invitation: string;
+  }>(),
+
+  /* ---------------- PAYMENT / ORDER ---------------- */
+
+  paymentStatus: text("payment_status").default("pending"),
+  paymentId: text("payment_id"),
+
+  orderStatus: text("order_status").default("not_ready"),
+
+  /* ---------------- PDF / EXPORT ---------------- */
+
   pdfUrl: text("pdf_url"),
   pdfUpdatedAt: timestamp("pdf_updated_at"),
-  orderStatus: text("order_status").default("not_ready"), 
-  currentStep: integer("current_step").default(1),
-  completedSteps: jsonb("completed_steps").default('[]'),
 
-    // ADD THIS LINE:
-    authorLetter: jsonb("author_letter").$type<{
-      opening: string;
-      intention: string[];
-      optionalTweaks: string[];
-      invitation: string;
-    }>(),
+  /* ---------------- WORKFLOW ---------------- */
+
+  currentStep: integer("current_step").default(1),
+  completedSteps: jsonb("completed_steps").default("[]"),
+
+  /* ---------------- HOUSEKEEPING ---------------- */
 
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
 
 /* ==================== STORY PAGES ==================== */
 

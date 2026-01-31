@@ -41,19 +41,22 @@ type Story = {
   tone: string | null;
   length: number | null;
   fullDraft: string | null;
-  coverImageUrl: string | null;
+
   status: string | null;
   storyConfirmed: boolean;
   paymentStatus: string | null;
   paymentId: string | null;
+
+  // ✅ NEW SINGLE COVER MODEL
+  coverSpreadUrl: string | null;
+
   pdfUrl: string | null;
-  frontCoverPrompt: string | null;
-  backCoverPrompt: string | null;
-  frontCoverUrl: string | null;
-  backCoverUrl: string | null;
+
   createdAt: Date | null;
   updatedAt: Date | null;
 };
+
+
 
 type CoverDesignPageProps = {
   story: Story;
@@ -72,8 +75,9 @@ export default function CoverDesignPage({
     storyId: story.id,
     projectId: story.projectId,
     title: story.title,
-    hasPrompts: !!(story.frontCoverPrompt && story.backCoverPrompt),
-    hasCovers: !!(story.frontCoverUrl && story.backCoverUrl),
+    hasPrompts: !!story.coverSpreadUrl,
+
+    hasCovers: !!(story.coverSpreadUrl),
   });
 
   return (

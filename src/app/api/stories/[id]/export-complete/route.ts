@@ -16,34 +16,50 @@ export async function POST(
     const { id: storyId } = await params;
 
     if (!storyId) {
-      return NextResponse.json({ error: "Missing story id" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing story id" },
+        { status: 400 }
+      );
     }
 
-    // 👉 Fetch story (covers + title)
+    /* --------------------------------------------------
+       1. Load story
+    -------------------------------------------------- */
+
     const story = await db.query.stories.findFirst({
       where: eq(stories.id, storyId),
     });
 
     if (!story) {
-      return NextResponse.json({ error: "Story not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Story not found" },
+        { status: 404 }
+      );
     }
 
-    if (!story.frontCoverUrl || !story.backCoverUrl) {
+    /* --------------------------------------------------
+       2. Validate cover (SINGLE WRAP SPREAD MODEL)
+    -------------------------------------------------- */
+
+    if (!story.coverSpreadUrl) {
       return NextResponse.json(
-        { error: "Covers not generated yet" },
+        { error: "Cover not generated yet" },
         { status: 400 }
       );
     }
 
-    // 👉 Fetch interior pages
+    /* --------------------------------------------------
+       3. Load interior pages
+    -------------------------------------------------- */
+
     const pages = await db.query.storyPages.findMany({
       where: eq(storyPages.storyId, storyId),
       orderBy: asc(storyPages.pageNumber),
     });
 
     const printable = pages
-      .filter(p => p.imageUrl)
-      .map(p => ({
+      .filter((p) => p.imageUrl)
+      .map((p) => ({
         pageNumber: p.pageNumber,
         imageUrl: p.imageUrl!,
       }));
@@ -55,24 +71,30 @@ export async function POST(
       );
     }
 
-    // 👉 Generate complete PDF buffer
+    /* --------------------------------------------------
+       4. Generate complete Gelato-ready PDF
+       (Cover wrap + interior pages)
+    -------------------------------------------------- */
+
     const pdfBuffer = await exportCompletePDF(
       {
-        frontCoverUrl: story.frontCoverUrl,
-        backCoverUrl: story.backCoverUrl,
-        title: story.title ?? "Story",
+        coverSpreadUrl: story.coverSpreadUrl,
         interiorPages: printable,
       },
       process.env.GELATO_PRODUCT_UID!,
       process.env.GELATO_API_KEY!
     );
-    
-    console.log("READY TO SEND YO UPLOAD TO FIREBASE +++++>>", pdfBuffer, storyId)
-    // 👉 Upload to Firebase Storage
+
+    /* --------------------------------------------------
+       5. Upload to Firebase
+    -------------------------------------------------- */
+
     const pdfUrl = await uploadPdfToFirebase(pdfBuffer, storyId);
 
+    /* --------------------------------------------------
+       6. Persist PDF URL
+    -------------------------------------------------- */
 
-    // 👉 Save URL in DB
     await db
       .update(stories)
       .set({
@@ -84,10 +106,12 @@ export async function POST(
     return NextResponse.json({ url: pdfUrl });
   } catch (err) {
     console.error("❌ Export complete PDF failed:", err);
+
     return NextResponse.json(
       {
         error: "Failed to export PDF",
-        details: err instanceof Error ? err.message : "Unknown error",
+        details:
+          err instanceof Error ? err.message : "Unknown error",
       },
       { status: 500 }
     );

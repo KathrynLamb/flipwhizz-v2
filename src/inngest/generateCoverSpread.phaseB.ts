@@ -379,8 +379,7 @@ console.log("🎨 Characters with image refs:", chars.map(c => ({
 
       await tx.update(stories)
         .set({
-          frontCoverUrl: url,
-          backCoverUrl: url,
+          coverSpreadUrl: url,
           updatedAt: new Date(),
         })
         .where(eq(stories.id, storyId));

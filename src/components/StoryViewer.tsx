@@ -18,8 +18,7 @@ type Story = {
   id: string;
   title: string;
   pdfUrl: string | null;
-  frontCoverUrl: string | null;
-  backCoverUrl: string | null;
+  coverSpreadUrl: string | null;
   paymentStatus: string | null;
   status: string;
 };
@@ -116,7 +115,7 @@ export default function StoryViewer({
             </a>
           )}
 
-          {story.frontCoverUrl && story.backCoverUrl && (
+          {story.coverSpreadUrl &&  (
             <button
               onClick={() => router.push(`/stories/${story.id}/checkout`)}
               className="px-4 py-2 rounded-xl bg-purple-600 text-white font-bold shadow flex items-center gap-2 hover:bg-purple-700"
