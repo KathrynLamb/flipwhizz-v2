@@ -11,7 +11,7 @@ import { decideSpreadScenes } from "@/inngest/decideSpreadScenes";
 import { generateStyleSample } from "@/inngest/generateStyle";
 import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateSpreadImages.phaseB";
 import { reviseSingleSpread } from "@/inngest/reviseSingleSpread";
-import { generateBookCovers } from "@/inngest/generateBookCovers";
+import { generateCoverSpreadPhaseB } from "@/inngest/generateCoverSpread.phaseB";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -27,6 +27,7 @@ export const { GET, POST, PUT } = serve({
     generateBookSpreads,    // ✅ ADDED: Orchestrator
     generateSingleSpread,   // ✅ Worker
     reviseSingleSpread,
-    generateBookCovers,
+    generateCoverSpreadPhaseB
+
   ],
 });

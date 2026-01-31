@@ -53,6 +53,9 @@ export const stories = pgTable("stories", {
   paymentStatus: text("payment_status").default("pending"),
   paymentId: text("payment_id"),
   imageChatId: text("image_chat_id"),
+  coverPlan: jsonb("cover_plan"),
+  coverPlanLocked: boolean("cover_plan_locked").default(false),
+
   frontCoverPrompt: text("front_cover_prompt"),
   backCoverPrompt: text("back_cover_prompt"),
   frontCoverUrl: text("front_cover_url"),

@@ -13,7 +13,7 @@ import {
   storyPageCharacters,
   storyPageLocations,
 } from "@/db/schema";
-import { eq, asc, inArray } from "drizzle-orm";
+import { eq, asc, inArray, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -364,3 +364,94 @@ Extract ONLY this JSON shape:
     return { ok: true };
   }
 );
+
+// ADD THIS TO YOUR inngest/functions.ts FILE
+
+// REPLACE THE generateCoversJob IN YOUR inngest/functions.ts WITH THIS
+
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { v2 as cloudinary } from "cloudinary";
+import { Readable } from "node:stream";
+import fs from "fs/promises";
+
+// Initialize Gemini client (add this at top of your functions.ts if not already there)
+const geminiClient = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY!,
+  apiVersion: "v1alpha",
+});
+
+const GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview";
+
+// Helper functions
+function isDataUrl(v: string) {
+  return v.startsWith("data:image");
+}
+
+function guessMimeTypeFromSource(source: string) {
+  const s = source.toLowerCase();
+  if (s.endsWith(".png")) return "image/png";
+  if (s.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
+}
+
+async function getImagePart(source: string) {
+  if (isDataUrl(source)) {
+    throw new Error("Base64 data URL not supported - use URLs only");
+  }
+
+  let buffer: Buffer;
+  const mimeType = guessMimeTypeFromSource(source);
+
+  if (source.startsWith("http")) {
+    const res = await fetch(source);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch image: ${res.status}`);
+    }
+    buffer = Buffer.from(await res.arrayBuffer());
+  } else {
+    buffer = await fs.readFile(source);
+  }
+
+  return {
+    inlineData: {
+      data: buffer.toString("base64"),
+      mimeType,
+    },
+  };
+}
+
+async function saveImageToCloudinary(
+  base64Data: string,
+  mimeType: string,
+  storyId: string,
+  coverType: "front" | "back"
+) {
+  const buffer = Buffer.from(base64Data, "base64");
+
+  return new Promise<string>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: `flipwhizz/stories/${storyId}/covers`,
+        filename_override: `${coverType}-${uuid()}`,
+        resource_type: "image",
+      },
+      (err, res) => {
+        if (err) return reject(err);
+        resolve(res?.secure_url ?? "");
+      }
+    );
+
+    Readable.from(buffer).pipe(stream);
+  });
+}
+
+function extractInlineImage(result: any) {
+  const parts = result.candidates?.[0]?.content?.parts ?? [];
+  const imagePart = parts.find((p: any) => p.inlineData?.data);
+  if (!imagePart) return null;
+
+  return {
+    data: imagePart.inlineData.data as string,
+    mimeType: imagePart.inlineData.mimeType as string,
+  };
+}

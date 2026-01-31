@@ -16,9 +16,10 @@ export async function POST(req: Request) {
 
     // Trigger the Inngest function
     await inngest.send({
-      name: "story/generate.covers",
+      name: "story/generate.cover.spread",
       data: { storyId },
     });
+    
 
     return NextResponse.json({ success: true });
   } catch (error) {

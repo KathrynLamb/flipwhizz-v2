@@ -1,8 +1,13 @@
 // app/api/stories/cover-chat/route.ts
+
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
-import { stories, coverChatSessions, coverChatMessages } from "@/db/schema";
+import {
+  stories,
+  coverChatSessions,
+  coverChatMessages,
+} from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
@@ -10,108 +15,116 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-
+/* -------------------------------------------------------------------------- */
+/*                              SYSTEM PROMPT                                 */
+/* -------------------------------------------------------------------------- */
 
 function buildCoverChatSystemPrompt(story: any) {
-  return `You are a cover design consultant helping parents create the perfect book cover for their child's personalized storybook.
-
-STORY DETAILS:
-- Title: ${story.title}
-- Story Summary: ${story.fullDraft ? story.fullDraft.substring(0, 500) + '...' : 'Adventure story'}
-
-YOUR ROLE:
-Through natural conversation, help the parent envision and articulate what they want for both the front and back covers.
-
-COVER DESIGN ELEMENTS TO DISCOVER:
-
-**FRONT COVER:**
-1. **Main Visual Focus**
-   - Which character(s) should be featured?
-   - What are they doing? (action pose, portrait, scene moment)
-   - What's the setting/background?
-   - Time of day and lighting mood?
-
-2. **Composition & Style**
-   - Close-up or full scene?
-   - Dynamic action or peaceful moment?
-   - Color mood (vibrant, soft, dramatic, cozy)?
-   - Any specific visual elements they want (magical effects, weather, props)?
-
-3. **Title Treatment**
-   - Where should the title go?
-   - What feeling should it convey?
-
-**BACK COVER:**
-1. **Visual Elements**
-   - Should it show a different scene or continue the front?
-   - Include characters or focus on setting?
-   - Any preview of the story's journey?
-
-2. **Text Elements**
-   - Back cover blurb/description
-   - Author info (parent's name, child's name)
-   - Age range or dedication
-
-CONVERSATION STRATEGY:
-- Start by understanding what moment/feeling they want to capture
-- Ask about their favorite page or scene from the story
-- Help them visualize specific details (character expressions, backgrounds, lighting)
-- Confirm their vision by summarizing back to them
-- Be enthusiastic and collaborative
-- Keep responses conversational, not like a questionnaire
-
-When they seem satisfied with the direction (usually after 3-5 exchanges), let them know you're ready to generate the covers.
+  return `
+You are helping a parent quickly decide a children's book cover.
 
 IMPORTANT:
-- Keep responses warm and conversational
-- Build on their ideas, don't interrogate
-- Help them articulate vague ideas into specific visual directions
-- Reference their story details when suggesting ideas`;
+- This conversation feeds a STRUCTURED COVER PLAN.
+- You are NOT designing images.
+- You are NOT writing prompts.
+- You are collecting DECISIONS ONLY.
+
+STORY CONTEXT:
+Title: ${story.title}
+Story excerpt:
+${story.fullDraft?.slice(0, 400) || "No story text provided"}
+
+YOUR GOAL:
+Reach a clear, final decision in 2–3 assistant turns MAX.
+
+WHAT YOU NEED TO COLLECT:
+
+FRONT COVER
+- What should we SEE?
+  (single character, group scene, symbolic image, moment from story)
+
+AUTHOR TEXT
+- Exact author credit text (e.g. "By Sophie", "By Mum and Sophie", or none)
+
+BACK COVER
+- Should there be:
+  - a short blurb
+  - a dedication
+  - both
+  - or nothing
+- Rough visual idea (continue front scene or simpler background)
+
+RULES:
+- Be warm, direct, and efficient
+- Ask grouped questions
+- If vague, offer 2–3 concrete options
+- DO NOT ask about fonts, colours, lighting, or layout
+- When you have enough, clearly say you're ready
+
+OUTPUT JSON ONLY:
+
+{
+  "message": "what you say to the user",
+  "stage": "intro" | "exploring" | "ready",
+  "summary": {
+    "front": "one-line summary",
+    "back": "one-line summary"
+  }
 }
+
+When stage === "ready", your message MUST end with:
+"Perfect — I have everything I need to create your cover."
+`.trim();
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                   ROUTE                                    */
+/* -------------------------------------------------------------------------- */
 
 export async function POST(req: Request) {
   try {
     const { message, history = [], storyId } = await req.json();
 
     if (!message || !storyId) {
-      return NextResponse.json({ reply: "(invalid request)" }, { status: 400 });
+      return NextResponse.json(
+        { reply: "(invalid request)" },
+        { status: 400 }
+      );
     }
 
-    // Get story details
     const story = await db
       .select()
       .from(stories)
       .where(eq(stories.id, storyId))
-      .then((rows) => rows[0]);
+      .then((r) => r[0]);
 
     if (!story) {
-      return NextResponse.json({ reply: "(story not found)" }, { status: 404 });
+      return NextResponse.json(
+        { reply: "(story not found)" },
+        { status: 404 }
+      );
     }
 
-    // Ensure chat session exists
+    /* ----------------------------- SESSION SETUP ---------------------------- */
+
     let session = await db
       .select()
       .from(coverChatSessions)
       .where(eq(coverChatSessions.storyId, storyId))
-      .then((rows) => rows[0]);
+      .then((r) => r[0]);
 
-      if (!session) {
-        const [newSession] = await db
-          .insert(coverChatSessions)
-          .values({
-            id: uuid(),
-            storyId,
-            coverPlan: null,
-            planUpdatedAt: null,
-            createdAt: new Date(),
-          })
-          .returning();
-      
-        session = newSession;
-      }
-      
+    if (!session) {
+      const [created] = await db
+        .insert(coverChatSessions)
+        .values({
+          id: uuid(),
+          storyId,
+          createdAt: new Date(),
+        })
+        .returning();
+      session = created;
+    }
 
-    // Save user message
     await db.insert(coverChatMessages).values({
       id: uuid(),
       sessionId: session.id,
@@ -120,37 +133,74 @@ export async function POST(req: Request) {
       createdAt: new Date(),
     });
 
-    // Build Claude messages
+    /* ------------------------------ CLAUDE INPUT ---------------------------- */
+
     const claudeMessages = history
       .filter((m: any) => m.role === "user" || m.role === "assistant")
-      .map((m: any) => ({ role: m.role, content: m.content }));
+      .map((m: any) => ({
+        role: m.role,
+        content: m.content,
+      }));
 
     claudeMessages.push({ role: "user", content: message });
 
-    // Call Claude
     const completion = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       system: buildCoverChatSystemPrompt(story),
-      max_tokens: 2000,
+      max_tokens: 600,
       messages: claudeMessages,
     });
 
-    const reply =
-    completion.content.find((b) => b.type === "text")?.text ??
-    "(no reply)";
-  
+    const raw =
+      completion.content.find((b) => b.type === "text")?.text ?? "";
 
-    // Save assistant message
+    let parsed: {
+      message: string;
+      stage: "intro" | "exploring" | "ready";
+      summary?: any;
+    };
+
+    try {
+      const match =
+        raw.match(/```json\s*([\s\S]*?)\s*```/) ||
+        raw.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(match ? match[1] || match[0] : raw);
+    } catch {
+      parsed = {
+        message: raw,
+        stage: "exploring",
+        summary: {},
+      };
+    }
+
+    // 🔒 Clamp stage
+    if (!["intro", "exploring", "ready"].includes(parsed.stage)) {
+      parsed.stage = "exploring";
+    }
+
+    // 🔒 Enforce ready termination
+    if (
+      parsed.stage === "ready" &&
+      !parsed.message.endsWith(
+        "Perfect — I have everything I need to create your cover."
+      )
+    ) {
+      parsed.message +=
+        "\n\nPerfect — I have everything I need to create your cover.";
+    }
+
     await db.insert(coverChatMessages).values({
       id: uuid(),
       sessionId: session.id,
       role: "assistant",
-      content: reply,
+      content: parsed.message,
       createdAt: new Date(),
     });
 
     return NextResponse.json({
-      reply,
+      reply: parsed.message,
+      stage: parsed.stage,
+      summary: parsed.summary ?? {},
       sessionId: session.id,
     });
   } catch (err) {
