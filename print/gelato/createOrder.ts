@@ -9,14 +9,14 @@ interface ShippingAddress {
   city: string;
   state?: string;
   postCode: string;
-  countryIsoCode: string; // e.g., "GB", "US"
+  countryIsoCode: string; // "GB", "US"
   email: string;
   phone?: string;
 }
 
 interface CreateOrderParams {
-  orderReferenceId: string; // Your internal Order ID
-  customerReferenceId: string; // Your internal User ID
+  orderReferenceId: string;   // your internal order id
+  customerReferenceId: string; // user id
   pdfUrl: string;
   shippingAddress: ShippingAddress;
 }
@@ -28,39 +28,41 @@ export async function createGelatoOrder(params: CreateOrderParams) {
   const productUid = process.env.GELATO_PRODUCT_UID;
 
   if (!apiKey || !productUid) {
-    throw new Error("Missing Gelato configuration in .env");
+    throw new Error("Missing Gelato configuration in environment variables");
   }
 
-  // Construct the payload required by Gelato
   const payload = {
-    orderType: "draft", // ⚠️ Change to "order" to actually print and charge!
-    orderReferenceId: orderReferenceId, 
-    customerReferenceId: customerReferenceId,
-    currency: "GBP", // Or "USD", based on your preference
+    orderType: "order", // ✅ MUST be "order" in production
+    orderReferenceId,
+    customerReferenceId,
+    currency: "GBP",
+
     items: [
       {
         itemReferenceId: uuidv4(),
-        productUid: productUid,
+        productUid,
         quantity: 1,
-        files: [
-          {
-            type: "default",
-            url: pdfUrl, // The Firebase URL we just generated
+
+        // ✅ Correct for books
+        assets: {
+          interior: {
+            url: pdfUrl,
           },
-        ],
+        },
       },
     ],
+
     shippingAddress: {
       firstName: shippingAddress.firstName,
       lastName: shippingAddress.lastName,
       addressLine1: shippingAddress.addressLine1,
-      addressLine2: shippingAddress.addressLine2 || "",
+      addressLine2: shippingAddress.addressLine2 ?? "",
       city: shippingAddress.city,
-      state: shippingAddress.state || "",
+      state: shippingAddress.state ?? "",
       postCode: shippingAddress.postCode,
       country: shippingAddress.countryIsoCode,
       email: shippingAddress.email,
-      phone: shippingAddress.phone || "",
+      phone: shippingAddress.phone ?? "",
     },
   };
 
@@ -68,15 +70,15 @@ export async function createGelatoOrder(params: CreateOrderParams) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-API-KEY": apiKey,
+      Authorization: `Bearer ${apiKey}`, // ✅ FIXED
     },
     body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
+    const error = await response.json();
     throw new Error(
-      `Gelato API Error: ${response.statusText} - ${JSON.stringify(errorData)}`
+      `Gelato API Error ${response.status}: ${JSON.stringify(error)}`
     );
   }
 

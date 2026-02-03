@@ -2,8 +2,12 @@ import puppeteer from "puppeteer";
 import { fetchGelatoCoverDimensions } from "@/lib/fetchGelatoCoverDimensions";
 
 export type ExportData = {
-  coverSpreadUrl: string; // ✅ single combined image
-  interiorPages: { pageNumber: number; imageUrl: string }[];
+  coverSpreadUrl: string;
+  interiorPages: { 
+    pageNumber: number; 
+    spreadImageUrl: string;
+    side: 'left' | 'right';
+  }[];
 };
 
 export async function exportCompletePDF(
@@ -71,12 +75,27 @@ export async function exportCompletePDF(
     width: 206mm;
     height: 206mm;
     page-break-after: always;
+    position: relative;
+    overflow: hidden;
   }
 
   .page img {
-    width: 100%;
-    height: 100%;
+    position: absolute;
+    width: 412mm; /* Double width for spread (206mm * 2) */
+    height: 206mm;
     object-fit: cover;
+  }
+
+  /* Left page: show left half of spread */
+  .page.left img {
+    left: 0;
+    object-position: left center;
+  }
+
+  /* Right page: show right half of spread */
+  .page.right img {
+    right: 0;
+    object-position: right center;
   }
 </style>
 </head>
@@ -95,8 +114,8 @@ export async function exportCompletePDF(
 ${data.interiorPages
   .map(
     (p) => `
-<div class="page">
-  <img src="${p.imageUrl}" />
+<div class="page ${p.side}">
+  <img src="${p.spreadImageUrl}" />
 </div>
 `
   )

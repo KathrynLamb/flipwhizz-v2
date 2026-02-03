@@ -1,81 +1,89 @@
-type InteriorPage = {
-    pageNumber: number
-    imageUrl: string
-  }
-  
-  export function renderInteriorHTML(pages: InteriorPage[]) {
-    let html = `
-  <!DOCTYPE html>
-  <html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      @page {
-        size: 206mm 206mm;
-        margin: 0;
-      }
-  
-      body {
-        margin: 0;
-        padding: 0;
-        background: white;
-      }
-  
-      .page {
-        position: relative;
-        width: 206mm;
-        height: 206mm;
-        overflow: hidden;
-        page-break-after: always;
-      }
-  
-      .page img {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 200%;
-        height: 100%;
-        object-fit: cover;
-      }
-  
-      .left img {
-        transform: translateX(0);
-      }
-  
-      .right img {
-        transform: translateX(-50%);
-      }
-    </style>
-  </head>
-  <body>
-  `;
-  
-    for (let i = 0; i < pages.length; i += 2) {
-      const left = pages[i];
-      const right = pages[i + 1];
-  
-      if (!left) continue;
-  
-      html += `
-  <div class="page left">
-    <img src="${left.imageUrl}" />
-  </div>
-  `;
-  
-      if (right) {
-        html += `
-  <div class="page right">
-    <img src="${right.imageUrl}" />
-  </div>
-  `;
-      }
+type PrintPage = {
+  pageNumber: number;
+  spreadImageUrl: string;
+  side: "left" | "right";
+};
+
+export function renderInteriorHTML(pages: PrintPage[]) {
+  console.log("🎨 Rendering HTML for pages:", pages.map(p => ({
+    pageNumber: p.pageNumber,
+    side: p.side,
+    imageUrl: p.spreadImageUrl.substring(0, 60) + '...'
+  })));
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    @page {
+      size: 11in 11in;
+      margin: 0;
     }
-  
-    html += `
-  </body>
-  </html>
-  `;
-  
-    return html;
-  }
-  
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+    }
+
+    .page {
+      width: 11in;
+      height: 11in;
+      page-break-after: always;
+      position: relative;
+      overflow: hidden;
+      border: 2px solid red; /* DEBUG: See page boundaries */
+    }
+
+    .page img {
+      position: absolute;
+      width: 22in;  /* Double width for spread */
+      height: 11in;
+      object-fit: cover;
+    }
+
+    .page.left img {
+      left: 0;
+      object-position: left center;
+    }
+
+    .page.right img {
+      right: 0;
+      object-position: right center;
+    }
+
+    /* DEBUG: Show which side */
+    .page::before {
+      content: attr(data-side);
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255,0,0,0.8);
+      color: white;
+      padding: 5px 10px;
+      z-index: 999;
+      font-size: 20px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  ${pages
+    .map(
+      (p) => `
+    <div class="page ${p.side}" data-side="${p.side.toUpperCase()} - Page ${p.pageNumber}">
+      <img src="${p.spreadImageUrl}" alt="Page ${p.pageNumber}" />
+    </div>
+  `
+    )
+    .join("")}
+</body>
+</html>
+`;
+}

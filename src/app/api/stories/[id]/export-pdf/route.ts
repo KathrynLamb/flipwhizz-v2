@@ -25,16 +25,68 @@ export async function POST(
       orderBy: asc(storyPages.pageNumber),
     });
 
+    console.log("📄 Total pages from DB:", pages.length);
+    console.log("📄 Pages:", pages.map(p => ({ 
+      pageNumber: p.pageNumber, 
+      hasImage: !!p.imageUrl,
+      imageUrl: p.imageUrl?.substring(0, 60) + '...'
+    })));
+
     if (!pages.length) {
       return NextResponse.json({ error: "No pages found" }, { status: 404 });
     }
 
-    const printable = pages
-      .filter(p => p.imageUrl)
-      .map(p => ({
-        pageNumber: p.pageNumber,
-        imageUrl: p.imageUrl!,
-      }));
+    // Group pages into spreads (pairs of 2)
+    const spreads: Array<{ left: typeof pages[0], right: typeof pages[0] | null }> = [];
+    for (let i = 0; i < pages.length; i += 2) {
+      spreads.push({
+        left: pages[i],
+        right: pages[i + 1] || null,
+      });
+    }
+
+    console.log("📖 Total spreads:", spreads.length);
+    console.log("📖 Spreads structure:", spreads.map((s, i) => ({
+      spreadIndex: i,
+      leftPage: s.left.pageNumber,
+      rightPage: s.right?.pageNumber || null,
+      leftHasImage: !!s.left.imageUrl,
+      rightHasImage: !!s.right?.imageUrl,
+    })));
+
+    // Convert spreads into individual printable pages
+    const printable: Array<{ 
+      pageNumber: number; 
+      spreadImageUrl: string; 
+      side: 'left' | 'right' 
+    }> = [];
+
+    for (const spread of spreads) {
+      if (spread.left.imageUrl) {
+        // Add left page
+        printable.push({
+          pageNumber: spread.left.pageNumber,
+          spreadImageUrl: spread.left.imageUrl,
+          side: 'left',
+        });
+
+        // Add right page if it exists
+        if (spread.right) {
+          printable.push({
+            pageNumber: spread.right.pageNumber,
+            spreadImageUrl: spread.left.imageUrl, // Same spread image!
+            side: 'right',
+          });
+        }
+      }
+    }
+
+    console.log("🖨️  Total printable pages:", printable.length);
+    console.log("🖨️  Printable structure:", printable.map(p => ({
+      pageNumber: p.pageNumber,
+      side: p.side,
+      imageUrl: p.spreadImageUrl.substring(0, 60) + '...'
+    })));
 
     if (!printable.length) {
       return NextResponse.json(

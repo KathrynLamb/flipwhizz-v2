@@ -1,24 +1,37 @@
 import { exportInteriorPDF } from "../print/gelato/exportInteriorPDF";
 
+type PrintPage = {
+  pageNumber: number;
+  spreadImageUrl: string;
+  side: "left" | "right";
+};
+
 async function run() {
-  const pages = [
+  const pages: PrintPage[] = [
     {
       pageNumber: 1,
-      imageUrl: "https://res.cloudinary.com/dz3sfyapj/image/upload/v1765980398/flipwhizz/style-samples/89cc41ea-184b-48ba-a0ea-5c82c842eb42/bwrxog0tl5fcuotif0op.jpg",
+      spreadImageUrl:
+        "https://res.cloudinary.com/.../spread1.jpg",
+      side: "left",
     },
     {
       pageNumber: 2,
-      imageUrl: "https://res.cloudinary.com/dz3sfyapj/image/upload/v1765980398/flipwhizz/style-samples/89cc41ea-184b-48ba-a0ea-5c82c842eb42/bwrxog0tl5fcuotif0op.jpg",
+      spreadImageUrl:
+        "https://res.cloudinary.com/.../spread1.jpg",
+      side: "right",
     },
     {
       pageNumber: 3,
-      imageUrl: "https://res.cloudinary.com/dz3sfyapj/image/upload/v1765980427/flipwhizz/style-samples/89cc41ea-184b-48ba-a0ea-5c82c842eb42/sfdsrm0ka0urttf7k5tw.jpg",
+      spreadImageUrl:
+        "https://res.cloudinary.com/.../spread2.jpg",
+      side: "left",
     },
     {
       pageNumber: 4,
-      imageUrl: "https://res.cloudinary.com/dz3sfyapj/image/upload/v1765980427/flipwhizz/style-samples/89cc41ea-184b-48ba-a0ea-5c82c842eb42/sfdsrm0ka0urttf7k5tw.jpg",
+      spreadImageUrl:
+        "https://res.cloudinary.com/.../spread2.jpg",
+      side: "right",
     },
-    // keep going until 30 pages
   ];
 
   await exportInteriorPDF(pages, "interior-test.pdf");

@@ -57,12 +57,41 @@ export async function POST(
       orderBy: asc(storyPages.pageNumber),
     });
 
-    const printable = pages
-      .filter((p) => p.imageUrl)
-      .map((p) => ({
-        pageNumber: p.pageNumber,
-        imageUrl: p.imageUrl!,
-      }));
+    // ✅ NEW: Group pages into spreads (pairs of 2)
+    const spreads: Array<{ left: typeof pages[0], right: typeof pages[0] | null }> = [];
+    for (let i = 0; i < pages.length; i += 2) {
+      spreads.push({
+        left: pages[i],
+        right: pages[i + 1] || null,
+      });
+    }
+
+    // ✅ NEW: Convert spreads into individual printable pages with side info
+    const printable: Array<{ 
+      pageNumber: number; 
+      spreadImageUrl: string; 
+      side: 'left' | 'right' 
+    }> = [];
+
+    for (const spread of spreads) {
+      if (spread.left.imageUrl) {
+        // Add left page
+        printable.push({
+          pageNumber: spread.left.pageNumber,
+          spreadImageUrl: spread.left.imageUrl,
+          side: 'left',
+        });
+
+        // Add right page if it exists (using same spread image)
+        if (spread.right) {
+          printable.push({
+            pageNumber: spread.right.pageNumber,
+            spreadImageUrl: spread.left.imageUrl, // Same spread image!
+            side: 'right',
+          });
+        }
+      }
+    }
 
     if (!printable.length) {
       return NextResponse.json(
