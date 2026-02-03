@@ -1,49 +1,41 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { stories, storyStyleGuide } from "@/db/schema";
+import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-export const runtime = "nodejs";
-
 export async function GET(
-  _req: Request,
-  ctx: { params: Promise<{ id: string }> }
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: storyId } = await ctx.params;
+  try {
+    const { id: storyId } = await params;
 
-  if (!storyId) {
+    const style = await db.query.storyStyleGuide.findFirst({
+      where: eq(storyStyleGuide.storyId, storyId),
+      columns: {
+        sampleIllustrationUrl: true,
+        generationId: true,
+      },
+    });
+
+    if (!style) {
+      return NextResponse.json(
+        { error: "Style guide not found" },
+        { status: 404 }
+      );
+    }
+
+    // Return the sample URL and generationId
+    // Frontend will check if generationId matches what it expects
+    return NextResponse.json({
+      sampleUrl: style.sampleIllustrationUrl,
+      generationId: style.generationId,
+    });
+  } catch (error: any) {
+    console.error("[STYLE POLL] Error:", error);
     return NextResponse.json(
-      { error: "Missing storyId" },
-      { status: 400 }
+      { error: error.message || "Internal error" },
+      { status: 500 }
     );
   }
-
-  const story = await db.query.stories.findFirst({
-    where: eq(stories.id, storyId),
-  });
-
-  if (!story) {
-    return NextResponse.json(
-      { error: "Story not found" },
-      { status: 404 }
-    );
-  }
-
-  const style = await db.query.storyStyleGuide.findFirst({
-    where: eq(storyStyleGuide.storyId, storyId),
-  });
-
-  return NextResponse.json({
-    status: story.status,
-    ready: Boolean(style?.sampleIllustrationUrl),
-    sampleUrl: style?.sampleIllustrationUrl ?? null,
-    style: style
-      ? {
-          summary: style.summary,
-          negativePrompt: style.negativePrompt,
-          updatedAt: style.updatedAt,
-        }
-      : null,
-  });
-  
 }

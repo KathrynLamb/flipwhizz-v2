@@ -16,6 +16,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="icon" href="/Flipwhizz_logo.png" />
+      </head>
       <body>
         <NextAuthProvider>
           {children}

@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import Link from "next/link";
 import {
@@ -12,6 +12,7 @@ import {
   PackageCheck,
   Users2,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 type Story = {
   id: string;
@@ -77,16 +78,21 @@ const STATUS_CONFIG: Record<string, {
   },
 };
 
-export default function StoriesCard({ story }: { story: Story }) {
+// export default function StoriesCard({ story }: { story: Story }) {
+  export default function StoriesCard({ story }: { story: any }) {
   const config = STATUS_CONFIG[story.status] ?? STATUS_CONFIG.draft;
   const StatusIcon = config.icon;
 
+  console.log("Story", story)
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   return (
-    <div
+    <li
       className="
         group relative
         bg-white
-        rounded-[1rem]
+        rounded-md
         border border-slate-200
         overflow-hidden
         shadow-[0_20px_40px_-20px_rgba(0,0,0,0.25)]
@@ -95,21 +101,23 @@ export default function StoriesCard({ story }: { story: Story }) {
         hover:shadow-[0_30px_70px_-25px_rgba(168,85,247,0.45)]
       "
     >
-      {/* COVER */}
-      <div className="relative aspect-[4/3] overflow-hidden">
-        {story.coverImageUrl ? (
+
+{/* COVER */}
+{/* COVER */}
+<div className="relative w-full overflow-hidden">
+      {story.coverImageUrl || story.coverSpread ? (
           <img
-            src={story.coverImageUrl}
+            src={story.coverSpread || story.coverImageUrl}
             alt={story.title}
             className="
-              absolute inset-0 h-full w-full object-cover
+              w-full h-auto block
               transition-transform duration-500
               group-hover:scale-[1.05]
             "
           />
         ) : (
           <div className="
-            absolute inset-0
+            aspect-[4/3]
             flex items-center justify-center
             bg-gradient-to-br from-pink-100 via-violet-100 to-blue-100
           ">
@@ -137,19 +145,17 @@ export default function StoriesCard({ story }: { story: Story }) {
 
       {/* CONTENT */}
       <div className="p-6 flex flex-col gap-4">
-        <h3 className="
-          font-black text-xl leading-tight
-          line-clamp-2
-          text-slate-900
-        ">
+        <h3 className="font-black text-xl leading-tight line-clamp-2 text-slate-900">
           {story.title || "Untitled story"}
         </h3>
 
         <p className="text-xs text-slate-500 flex items-center gap-1.5">
           <Clock className="w-3.5 h-3.5" />
-          {story.updatedAt
-            ? `Updated ${new Date(story.updatedAt).toLocaleDateString()}`
-            : "Just created"}
+          {!mounted
+            ? "—"
+            : story.updatedAt
+              ? `Updated ${new Date(story.updatedAt).toLocaleDateString("en-GB")}`
+              : "Just created"}
         </p>
 
         <Link
@@ -169,6 +175,6 @@ export default function StoriesCard({ story }: { story: Story }) {
           Open story
         </Link>
       </div>
-    </div>
+    </li>
   );
 }

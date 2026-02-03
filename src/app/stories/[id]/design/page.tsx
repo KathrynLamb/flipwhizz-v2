@@ -4,19 +4,19 @@ import {
   stories,
   storySpreads,
   storyPages,
-  storyStyleGuide,
-  storyPageCharacters,
-  storyPageLocations,
+  storySpreadPresence,
   characters,
   locations,
+  storyStyleGuide,
   styleGuideImages,
 } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 
-import InitialStyleDesignEditor, {
+import StylePreviewStage, {
   ClientStyleGuide,
-  Entity,
-} from "@/app/stories/[id]/design/components/InitialStyleDesignEditor";
+  EntityUI,
+  SpreadUI,
+} from "@/app/stories/[id]/design/components/StylePreviewStage";
 
 export default async function DesignPage({
   params,
@@ -25,47 +25,33 @@ export default async function DesignPage({
   params: Promise<{ id: string }>;
   searchParams?: Promise<{ spread?: string }>;
 }) {
-  /* -------------------------------------------------
-     PARAMS
-  -------------------------------------------------- */
-
   const { id: storyId } = await params;
   const { spread } = (await searchParams) ?? {};
 
-  /* -------------------------------------------------
-     STORY
-  -------------------------------------------------- */
-
+  /* ── STORY ── */
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
   });
-
   if (!story) return notFound();
 
-  /* -------------------------------------------------
-     SPREADS
-  -------------------------------------------------- */
-
-  const rawSpreads = await db
+  /* ── SPREADS ── */
+  const spreadsRaw = await db
     .select()
     .from(storySpreads)
     .where(eq(storySpreads.storyId, storyId))
     .orderBy(storySpreads.spreadIndex);
 
-  if (rawSpreads.length === 0) {
+  if (spreadsRaw.length === 0) {
     redirect(`/stories/${storyId}/extract`);
   }
 
   const spreadIndex =
     spread && !Number.isNaN(Number(spread))
-      ? Math.max(0, Math.min(rawSpreads.length - 1, Number(spread)))
-      : Math.floor(rawSpreads.length / 2);
+      ? Math.max(0, Math.min(spreadsRaw.length - 1, Number(spread)))
+      : Math.floor(spreadsRaw.length / 2);
 
-  /* -------------------------------------------------
-     PAGES (ALL)
-  -------------------------------------------------- */
-
-  const allPageIds = rawSpreads.flatMap((s) =>
+  /* ── PAGES ── */
+  const allPageIds = spreadsRaw.flatMap((s) =>
     [s.leftPageId, s.rightPageId].filter(Boolean)
   ) as string[];
 
@@ -75,102 +61,127 @@ export default async function DesignPage({
 
   const pageById = Object.fromEntries(pages.map((p) => [p.id, p]));
 
-  /* -------------------------------------------------
-     PAGE → CHARACTERS
-  -------------------------------------------------- */
-
-  const pageCharacters = await db
-    .select({
-      pageId: storyPageCharacters.pageId,
-      id: characters.id,
-      name: characters.name,
-      description: characters.description,
-      referenceImageUrl: characters.referenceImageUrl,
-    })
-    .from(storyPageCharacters)
-    .innerJoin(
-      characters,
-      eq(storyPageCharacters.characterId, characters.id)
+  /* ── SPREAD PRESENCE ── */
+  const presences = await db
+    .select()
+    .from(storySpreadPresence)
+    .where(
+      inArray(
+        storySpreadPresence.spreadId,
+        spreadsRaw.map((s) => s.id)
+      )
     );
 
-  const charactersByPage = new Map<string, Entity[]>();
-  for (const row of pageCharacters) {
-    const arr = charactersByPage.get(row.pageId) ?? [];
-    arr.push({
-      id: row.id,
-      name: row.name,
-      description: row.description ?? "",
-      referenceImageUrl: row.referenceImageUrl ?? null,
-    });
-    charactersByPage.set(row.pageId, arr);
-  }
+  const presenceBySpreadId = new Map(presences.map((p) => [p.spreadId, p]));
 
-  /* -------------------------------------------------
-     PAGE → LOCATIONS
-  -------------------------------------------------- */
+  /* ── LOAD ALL CHARACTERS & LOCATIONS ── */
+  const allCharacterIds = Array.from(
+    new Set(
+      presences.flatMap((p) =>
+        (p.characters as any)?.map((c: any) => c.characterId) ?? []
+      )
+    )
+  );
 
-  const pageLocations = await db
-    .select({
-      pageId: storyPageLocations.pageId,
-      id: locations.id,
-      name: locations.name,
-      description: locations.description,
-      referenceImageUrl: locations.referenceImageUrl,
-    })
-    .from(storyPageLocations)
-    .innerJoin(
-      locations,
-      eq(storyPageLocations.locationId, locations.id)
-    );
+  const allLocationIds = Array.from(
+    new Set(
+      presences
+        .map((p) => p.primaryLocationId)
+        .filter(Boolean) as string[]
+    )
+  );
 
-  const locationsByPage = new Map<string, Entity[]>();
-  for (const row of pageLocations) {
-    const arr = locationsByPage.get(row.pageId) ?? [];
-    arr.push({
-      id: row.id,
-      name: row.name,
-      description: row.description ?? "",
-      referenceImageUrl: row.referenceImageUrl ?? null,
-    });
-    locationsByPage.set(row.pageId, arr);
-  }
+  const allCharacters =
+    allCharacterIds.length > 0
+      ? await db.query.characters.findMany({
+          where: inArray(characters.id, allCharacterIds),
+        })
+      : [];
 
-  /* -------------------------------------------------
-     BUILD SpreadUI[]
-  -------------------------------------------------- */
+  const allLocations =
+    allLocationIds.length > 0
+      ? await db.query.locations.findMany({
+          where: inArray(locations.id, allLocationIds),
+        })
+      : [];
 
-  const spreads = rawSpreads.map((s) => {
-    const pageIds = [s.leftPageId, s.rightPageId].filter(Boolean) as string[];
+  const charactersById = Object.fromEntries(
+    allCharacters.map((c) => [c.id, c])
+  );
 
-    const characters = Array.from(
-      new Map(
-        pageIds
-          .flatMap((id) => charactersByPage.get(id) ?? [])
-          .map((c) => [c.id, c])
-      ).values()
-    );
+  const locationsById = Object.fromEntries(
+    allLocations.map((l) => [l.id, l])
+  );
 
-    const locations = Array.from(
-      new Map(
-        pageIds
-          .flatMap((id) => locationsByPage.get(id) ?? [])
-          .map((l) => [l.id, l])
-      ).values()
-    );
+  /* ── BUILD SpreadUI[] ── */
+  const spreadsUI: SpreadUI[] = spreadsRaw.map((spread, idx) => {
+    const presence = presenceBySpreadId.get(spread.id);
+
+    const leftPage = spread.leftPageId ? pageById[spread.leftPageId] : null;
+    const rightPage = spread.rightPageId ? pageById[spread.rightPageId] : null;
+
+    // Build character entities
+    const characterEntities: EntityUI[] =
+      (presence?.characters as any)?.map((meta: any) => {
+        const c = charactersById[meta.characterId];
+        if (!c) return null;
+
+        return {
+          id: c.id,
+          kind: "character" as const,
+          name: c.name,
+          description: c.description ?? null,
+          referenceImageUrl: c.referenceImageUrl ?? null,
+          imageUrl: c.portraitImageUrl ?? c.referenceImageUrl ?? null,
+        };
+      }).filter(Boolean) ?? [];
+
+    // Build location entities
+    const locationEntities: EntityUI[] =
+      presence?.primaryLocationId && locationsById[presence.primaryLocationId]
+        ? [
+            {
+              id: locationsById[presence.primaryLocationId].id,
+              kind: "location" as const,
+              name: locationsById[presence.primaryLocationId].name,
+              description:
+                locationsById[presence.primaryLocationId].description ?? null,
+              referenceImageUrl:
+                locationsById[presence.primaryLocationId].referenceImageUrl ??
+                null,
+              imageUrl:
+                locationsById[presence.primaryLocationId].portraitImageUrl ??
+                locationsById[presence.primaryLocationId].referenceImageUrl ??
+                null,
+            },
+          ]
+        : [];
+
+    // Merge into single entities array
+    const entities = [...characterEntities, ...locationEntities];
 
     return {
-      leftText: pageById[s.leftPageId!]?.text ?? "",
-      rightText: pageById[s.rightPageId!]?.text ?? "",
-      sceneSummary: s.sceneSummary ?? null,
-      characters,
-      locations,
+      spreadIndex: idx + 1,
+      sceneSummary: spread.sceneSummary ?? null,
+      leftPage: leftPage
+        ? {
+            id: leftPage.id,
+            pageNumber: leftPage.pageNumber,
+            text: leftPage.text,
+          }
+        : null,
+      rightPage: rightPage
+        ? {
+            id: rightPage.id,
+            pageNumber: rightPage.pageNumber,
+            text: rightPage.text,
+          }
+        : null,
+      entities,
     };
   });
 
-  /* -------------------------------------------------
-     STYLE GUIDE
-  -------------------------------------------------- */
-
+  /* ── STYLE GUIDE ── */
   const guide = await db.query.storyStyleGuide.findFirst({
     where: eq(storyStyleGuide.storyId, storyId),
   });
@@ -181,30 +192,29 @@ export default async function DesignPage({
       })
     : [];
 
-  const styleImage =
-    images.find((img) => img.type === "style")?.url ?? null;
+  const styleRefUrl =
+    images.find((img) => img.type === "style")?.url ?? guide?.styleGuideImage ?? null;
 
   const clientStyle: ClientStyleGuide = {
     id: guide?.id ?? "new",
     storyId,
     summary: guide?.summary ?? "",
-    styleGuideImage: styleImage,
     negativePrompt: guide?.negativePrompt ?? "",
+    artStyle: guide?.artStyle ?? "",
+    visualThemes: guide?.visualThemes ?? "",
+    colorPalette: guide?.colorPalette ?? null,
+    styleReferenceUrl: styleRefUrl,
     sampleIllustrationUrl: guide?.sampleIllustrationUrl ?? null,
   };
 
-  /* -------------------------------------------------
-     RENDER
-  -------------------------------------------------- */
-
   return (
     <main>
-      <InitialStyleDesignEditor
-        style={clientStyle}
-        spreads={spreads}
+      <StylePreviewStage
+        storyId={storyId}
+        storyTitle={story.title}
+        spreads={spreadsUI}
         initialSpreadIndex={spreadIndex}
-        storyStatus={story.status as any}
-        sampleImage={guide?.sampleIllustrationUrl}
+        style={clientStyle}
       />
     </main>
   );

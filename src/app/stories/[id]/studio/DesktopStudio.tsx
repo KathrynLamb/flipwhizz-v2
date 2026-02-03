@@ -230,38 +230,15 @@ export default function DesktopStudio({
         )}
       </AnimatePresence>
 
-      {/* HEADER */}
-      <header className="sticky top-0 z-40 bg-white border-b px-8 py-4 flex justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard">
-            <ChevronLeft />
-          </Link>
-          <div>
-            <h1 className="font-bold text-xl">{story.title}</h1>
-            <p className="text-xs text-gray-500">
-              {completedCount} of {totalCount} pages illustrated
-            </p>
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={() => router.push(`/stories/${story.id}/cover`)}
-            className="bg-gray-900 text-white px-4 py-2 rounded-xl"
-          >
-            Edit Cover
-          </button>
-
-          <button
-            onClick={handleExportPDF}
-            disabled={isExporting}
-            className="bg-gray-900 text-white px-4 py-2 rounded-xl flex items-center gap-2"
-          >
-            {isExporting ? <Loader2 className="animate-spin" /> : <Download />}
-            Export PDF
-          </button>
-        </div>
-      </header>
+ {/* FLOATING EXPORT BUTTON */}
+ <button
+        onClick={handleExportPDF}
+        disabled={isExporting}
+        className="fixed bottom-8 right-8 z-40 bg-gray-900 text-white px-5 py-3 rounded-2xl flex items-center gap-2 shadow-lg hover:shadow-xl transition-shadow"
+      >
+        {isExporting ? <Loader2 className="animate-spin w-4 h-4" /> : <Download className="w-4 h-4" />}
+        Export PDF
+      </button>
 
       {/* CONTENT */}
       <div className="max-w-[1400px] mx-auto p-8 space-y-8">

@@ -22,6 +22,7 @@ export default async function ProjectsIndexPage() {
       projectId: stories.projectId,
       title: stories.title,
       description: stories.description,
+      coverSpread: stories.coverSpreadUrl,
       status: sql<string>`coalesce(${stories.status}, 'planning')`,
       paymentStatus: sql<string>`coalesce(${stories.paymentStatus}, 'pending')`,
       createdAt: stories.createdAt,
@@ -150,7 +151,7 @@ export default async function ProjectsIndexPage() {
               </div>
             </div>
           ) : (
-            <ul className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+            <ul className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
               {userStories.map((story) => (
                 <StoriesCard key={story.id} story={story} />
               ))}

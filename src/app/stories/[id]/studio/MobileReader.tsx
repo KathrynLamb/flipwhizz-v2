@@ -280,32 +280,6 @@ export default function MobileStudio({
         })}
       </motion.div>
 
-      {/* ============================== TOP BAR ============================== */}
-      <div className="absolute top-0 inset-x-0 px-4 pt-2 pb-6 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/60 to-transparent">
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="p-2.5 rounded-xl hover:bg-white/10"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-
-        <div className="text-xs font-semibold text-white/80">
-          {isCoverIndex
-            ? "Cover"
-            : `Pages ${spread?.left.pageNumber}${
-                spread?.right
-                  ? `–${spread.right.pageNumber}`
-                  : ""
-              }`}
-        </div>
-
-        <button
-          onClick={() => router.push(`/stories/${story.id}/cover`)}
-          className="p-2.5 rounded-xl hover:bg-white/10"
-        >
-          <Wand2 className="w-5 h-5" />
-        </button>
-      </div>
 
       {/* ============================ BOTTOM BAR ============================== */}
       <div className="absolute bottom-0 inset-x-0 px-4 pb-3 pt-6 flex justify-center bg-gradient-to-t from-black/90 via-black/60 to-transparent">

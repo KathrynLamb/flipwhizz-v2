@@ -8,16 +8,18 @@ import {
   Unlock,
   Loader2,
   ChevronDown,
-  ChevronUp,
   Save,
-  User,
   FileText,
-  AlertCircle,
+  User,
   Upload,
   Sparkles,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ImageUploadSurface } from "@/app/stories/[id]/characters/components/ImageUploadSurface";
+
+/* ------------------------------------------------------------------ */
+/* TYPES                                                               */
+/* ------------------------------------------------------------------ */
 
 type Character = {
   id: string;
@@ -30,18 +32,23 @@ type Character = {
   locked: boolean;
 };
 
-const GRADIENTS = [
-  "from-amber-400 via-orange-500 to-rose-500",
-  "from-pink-400 via-rose-500 to-purple-500",
-  "from-purple-400 via-violet-500 to-indigo-500",
-  "from-cyan-400 via-blue-500 to-indigo-500",
-  "from-lime-400 via-green-500 to-emerald-500",
-  "from-yellow-400 via-amber-500 to-orange-500",
-  "from-fuchsia-400 via-pink-500 to-rose-500",
-  "from-teal-400 via-cyan-500 to-blue-500",
+/* Warm accent palettes per card */
+const CARD_ACCENTS = [
+  { from: "#f59e0b", to: "#ef4444" },   // amber → red
+  { from: "#ec4899", to: "#8b5cf6" },   // pink → violet
+  { from: "#8b5cf6", to: "#06b6d4" },   // violet → cyan
+  { from: "#06b6d4", to: "#10b981" },   // cyan → emerald
+  { from: "#84cc16", to: "#06b6d4" },   // lime → cyan
+  { from: "#f59e0b", to: "#ec4899" },   // amber → pink
+  { from: "#d946ef", to: "#ec4899" },   // fuchsia → pink
+  { from: "#14b8a6", to: "#06b6d4" },   // teal → cyan
 ];
 
 const MAX_CHARS = 500;
+
+/* ------------------------------------------------------------------ */
+/* CARD                                                                */
+/* ------------------------------------------------------------------ */
 
 export function CharacterCard({
   storyId,
@@ -55,24 +62,17 @@ export function CharacterCard({
   onDelete?: (id: string) => void;
 }) {
   const router = useRouter();
-  const gradient = GRADIENTS[index % GRADIENTS.length];
+  const accent = CARD_ACCENTS[index % CARD_ACCENTS.length];
 
-  // State
+  /* ── state ── */
   const [uploading, setUploading] = useState(false);
   const [imageUrl, setImageUrl] = useState(
     character.portraitImageUrl || character.referenceImageUrl
   );
-
   const [locked, setLocked] = useState(character.locked);
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState<"description" | "appearance" | null>(null);
-
-  // Expandable sections
-  const [expandedSection, setExpandedSection] = useState<
-    "description" | "appearance" | null
-  >(null);
-
-  // Editing state
+  const [expandedSection, setExpandedSection] = useState<"description" | "appearance" | null>(null);
   const [description, setDescription] = useState(character.description ?? "");
   const [appearance, setAppearance] = useState(character.appearance ?? "");
 
@@ -80,27 +80,17 @@ export function CharacterCard({
     ? character.personalityTraits.split(",").map((t) => t.trim()).slice(0, 3)
     : [];
 
-  /* ======================================================
-     IMAGE ACTIONS
-  ====================================================== */
-
+  /* ── image actions ── */
   async function uploadReference(file: File) {
     if (locked) return;
-
     setUploading(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("characterId", character.id);
-
-      const res = await fetch("/api/characters/upload-reference", {
-        method: "POST",
-        body: fd,
-      });
-
+      const res = await fetch("/api/characters/upload-reference", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error();
-
       setImageUrl(data.url);
     } finally {
       setUploading(false);
@@ -109,7 +99,6 @@ export function CharacterCard({
 
   async function useAiImage() {
     if (locked) return;
-
     setUploading(true);
     try {
       const res = await fetch("/api/characters/use-ai-image", {
@@ -117,29 +106,24 @@ export function CharacterCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId: character.id }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error();
-
       setImageUrl(data.url);
     } finally {
       setUploading(false);
     }
   }
 
-  /* ======================================================
-     SAVE ACTIONS
-  ====================================================== */
-
-  async function saveDescription() {
-    setSaving("description");
+  /* ── save ── */
+  async function saveField(field: "description" | "appearance") {
+    setSaving(field);
     try {
       await fetch("/api/characters/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           characterId: character.id,
-          description: description.trim(),
+          [field]: (field === "description" ? description : appearance).trim(),
         }),
       });
       setExpandedSection(null);
@@ -148,27 +132,7 @@ export function CharacterCard({
     }
   }
 
-  async function saveAppearance() {
-    setSaving("appearance");
-    try {
-      await fetch("/api/characters/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          characterId: character.id,
-          appearance: appearance.trim(),
-        }),
-      });
-      setExpandedSection(null);
-    } finally {
-      setSaving(null);
-    }
-  }
-
-  /* ======================================================
-     LOCK/UNLOCK
-  ====================================================== */
-
+  /* ── lock / unlock ── */
   async function toggleLock() {
     if (locked) {
       await fetch("/api/characters/unlock", {
@@ -184,83 +148,78 @@ export function CharacterCard({
         body: JSON.stringify({ characterId: character.id }),
       });
       setLocked(true);
-      setExpandedSection(null); // Close any open sections
+      setExpandedSection(null);
     }
   }
 
-  /* ======================================================
-     DELETE
-  ====================================================== */
-
+  /* ── delete ── */
   async function deleteCharacter() {
     if (!confirm(`Delete ${character.name}? This cannot be undone.`)) return;
-
     setDeleting(true);
     if (onDelete) onDelete(character.id);
-
-    await fetch(`/api/characters/${character.id}`, {
-      method: "DELETE",
-    });
-
+    await fetch(`/api/characters/${character.id}`, { method: "DELETE" });
     router.refresh();
   }
 
-  /* ======================================================
-     TOGGLE SECTION
-  ====================================================== */
-
+  /* ── helpers ── */
   function toggleSection(section: "description" | "appearance") {
-    if (locked) return; // Can't edit when locked
+    if (locked) return;
     setExpandedSection(expandedSection === section ? null : section);
   }
 
-  /* ======================================================
-     RENDER
-  ====================================================== */
-
+  /* ── render ── */
   return (
-    <motion.div
-      layout
-      whileHover={{ y: locked ? 0 : -4 }}
-      className={`
-        relative bg-white rounded-2xl overflow-hidden
-        border-2 shadow-md hover:shadow-xl transition-all
-        ${locked ? "border-purple-200 bg-purple-50/20" : "border-gray-200"}
-      `}
+    <div
+      className="relative rounded-2xl overflow-hidden"
+      style={{
+        background: locked
+          ? 'linear-gradient(145deg, rgba(124,92,252,0.12), rgba(194,94,240,0.06))'
+          : 'rgba(255,255,255,0.04)',
+        border: '1px solid ' + (locked ? 'rgba(124,92,252,0.3)' : 'rgba(255,255,255,0.08)'),
+        backdropFilter: 'blur(12px)',
+      }}
     >
-      {/* Locked Badge */}
-      {locked && (
-        <div className="absolute top-3 right-3 z-10 bg-purple-600 text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-lg">
-          <Lock className="w-3 h-3" />
-          Locked
-        </div>
-      )}
+      {/* ── locked badge ── */}
+      <AnimatePresence>
+        {locked && (
+          <motion.div
+            initial={{ opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 12 }}
+            className="absolute top-3 right-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold"
+            style={{ background: 'linear-gradient(135deg, #7c5cfc, #c25ef0)', color: '#fff' }}
+          >
+            <Lock className="w-3 h-3" />
+            Locked
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* IMAGE SURFACE */}
+      {/* ── image surface ── */}
       <ImageUploadSurface
         imageUrl={imageUrl}
         locked={locked}
-        gradient={gradient}
+        accentFrom={accent.from}
+        accentTo={accent.to}
         fallbackLetter={character.name.charAt(0)}
         uploading={uploading}
         onUpload={uploadReference}
         onUseAi={useAiImage}
       />
 
-      {/* CONTENT */}
-      <div className="p-5 space-y-4">
-        {/* Name & Traits */}
-        <div>
-          <h3 className="text-xl font-bold text-gray-900 mb-2">
-            {character.name}
-          </h3>
+      {/* ── content ── */}
+      <div className="p-4 sm:p-5 space-y-4">
 
+        {/* name + traits */}
+        <div>
+          <h3 className="text-lg font-bold text-white tracking-tight">{character.name}</h3>
           {traits.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 mt-2">
               {traits.map((t, i) => (
                 <span
                   key={i}
-                  className="px-2.5 py-1 rounded-full bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 text-xs font-semibold"
+                  className="px-2.5 py-0.75 rounded-full text-xs font-semibold"
+                  style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)', border: '1px solid rgba(255,255,255,0.1)' }}
                 >
                   {t}
                 </span>
@@ -269,39 +228,51 @@ export function CharacterCard({
           )}
         </div>
 
-        {/* Image Upload Buttons (visible, mobile-friendly) */}
-        {!locked && (
-          <div className="flex gap-2">
-            <button
-              onClick={() => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = 'image/*';
-                input.onchange = (e) => {
-                  const file = (e.target as HTMLInputElement).files?.[0];
-                  if (file) uploadReference(file);
-                };
-                input.click();
-              }}
-              disabled={uploading}
-              className="flex-1 h-10 rounded-lg border-2 border-gray-300 text-gray-700 font-bold text-sm hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+        {/* upload row – only when unlocked */}
+        <AnimatePresence>
+          {!locked && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25 }}
+              className="overflow-hidden"
             >
-              <Upload className="w-4 h-4" />
-              Upload Image
-            </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.accept = "image/*";
+                    input.onchange = (e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) uploadReference(file);
+                    };
+                    input.click();
+                  }}
+                  disabled={uploading}
+                  className="flex-1 h-10 rounded-lg flex items-center justify-center gap-2 text-sm font-semibold transition-all disabled:opacity-40"
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.7)' }}
+                >
+                  <Upload className="w-4 h-4" />
+                  Upload
+                </button>
 
-            <button
-              onClick={useAiImage}
-              disabled={uploading}
-              className="flex-1 h-10 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-sm hover:from-purple-700 hover:to-pink-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              <Sparkles className="w-4 h-4" />
-              AI Image
-            </button>
-          </div>
-        )}
+                <button
+                  onClick={useAiImage}
+                  disabled={uploading}
+                  className="flex-1 h-10 rounded-lg flex items-center justify-center gap-2 text-sm font-bold text-white transition-all disabled:opacity-40"
+                  style={{ background: 'linear-gradient(135deg, #7c5cfc, #c25ef0)' }}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  AI Image
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Description Section */}
+        {/* expandable sections */}
         <ExpandableSection
           title="Description"
           icon={FileText}
@@ -313,15 +284,11 @@ export function CharacterCard({
           maxChars={MAX_CHARS}
           onToggle={() => toggleSection("description")}
           onChange={setDescription}
-          onSave={saveDescription}
-          onCancel={() => {
-            setDescription(character.description ?? "");
-            setExpandedSection(null);
-          }}
-          placeholder="Describe this character's personality, background, and role in the story..."
+          onSave={() => saveField("description")}
+          onCancel={() => { setDescription(character.description ?? ""); setExpandedSection(null); }}
+          placeholder="Personality, background, and role in the story…"
         />
 
-        {/* Appearance Section */}
         <ExpandableSection
           title="Appearance"
           icon={User}
@@ -333,74 +300,42 @@ export function CharacterCard({
           maxChars={MAX_CHARS}
           onToggle={() => toggleSection("appearance")}
           onChange={setAppearance}
-          onSave={saveAppearance}
-          onCancel={() => {
-            setAppearance(character.appearance ?? "");
-            setExpandedSection(null);
-          }}
-          placeholder="Describe physical features, clothing, colors, and distinctive characteristics..."
+          onSave={() => saveField("appearance")}
+          onCancel={() => { setAppearance(character.appearance ?? ""); setExpandedSection(null); }}
+          placeholder="Physical features, clothing, colors…"
         />
 
-        {/* Actions */}
-        <div className="flex gap-2 pt-2">
+        {/* ── actions row ── */}
+        <div className="flex gap-2 pt-1">
           <button
             onClick={toggleLock}
-            className={`
-              flex-1 h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all
-              ${
-                locked
-                  ? "bg-purple-600 text-white hover:bg-purple-700"
-                  : "bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600"
-              }
-            `}
+            className="flex-1 h-11 rounded-xl flex items-center justify-center gap-2 text-sm font-bold text-white transition-all"
+            style={
+              locked
+                ? { background: 'linear-gradient(135deg, #7c5cfc, #c25ef0)' }
+                : { background: 'linear-gradient(135deg, #7c5cfc, #c25ef0)', opacity: 0.85 }
+            }
           >
-            {locked ? (
-              <>
-                <Unlock className="w-4 h-4" />
-                Unlock
-              </>
-            ) : (
-              <>
-                <Lock className="w-4 h-4" />
-                Lock
-              </>
-            )}
+            {locked ? <><Unlock className="w-4 h-4" /> Unlock</> : <><Lock className="w-4 h-4" /> Lock</>}
           </button>
 
           <button
             onClick={deleteCharacter}
             disabled={deleting}
-            className="w-12 h-12 rounded-xl bg-red-50 border-2 border-red-200 text-red-600 hover:bg-red-100 transition-colors flex items-center justify-center"
+            className="w-11 h-11 rounded-xl flex items-center justify-center transition-all disabled:opacity-40"
+            style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#ef4444' }}
           >
-            {deleting ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Trash2 className="w-5 h-5" />
-            )}
+            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
           </button>
         </div>
-
-        {/* Locked Message */}
-        {locked && expandedSection && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-purple-50 border-2 border-purple-200 rounded-xl p-3 flex items-start gap-2"
-          >
-            <AlertCircle className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-purple-700">
-              This character is locked. Unlock to make changes.
-            </p>
-          </motion.div>
-        )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
-/* ======================================================
-   EXPANDABLE SECTION COMPONENT
-====================================================== */
+/* ------------------------------------------------------------------ */
+/* EXPANDABLE SECTION                                                  */
+/* ------------------------------------------------------------------ */
 
 function ExpandableSection({
   title,
@@ -426,14 +361,14 @@ function ExpandableSection({
   charCount: number;
   maxChars: number;
   onToggle: () => void;
-  onChange: (value: string) => void;
+  onChange: (v: string) => void;
   onSave: () => void;
   onCancel: () => void;
   placeholder: string;
 }) {
   const preview = content
-    ? content.length > 80
-      ? content.slice(0, 80) + "..."
+    ? content.length > 72
+      ? content.slice(0, 72) + "…"
       : content
     : null;
 
@@ -441,147 +376,99 @@ function ExpandableSection({
 
   return (
     <div
-      className={`
-        border-2 rounded-xl overflow-hidden transition-all
-        ${isExpanded ? "border-purple-300 bg-purple-50/30" : "border-gray-200"}
-      `}
+      className="rounded-xl overflow-hidden transition-all"
+      style={{
+        border: '1px solid ' + (isExpanded ? 'rgba(124,92,252,0.4)' : 'rgba(255,255,255,0.1)'),
+        background: isExpanded ? 'rgba(124,92,252,0.06)' : 'rgba(255,255,255,0.03)',
+      }}
     >
-      {/* Header */}
+      {/* header row */}
       <button
         onClick={onToggle}
-        className={`
-          w-full px-4 py-3 flex items-center justify-between
-          transition-colors
-          ${isExpanded ? "bg-purple-100/50" : "bg-gray-50 hover:bg-gray-100"}
-        `}
+        className="w-full flex items-center justify-between px-4 py-3 transition-colors"
+        style={{ color: 'rgba(255,255,255,0.8)' }}
       >
         <div className="flex items-center gap-2">
-          <Icon
-            className={`w-4 h-4 ${
-              isExpanded ? "text-purple-600" : "text-gray-600"
-            }`}
-          />
-          <span
-            className={`font-bold text-sm ${
-              isExpanded ? "text-purple-900" : "text-gray-900"
-            }`}
-          >
+          <Icon className="w-4 h-4" style={{ color: isExpanded ? '#a78bfa' : 'rgba(255,255,255,0.4)' }} />
+          <span className="text-sm font-semibold" style={{ color: isExpanded ? '#fff' : 'rgba(255,255,255,0.7)' }}>
             {title}
           </span>
         </div>
-
-        {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-purple-600" />
-        ) : (
-          <ChevronDown className="w-4 h-4 text-gray-400" />
-        )}
+        <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+          <ChevronDown className="w-4 h-4" style={{ color: isExpanded ? '#a78bfa' : 'rgba(255,255,255,0.3)' }} />
+        </motion.div>
       </button>
 
-      {/* Preview (when collapsed) */}
-      {!isExpanded && preview && (
-        <div className="px-4 py-3 border-t border-gray-200">
-          <p className="text-sm text-gray-600 line-clamp-2">{preview}</p>
-        </div>
-      )}
-
-      {!isExpanded && !preview && (
-        <div className="px-4 py-3 border-t border-gray-200">
-          <p className="text-sm text-gray-400 italic">
-            {isLocked ? "No content" : "Tap to add..."}
+      {/* preview (collapsed) */}
+      {!isExpanded && (
+        <div className="px-4 pb-3">
+          <p className="text-xs line-clamp-2" style={{ color: preview ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.22)' }}>
+            {preview ?? (isLocked ? "—" : "Tap to add…")}
           </p>
         </div>
       )}
 
-      {/* Expanded Content */}
+      {/* expanded editor */}
       <AnimatePresence>
         {isExpanded && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.22 }}
             className="overflow-hidden"
           >
-            <div className="p-4 space-y-3 bg-white">
-              {/* Textarea */}
+            <div className="px-4 pb-4 space-y-3">
               <textarea
                 value={content}
-                onChange={(e) => {
-                  if (e.target.value.length <= maxChars) {
-                    onChange(e.target.value);
-                  }
-                }}
+                onChange={(e) => { if (e.target.value.length <= maxChars) onChange(e.target.value); }}
                 disabled={isLocked || isSaving}
                 placeholder={placeholder}
-                className={`
-                  w-full rounded-xl p-3 text-sm resize-none
-                  border-2 transition-colors
-                  ${
-                    isOverLimit
-                      ? "border-red-300 bg-red-50 focus:border-red-400"
-                      : "border-gray-200 focus:border-purple-400"
-                  }
-                  ${isLocked ? "bg-gray-100 text-gray-500 cursor-not-allowed" : ""}
-                  focus:outline-none
-                `}
-                rows={6}
                 autoFocus={!isLocked}
+                rows={5}
+                className="w-full rounded-lg p-3 text-sm resize-none focus:outline-none transition-colors"
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid ' + (isOverLimit ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.12)'),
+                  color: '#fff',
+                  caretColor: '#a78bfa',
+                }}
               />
 
-              {/* Character Count */}
-              <div className="flex items-center justify-between text-xs">
+              {/* char count */}
+              <div className="flex items-center justify-between">
                 <span
-                  className={`font-medium ${
-                    isOverLimit
-                      ? "text-red-600"
-                      : charCount > maxChars * 0.9
-                      ? "text-amber-600"
-                      : "text-gray-500"
-                  }`}
+                  className="text-xs font-medium"
+                  style={{
+                    color: isOverLimit
+                      ? '#ef4444'
+                      : charCount > maxChars * 0.85
+                      ? '#f59e0b'
+                      : 'rgba(255,255,255,0.3)',
+                  }}
                 >
-                  {charCount} / {maxChars} characters
+                  {charCount} / {maxChars}
                 </span>
-
-                {isOverLimit && (
-                  <span className="text-red-600 font-bold">
-                    {charCount - maxChars} over limit
-                  </span>
-                )}
+                {isOverLimit && <span className="text-xs font-bold" style={{ color: '#ef4444' }}>{charCount - maxChars} over</span>}
               </div>
 
-              {/* Action Buttons */}
+              {/* save / cancel */}
               {!isLocked && (
                 <div className="flex gap-2">
                   <button
                     onClick={onSave}
                     disabled={isSaving || isOverLimit || !content.trim()}
-                    className={`
-                      flex-1 h-10 rounded-lg font-bold text-sm flex items-center justify-center gap-2
-                      transition-all
-                      ${
-                        isSaving || isOverLimit || !content.trim()
-                          ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                          : "bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700"
-                      }
-                    `}
+                    className="flex-1 h-9 rounded-lg flex items-center justify-center gap-2 text-sm font-bold text-white transition-all disabled:opacity-35"
+                    style={{ background: 'linear-gradient(135deg, #7c5cfc, #c25ef0)' }}
                   >
-                    {isSaving ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4" />
-                        Save
-                      </>
-                    )}
+                    {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : <><Save className="w-4 h-4" /> Save</>}
                   </button>
 
                   <button
                     onClick={onCancel}
                     disabled={isSaving}
-                    className="px-6 h-10 rounded-lg border-2 border-gray-300 text-gray-700 font-bold text-sm hover:bg-gray-50 transition-colors disabled:opacity-50"
+                    className="px-5 h-9 rounded-lg text-sm font-semibold transition-all disabled:opacity-40"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.6)' }}
                   >
                     Cancel
                   </button>

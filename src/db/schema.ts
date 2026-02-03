@@ -307,6 +307,8 @@ export const storyStyleGuide = pgTable("story_style_guide", {
   summary: text("summary"),
   negativePrompt: text("negative_prompt"),
   userNotes: text("user_notes"),
+
+  generationId: text("generation_id"),
   
   // NEW: Enhanced style tracking
   artStyle: varchar("art_style", { length: 100 }), // watercolor, digital, cartoon, realistic, etc.

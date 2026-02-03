@@ -13,11 +13,12 @@ import {
   Layers,
   Lock,
   Map,
+  Check,
 } from "lucide-react";
 import type { StepKey } from "@/lib/storySteps";
 
 /* ======================================================
-   STEP ORDER
+   STEP ORDER  — must match STEP_ORDER in storySteps.ts
 ====================================================== */
 
 const STEP_ORDER: StepKey[] = [
@@ -32,10 +33,6 @@ const STEP_ORDER: StepKey[] = [
 function stepIndex(step: StepKey) {
   const idx = STEP_ORDER.indexOf(step);
   return idx === -1 ? 0 : idx;
-}
-
-function highestReachedIndex(currentStep: StepKey, completedSteps: StepKey[]) {
-  return Math.max(stepIndex(currentStep), ...completedSteps.map(stepIndex));
 }
 
 /* ======================================================
@@ -55,44 +52,46 @@ const STEPS: Step[] = [
     key: "write",
     label: "Write",
     icon: PenLine,
-    href: id => `/stories/${id}/pages`,
+    href: (id) => `/stories/${id}/pages`,
     match: (p, id) =>
-      p === `/stories/${id}` || p.startsWith(`/stories/${id}/hub`),
+      p === `/stories/${id}` || p.startsWith(`/stories/${id}/pages`),
   },
   {
     key: "extract",
     label: "Characters",
     icon: Users,
-    href: id => `/stories/${id}/characters`,
+    href: (id) => `/stories/${id}/characters`,
     match: (p, id) => p.startsWith(`/stories/${id}/characters`),
   },
   {
     key: "locations",
     label: "Locations",
     icon: Map,
-    href: id => `/stories/${id}/locations`,
+    href: (id) => `/stories/${id}/locations`,
     match: (p, id) => p.startsWith(`/stories/${id}/locations`),
   },
   {
     key: "design",
     label: "Design",
     icon: Palette,
-    href: id => `/stories/${id}/design`,
+    href: (id) => `/stories/${id}/design`,
     match: (p, id) => p.startsWith(`/stories/${id}/design`),
   },
   {
     key: "studio",
     label: "Studio",
     icon: Layers,
-    href: id => `/stories/${id}/studio`,
+    href: (id) => `/stories/${id}/studio`,
     match: (p, id) => p.startsWith(`/stories/${id}/studio`),
   },
   {
     key: "print",
     label: "Print",
     icon: Printer,
-    href: id => `/stories/${id}/checkout`,
-    match: (p, id) => p.startsWith(`/stories/${id}/checkout`),
+    href: (id) => `/stories/${id}/checkout`,
+    match: (p, id) =>
+      p.startsWith(`/stories/${id}/checkout`) ||
+      p.startsWith(`/stories/${id}/print`),
   },
 ];
 
@@ -114,18 +113,42 @@ export default function StoryHeader({
   const router = useRouter();
   const pathname = usePathname();
 
-  /** 🔑 hydration fix */
+  /** 🔑 hydration fix — active state only calculated after mount */
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const reached = highestReachedIndex(currentStep, completedSteps);
-  const canEnterStudio = reached >= stepIndex("design");
-  const canEnterPrint = reached >= stepIndex("studio");
+  /* ------------------------------------------------------------
+     DERIVE STATE PER STEP
 
-  function isLocked(step: StepKey) {
-    if (step === "studio") return !canEnterStudio;
-    if (step === "print") return !canEnterPrint;
-    return false;
+     A step is one of three states:
+       completed  — it's in completedSteps[]
+       active     — the URL matches it right now
+       locked     — it's beyond what the user has reached
+
+     "Reached" = the highest index between currentStep and any
+     completed step. Everything at or below that index is 
+     clickable. Everything above is locked.
+  ------------------------------------------------------------ */
+
+  const highestReached = Math.max(
+    stepIndex(currentStep),
+    ...completedSteps.map(stepIndex)
+  );
+
+  function getStepState(step: Step): "completed" | "active" | "locked" | "idle" {
+    const idx = stepIndex(step.key);
+
+    // Active = URL match (only after hydration)
+    if (mounted && step.match(pathname, storyId)) return "active";
+
+    // Completed = in the completedSteps array
+    if (completedSteps.includes(step.key)) return "completed";
+
+    // Locked = beyond what user has reached
+    if (idx > highestReached) return "locked";
+
+    // Idle = reachable but not current and not completed
+    return "idle";
   }
 
   return (
@@ -153,12 +176,10 @@ export default function StoryHeader({
               ${mounted ? "backdrop-blur-xl" : ""}
             `}
           >
-            {STEPS.map(step => {
+            {STEPS.map((step) => {
               const Icon = step.icon;
-              const locked = isLocked(step.key);
-
-              // 🔒 IMPORTANT: active is only calculated AFTER mount
-              const active = mounted && step.match(pathname, storyId);
+              const state = getStepState(step);
+              const locked = state === "locked";
 
               return (
                 <motion.button
@@ -167,24 +188,30 @@ export default function StoryHeader({
                   whileTap={!locked ? { scale: 0.96 } : undefined}
                   onClick={() => !locked && router.push(step.href(storyId))}
                   className={`
+                    relative
                     flex items-center gap-2
                     px-4 py-2 rounded-full
                     text-sm font-bold
                     transition-all
-                    ${
-                      active
-                        ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-md"
-                        : locked
-                        ? "bg-stone-100 text-stone-400 cursor-not-allowed"
-                        : "bg-stone-100 text-stone-700 hover:bg-stone-200"
+                    ${state === "active"
+                      ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-md"
+                      : state === "completed"
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      : locked
+                      ? "bg-stone-100 text-stone-400 cursor-not-allowed"
+                      : "bg-stone-100 text-stone-700 hover:bg-stone-200"
                     }
                   `}
                 >
-                  {locked ? (
+                  {/* ICON — swap to checkmark when completed */}
+                  {state === "completed" ? (
+                    <Check className="w-4 h-4 text-emerald-500" />
+                  ) : locked ? (
                     <Lock className="w-4 h-4 opacity-60" />
                   ) : (
                     <Icon className="w-4 h-4" />
                   )}
+
                   {step.label}
                 </motion.button>
               );

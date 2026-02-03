@@ -1,9 +1,10 @@
-// api/paypal/capture
+// api/paypal/capture/route.ts
 import { NextResponse } from "next/server";
 import { paypalCaptureOrder } from "@/lib/paypal";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { inngest } from "@/inngest/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
     }
 
     /* --------------------------------------------------
-       UPDATE PAYMENT STATE ONLY
+       UPDATE PAYMENT STATE + SET STATUS TO GENERATING
     -------------------------------------------------- */
 
     await db
@@ -62,9 +63,23 @@ export async function POST(req: Request) {
       .set({
         paymentStatus: "paid",
         paymentId: orderID,
+        status: "generating",        // ← marks story as paid + in-progress
         updatedAt: new Date(),
       })
       .where(eq(stories.id, storyId));
+
+    /* --------------------------------------------------
+       FIRE INNGEST — generates all spreads in parallel
+    -------------------------------------------------- */
+
+    await inngest.send({
+      name: "story/generate.spreads",
+      data: { storyId },
+    });
+
+    /* --------------------------------------------------
+       RESPOND
+    -------------------------------------------------- */
 
     return NextResponse.json({
       success: true,

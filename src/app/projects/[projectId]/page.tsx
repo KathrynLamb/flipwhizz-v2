@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import PagesBox from "@/app/projects/components/PagesBox";
 import IllustrationsBox from "@/app/projects/components/IllustrationsBox";
+import { AuthButton } from "@/components/auth-button";
 
 function isFilled(v: unknown) {
   if (!v) return false;
@@ -29,8 +30,8 @@ export default async function ProjectDashboard(
 
   console.log('story', story,"pages, ", pages, "Chars", characters, "loc", locations, "Style", styleGuide)
 
-
   const session = await getServerSession(authOptions);
+
   if (!session?.user?.id) {
     return (
       <main className="min-h-screen bg-[#0b0b10] text-white">
@@ -40,19 +41,17 @@ export default async function ProjectDashboard(
             <p className="mt-1 text-sm text-white/70">
               Please sign in to view your story projects.
             </p>
+  
+            {/* ⬇️ THIS is what we change */}
             <div className="mt-4">
-              <Link
-                href="/api/auth/signin"
-                className="inline-flex items-center rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-black"
-              >
-                Sign in
-              </Link>
+              <AuthButton />
             </div>
           </div>
         </div>
       </main>
     );
   }
+  
   const project = await db.query.projects.findFirst({
     where: and(
       eq(projects.id, projectId),
@@ -68,7 +67,6 @@ export default async function ProjectDashboard(
   });
 
 
-
   if (!project) {
     return (
       <main className="min-h-screen bg-[#0b0b10] text-white">
@@ -80,8 +78,7 @@ export default async function ProjectDashboard(
             </p>
             <div className="mt-4">
               <Link
-                href="/projects"
-                className="inline-flex items-center rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-black"
+                href="/projects" className="inline-flex items-center rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-black"
               >
                 Back to projects
               </Link>
