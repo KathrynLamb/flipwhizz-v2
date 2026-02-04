@@ -67,6 +67,11 @@ export function MobileLocationCard({
   const [uploading, setUploading] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
 
+  const [description, setDescription] = useState(location.description || "");
+  const [prevDescription, setPrevDescription] = useState(location.description || "");
+
+  const isDirty = description.trim() !== (location.description || "").trim();
+
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-200, 0, 200], [-15, 0, 15]);
   const opacity = useTransform(x, [-200, -100, 0, 100, 200], [0, 1, 1, 1, 0]);
@@ -129,6 +134,33 @@ export function MobileLocationCard({
       handleLock();
     }
   }
+
+  async function saveChanges() {
+    // Optimistic update
+    setPrevDescription(location.description || "");
+    setShowEdit(false);
+  
+    try {
+      const res = await fetch(`/api/locations/${location.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description,
+        }),
+      });
+  
+      if (!res.ok) {
+        throw new Error("Failed to save");
+      }
+  
+      router.refresh();
+    } catch (err) {
+      // Rollback on failure
+      setDescription(prevDescription);
+      alert("Failed to save changes. Please try again.");
+    }
+  }
+  
 
   /* ── Render ── */
   return (
@@ -333,18 +365,21 @@ export function MobileLocationCard({
                   <span className="text-lg">📝</span> Description
                 </label>
                 <textarea
-                  defaultValue={location.description || ""}
-                  rows={6}
-                  className="w-full rounded-2xl p-4 text-stone-800 border-2 border-stone-100 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/20 focus:outline-none resize-none transition-all placeholder:text-stone-400"
-                  placeholder="Describe this location's atmosphere, key features, and significance..."
-                />
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={6}
+                    className="w-full rounded-2xl p-4 text-stone-800 border-2 border-stone-100 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/20 focus:outline-none resize-none transition-all placeholder:text-stone-400"
+                    placeholder="Describe this location's atmosphere, key features, and significance..."
+                    />
               </div>
 
               {/* Save Button */}
               <button
-                className="w-full py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 active:scale-[0.98] transition-all shadow-lg shadow-violet-500/30 flex items-center justify-center gap-2"
-                onClick={() => setShowEdit(false)}
-              >
+                    disabled={!isDirty}
+                    className="w-full py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 active:scale-[0.98] transition-all shadow-lg shadow-violet-500/30 flex items-center justify-center gap-2"
+                    onClick={saveChanges}
+                    >
+
                 <Check className="w-5 h-5" />
                 Save Changes
               </button>
