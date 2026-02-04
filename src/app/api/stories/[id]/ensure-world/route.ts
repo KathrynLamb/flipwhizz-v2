@@ -1,22 +1,15 @@
-// src/app/api/stories/[id]/ensure-world/route.ts
-
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import {
   stories,
   storyPages,
-  storyCharacters,
-  storyLocations,
-  storyStyleGuide,
   storyWorkflowProgress,
 } from "@/db/schema";
-import { eq, asc, sql } from "drizzle-orm";
+import { eq, asc } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-type Phase = "extracting" | "building_spreads" | "deciding_scenes" | "ready";
 
 export async function POST(
   _req: Request,
@@ -29,7 +22,7 @@ export async function POST(
   }
 
   /* --------------------------------------------------
-     1. LOAD STORY + PAGES
+     1. Validate story + pages
   -------------------------------------------------- */
 
   const story = await db.query.stories.findFirst({
@@ -48,111 +41,63 @@ export async function POST(
   });
 
   if (pages.length === 0) {
-    return NextResponse.json({ error: "Story has no pages" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Story has no pages" },
+      { status: 400 }
+    );
   }
 
   /* --------------------------------------------------
-     2. LOAD OR CREATE WORKFLOW PROGRESS
+     2. Load workflow progress (canonical state)
   -------------------------------------------------- */
 
   let progress = await db.query.storyWorkflowProgress.findFirst({
     where: eq(storyWorkflowProgress.storyId, storyId),
   });
 
+  /* --------------------------------------------------
+     3. Bootstrap if missing
+  -------------------------------------------------- */
+
   if (!progress) {
-    // Check legacy data
-    const [charCount, locCount, styleGuide] = await Promise.all([
-      db
-        .select({ count: sql<number>`count(*)` })
-        .from(storyCharacters)
-        .where(eq(storyCharacters.storyId, storyId)),
-      db
-        .select({ count: sql<number>`count(*)` })
-        .from(storyLocations)
-        .where(eq(storyLocations.storyId, storyId)),
-      db.query.storyStyleGuide.findFirst({
-        where: eq(storyStyleGuide.storyId, storyId),
-        columns: { id: true },
-      }),
-    ]);
-
-    const hasWorld =
-      charCount[0].count > 0 &&
-      locCount[0].count > 0 &&
-      Boolean(styleGuide);
-
     await db.insert(storyWorkflowProgress).values({
       storyId,
-      worldExtracted: hasWorld,
+      worldExtracted: false,
       spreadsBuilt: false,
       scenesDecided: false,
-    });
-
-    progress = {
-      storyId,
-    
-      worldExtracted: hasWorld,
-      spreadsBuilt: false,
-      scenesDecided: false,
-    
-      worldExtractedAt: hasWorld ? new Date() : null,
-      spreadsBuiltAt: null,
-      scenesDecidedAt: null,
-    
-      extractingWorld: false,
+      extractingWorld: true,
       buildingSpreads: false,
       decidingScenes: false,
-    
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    
-  }
+      worldExtractedAt: null,
+      spreadsBuiltAt: null,
+      scenesDecidedAt: null,
+    });
 
-  /* --------------------------------------------------
-     3. DETERMINE CURRENT PHASE
-  -------------------------------------------------- */
-
-  let mode: Phase = "extracting";
-
-  if (progress.worldExtracted && progress.spreadsBuilt && progress.scenesDecided) {
-    mode = "ready";
-  } else if (progress.worldExtracted && progress.spreadsBuilt) {
-    mode = "deciding_scenes";
-  } else if (progress.worldExtracted) {
-    mode = "building_spreads";
-  }
-
-  /* --------------------------------------------------
-     4. ENSURE CORRECT WORKFLOW IS RUNNING
-  -------------------------------------------------- */
-
-  if (mode === "extracting") {
     await inngest.send({
       name: "story/extract-world",
       data: { storyId },
     });
-  }
 
-  if (mode === "building_spreads") {
-    await inngest.send({
-      name: "story/build-spreads",
-      data: { storyId },
-    });
-  }
-
-  if (mode === "deciding_scenes") {
-    await inngest.send({
-      name: "story/decide-spread-scenes", // ✅ FIXED NAME
-      data: { storyId },
+    return NextResponse.json({
+      status: "processing",
+      mode: "extracting",
+      progress: {
+        worldExtracted: false,
+        spreadsBuilt: false,
+        scenesDecided: false,
+      },
     });
   }
 
   /* --------------------------------------------------
-     5. RETURN UI CONTRACT
+     4. COMPLETE
   -------------------------------------------------- */
 
-  if (mode === "ready") {
+  if (
+    progress.worldExtracted &&
+    progress.spreadsBuilt &&
+    progress.scenesDecided
+  ) {
     return NextResponse.json({
       status: "complete",
       mode: "ready",
@@ -164,13 +109,77 @@ export async function POST(
     });
   }
 
-  return NextResponse.json({
-    status: "processing",
-    mode,
-    progress: {
-      worldExtracted: progress.worldExtracted,
-      spreadsBuilt: progress.spreadsBuilt,
-      scenesDecided: progress.scenesDecided,
-    },
-  });
+  /* --------------------------------------------------
+     5. DECIDING SCENES
+  -------------------------------------------------- */
+
+  if (progress.worldExtracted && progress.spreadsBuilt) {
+    if (!progress.decidingScenes) {
+      await db
+        .update(storyWorkflowProgress)
+        .set({ decidingScenes: true })
+        .where(eq(storyWorkflowProgress.storyId, storyId));
+
+      await inngest.send({
+        name: "story/decide-spread-scenes",
+        data: { storyId },
+      });
+    }
+
+    return NextResponse.json({
+      status: "processing",
+      mode: "deciding_scenes",
+      progress: {
+        worldExtracted: true,
+        spreadsBuilt: true,
+        scenesDecided: false,
+      },
+    });
+  }
+
+  /* --------------------------------------------------
+     6. BUILDING SPREADS
+  -------------------------------------------------- */
+
+  if (progress.worldExtracted && !progress.spreadsBuilt) {
+    if (!progress.buildingSpreads) {
+      await db
+        .update(storyWorkflowProgress)
+        .set({ buildingSpreads: true })
+        .where(eq(storyWorkflowProgress.storyId, storyId));
+
+      await inngest.send({
+        name: "story/build-spreads",
+        data: { storyId },
+      });
+    }
+
+    return NextResponse.json({
+      status: "processing",
+      mode: "building_spreads",
+      progress: {
+        worldExtracted: true,
+        spreadsBuilt: false,
+        scenesDecided: false,
+      },
+    });
+  }
+
+  /* --------------------------------------------------
+     7. EXTRACTING WORLD
+  -------------------------------------------------- */
+
+  if (!progress.worldExtracted) {
+    return NextResponse.json({
+      status: "processing",
+      mode: "extracting",
+      progress: {
+        worldExtracted: false,
+        spreadsBuilt: false,
+        scenesDecided: false,
+      },
+    });
+  }
+
+  return NextResponse.json({ error: "Invalid workflow state" }, { status: 500 });
 }
