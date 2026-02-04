@@ -141,13 +141,15 @@ export function MobileLocationCard({
     setShowEdit(false);
   
     try {
-      const res = await fetch(`/api/locations/${location.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description,
-        }),
-      });
+        const res = await fetch("/api/locations/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              locationId: location.id,
+              description,
+            }),
+          });
+          
   
       if (!res.ok) {
         throw new Error("Failed to save");
@@ -262,11 +264,12 @@ export function MobileLocationCard({
           </div>
 
           {/* Description Preview */}
-          {location.description && (
-            <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">
-              {location.description}
-            </p>
-          )}
+          {description && (
+                <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">
+                    {description}
+                </p>
+                )}
+
 
           {/* Edit button */}
           <button
