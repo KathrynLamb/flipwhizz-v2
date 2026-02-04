@@ -94,8 +94,6 @@ export default async function ProjectDashboard(
   const hasBasePrompt = isFilled(project.storyBasePrompt);
   const hasFullStory = isFilled(project.fullAiStory);
 
-  console.log("PROJECT IN project page +> ", project)
-
   const stageLabel = hasFullStory
     ? "Story drafted"
     : hasBrief || hasBasePrompt

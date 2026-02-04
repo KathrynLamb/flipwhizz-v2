@@ -68,39 +68,38 @@ export default async function ProjectsIndexPage() {
       </div>
 
       {/* Header */}
-      <header className="relative z-10 border-b border-gray-200 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent leading-tight backdrop-blur-sm">
-        <div className="mx-auto max-w-7xl py-2 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-1 group">
-            <div className="relative">
+      <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-gray-200">
+          <div className="mx-auto max-w-7xl px-4 h-14 flex items-center justify-between">
+
+            {/* Brand */}
+            <Link
+              href="/"
+              className="flex items-center gap-0.5 md:gap-2 group"
+              aria-label="FlipWhizz home"
+            >
               <Image
                 src="/Flipwhizz_logo.png"
-                alt="FlipWhizz"
-                width={120}
-                height={120}
+                alt=""
+                width={48}
+                height={48}
                 priority
-                className="group-hover:scale-110 transition-transform"
+                className="transition-transform group-hover:scale-105"
               />
-            </div>
-            <span className="text-2xl font-black tracking-tight bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">
-              FlipWhizz
-            </span>
-          </Link>
 
-          <CreateStoryButton />
-        </div>
-      </header>
+              <span className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+                FlipWhizz
+              </span>
+            </Link>
+
+            {/* Primary action */}
+            <CreateStoryButton />
+          </div>
+        </header>
+
 
       {/* Hero Section */}
       <section className="relative z-10 px-6 pt-4 pb-4 bg-white">
         <div className="mx-auto max-w-7xl">
-          {/* <div className="inline-flex items-center gap-2 mb-8">
-            {[...Array(3)].map((_, i) => (
-              <div
-                key={i}
-                className="w-3 h-3 rounded-full bg-gradient-to-r from-pink-500 to-purple-500"
-              />
-            ))}
-          </div> */}
 
           <h1 className="text-2xl md:text-5xl font-black mb-6 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent leading-tight">
             Your Stories

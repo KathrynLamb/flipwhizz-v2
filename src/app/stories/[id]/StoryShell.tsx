@@ -97,12 +97,12 @@ export default function StoryJourneyShell({
       {/* ==================================================
           HEADER
       ================================================== */}
-      <StoryHeader
+      {/* <StoryHeader
         storyId={storyId}
         title={title}
         currentStep={currentStep}
         completedSteps={completedSteps}
-      />
+      /> */}
 
       {/* ==================================================
           PAGE CONTENT

@@ -4,7 +4,8 @@ import { getStoryForHub } from "@/lib/story/getStoryForHub";
 import { db } from "@/db";
 import { storyWorkflowProgress } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import CharactersClient from "./CharactersClient";
+import CharactersClient from "@/app/stories/[id]/characters/CharactersClient";
+
 
 type Props = {
   params: Promise<{ id: string }>;
