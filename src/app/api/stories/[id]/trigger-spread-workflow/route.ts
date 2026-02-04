@@ -25,7 +25,7 @@ export async function POST(
     // 1. Build spreads
     console.log("🏗️ Triggering build-spreads...");
     await inngest.send({
-      name: "story/build.spreads",
+      name: "story/build-spreads",
       data: { storyId },
     });
 

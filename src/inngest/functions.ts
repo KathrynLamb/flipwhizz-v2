@@ -373,6 +373,8 @@ import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { v2 as cloudinary } from "cloudinary";
 import { Readable } from "node:stream";
 import fs from "fs/promises";
+import { buildSpreads } from "@/inngest/buildSpreads";
+import { decideSpreadScenes } from "@/inngest/decideSpreadScenes";
 
 // Initialize Gemini client (add this at top of your functions.ts if not already there)
 const geminiClient = new GoogleGenAI({
@@ -455,3 +457,5 @@ function extractInlineImage(result: any) {
     mimeType: imagePart.inlineData.mimeType as string,
   };
 }
+
+
