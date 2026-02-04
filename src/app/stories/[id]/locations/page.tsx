@@ -4,9 +4,6 @@ import LocationsClient from "@/app/stories/[id]/locations/locationsClient";
 import { stepNumberToKey } from "@/lib/storySteps";
 import type { StepKey } from "@/lib/storySteps";
 
-
-
-
 type Props = {
   params: Promise<{ id: string }>;
 };
@@ -24,8 +21,6 @@ export default async function LocationsPage({ params }: Props) {
     story.currentStep != null
       ? stepNumberToKey(story.currentStep)
       : "extract"; // safe fallback
-  
-
   
   const locations = dbLocations.map((l) => ({
     id: l.id,
