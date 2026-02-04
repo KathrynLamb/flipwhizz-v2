@@ -217,7 +217,7 @@ export function MobileLocationCard({
         )}
 
         {/* ── Info Overlay (Bottom) ── */}
-        <div className="absolute bottom-0 left-0 right-0 z-10 p-5 space-y-3">
+        <div className="absolute bottom-0 left-0 right-0 z-10 px-5 pt-5 pb-28 space-y-3">
           
           {/* Location icon + Name */}
           <div className="flex items-center gap-3">
@@ -247,7 +247,7 @@ export function MobileLocationCard({
         </div>
 
         {/* ── Action Buttons (Bottom Fixed) ── */}
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4">
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4">
           
           {/* Delete */}
           <button
@@ -305,36 +305,51 @@ export function MobileLocationCard({
         </motion.div>
       </div>
 
-      {/* ── Edit Modal (Full Screen) ── */}
+      {/* ── Edit Modal (Redesigned) ── */}
       {showEdit && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end">
-          <div className="w-full bg-white rounded-t-3xl p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-stone-900">Edit Location</h3>
-              <button onClick={() => setShowEdit(false)} className="p-2 hover:bg-stone-100 rounded-full">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-stone-100">
+              <h3 className="text-xl font-extrabold text-stone-900">Edit {location.name}</h3>
+              <button
+                onClick={() => setShowEdit(false)}
+                className="p-2 bg-stone-100 hover:bg-stone-200 rounded-full transition-colors"
+              >
                 <X className="w-5 h-5 text-stone-600" />
               </button>
             </div>
 
-            <div className="space-y-4">
+            {/* Form Fields */}
+            <div className="p-6 space-y-6">
+              {/* Description Field */}
               <div>
-                <label className="text-xs font-bold text-stone-700 mb-2 block">Description</label>
+                <label className="flex items-center gap-2 text-sm font-bold text-stone-800 mb-3">
+                  <span className="text-lg">📝</span> Description
+                </label>
                 <textarea
                   defaultValue={location.description || ""}
                   rows={6}
-                  className="w-full rounded-xl p-3 text-sm border border-stone-200 focus:border-violet-400 focus:outline-none resize-none"
+                  className="w-full rounded-2xl p-4 text-stone-800 border-2 border-stone-100 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/20 focus:outline-none resize-none transition-all placeholder:text-stone-400"
                   placeholder="Describe this location's atmosphere, key features, and significance..."
                 />
               </div>
 
+              {/* Save Button */}
               <button
-                className="w-full py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-purple-600 active:scale-[0.98] transition-transform"
+                className="w-full py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 active:scale-[0.98] transition-all shadow-lg shadow-violet-500/30 flex items-center justify-center gap-2"
                 onClick={() => setShowEdit(false)}
               >
+                <Check className="w-5 h-5" />
                 Save Changes
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
     </motion.div>
