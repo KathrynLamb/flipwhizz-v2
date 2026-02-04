@@ -1,4 +1,5 @@
 // src/app/api/stories/[id]/ensure-world/route.ts
+
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import {
@@ -14,6 +15,8 @@ import { inngest } from "@/inngest/client";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+type Phase = "extracting" | "building_spreads" | "deciding_scenes" | "ready";
 
 export async function POST(
   _req: Request,
@@ -31,7 +34,7 @@ export async function POST(
 
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
-    columns: { id: true, status: true },
+    columns: { id: true },
   });
 
   if (!story) {
@@ -49,20 +52,16 @@ export async function POST(
   }
 
   /* --------------------------------------------------
-     2. LOAD WORKFLOW PROGRESS (SINGLE SOURCE OF TRUTH)
+     2. LOAD OR CREATE WORKFLOW PROGRESS
   -------------------------------------------------- */
 
-  const progress = await db.query.storyWorkflowProgress.findFirst({
+  let progress = await db.query.storyWorkflowProgress.findFirst({
     where: eq(storyWorkflowProgress.storyId, storyId),
   });
 
-  /* --------------------------------------------------
-     3. BOOTSTRAP WORKFLOW IF NOT STARTED
-  -------------------------------------------------- */
-
   if (!progress) {
-    // Check if world data already exists (from previous runs with old system)
-    const [charCountRow, locCountRow, styleCount] = await Promise.all([
+    // Check legacy data
+    const [charCount, locCount, styleGuide] = await Promise.all([
       db
         .select({ count: sql<number>`count(*)` })
         .from(storyCharacters)
@@ -77,170 +76,101 @@ export async function POST(
       }),
     ]);
 
-    const hasExistingWorld = 
-      charCountRow[0].count > 0 && 
-      locCountRow[0].count > 0 && 
-      Boolean(styleCount);
+    const hasWorld =
+      charCount[0].count > 0 &&
+      locCount[0].count > 0 &&
+      Boolean(styleGuide);
 
-    if (hasExistingWorld) {
-      // World already exists - create progress record and skip to spreads
-      console.log("🔄 [ensure-world] Existing world data found, starting at build-spreads");
-
-      await db.insert(storyWorkflowProgress).values({
-        storyId,
-        worldExtracted: true,
-        worldExtractedAt: new Date(),
-        spreadsBuilt: false,
-        scenesDecided: false,
-        extractingWorld: false,
-        buildingSpreads: true, // Set lock
-        decidingScenes: false,
-      });
-
-      await inngest.send({
-        name: "story/build-spreads",
-        data: { storyId },
-      });
-
-      return NextResponse.json({
-        status: "processing",
-        mode: "building_spreads",
-        progress: {
-          worldExtracted: true,
-          spreadsBuilt: false,
-          scenesDecided: false,
-        },
-      });
-    } else {
-      // No world data - start from beginning
-      console.log("🚀 [ensure-world] No world data, starting at extract-world");
-
-      await db.insert(storyWorkflowProgress).values({
-        storyId,
-        worldExtracted: false,
-        spreadsBuilt: false,
-        scenesDecided: false,
-        extractingWorld: true, // Set lock
-        buildingSpreads: false,
-        decidingScenes: false,
-      });
-
-      await inngest.send({
-        name: "story/extract-world",
-        data: { storyId },
-      });
-
-      return NextResponse.json({
-        status: "processing",
-        mode: "extracting",
-        progress: {
-          worldExtracted: false,
-          spreadsBuilt: false,
-          scenesDecided: false,
-        },
-      });
-    }
-  }
-
-
-/* --------------------------------------------------
-   4. RETURN CURRENT PHASE BASED ON COMPLETION FLAGS
--------------------------------------------------- */
-
-// All phases complete!
-if (progress.worldExtracted && progress.spreadsBuilt && progress.scenesDecided) {
-  return NextResponse.json({
-    status: "complete",
-    mode: "ready",
-    progress: {
-      worldExtracted: true,
-      spreadsBuilt: true,
-      scenesDecided: true,
-    },
-  });
-}
-
-// Deciding scenes
-if (progress.worldExtracted && progress.spreadsBuilt && !progress.scenesDecided) {
-  // Check if we need to trigger the workflow
-  if (!progress.decidingScenes) {
-    console.log("🚀 [ensure-world] Starting decide-scenes workflow");
-    
-    await db
-      .update(storyWorkflowProgress)
-      .set({ decidingScenes: true })
-      .where(eq(storyWorkflowProgress.storyId, storyId));
-
-    await inngest.send({
-      name: "story/decide-scenes",
-      data: { storyId },
-    });
-  }
-
-  return NextResponse.json({
-    status: "processing",
-    mode: "deciding_scenes",
-    progress: {
-      worldExtracted: true,
-      spreadsBuilt: true,
-      scenesDecided: false,
-    },
-  });
-}
-
-// Building spreads
-if (progress.worldExtracted && !progress.spreadsBuilt) {
-  // Check if we need to trigger the workflow
-  if (!progress.buildingSpreads) {
-    console.log("🚀 [ensure-world] Starting build-spreads workflow");
-    
-    await db
-      .update(storyWorkflowProgress)
-      .set({ buildingSpreads: true })
-      .where(eq(storyWorkflowProgress.storyId, storyId));
-
-    await inngest.send({
-      name: "story/build-spreads",
-      data: { storyId },
-    });
-  }
-
-  return NextResponse.json({
-    status: "processing",
-    mode: "building_spreads",
-    progress: {
-      worldExtracted: true,
+    await db.insert(storyWorkflowProgress).values({
+      storyId,
+      worldExtracted: hasWorld,
       spreadsBuilt: false,
       scenesDecided: false,
-    },
-  });
-}
+    });
 
-// Extracting world
-if (!progress.worldExtracted) {
-  // Check if we need to trigger the workflow
-  if (!progress.extractingWorld) {
-    console.log("🚀 [ensure-world] Starting extract-world workflow");
+    progress = {
+      storyId,
     
-    await db
-      .update(storyWorkflowProgress)
-      .set({ extractingWorld: true })
-      .where(eq(storyWorkflowProgress.storyId, storyId));
+      worldExtracted: hasWorld,
+      spreadsBuilt: false,
+      scenesDecided: false,
+    
+      worldExtractedAt: hasWorld ? new Date() : null,
+      spreadsBuiltAt: null,
+      scenesDecidedAt: null,
+    
+      extractingWorld: false,
+      buildingSpreads: false,
+      decidingScenes: false,
+    
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    
+  }
 
+  /* --------------------------------------------------
+     3. DETERMINE CURRENT PHASE
+  -------------------------------------------------- */
+
+  let mode: Phase = "extracting";
+
+  if (progress.worldExtracted && progress.spreadsBuilt && progress.scenesDecided) {
+    mode = "ready";
+  } else if (progress.worldExtracted && progress.spreadsBuilt) {
+    mode = "deciding_scenes";
+  } else if (progress.worldExtracted) {
+    mode = "building_spreads";
+  }
+
+  /* --------------------------------------------------
+     4. ENSURE CORRECT WORKFLOW IS RUNNING
+  -------------------------------------------------- */
+
+  if (mode === "extracting") {
     await inngest.send({
       name: "story/extract-world",
       data: { storyId },
     });
   }
 
+  if (mode === "building_spreads") {
+    await inngest.send({
+      name: "story/build-spreads",
+      data: { storyId },
+    });
+  }
+
+  if (mode === "deciding_scenes") {
+    await inngest.send({
+      name: "story/decide-spread-scenes", // ✅ FIXED NAME
+      data: { storyId },
+    });
+  }
+
+  /* --------------------------------------------------
+     5. RETURN UI CONTRACT
+  -------------------------------------------------- */
+
+  if (mode === "ready") {
+    return NextResponse.json({
+      status: "complete",
+      mode: "ready",
+      progress: {
+        worldExtracted: true,
+        spreadsBuilt: true,
+        scenesDecided: true,
+      },
+    });
+  }
+
   return NextResponse.json({
     status: "processing",
-    mode: "extracting",
+    mode,
     progress: {
-      worldExtracted: false,
-      spreadsBuilt: false,
-      scenesDecided: false,
+      worldExtracted: progress.worldExtracted,
+      spreadsBuilt: progress.spreadsBuilt,
+      scenesDecided: progress.scenesDecided,
     },
   });
-}
 }
