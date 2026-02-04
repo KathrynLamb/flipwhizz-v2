@@ -9,6 +9,7 @@ import {
   storyWorkflowProgress,
   storySpreadPresence,
   locations,
+  storyLocations,
 } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
@@ -18,47 +19,75 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-3-sonnet-20240229";
 
-// src/inngest/decideScenes.ts - UPDATE extractJson function
+/* ======================================================
+   CLAUDE TOOL DEFINITION (STRICT JSON CONTRACT)
+====================================================== */
 
-function extractJson(raw: string) {
-  try {
-    // Try to find JSON in code fences
-    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-    const text = (fenced?.[1] ?? raw).trim();
+const decideScenesTool = {
+  name: "decide_spread_scenes",
+  description:
+    "Decide which characters and locations appear in each story spread",
+  input_schema: {
+    type: "object",
+    // FIX: Cast to string[] to satisfy mutable array requirement of SDK
+    required: ["spreads"] as string[],
+    properties: {
+      spreads: {
+        type: "array",
+        items: {
+          type: "object",
+          // FIX: Cast to string[] to satisfy mutable array requirement of SDK
+          required: [
+            "spreadIndex",
+            "primaryLocationId",
+            "characters",
+            "reasoning",
+          ] as string[],
+          properties: {
+            spreadIndex: { type: "number" },
+            primaryLocationId: { type: ["string", "null"] },
+            characters: {
+              type: "array",
+              items: {
+                type: "object",
+                // FIX: Cast to string[] to satisfy mutable array requirement of SDK
+                required: [
+                  "characterId",
+                  "role",
+                  "confidence",
+                ] as string[],
+                properties: {
+                  characterId: { type: "string" },
+                  role: {
+                    type: "string",
+                    enum: ["primary", "secondary", "background"],
+                  },
+                  confidence: {
+                    type: "number",
+                    minimum: 0,
+                    maximum: 1,
+                  },
+                  reason: { type: "string" },
+                },
+              },
+            },
+            reasoning: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+} as const;
 
-    // Find the first { and last }
-    const first = text.indexOf("{");
-    const last = text.lastIndexOf("}");
-    
-    if (first === -1 || last === -1) {
-      throw new Error("No JSON object found in response");
-    }
-
-    let json = text.slice(first, last + 1);
-    
-    // Remove trailing commas before closing brackets/braces (common Claude error)
-    json = json.replace(/,(\s*[}\]])/g, '$1');
-    
-    return JSON.parse(json);
-  } catch (error) {
-    console.error("Failed to parse JSON:", raw);
-    console.error("Parse error:", error);
-    throw new Error(`JSON parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-}
-
-function extractClaudeText(content: any): string {
-  return (Array.isArray(content) ? content : [])
-    .map((b) => (b?.type === "text" ? String(b.text ?? "") : ""))
-    .join("\n")
-    .trim();
-}
+/* ======================================================
+   INNGEST FUNCTION
+====================================================== */
 
 export const decideScenes = inngest.createFunction(
   {
-    id: "decide-scenes-v2", 
+    id: "decide-scenes-v2",
     retries: 2,
   },
   { event: "story/decide-spread-scenes" },
@@ -70,125 +99,150 @@ export const decideScenes = inngest.createFunction(
     /* --------------------------------------------------
        STEP 1: Load spreads
     -------------------------------------------------- */
-    const spreads = await step.run("load-spreads", async () => {
-      return db.query.storySpreads.findMany({
+    const spreads = await step.run("load-spreads", async () =>
+      db.query.storySpreads.findMany({
         where: eq(storySpreads.storyId, storyId),
-      });
-    });
+        orderBy: (s, { asc }) => [asc(s.spreadIndex)],
+      })
+    );
+
+    if (spreads.length === 0) {
+      throw new Error("No spreads found for story");
+    }
+
+    const spreadByIndex = new Map(spreads.map((s, i) => [i + 1, s]));
 
     /* --------------------------------------------------
        STEP 2: Load pages
     -------------------------------------------------- */
     const pageIds = spreads
-      .flatMap(s => [s.leftPageId, s.rightPageId])
+      .flatMap((s) => [s.leftPageId, s.rightPageId])
       .filter(Boolean) as string[];
 
-    const pages = await step.run("load-pages", async () => {
-      return db.query.storyPages.findMany({
+    const pages = await step.run("load-pages", async () =>
+      db.query.storyPages.findMany({
         where: inArray(storyPages.id, pageIds),
-      });
-    });
+      })
+    );
 
-    const pageMap = new Map(pages.map(p => [p.id, p]));
+    const pageMap = new Map(pages.map((p) => [p.id, p]));
 
     /* --------------------------------------------------
        STEP 3: Load characters
     -------------------------------------------------- */
-    const storyChars = await step.run("load-story-characters", async () => {
-      return db.query.storyCharacters.findMany({
+    const storyChars = await step.run("load-story-characters", async () =>
+      db.query.storyCharacters.findMany({
         where: eq(storyCharacters.storyId, storyId),
-      });
-    });
+      })
+    );
 
-    const charIds = storyChars.map(sc => sc.characterId);
+    const charIds = storyChars.map((sc) => sc.characterId);
 
-    const chars = await step.run("load-characters", async () => {
-      if (charIds.length === 0) return [];
-      return db.query.characters.findMany({
-        where: inArray(characters.id, charIds),
-      });
-    });
+    const chars = await step.run("load-characters", async () =>
+      charIds.length === 0
+        ? []
+        : db.query.characters.findMany({
+            where: inArray(characters.id, charIds),
+          })
+    );
 
     /* --------------------------------------------------
        STEP 4: Load locations
     -------------------------------------------------- */
-    const storyLocs = await step.run("load-locations", async () => {
-      const locs = await db.query.storyLocations.findMany({
-        where: eq(storyCharacters.storyId, storyId),
-      });
-      
-      if (locs.length === 0) return [];
-      
-      const locIds = locs.map(sl => sl.locationId);
-      return db.query.locations.findMany({
-        where: inArray(locations.id, locIds),
-      });
-    });
+    const storyLocs = await step.run("load-story-locations", async () =>
+      db.query.storyLocations.findMany({
+        where: eq(storyLocations.storyId, storyId),
+      })
+    );
+
+    const locIds = storyLocs.map((sl) => sl.locationId);
+
+    const locs = await step.run("load-locations", async () =>
+      locIds.length === 0
+        ? []
+        : db.query.locations.findMany({
+            where: inArray(locations.id, locIds),
+          })
+    );
 
     /* --------------------------------------------------
-       STEP 5: Call Claude to assign characters/locations
+       STEP 5: Ask Claude (TOOLS — NO JSON PARSING)
     -------------------------------------------------- */
     const assignments = await step.run("decide-with-claude", async () => {
-      const spreadTexts = spreads.map((s, i) => {
-        const leftPage = s.leftPageId ? pageMap.get(s.leftPageId) : null;
-        const rightPage = s.rightPageId ? pageMap.get(s.rightPageId) : null;
-        const left = leftPage?.text || "";
-        const right = rightPage?.text || "";
-        return `SPREAD ${i + 1}:\nLeft: ${left}\nRight: ${right}`;
-      }).join("\n\n");
+      const spreadTexts = spreads
+        .map((s, i) => {
+          const left = s.leftPageId
+            ? pageMap.get(s.leftPageId)?.text ?? ""
+            : "";
+          const right = s.rightPageId
+            ? pageMap.get(s.rightPageId)?.text ?? ""
+            : "";
+          return `SPREAD ${i + 1}:\nLeft: ${left}\nRight: ${right}`;
+        })
+        .join("\n\n");
 
-      const charList = chars.map(c => `${c.name} (${c.id})`).join(", ");
-      const locList = storyLocs.map(l => `${l.name} (${l.id})`).join(", ");
+      const charList = chars
+        .filter((c) => c !== null && c !== undefined)
+        .map((c) => `${c?.name} (${c?.id})`)
+        .join(", ");
+
+      const locList = locs
+        .filter((l) => l !== null && l !== undefined)
+        .map((l) => `${l?.name} (${l?.id})`)
+        .join(", ");
 
       const res = await client.messages.create({
         model: MODEL,
         max_tokens: 3000,
-        system: `For each spread, decide which characters appear and which location is primary.
-Return ONLY JSON:
-{
-  "spreads": [
-    {
-      "spreadIndex": 1,
-      "primaryLocationId": "uuid-or-null",
-      "characters": [
-        {
-          "characterId": "uuid",
-          "role": "primary",
-          "confidence": 0.9,
-          "reason": "Main character in this scene"
-        }
-      ],
-      "reasoning": "Brief explanation"
-    }
-  ]
-}
-
-Role must be: "primary", "secondary", or "background"
-Confidence: 0 to 1`,
-        messages: [{
-          role: "user",
-          content: `Characters: ${charList}\nLocations: ${locList}\n\n${spreadTexts}`
-        }],
+        tools: [decideScenesTool],
+        tool_choice: {
+          type: "tool",
+          name: "decide_spread_scenes",
+        },
+        messages: [
+          {
+            role: "user",
+            content: `Characters:\n${charList}\n\nLocations:\n${locList}\n\n${spreadTexts}`,
+          },
+        ],
       });
 
-      return extractJson(extractClaudeText(res.content));
+      const toolUse = res.content.find(
+        (c) => c.type === "tool_use" && c.name === "decide_spread_scenes"
+      ) as
+        | {
+            type: "tool_use";
+            input: { spreads: any[] };
+          }
+        | undefined;
+
+      if (!toolUse?.input?.spreads) {
+        throw new Error("Claude did not return spread decisions");
+      }
+
+      return toolUse.input;
     });
 
     /* --------------------------------------------------
-       STEP 6: Save spread presence records
+       STEP 6: Persist spread presence
     -------------------------------------------------- */
     await step.run("save-spread-presence", async () => {
-      for (const assignment of assignments.spreads || []) {
-        const spread = spreads[assignment.spreadIndex - 1];
-        if (!spread) continue;
+      for (const assignment of assignments.spreads) {
+        const spread = spreadByIndex.get(assignment.spreadIndex);
+
+        if (!spread) {
+          throw new Error(
+            `Invalid spreadIndex returned by Claude: ${assignment.spreadIndex}`
+          );
+        }
 
         await db.insert(storySpreadPresence).values({
           id: uuid(),
           spreadId: spread.id,
-          primaryLocationId: assignment.primaryLocationId || null,
-          characters: assignment.characters || [],
+          primaryLocationId: assignment.primaryLocationId,
+          characters: assignment.characters,
           excludedCharacters: [],
-          reasoning: assignment.reasoning || null,
+          reasoning: assignment.reasoning,
           source: "claude",
           locked: true,
           createdAt: new Date(),
@@ -196,8 +250,6 @@ Confidence: 0 to 1`,
         });
       }
     });
-
-    console.log("✅ [decide-scenes] Assigned characters/locations to spreads");
 
     /* --------------------------------------------------
        STEP 7: Mark workflow complete
@@ -211,9 +263,9 @@ Confidence: 0 to 1`,
           updatedAt: new Date(),
         })
         .where(eq(storyWorkflowProgress.storyId, storyId));
-
-      console.log("✅ [decide-scenes] Workflow complete!");
     });
+
+    console.log("✅ [decide-scenes] Complete");
 
     return { ok: true };
   }
