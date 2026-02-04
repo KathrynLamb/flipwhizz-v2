@@ -1,222 +1,250 @@
-import { notFound, redirect } from "next/navigation";
-import { db } from "@/db";
-import {
-  stories,
-  storySpreads,
-  storyPages,
-  storySpreadPresence,
-  characters,
-  locations,
-  storyStyleGuide,
-  styleGuideImages,
-} from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+// src/app/stories/[id]/extract/page.tsx
+"use client";
 
-import StylePreviewStage, {
-  ClientStyleGuide,
-  EntityUI,
-  SpreadUI,
-} from "@/app/stories/[id]/design/components/StylePreviewStage";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, CheckCircle, Loader2, Sparkles, BookOpen, Eye } from "lucide-react";
 
-export default async function DesignPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams?: Promise<{ spread?: string }>;
-}) {
-  const { id: storyId } = await params;
-  const { spread } = (await searchParams) ?? {};
+type Phase = "extracting" | "building_spreads" | "deciding_scenes" | "ready";
 
-  /* ── STORY ── */
-  const story = await db.query.stories.findFirst({
-    where: eq(stories.id, storyId),
+type ProgressData = {
+  worldExtracted: boolean;
+  spreadsBuilt: boolean;
+  scenesDecided: boolean;
+};
+
+export default function ExtractWorldPage() {
+  const params = useParams();
+  const router = useRouter();
+  const storyId = useMemo(() => {
+    const raw = (params as any)?.id;
+    return typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : null;
+  }, [params]);
+
+  const [phase, setPhase] = useState<Phase>("extracting");
+  const [progress, setProgress] = useState<ProgressData>({
+    worldExtracted: false,
+    spreadsBuilt: false,
+    scenesDecided: false,
   });
-  if (!story) return notFound();
+  const [error, setError] = useState<string | null>(null);
 
-  /* ── SPREADS ── */
-  const spreadsRaw = await db
-    .select()
-    .from(storySpreads)
-    .where(eq(storySpreads.storyId, storyId))
-    .orderBy(storySpreads.spreadIndex);
+  /* --------------------------------------------------
+     Poll workflow status
+  -------------------------------------------------- */
+  useEffect(() => {
+    if (!storyId) return;
 
-  if (spreadsRaw.length === 0) {
-    redirect(`/stories/${storyId}/extract`);
-  }
+    async function checkProgress() {
+      try {
+        const res = await fetch(`/api/stories/${storyId}/ensure-world`, {
+          method: "POST",
+        });
 
-  const spreadIndex =
-    spread && !Number.isNaN(Number(spread))
-      ? Math.max(0, Math.min(spreadsRaw.length - 1, Number(spread)))
-      : Math.floor(spreadsRaw.length / 2);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-  /* ── PAGES ── */
-  const allPageIds = spreadsRaw.flatMap((s) =>
-    [s.leftPageId, s.rightPageId].filter(Boolean)
-  ) as string[];
+        const data = await res.json();
 
-  const pages = await db.query.storyPages.findMany({
-    where: inArray(storyPages.id, allPageIds),
-  });
+        if (data.status === "complete") {
+          setPhase("ready");
+          setProgress({
+            worldExtracted: true,
+            spreadsBuilt: true,
+            scenesDecided: true,
+          });
+          return;
+        }
 
-  const pageById = Object.fromEntries(pages.map((p) => [p.id, p]));
+        if (data.status === "processing" && data.progress) {
+          setPhase(data.mode);
+          setProgress(data.progress);
+        }
+      } catch (err) {
+        console.error("Error checking progress:", err);
+        setError("Unable to check progress");
+      }
+    }
 
-  /* ── SPREAD PRESENCE ── */
-  const presences = await db
-    .select()
-    .from(storySpreadPresence)
-    .where(
-      inArray(
-        storySpreadPresence.spreadId,
-        spreadsRaw.map((s) => s.id)
-      )
-    );
+    checkProgress();
+    const interval = setInterval(checkProgress, 2000);
 
-  const presenceBySpreadId = new Map(presences.map((p) => [p.spreadId, p]));
+    return () => clearInterval(interval);
+  }, [storyId]);
 
-  /* ── LOAD ALL CHARACTERS & LOCATIONS ── */
-  const allCharacterIds = Array.from(
-    new Set(
-      presences.flatMap((p) =>
-        (p.characters as any)?.map((c: any) => c.characterId) ?? []
-      )
-    )
-  );
+  /* --------------------------------------------------
+     Auto-redirect when complete
+  -------------------------------------------------- */
+  useEffect(() => {
+    if (phase === "ready" && storyId) {
+      setTimeout(() => {
+        router.push(`/stories/${storyId}/characters`);
+      }, 2000);
+    }
+  }, [phase, storyId, router]);
 
-  const allLocationIds = Array.from(
-    new Set(
-      presences
-        .map((p) => p.primaryLocationId)
-        .filter(Boolean) as string[]
-    )
-  );
-
-  const allCharacters =
-    allCharacterIds.length > 0
-      ? await db.query.characters.findMany({
-          where: inArray(characters.id, allCharacterIds),
-        })
-      : [];
-
-  const allLocations =
-    allLocationIds.length > 0
-      ? await db.query.locations.findMany({
-          where: inArray(locations.id, allLocationIds),
-        })
-      : [];
-
-  const charactersById = Object.fromEntries(
-    allCharacters.map((c) => [c.id, c])
-  );
-
-  const locationsById = Object.fromEntries(
-    allLocations.map((l) => [l.id, l])
-  );
-
-  /* ── BUILD SpreadUI[] ── */
-  const spreadsUI: SpreadUI[] = spreadsRaw.map((spread, idx) => {
-    const presence = presenceBySpreadId.get(spread.id);
-
-    const leftPage = spread.leftPageId ? pageById[spread.leftPageId] : null;
-    const rightPage = spread.rightPageId ? pageById[spread.rightPageId] : null;
-
-    // Build character entities
-    const characterEntities: EntityUI[] =
-      (presence?.characters as any)?.map((meta: any) => {
-        const c = charactersById[meta.characterId];
-        if (!c) return null;
-
-        return {
-          id: c.id,
-          kind: "character" as const,
-          name: c.name,
-          description: c.description ?? null,
-          referenceImageUrl: c.referenceImageUrl ?? null,
-          imageUrl: c.portraitImageUrl ?? c.referenceImageUrl ?? null,
-        };
-      }).filter(Boolean) ?? [];
-
-    // Build location entities
-    const locationEntities: EntityUI[] =
-      presence?.primaryLocationId && locationsById[presence.primaryLocationId]
-        ? [
-            {
-              id: locationsById[presence.primaryLocationId].id,
-              kind: "location" as const,
-              name: locationsById[presence.primaryLocationId].name,
-              description:
-                locationsById[presence.primaryLocationId].description ?? null,
-              referenceImageUrl:
-                locationsById[presence.primaryLocationId].referenceImageUrl ??
-                null,
-              imageUrl:
-                locationsById[presence.primaryLocationId].portraitImageUrl ??
-                locationsById[presence.primaryLocationId].referenceImageUrl ??
-                null,
-            },
-          ]
-        : [];
-
-    // Merge into single entities array
-    const entities = [...characterEntities, ...locationEntities];
-
-    return {
-      spreadIndex: idx + 1,
-      sceneSummary: spread.sceneSummary ?? null,
-      leftPage: leftPage
-        ? {
-            id: leftPage.id,
-            pageNumber: leftPage.pageNumber,
-            text: leftPage.text,
-          }
-        : null,
-      rightPage: rightPage
-        ? {
-            id: rightPage.id,
-            pageNumber: rightPage.pageNumber,
-            text: rightPage.text,
-          }
-        : null,
-      entities,
-    };
-  });
-
-  /* ── STYLE GUIDE ── */
-  const guide = await db.query.storyStyleGuide.findFirst({
-    where: eq(storyStyleGuide.storyId, storyId),
-  });
-
-  const images = guide
-    ? await db.query.styleGuideImages.findMany({
-        where: eq(styleGuideImages.styleGuideId, guide.id),
-      })
-    : [];
-
-  const styleRefUrl =
-    images.find((img) => img.type === "style")?.url ?? guide?.styleGuideImage ?? null;
-
-  const clientStyle: ClientStyleGuide = {
-    id: guide?.id ?? "new",
-    storyId,
-    summary: guide?.summary ?? "",
-    negativePrompt: guide?.negativePrompt ?? "",
-    artStyle: guide?.artStyle ?? "",
-    visualThemes: guide?.visualThemes ?? "",
-    colorPalette: guide?.colorPalette ?? null,
-    styleReferenceUrl: styleRefUrl,
-    sampleIllustrationUrl: guide?.sampleIllustrationUrl ?? null,
+  /* --------------------------------------------------
+     Phase configuration
+  -------------------------------------------------- */
+  const phaseConfig = {
+    extracting: {
+      title: "Building Your World",
+      subtitle: "Discovering characters, locations, and style",
+      icon: Sparkles,
+      color: "from-purple-500 to-pink-500",
+    },
+    building_spreads: {
+      title: "Structuring Your Book",
+      subtitle: "Pairing pages into double-page spreads",
+      icon: BookOpen,
+      color: "from-blue-500 to-cyan-500",
+    },
+    deciding_scenes: {
+      title: "Planning Illustrations",
+      subtitle: "Deciding which characters appear on each spread",
+      icon: Eye,
+      color: "from-green-500 to-emerald-500",
+    },
+    ready: {
+      title: "Your World Is Ready!",
+      subtitle: "Redirecting...",
+      icon: CheckCircle,
+      color: "from-emerald-500 to-green-500",
+    },
   };
 
-  console.log("STYLE,", clientStyle)
+  const currentPhase = phaseConfig[phase];
+  const Icon = currentPhase.icon;
+
+  const overallProgress = useMemo(() => {
+    const phases = [
+      progress.worldExtracted,
+      progress.spreadsBuilt,
+      progress.scenesDecided,
+    ];
+    return (phases.filter(Boolean).length / phases.length) * 100;
+  }, [progress]);
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 text-center">
+          <h1 className="text-2xl font-black text-gray-900 mb-2">Error</h1>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full py-3 bg-red-500 text-white font-bold rounded-full hover:scale-105 transition"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <main>
-      <StylePreviewStage
-        storyId={storyId}
-        storyTitle={story.title}
-        spreads={spreadsUI}
-        initialSpreadIndex={spreadIndex}
-        style={clientStyle}
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
+      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-gray-200/50">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center">
+          <button
+            onClick={() => router.push(`/stories/${storyId}/hub`)}
+            className="flex items-center gap-2 text-gray-700 hover:text-gray-900 font-semibold text-sm transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back</span>
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-12">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={phase}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="space-y-8"
+          >
+            {/* Icon */}
+            <div className="flex justify-center">
+              {phase === "ready" ? (
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className={`w-20 h-20 rounded-full bg-gradient-to-br ${currentPhase.color} flex items-center justify-center shadow-2xl`}
+                >
+                  <Icon className="w-10 h-10 text-white" strokeWidth={2.5} />
+                </motion.div>
+              ) : (
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                  className={`w-20 h-20 rounded-full bg-gradient-to-br ${currentPhase.color} p-1 shadow-2xl`}
+                >
+                  <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
+                    <Icon className="w-10 h-10 text-gray-800" />
+                  </div>
+                </motion.div>
+              )}
+            </div>
+
+            {/* Title */}
+            <div className="text-center space-y-2">
+              <h1 className="text-4xl font-black text-gray-900">
+                {currentPhase.title}
+              </h1>
+              <p className="text-lg text-gray-600">
+                {currentPhase.subtitle}
+              </p>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-2">
+              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <motion.div
+                  className={`h-full bg-gradient-to-r ${currentPhase.color}`}
+                  initial={{ width: "0%" }}
+                  animate={{ width: `${overallProgress}%` }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
+              <p className="text-center text-sm font-semibold text-gray-600">
+                {Math.round(overallProgress)}% Complete
+              </p>
+            </div>
+
+            {/* Progress Steps */}
+            <div className="flex justify-center items-center gap-4">
+              <Step label="World" complete={progress.worldExtracted} />
+              <div className="w-12 h-0.5 bg-gray-300" />
+              <Step label="Spreads" complete={progress.spreadsBuilt} />
+              <div className="w-12 h-0.5 bg-gray-300" />
+              <Step label="Scenes" complete={progress.scenesDecided} />
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </main>
+    </div>
+  );
+}
+
+function Step({ label, complete }: { label: string; complete: boolean }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div
+        className={`w-3 h-3 rounded-full ${
+          complete
+            ? "bg-gradient-to-r from-green-500 to-emerald-500"
+            : "bg-gray-300"
+        }`}
       />
-    </main>
+      <span
+        className={`text-xs font-medium ${
+          complete ? "text-gray-900" : "text-gray-400"
+        }`}
+      >
+        {label}
+      </span>
+    </div>
   );
 }

@@ -309,6 +309,13 @@
       "when": 1770145780157,
       "tag": "0043_true_stone_men",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1770244591621,
+      "tag": "0044_stiff_sentry",
+      "breakpoints": true
     }
   ]
 }

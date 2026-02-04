@@ -616,37 +616,24 @@ export const storySpreads = pgTable("story_spreads", {
 // Add this to your db/schema.ts file
 
 
+// src/db/schema.ts (ADD THIS TABLE)
 
-export const storyWorkflowProgress = pgTable(
-  "story_workflow_progress",
-  {
-    storyId: uuid("story_id")
-      .primaryKey()
-      .references(() => stories.id, { onDelete: "cascade" }),
-
-    // Phase completion flags
-    worldExtracted: boolean("world_extracted").notNull().default(false),
-    spreadsBuilt: boolean("spreads_built").notNull().default(false),
-    scenesDecided: boolean("scenes_decided").notNull().default(false),
-
-    // Timestamps
-    worldExtractedAt: timestamp("world_extracted_at"),
-    spreadsBuiltAt: timestamp("spreads_built_at"),
-    scenesDecidedAt: timestamp("scenes_decided_at"),
-
-    // Lock flags (prevent duplicate triggers)
-    extractingWorld: boolean("extracting_world").notNull().default(false),
-    buildingSpreads: boolean("building_spreads").notNull().default(false),
-    decidingScenes: boolean("deciding_scenes").notNull().default(false),
-
-    // Housekeeping
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  },
-  (table) => ({
-    storyIdIdx: index("idx_story_workflow_progress_story_id").on(table.storyId),
-  })
-);
+export const storyWorkflowProgress = pgTable("story_workflow_progress", {
+  storyId: uuid("story_id").primaryKey().references(() => stories.id, { onDelete: "cascade" }),
+  
+  // Completion flags
+  worldExtracted: boolean("world_extracted").notNull().default(false),
+  spreadsBuilt: boolean("spreads_built").notNull().default(false),
+  scenesDecided: boolean("scenes_decided").notNull().default(false),
+  
+  // Timestamps
+  worldExtractedAt: timestamp("world_extracted_at"),
+  spreadsBuiltAt: timestamp("spreads_built_at"),
+  scenesDecidedAt: timestamp("scenes_decided_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 
 
 export const storyIntent = pgTable("story_intent", {

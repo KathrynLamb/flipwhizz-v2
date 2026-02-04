@@ -1,86 +1,33 @@
-// inngest/decideSpreadScenes.ts
+// src/inngest/decideScenes.ts
 import { inngest } from "@/inngest/client";
 import { db } from "@/db";
 import {
-  stories,
   storySpreads,
   storyPages,
-  characters,
-  locations,
   storyCharacters,
-  storyLocations,
-  storySpreadPresence,
-  storySpreadScene,
+  characters,
   storyWorkflowProgress,
+  storySpreadPresence,
+  locations,
 } from "@/db/schema";
-import type { InferInsertModel } from "drizzle-orm";
-
-import { eq, asc, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
+import { v4 as uuid } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
-import { z } from "zod";
 
-/* ======================================================
-   CONFIG
-====================================================== */
-
-const MODEL = "claude-sonnet-4-5-20250929";
-const BATCH_SIZE = 4;
-
-const anthropic = new Anthropic({
+const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-type SpreadDecision = z.infer<typeof SpreadDecisionSchema>;
+const MODEL = "claude-sonnet-4-20250514";
 
-/* ======================================================
-   SCHEMA
-====================================================== */
-
-const SpreadDecisionSchema = z.object({
-  spreadId: z.string(),
-
-  presence: z.object({
-    primaryLocationId: z.string().nullable(),
-
-    characters: z.array(
-      z.object({
-        characterId: z.string(),
-        role: z.enum(["primary", "secondary", "background"]),
-        confidence: z.number().optional(),
-        reason: z.string().optional(),
-      })
-    ),
-
-    excludedCharacters: z.array(
-      z.union([
-        z.string(),
-        z.object({
-          characterId: z.string(),
-          reason: z.string().optional(),
-        })
-      ])
-    ).optional().default([]),
-
-    reasoning: z.string().optional(),
-  }),
-
-  scene: z.object({
-    sceneSummary: z.string(),
-    illustrationPrompt: z.string(),
-    compositionNotes: z.array(z.string()).optional().default([]),
-    mood: z.string().optional(),
-    doNotInclude: z.array(z.string()).optional().default([]),
-    negativePrompt: z.string().optional(),
-  }),
-});
-
-const ClaudeOutputSchema = z.object({
-  spreads: z.array(SpreadDecisionSchema),
-});
-
-/* ======================================================
-   HELPERS
-====================================================== */
+function extractJson(raw: string) {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const text = (fenced?.[1] ?? raw).trim();
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
+  const json = first !== -1 && last !== -1 ? text.slice(first, last + 1) : text;
+  return JSON.parse(json);
+}
 
 function extractClaudeText(content: any): string {
   return (Array.isArray(content) ? content : [])
@@ -89,311 +36,165 @@ function extractClaudeText(content: any): string {
     .trim();
 }
 
-function parseClaudeJson(raw: string): unknown {
-  let clean = raw.trim();
-  const fenced = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (fenced?.[1]) clean = fenced[1].trim();
-  
-  try {
-    return JSON.parse(clean);
-  } catch (e) {
-    const first = clean.indexOf("{");
-    const last = clean.lastIndexOf("}");
-    if (first !== -1 && last !== -1) {
-      return JSON.parse(clean.slice(first, last + 1));
-    }
-    throw e;
-  }
-}
-
-/* ======================================================
-   INNGEST FUNCTION
-====================================================== */
-
-export const decideSpreadScenes = inngest.createFunction(
+export const decideScenes = inngest.createFunction(
   {
-    id: "decide-spread-scenes",
-    retries: 1,
-    concurrency: { limit: 1, key: "event.data.storyId" },
-    timeouts: { start: "10m", finish: "20m" },
+    id: "decide-scenes",
+    retries: 2,
   },
-
-  { event: "story/decide-spread-scenes" },
+  { event: "story/decide-scenes" },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
 
-    console.log("🔵 [decide-spread-scenes] Starting for story:", storyId);
+    console.log("🔵 [decide-scenes] Starting for story:", storyId);
 
     /* --------------------------------------------------
-       STEP 1: Check if already completed (idempotency)
+       STEP 1: Load spreads
     -------------------------------------------------- */
-
-    const progress = await step.run("check-progress", async () => {
-      return db.query.storyWorkflowProgress.findFirst({
-        where: eq(storyWorkflowProgress.storyId, storyId),
-      });
-    });
-
-    if (!progress) {
-      throw new Error("Workflow progress not found");
-    }
-
-    if (progress.scenesDecided) {
-      console.log("⏭️ [decide-spread-scenes] Already completed, skipping");
-      return { ok: true, skipped: true };
-    }
-
-    if (!progress.spreadsBuilt) {
-      throw new Error("Cannot decide scenes - spreads not built yet");
-    }
-
-    /* --------------------------------------------------
-       STEP 2: Acquire lock
-    -------------------------------------------------- */
-
-    await step.run("acquire-lock", async () => {
-      await db
-        .update(storyWorkflowProgress)
-        .set({ decidingScenes: true, updatedAt: new Date() })
-        .where(eq(storyWorkflowProgress.storyId, storyId));
-    });
-
-    /* --------------------------------------------------
-       STEP 3: Load all data
-    -------------------------------------------------- */
-
-    const data = await step.run("load-world", async () => {
-      const story = await db.query.stories.findFirst({ 
-        where: eq(stories.id, storyId) 
-      });
-      if (!story) throw new Error("Story not found");
-
-      const spreads = await db.query.storySpreads.findMany({
+    const spreads = await step.run("load-spreads", async () => {
+      return db.query.storySpreads.findMany({
         where: eq(storySpreads.storyId, storyId),
-        orderBy: asc(storySpreads.spreadIndex),
       });
-      if (!spreads.length) throw new Error("No spreads found");
-
-      const pages = await db.query.storyPages.findMany({ 
-        where: eq(storyPages.storyId, storyId) 
-      });
-
-      const chars = await db.select({
-          id: characters.id,
-          name: characters.name,
-          description: characters.description,
-        }).from(storyCharacters)
-        .innerJoin(characters, eq(storyCharacters.characterId, characters.id))
-        .where(eq(storyCharacters.storyId, storyId));
-
-      const locs = await db.select({
-          id: locations.id,
-          name: locations.name,
-          description: locations.description,
-        }).from(storyLocations)
-        .innerJoin(locations, eq(storyLocations.locationId, locations.id))
-        .where(eq(storyLocations.storyId, storyId));
-
-      return { story, spreads, pages, chars, locs };
-    });
-
-    console.log(`📊 [decide-spread-scenes] Loaded ${data.spreads.length} spreads, ${data.chars.length} characters, ${data.locs.length} locations`);
-
-    const spreadsForClaude = data.spreads.map((s) => {
-      const left = data.pages.find((p) => p.id === s.leftPageId);
-      const right = data.pages.find((p) => p.id === s.rightPageId);
-      return {
-        spreadId: s.id,
-        index: s.spreadIndex,
-        text: `Left: ${left?.text || ""}\nRight: ${right?.text || ""}`
-      };
     });
 
     /* --------------------------------------------------
-       STEP 4: Process in batches with Claude
+       STEP 2: Load pages
     -------------------------------------------------- */
+    const pageIds = spreads
+      .flatMap(s => [s.leftPageId, s.rightPageId])
+      .filter(Boolean) as string[];
 
-    const batches = [];
-    for (let i = 0; i < spreadsForClaude.length; i += BATCH_SIZE) {
-        batches.push(spreadsForClaude.slice(i, i + BATCH_SIZE));
+    const pages = await step.run("load-pages", async () => {
+      return db.query.storyPages.findMany({
+        where: inArray(storyPages.id, pageIds),
+      });
+    });
+
+    const pageMap = new Map(pages.map(p => [p.id, p]));
+
+    /* --------------------------------------------------
+       STEP 3: Load characters
+    -------------------------------------------------- */
+    const storyChars = await step.run("load-story-characters", async () => {
+      return db.query.storyCharacters.findMany({
+        where: eq(storyCharacters.storyId, storyId),
+      });
+    });
+
+    const charIds = storyChars.map(sc => sc.characterId);
+
+    const chars = await step.run("load-characters", async () => {
+      if (charIds.length === 0) return [];
+      return db.query.characters.findMany({
+        where: inArray(characters.id, charIds),
+      });
+    });
+
+    /* --------------------------------------------------
+       STEP 4: Load locations
+    -------------------------------------------------- */
+    const storyLocs = await step.run("load-locations", async () => {
+      const locs = await db.query.storyLocations.findMany({
+        where: eq(storyCharacters.storyId, storyId),
+      });
+      
+      if (locs.length === 0) return [];
+      
+      const locIds = locs.map(sl => sl.locationId);
+      return db.query.locations.findMany({
+        where: inArray(locations.id, locIds),
+      });
+    });
+
+    /* --------------------------------------------------
+       STEP 5: Call Claude to assign characters/locations
+    -------------------------------------------------- */
+    const assignments = await step.run("decide-with-claude", async () => {
+      const spreadTexts = spreads.map((s, i) => {
+        const leftPage = s.leftPageId ? pageMap.get(s.leftPageId) : null;
+        const rightPage = s.rightPageId ? pageMap.get(s.rightPageId) : null;
+        const left = leftPage?.text || "";
+        const right = rightPage?.text || "";
+        return `SPREAD ${i + 1}:\nLeft: ${left}\nRight: ${right}`;
+      }).join("\n\n");
+
+      const charList = chars.map(c => `${c.name} (${c.id})`).join(", ");
+      const locList = storyLocs.map(l => `${l.name} (${l.id})`).join(", ");
+
+      const res = await client.messages.create({
+        model: MODEL,
+        max_tokens: 3000,
+        system: `For each spread, decide which characters appear and which location is primary.
+Return ONLY JSON:
+{
+  "spreads": [
+    {
+      "spreadIndex": 1,
+      "primaryLocationId": "uuid-or-null",
+      "characters": [
+        {
+          "characterId": "uuid",
+          "role": "primary",
+          "confidence": 0.9,
+          "reason": "Main character in this scene"
+        }
+      ],
+      "reasoning": "Brief explanation"
     }
+  ]
+}
 
-    const allResults: SpreadDecision[] = [];
+Role must be: "primary", "secondary", or "background"
+Confidence: 0 to 1`,
+        messages: [{
+          role: "user",
+          content: `Characters: ${charList}\nLocations: ${locList}\n\n${spreadTexts}`
+        }],
+      });
 
-    for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i];
-        
-        const batchResult = await step.run(`claude-batch-${i + 1}`, async () => {
-            const exampleJson = JSON.stringify({
-                spreads: [
-                    {
-                    spreadId: batch[0].spreadId,
-                    presence: {
-                        primaryLocationId: data.locs[0]?.id || "loc-1",
-                        characters: [ { characterId: data.chars[0]?.id || "char-1", role: "primary" } ],
-                        excludedCharacters: [],
-                        reasoning: "Simple reasoning here."
-                    },
-                    scene: {
-                        sceneSummary: "A bear walking in the woods.",
-                        illustrationPrompt: "A wide shot of a bear walking...",
-                        compositionNotes: ["Center the bear"],
-                        mood: "Calm"
-                    }
-                    }
-                ]
-            }, null, 2);
+      return extractJson(extractClaudeText(res.content));
+    });
 
-            const systemPrompt = `
-You are a layout engine for a children's book.
-Your job is to determine WHICH characters and WHICH location appear on these specific spreads.
+    /* --------------------------------------------------
+       STEP 6: Save spread presence records
+    -------------------------------------------------- */
+    await step.run("save-spread-presence", async () => {
+      for (const assignment of assignments.spreads || []) {
+        const spread = spreads[assignment.spreadIndex - 1];
+        if (!spread) continue;
 
-INPUTS:
-1. List of Available Characters (with IDs)
-2. List of Available Locations (with IDs)
-3. List of Spreads (with IDs and Story Text)
-
-OUTPUT:
-Valid JSON object containing a "spreads" array.
-Each item in the array MUST follow this structure EXACTLY:
-${exampleJson}
-
-RULES:
-1. "spreadId" must match the input exactly.
-2. "primaryLocationId" must be one of the provided Location IDs (or null).
-3. "characters" list must use provided Character IDs.
-4. **"role"** must be one of: "primary", "secondary", or "background".
-5. Do NOT include markdown formatting.
-            `.trim();
-
-            const userPrompt = `
-CHARACTERS:
-${data.chars.map(c => `${c.name}: ${c.id}`).join("\n")}
-
-LOCATIONS:
-${data.locs.map(l => `${l.name}: ${l.id}`).join("\n")}
-
-SPREADS TO PROCESS (Batch ${i + 1}/${batches.length}):
-${JSON.stringify(batch, null, 2)}
-            `.trim();
-
-            const prefill = `{ "spreads": [`;
-            
-            const res = await anthropic.messages.create({
-                model: MODEL,
-                max_tokens: 4096,
-                system: systemPrompt,
-                messages: [
-                { role: "user", content: userPrompt },
-                { role: "assistant", content: prefill }
-                ],
-            });
-
-            const raw = prefill + extractClaudeText(res.content);
-            console.log(`✅ [decide-spread-scenes] Batch ${i+1} complete`);
-            
-            const parsed = parseClaudeJson(raw);
-            return ClaudeOutputSchema.parse(parsed);
+        await db.insert(storySpreadPresence).values({
+          id: uuid(),
+          spreadId: spread.id,
+          primaryLocationId: assignment.primaryLocationId || null,
+          characters: assignment.characters || [],
+          excludedCharacters: [],
+          reasoning: assignment.reasoning || null,
+          source: "claude",
+          locked: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         });
-
-        allResults.push(...batchResult.spreads);
-    }
-
-    console.log(`✅ [decide-spread-scenes] Claude processed ${allResults.length} spreads`);
-
-    /* --------------------------------------------------
-       STEP 5: Persist scene data
-    -------------------------------------------------- */
-
-    await step.run("persist-scenes", async () => {
-      await db.transaction(async (tx) => {
-        const spreadIds = data.spreads.map((s) => s.id);
-        
-        if(spreadIds.length > 0) {
-            await tx.delete(storySpreadPresence).where(inArray(storySpreadPresence.spreadId, spreadIds));
-            await tx.delete(storySpreadScene).where(inArray(storySpreadScene.spreadId, spreadIds));
-        }
-
-        for (const s of allResults) {
-          if (!spreadIds.includes(s.spreadId)) continue;
-
-          const presenceRow: InferInsertModel<typeof storySpreadPresence> = {
-            spreadId: s.spreadId,
-            primaryLocationId: s.presence.primaryLocationId,
-            characters: s.presence.characters.map(c => ({
-              characterId: c.characterId,
-              role: c.role === "background" ? "secondary" : c.role,
-              confidence: c.confidence ?? 0.8,
-              reason: c.reason ?? "Inferred by story context",
-            })),
-            excludedCharacters: (s.presence.excludedCharacters ?? []).map(ec => {
-              if (typeof ec === 'string') {
-                return {
-                  characterId: ec,
-                  reason: "Not present in this scene",
-                };
-              }
-              return {
-                characterId: ec.characterId,
-                reason: ec.reason ?? "Not present in this scene",
-              };
-            }),
-            reasoning: s.presence.reasoning ?? "",
-            source: "claude",
-            locked: false,
-          };
-
-          await tx.insert(storySpreadPresence).values(presenceRow);
-          
-          const sceneRow: InferInsertModel<typeof storySpreadScene> = {
-            spreadId: s.spreadId,
-            sceneSummary: s.scene.sceneSummary,
-            illustrationPrompt: s.scene.illustrationPrompt,
-            compositionNotes: s.scene.compositionNotes ?? [],
-            mood: s.scene.mood,
-            doNotInclude: s.scene.doNotInclude ?? [],
-            negativePrompt: s.scene.negativePrompt,
-            source: "claude",
-            locked: false,
-          };
-          
-          await tx.insert(storySpreadScene).values(sceneRow);
-        }
-      });
+      }
     });
 
-    console.log("✅ [decide-spread-scenes] Scene data persisted");
+    console.log("✅ [decide-scenes] Assigned characters/locations to spreads");
 
     /* --------------------------------------------------
-       STEP 6: Mark phase complete (FINAL PHASE)
+       STEP 7: Mark workflow complete
     -------------------------------------------------- */
-
     await step.run("mark-complete", async () => {
       await db
         .update(storyWorkflowProgress)
         .set({
           scenesDecided: true,
           scenesDecidedAt: new Date(),
-          decidingScenes: false,
           updatedAt: new Date(),
         })
         .where(eq(storyWorkflowProgress.storyId, storyId));
 
-      // Update story status to ready (optional - for backwards compatibility)
-      await db
-        .update(stories)
-        .set({ status: "ready", updatedAt: new Date() })
-        .where(eq(stories.id, storyId));
-
-      console.log("✅ [decide-spread-scenes] ALL PHASES COMPLETE - Story ready!");
+      console.log("✅ [decide-scenes] Workflow complete!");
     });
 
-    console.log(`🎉 [decide-spread-scenes] Complete: ${allResults.length} scenes decided`);
-
-    return { 
-      ok: true, 
-      count: allResults.length,
-      phase: "scenes_decided" 
-    };
+    return { ok: true };
   }
 );

@@ -1,11 +1,7 @@
 // src/app/api/stories/[id]/ensure-world/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import {
-  stories,
-  storyPages,
-  storyWorkflowProgress,
-} from "@/db/schema";
+import { stories, storyPages, storyWorkflowProgress } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 
@@ -23,9 +19,8 @@ export async function POST(
   }
 
   /* --------------------------------------------------
-     1. Validate story + pages
+     1. Validate story exists and has pages
   -------------------------------------------------- */
-
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
     columns: { id: true },
@@ -42,36 +37,23 @@ export async function POST(
   });
 
   if (pages.length === 0) {
-    return NextResponse.json(
-      { error: "Story has no pages" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Story has no pages" }, { status: 400 });
   }
 
   /* --------------------------------------------------
-     2. Load workflow progress (canonical state)
+     2. Load or create workflow progress
   -------------------------------------------------- */
-
-  const progress = await db.query.storyWorkflowProgress.findFirst({
+  let progress = await db.query.storyWorkflowProgress.findFirst({
     where: eq(storyWorkflowProgress.storyId, storyId),
   });
 
-  /* --------------------------------------------------
-     3. Bootstrap workflow (ONLY place we trigger Inngest)
-  -------------------------------------------------- */
-
+  // Bootstrap workflow if not started
   if (!progress) {
     await db.insert(storyWorkflowProgress).values({
       storyId,
       worldExtracted: false,
       spreadsBuilt: false,
       scenesDecided: false,
-      extractingWorld: true,
-      buildingSpreads: false,
-      decidingScenes: false,
-      worldExtractedAt: null,
-      spreadsBuiltAt: null,
-      scenesDecidedAt: null,
     });
 
     await inngest.send({
@@ -91,14 +73,11 @@ export async function POST(
   }
 
   /* --------------------------------------------------
-     4. COMPLETE
+     3. Return current progress state
   -------------------------------------------------- */
-
-  if (
-    progress.worldExtracted &&
-    progress.spreadsBuilt &&
-    progress.scenesDecided
-  ) {
+  
+  // All complete
+  if (progress.worldExtracted && progress.spreadsBuilt && progress.scenesDecided) {
     return NextResponse.json({
       status: "complete",
       mode: "ready",
@@ -110,18 +89,8 @@ export async function POST(
     });
   }
 
-  /* --------------------------------------------------
-     5. DECIDING SCENES
-  -------------------------------------------------- */
-
+  // Deciding scenes
   if (progress.worldExtracted && progress.spreadsBuilt) {
-    if (!progress.decidingScenes) {
-      await db
-        .update(storyWorkflowProgress)
-        .set({ decidingScenes: true })
-        .where(eq(storyWorkflowProgress.storyId, storyId));
-    }
-
     return NextResponse.json({
       status: "processing",
       mode: "deciding_scenes",
@@ -133,12 +102,8 @@ export async function POST(
     });
   }
 
-  /* --------------------------------------------------
-     6. BUILDING SPREADS
-     (progress only — NO triggers here)
-  -------------------------------------------------- */
-
-  if (progress.worldExtracted && !progress.spreadsBuilt) {
+  // Building spreads
+  if (progress.worldExtracted) {
     return NextResponse.json({
       status: "processing",
       mode: "building_spreads",
@@ -150,28 +115,14 @@ export async function POST(
     });
   }
 
-  /* --------------------------------------------------
-     7. EXTRACTING WORLD
-  -------------------------------------------------- */
-
-  if (!progress.worldExtracted) {
-    return NextResponse.json({
-      status: "processing",
-      mode: "extracting",
-      progress: {
-        worldExtracted: false,
-        spreadsBuilt: false,
-        scenesDecided: false,
-      },
-    });
-  }
-
-  /* --------------------------------------------------
-     8. FALLBACK (should never happen)
-  -------------------------------------------------- */
-
-  return NextResponse.json(
-    { error: "Invalid workflow state" },
-    { status: 500 }
-  );
+  // Extracting world
+  return NextResponse.json({
+    status: "processing",
+    mode: "extracting",
+    progress: {
+      worldExtracted: false,
+      spreadsBuilt: false,
+      scenesDecided: false,
+    },
+  });
 }

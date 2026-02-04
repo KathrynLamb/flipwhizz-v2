@@ -5,7 +5,7 @@ import { inngest } from "@/inngest/client";
 // Core narrative
 import { globalRewriteJob, extractWorldJob } from "@/inngest/functions";
 
-import { decideSpreadScenes } from "@/inngest/decideSpreadScenes";
+import { decideScenes } from "@/inngest/decideSpreadScenes";
 
 // Visuals
 import { generateStyleSample } from "@/inngest/generateStyle";
@@ -22,7 +22,7 @@ export const { GET, POST, PUT } = serve({
     globalRewriteJob,
     extractWorldJob,
     buildSpreads,
-    decideSpreadScenes,
+    decideScenes,
 
     // Visuals
     generateStyleSample,
