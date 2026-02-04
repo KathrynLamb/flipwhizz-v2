@@ -19,7 +19,8 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-const MODEL = "claude-3-sonnet-20240229";
+const MODEL = "claude-sonnet-4-20250514"
+
 
 /* ======================================================
    CLAUDE TOOL DEFINITION (STRICT JSON CONTRACT)
