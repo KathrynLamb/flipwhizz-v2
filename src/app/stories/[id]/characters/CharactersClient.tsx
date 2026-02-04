@@ -37,19 +37,21 @@ type Character = {
 
 export default function CharactersClient({
   storyId,
-  storyTitle,
+  storyTitle = "Characters",
   storyConfirmed,
   characters,
-  currentStep,
-  completedSteps,
+  currentStep = "studio",
+  completedSteps = [],
 }: {
   storyId: string;
-  storyTitle: string;
+  storyTitle?: string;
   storyConfirmed: boolean;
   characters: Character[];
-  currentStep: StepKey;
-  completedSteps: StepKey[];
-}) {
+  currentStep?: StepKey;
+  completedSteps?: StepKey[];
+})
+
+{
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [charactersLocal, setCharactersLocal] = useState(characters);
@@ -124,7 +126,7 @@ export default function CharactersClient({
         showProgress={!storyConfirmed && totalCount > 0}
         progressCurrent={lockedCount}
         progressTotal={totalCount}
-        showGenerateAll={isPurchased && !allLocked && !storyConfirmed}
+        showGenerateAll={isPurchased === true && !allLocked && !storyConfirmed}
         onGenerateAll={generateAIAvatars}
         isGenerating={generatingAvatars}
       />
@@ -205,9 +207,9 @@ export default function CharactersClient({
                 >
                   <CharacterCard
                     character={char}
-                    index={idx}
-                    onDelete={handleDelete}
-                    storyId={storyId}
+                    // index={idx}
+                    // onDelete={handleDelete}
+                    // storyId={storyId}
                   />
                 </motion.div>
               ))}
