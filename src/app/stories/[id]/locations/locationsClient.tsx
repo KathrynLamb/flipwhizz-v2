@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle, ArrowLeft, Sparkles, Heart, Zap } from "lucide-react";
+import { CheckCircle, ArrowLeft, Sparkles, Heart, Zap, MapPin } from "lucide-react";
 import { LocationCard } from "@/app/stories/[id]/locations/components/LocationCard";
+import { MobileLocationStack } from "@/app/stories/[id]/locations/components/MobileLocationCard";
 
 
 /* ------------------------------------------------------------------ */
@@ -104,12 +105,37 @@ useEffect(() => {
             </h1>
             
             <p className="text-xl text-gray-600 max-w-xl mx-auto font-medium">
-              {locations.length} characters ready to star in your story ✨
+              {locations.length} locations ready for your story ✨
             </p>
           </div>
 
-          {/* Character Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+          {/* ── MOBILE: TINDER-STYLE STACK ── */}
+          <div className="md:hidden mb-16">
+            {locationsLocal.length > 0 ? (
+              <MobileLocationStack
+                locations={locationsLocal}
+                onDelete={handleDelete}
+                onLockToggle={(id, locked) => {
+                  setLocationsLocal(prev =>
+                    prev.map(l => l.id === id ? { ...l, locked } : l)
+                  );
+                }}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-20">
+                <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-violet-100 to-fuchsia-100 border border-violet-200 flex items-center justify-center mb-6">
+                  <MapPin className="w-10 h-10 text-violet-400" />
+                </div>
+                <h3 className="text-xl font-bold text-stone-900 mb-2">No Locations Yet</h3>
+                <p className="text-sm text-stone-500 text-center max-w-xs mb-8 px-4">
+                  Locations will appear here after extraction.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* ── DESKTOP: GRID VIEW ── */}
+          <div className="hidden md:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
             {locationsLocal.map((location, idx) => (
               <LocationCard
                 key={location.id}
@@ -133,11 +159,11 @@ useEffect(() => {
                   </div>
                   
                   <h2 className="text-4xl font-black mb-4 text-black">
-                    Ready to lock in your cast?
+                    Ready to lock in your locations?
                   </h2>
                   
                   <p className="text-lg text-gray-600 mb-8 max-w-2xl mx-auto font-medium">
-                    Once you confirm, these characters will stay consistent in every illustration. Your story text can still be edited anytime!
+                    Once you confirm, these locations will stay consistent in every illustration. Your story text can still be edited anytime!
                   </p>
                   
                   <button
