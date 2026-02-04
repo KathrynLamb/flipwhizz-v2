@@ -1,17 +1,26 @@
 'use client';
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { CheckCircle, ArrowLeft, Sparkles, Heart, Zap, MapPin } from "lucide-react";
-import { LocationCard } from "@/app/stories/[id]/locations/components/LocationCard";
-import { MobileLocationStack } from "@/app/stories/[id]/locations/components/MobileLocationCard";
-
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  CheckCircle,
+  Lock,
+  MapPin,
+  ChevronRight,
+  Loader2,
+  Zap,
+} from 'lucide-react';
+import { MobileLocationStack } from '@/app/stories/[id]/locations/components/MobileLocationCard';
+import type { StepKey } from '@/lib/storySteps';
+import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
+import { LocationCard } from '@/app/stories/[id]/locations/components/LocationCard';
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
 /* ------------------------------------------------------------------ */
 
-type UILocation = {
+type Location = {
   id: string;
   name: string;
   description: string | null;
@@ -20,210 +29,332 @@ type UILocation = {
   locked: boolean;
 };
 
-
 /* ------------------------------------------------------------------ */
 /* PAGE                                                                */
 /* ------------------------------------------------------------------ */
 
 export default function LocationsClient({
   storyId,
+  storyTitle,
   storyConfirmed,
   locations,
+  currentStep,
+  completedSteps,
 }: {
   storyId: string;
+  storyTitle: string;
   storyConfirmed: boolean;
-  locations: UILocation[];
+  locations: Location[];
+  currentStep: StepKey;
+  completedSteps: StepKey[];
 }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
-
-  const [mounted, setMounted] = useState(false);
   const [locationsLocal, setLocationsLocal] = useState(locations);
-
-useEffect(() => {
-  setLocationsLocal(locations);
-}, [locations]);
-
+  const [isPurchased, setIsPurchased] = useState<boolean | null>(null);
+  const [generatingAvatars, setGeneratingAvatars] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    if (!storyId) return;
+    let cancelled = false;
+
+    async function checkPurchase() {
+      const res = await fetch(`/api/stories/${storyId}/purchase-status`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!cancelled) setIsPurchased(data.purchased);
+    }
+
+    checkPurchase();
+    return () => { cancelled = true; };
+  }, [storyId]);
+
+  useEffect(() => {
+    setLocationsLocal(locations);
+  }, [locations]);
 
   function handleDelete(id: string) {
     setLocationsLocal(prev => prev.filter(l => l.id !== id));
   }
-  
 
-  if (!mounted) {
-    // IMPORTANT: render a stable placeholder
-    return (
-      <div className="min-h-screen bg-white" />
-    );
+  async function generateAIAvatars() {
+    if (!confirm('Generate AI images for all locations? This will use AI credits.')) return;
+    setGeneratingAvatars(true);
+    try {
+      const res = await fetch(`/api/stories/${storyId}/generate-all-location-images`, { method: 'POST' });
+      if (res.ok) router.refresh();
+      else alert('Failed to generate images. Please try again.');
+    } catch (err) {
+      console.error(err);
+      alert('Error generating images');
+    } finally {
+      setGeneratingAvatars(false);
+    }
   }
 
+  const lockedCount = locationsLocal.filter(l => l.locked).length;
+  const totalCount = locationsLocal.length;
+  const allLocked = lockedCount === totalCount && totalCount > 0;
 
+  /* -------------------------------------------------------- */
+  /* RENDER                                                    */
+  /* -------------------------------------------------------- */
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-white to-stone-50">
       
-      {/* Top bar */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <button
-            onClick={() => router.push(`/stories/${storyId}/hub`)}
-            className="flex items-center gap-2 text-gray-600 hover:text-black transition-colors font-medium"
+      {/* Add scrollbar hide styles */}
+      <style jsx global>{`
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
+      
+      {/* ── UNIFIED HEADER ── */}
+      <UnifiedStoryHeader
+        storyId={storyId}
+        title={storyTitle}
+        currentStep={currentStep}
+        completedSteps={completedSteps}
+        showProgress={!storyConfirmed && totalCount > 0}
+        progressCurrent={lockedCount}
+        progressTotal={totalCount}
+        showGenerateAll={!!isPurchased && !allLocked && !storyConfirmed}
+        onGenerateAll={generateAIAvatars}
+        isGenerating={generatingAvatars}
+      />
+
+      {/* ── BODY ── */}
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+
+        {/* Mobile: Generate All button */}
+        {isPurchased && !allLocked && !storyConfirmed && (
+          <motion.button
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            onClick={generateAIAvatars}
+            disabled={generatingAvatars}
+            className="md:hidden w-full flex items-center justify-center gap-2.5 px-5 py-3.5 rounded-2xl text-sm font-bold text-white mb-6 bg-gradient-to-r from-violet-600 to-fuchsia-600 active:scale-[0.98] transition-all disabled:opacity-40 shadow-lg"
           >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back</span>
-          </button>
-          
-          {storyConfirmed && (
-            <div className="flex items-center gap-2 text-emerald-600 font-bold">
-              <CheckCircle className="w-5 h-5" />
-              <span>Story Locked!</span>
-            </div>
+            {generatingAvatars ? (
+              <><Loader2 className="w-5 h-5 animate-spin" /> Generating Images…</>
+            ) : (
+              <><Zap className="w-5 h-5" /> Generate All Images</>
+            )}
+          </motion.button>
+        )}
+
+        {/* ── MOBILE: TINDER-STYLE STACK ── */}
+        <div className="md:hidden">
+          {locationsLocal.length > 0 ? (
+            <MobileLocationStack
+              locations={locationsLocal}
+              onDelete={handleDelete}
+              onLockToggle={(id, locked) => {
+                setLocationsLocal(prev =>
+                  prev.map(l => l.id === id ? { ...l, locked } : l)
+                );
+              }}
+            />
+          ) : (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }} 
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="flex flex-col items-center justify-center py-20"
+            >
+              <motion.div 
+                initial={{ scale: 0.8 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
+                className="w-20 h-20 rounded-3xl bg-gradient-to-br from-violet-100 to-fuchsia-100 border border-violet-200 flex items-center justify-center mb-6"
+              >
+                <MapPin className="w-10 h-10 text-violet-400" />
+              </motion.div>
+              <h3 className="text-xl font-bold text-stone-900 mb-2">No Locations Yet</h3>
+              <p className="text-sm text-stone-500 text-center max-w-xs mb-8 px-4">
+                Locations will appear here after extraction.
+              </p>
+            </motion.div>
           )}
         </div>
-      </div>
 
-      <div className="pt-24 pb-20 px-6">
-        <div className="max-w-6xl mx-auto">
-          
-          {/* Header */}
-          <div className="mb-16 text-center">
-            <div className="inline-flex items-center gap-2 mb-6">
-              {[...Array(3)].map((_, i) => (
-                <div
-                  key={i}
-                  className="w-3 h-3 rounded-full bg-gradient-to-r from-pink-500 to-purple-500"
-                  style={{ animationDelay: `${i * 0.2}s` }}
-                />
+        {/* ── DESKTOP: GRID VIEW ── */}
+        {locationsLocal.length > 0 && (
+          <AnimatePresence mode="popLayout">
+            <div className="hidden md:grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
+              {locationsLocal.map((location, idx) => (
+                <motion.div
+                  key={location.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                  transition={{ 
+                    duration: 0.4, 
+                    delay: idx * 0.05, 
+                    ease: [0.4, 0, 0.2, 1],
+                    layout: { duration: 0.3 }
+                  }}
+                >
+                  <LocationCard
+                    location={location}
+                    index={idx}
+                    onDelete={handleDelete}
+                  />
+                </motion.div>
               ))}
             </div>
-            
-            <h1 className="text-7xl font-black mb-6 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
-              Your Story Locations
-            </h1>
-            
-            <p className="text-xl text-gray-600 max-w-xl mx-auto font-medium">
-              {locations.length} locations ready for your story ✨
+          </AnimatePresence>
+        )}
+
+        {/* ── DESKTOP EMPTY STATE ── */}
+        {locationsLocal.length === 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="hidden md:flex flex-col items-center justify-center py-20 sm:py-32"
+          >
+            <motion.div 
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
+              className="w-20 h-20 rounded-3xl bg-gradient-to-br from-violet-100 to-fuchsia-100 border border-violet-200 flex items-center justify-center mb-6"
+            >
+              <MapPin className="w-10 h-10 text-violet-400" />
+            </motion.div>
+            <h3 className="text-xl font-bold text-stone-900 mb-2">No Locations Yet</h3>
+            <p className="text-sm text-stone-500 text-center max-w-xs mb-8 px-4">
+              Locations will appear here after extraction. Head back to your story hub to get started.
             </p>
-          </div>
+            <button
+              onClick={() => router.push(`/stories/${storyId}/hub`)}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 border border-stone-200 transition-all active:scale-95"
+            >
+              Back to Hub
+            </button>
+          </motion.div>
+        )}
 
-          {/* ── MOBILE: TINDER-STYLE STACK ── */}
-          <div className="md:hidden mb-16">
-            {locationsLocal.length > 0 ? (
-              <MobileLocationStack
-                locations={locationsLocal}
-                onDelete={handleDelete}
-                onLockToggle={(id, locked) => {
-                  setLocationsLocal(prev =>
-                    prev.map(l => l.id === id ? { ...l, locked } : l)
-                  );
-                }}
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center py-20">
-                <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-violet-100 to-fuchsia-100 border border-violet-200 flex items-center justify-center mb-6">
-                  <MapPin className="w-10 h-10 text-violet-400" />
-                </div>
-                <h3 className="text-xl font-bold text-stone-900 mb-2">No Locations Yet</h3>
-                <p className="text-sm text-stone-500 text-center max-w-xs mb-8 px-4">
-                  Locations will appear here after extraction.
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* ── DESKTOP: GRID VIEW ── */}
-          <div className="hidden md:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-            {locationsLocal.map((location, idx) => (
-              <LocationCard
-                key={location.id}
-                location={location}
-                index={idx}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
-
-
-          {/* Confirmation Section */}
-          {!storyConfirmed ? (
-            <div className="relative">
-              <div className="bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 rounded-3xl p-1">
-                <div className="bg-white rounded-3xl p-10 text-center">
-                  <div className="flex justify-center gap-3 mb-6">
-                    <Sparkles className="w-10 h-10 text-pink-500" />
-                    <Heart className="w-10 h-10 text-purple-500" />
-                    <Zap className="w-10 h-10 text-blue-500" />
-                  </div>
-                  
-                  <h2 className="text-4xl font-black mb-4 text-black">
-                    Ready to lock in your locations?
-                  </h2>
-                  
-                  <p className="text-lg text-gray-600 mb-8 max-w-2xl mx-auto font-medium">
-                    Once you confirm, these locations will stay consistent in every illustration. Your story text can still be edited anytime!
-                  </p>
-                  
-                  <button
-                      disabled={confirming}
-                      onClick={async () => {
-                        setConfirming(true);
-
-                        await fetch(
-                          `/api/stories/${storyId}/confirm-locations`,
-                          { method: "POST" }
-                        );
-
-                        router.refresh();
-                      }}
-                      className="
-                        bg-black text-white
-                        text-xl font-black
-                        px-12 py-5 rounded-2xl
-                        hover:scale-110 transition-transform
-                        active:scale-95
-                        shadow-xl hover:shadow-2xl
-                        disabled:opacity-60 disabled:hover:scale-100
-                      "
-                    >
-                      {confirming ? "Locking..." : "Lock Locations 🔒"}
-                    </button>
-
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-gradient-to-r from-emerald-400 to-green-500 rounded-3xl p-10 text-center">
-              <div className="text-7xl mb-6 animate-bounce">🎉</div>
-              
-              <h2 className="text-5xl font-black mb-4 text-white">
-                Locations Locked!
-              </h2>
-              
-              <p className="text-xl text-white/90 mb-8 font-bold">
-                Your illustrations will be perfectly consistent now!
-              </p>
-              
-              <button
-                onClick={() => router.push(`/stories/${storyId}/design`)}
-                className="
-                  bg-white text-black
-                  text-xl font-black
-                  px-12 py-5 rounded-2xl
-                  hover:scale-110 transition-transform
-                  active:scale-95
-                  shadow-xl
-                "
+        {/* ── BOTTOM CTA ── */}
+        <AnimatePresence mode="wait">
+          {!storyConfirmed && locationsLocal.length > 0 && (
+            <motion.div
+              key="cta-lock"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+              className="mt-8 sm:mt-12"
+            >
+              <div
+                className={`rounded-3xl p-6 sm:p-8 text-center relative overflow-hidden ${
+                  allLocked 
+                    ? 'bg-gradient-to-br from-emerald-50 via-green-50 to-transparent border-2 border-emerald-200' 
+                    : 'bg-stone-50 border border-stone-200'
+                }`}
               >
-                Continue to Design Hub →
-              </button>
-            </div>
+                {/* Glow effect for locked state */}
+                {allLocked && (
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-100/30 via-transparent to-transparent opacity-50" />
+                )}
+
+                <div className="relative">
+                  {allLocked ? (
+                    <>
+                      {/* Success icon */}
+                      <motion.div
+                        initial={{ scale: 0, rotate: -180 }}
+                        animate={{ scale: 1, rotate: 0 }}
+                        transition={{ type: 'spring', stiffness: 200, delay: 0.1 }}
+                        className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-emerald-500/25"
+                      >
+                        <CheckCircle className="w-8 h-8 text-white" />
+                      </motion.div>
+
+                      <h2 className="text-xl sm:text-2xl font-bold text-stone-900 mb-3">
+                        Ready to Confirm
+                      </h2>
+                      <p className="text-sm sm:text-base text-stone-600 max-w-md mx-auto mb-8">
+                        All locations are locked. Confirm to ensure visual consistency throughout your story.
+                      </p>
+
+                      <button
+                        disabled={confirming}
+                        onClick={async () => {
+                          setConfirming(true);
+                          await fetch(`/api/stories/${storyId}/confirm-locations`, { method: 'POST' });
+                          router.refresh();
+                        }}
+                        className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-emerald-400 to-green-500 hover:from-emerald-500 hover:to-green-600 transition-all disabled:opacity-40 shadow-xl shadow-emerald-500/25 active:scale-[0.98]"
+                      >
+                        {confirming ? (
+                          <><Loader2 className="w-5 h-5 animate-spin" /> Confirming…</>
+                        ) : (
+                          <><Lock className="w-5 h-5" /> Confirm Location Set</>
+                        )}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-14 h-14 rounded-2xl bg-stone-100 border border-stone-200 flex items-center justify-center mx-auto mb-5">
+                        <Lock className="w-7 h-7 text-stone-400" />
+                      </div>
+                      <h2 className="text-lg sm:text-xl font-bold text-stone-900 mb-3">
+                        Lock All Locations to Continue
+                      </h2>
+                      <p className="text-sm text-stone-600 max-w-md mx-auto">
+                        Review each location's image and details, then tap{' '}
+                        <span className="font-semibold text-stone-800">Lock</span> on each card.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+            </motion.div>
           )}
 
-        </div>
-      </div>
+          {/* Confirmed state */}
+          {storyConfirmed && (
+            <motion.div
+              key="cta-confirmed"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+              className="mt-8 sm:mt-12"
+            >
+              <div className="rounded-3xl p-6 sm:p-8 text-center relative overflow-hidden bg-gradient-to-br from-violet-50 via-fuchsia-50 to-transparent border-2 border-violet-200">
+                <div className="absolute inset-0 bg-gradient-to-br from-violet-100/30 via-transparent to-transparent opacity-50" />
+                
+                <div className="relative">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-violet-500/25">
+                    <CheckCircle className="w-8 h-8 text-white" />
+                  </div>
+
+                  <h2 className="text-xl sm:text-2xl font-bold text-stone-900 mb-3">
+                    Location Set Confirmed
+                  </h2>
+                  <p className="text-sm sm:text-base text-stone-600 max-w-md mx-auto mb-8">
+                    Your locations are locked in. All illustrations will maintain perfect visual consistency.
+                  </p>
+
+                  <button
+                    onClick={() => router.push(`/stories/${storyId}/design`)}
+                    className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 transition-all shadow-xl shadow-violet-500/25 active:scale-[0.98]"
+                  >
+                    Continue to Design
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
     </div>
   );
 }
