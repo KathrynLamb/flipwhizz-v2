@@ -20,13 +20,33 @@ const client = new Anthropic({
 
 const MODEL = "claude-sonnet-4-20250514";
 
+// src/inngest/decideScenes.ts - UPDATE extractJson function
+
 function extractJson(raw: string) {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  const text = (fenced?.[1] ?? raw).trim();
-  const first = text.indexOf("{");
-  const last = text.lastIndexOf("}");
-  const json = first !== -1 && last !== -1 ? text.slice(first, last + 1) : text;
-  return JSON.parse(json);
+  try {
+    // Try to find JSON in code fences
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const text = (fenced?.[1] ?? raw).trim();
+
+    // Find the first { and last }
+    const first = text.indexOf("{");
+    const last = text.lastIndexOf("}");
+    
+    if (first === -1 || last === -1) {
+      throw new Error("No JSON object found in response");
+    }
+
+    let json = text.slice(first, last + 1);
+    
+    // Remove trailing commas before closing brackets/braces (common Claude error)
+    json = json.replace(/,(\s*[}\]])/g, '$1');
+    
+    return JSON.parse(json);
+  } catch (error) {
+    console.error("Failed to parse JSON:", raw);
+    console.error("Parse error:", error);
+    throw new Error(`JSON parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 function extractClaudeText(content: any): string {
