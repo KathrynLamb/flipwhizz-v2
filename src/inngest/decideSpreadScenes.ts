@@ -38,7 +38,7 @@ function extractClaudeText(content: any): string {
 
 export const decideScenes = inngest.createFunction(
   {
-    id: "decide-scenes",
+    id: "decide-scenes-v2", 
     retries: 2,
   },
   { event: "story/decide-scenes" },
