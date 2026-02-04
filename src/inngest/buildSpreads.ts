@@ -74,7 +74,7 @@ export const buildSpreads = inngest.createFunction(
       console.log("✅ [build-spreads] Complete, triggering decide-scenes");
 
       await inngest.send({
-        name: "story/decide-scenes",
+        name: "story/decide-spread-scenes",
         data: { storyId },
       });
     });
