@@ -142,70 +142,105 @@ export async function POST(
     }
   }
 
-  /* --------------------------------------------------
-     4. RETURN CURRENT PHASE BASED ON COMPLETION FLAGS
-  -------------------------------------------------- */
 
-  // All phases complete!
-  if (progress.worldExtracted && progress.spreadsBuilt && progress.scenesDecided) {
-    return NextResponse.json({
-      status: "complete",
-      mode: "ready",
-      progress: {
-        worldExtracted: true,
-        spreadsBuilt: true,
-        scenesDecided: true,
-      },
+/* --------------------------------------------------
+   4. RETURN CURRENT PHASE BASED ON COMPLETION FLAGS
+-------------------------------------------------- */
+
+// All phases complete!
+if (progress.worldExtracted && progress.spreadsBuilt && progress.scenesDecided) {
+  return NextResponse.json({
+    status: "complete",
+    mode: "ready",
+    progress: {
+      worldExtracted: true,
+      spreadsBuilt: true,
+      scenesDecided: true,
+    },
+  });
+}
+
+// Deciding scenes
+if (progress.worldExtracted && progress.spreadsBuilt && !progress.scenesDecided) {
+  // Check if we need to trigger the workflow
+  if (!progress.decidingScenes) {
+    console.log("🚀 [ensure-world] Starting decide-scenes workflow");
+    
+    await db
+      .update(storyWorkflowProgress)
+      .set({ decidingScenes: true })
+      .where(eq(storyWorkflowProgress.storyId, storyId));
+
+    await inngest.send({
+      name: "story/decide-scenes",
+      data: { storyId },
     });
   }
 
-  // Deciding scenes
-  if (progress.worldExtracted && progress.spreadsBuilt && !progress.scenesDecided) {
-    return NextResponse.json({
-      status: "processing",
-      mode: "deciding_scenes",
-      progress: {
-        worldExtracted: true,
-        spreadsBuilt: true,
-        scenesDecided: false,
-      },
+  return NextResponse.json({
+    status: "processing",
+    mode: "deciding_scenes",
+    progress: {
+      worldExtracted: true,
+      spreadsBuilt: true,
+      scenesDecided: false,
+    },
+  });
+}
+
+// Building spreads
+if (progress.worldExtracted && !progress.spreadsBuilt) {
+  // Check if we need to trigger the workflow
+  if (!progress.buildingSpreads) {
+    console.log("🚀 [ensure-world] Starting build-spreads workflow");
+    
+    await db
+      .update(storyWorkflowProgress)
+      .set({ buildingSpreads: true })
+      .where(eq(storyWorkflowProgress.storyId, storyId));
+
+    await inngest.send({
+      name: "story/build-spreads",
+      data: { storyId },
     });
   }
 
-  // Building spreads
-  if (progress.worldExtracted && !progress.spreadsBuilt) {
-    return NextResponse.json({
-      status: "processing",
-      mode: "building_spreads",
-      progress: {
-        worldExtracted: true,
-        spreadsBuilt: false,
-        scenesDecided: false,
-      },
+  return NextResponse.json({
+    status: "processing",
+    mode: "building_spreads",
+    progress: {
+      worldExtracted: true,
+      spreadsBuilt: false,
+      scenesDecided: false,
+    },
+  });
+}
+
+// Extracting world
+if (!progress.worldExtracted) {
+  // Check if we need to trigger the workflow
+  if (!progress.extractingWorld) {
+    console.log("🚀 [ensure-world] Starting extract-world workflow");
+    
+    await db
+      .update(storyWorkflowProgress)
+      .set({ extractingWorld: true })
+      .where(eq(storyWorkflowProgress.storyId, storyId));
+
+    await inngest.send({
+      name: "story/extract-world",
+      data: { storyId },
     });
   }
 
-  // Extracting world
-  if (!progress.worldExtracted) {
-    return NextResponse.json({
-      status: "processing",
-      mode: "extracting",
-      progress: {
-        worldExtracted: false,
-        spreadsBuilt: false,
-        scenesDecided: false,
-      },
-    });
-  }
-
-  // Fallback (should never reach here)
   return NextResponse.json({
     status: "processing",
     mode: "extracting",
     progress: {
-      worldExtracted: progress.worldExtracted,
-      spreadsBuilt: progress.spreadsBuilt,
-      scenesDecided: progress.scenesDecided,
+      worldExtracted: false,
+      spreadsBuilt: false,
+      scenesDecided: false,
     },
   });
+}
 }

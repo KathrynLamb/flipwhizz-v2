@@ -207,6 +207,7 @@ export default async function DesignPage({
     sampleIllustrationUrl: guide?.sampleIllustrationUrl ?? null,
   };
 
+  console.log("STYLE,", clientStyle)
   return (
     <main>
       <StylePreviewStage
