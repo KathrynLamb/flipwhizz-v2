@@ -1,3 +1,4 @@
+// src/app/api/stories/[id]/ensure-world/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import {
@@ -51,12 +52,12 @@ export async function POST(
      2. Load workflow progress (canonical state)
   -------------------------------------------------- */
 
-  let progress = await db.query.storyWorkflowProgress.findFirst({
+  const progress = await db.query.storyWorkflowProgress.findFirst({
     where: eq(storyWorkflowProgress.storyId, storyId),
   });
 
   /* --------------------------------------------------
-     3. Bootstrap if missing
+     3. Bootstrap workflow (ONLY place we trigger Inngest)
   -------------------------------------------------- */
 
   if (!progress) {
@@ -119,11 +120,6 @@ export async function POST(
         .update(storyWorkflowProgress)
         .set({ decidingScenes: true })
         .where(eq(storyWorkflowProgress.storyId, storyId));
-
-      await inngest.send({
-        name: "story/decide-spread-scenes",
-        data: { storyId },
-      });
     }
 
     return NextResponse.json({
@@ -139,21 +135,10 @@ export async function POST(
 
   /* --------------------------------------------------
      6. BUILDING SPREADS
+     (progress only — NO triggers here)
   -------------------------------------------------- */
 
   if (progress.worldExtracted && !progress.spreadsBuilt) {
-    if (!progress.buildingSpreads) {
-      await db
-        .update(storyWorkflowProgress)
-        .set({ buildingSpreads: true })
-        .where(eq(storyWorkflowProgress.storyId, storyId));
-
-      await inngest.send({
-        name: "story/build-spreads",
-        data: { storyId },
-      });
-    }
-
     return NextResponse.json({
       status: "processing",
       mode: "building_spreads",
@@ -181,5 +166,12 @@ export async function POST(
     });
   }
 
-  return NextResponse.json({ error: "Invalid workflow state" }, { status: 500 });
+  /* --------------------------------------------------
+     8. FALLBACK (should never happen)
+  -------------------------------------------------- */
+
+  return NextResponse.json(
+    { error: "Invalid workflow state" },
+    { status: 500 }
+  );
 }
