@@ -69,7 +69,7 @@ function extractJson(raw: string): unknown {
 ====================================================== */
 
 export const decideScenes = inngest.createFunction(
-  { id: "decide-scenes-v3", retries: 2 },
+  { id: "decide-scenes-v2", retries: 2 },
   { event: "story/decide-spread-scenes" },
   async ({ event }) => {
     const { storyId } = event.data as { storyId: string };
