@@ -111,7 +111,7 @@ export default function StoryViewPage() {
     setIsConfirming(true); // Start the magical loading screen
     
     try {
-      await fetch(`/api/stories/${storyId}/extract-world`, {
+      await fetch(`/api/stories/${storyId}/ensure-world`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ overwriteLinks: true }),

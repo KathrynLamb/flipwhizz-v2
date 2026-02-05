@@ -182,7 +182,7 @@ export default function StoryReaderClient({
   const handleConfirmStory = async () => {
     try {
       await fetch(`/api/stories/${id}/lock`, { method: 'POST' });
-      fetch(`/api/stories/${id}/extract-world`, { method: 'POST' }).catch(
+      fetch(`/api/stories/${id}/ensure-world`, { method: 'POST' }).catch(
         () => {}
       );
       router.push(`/stories/${id}/extract`);

@@ -192,7 +192,34 @@ export default function ExtractWorldPage() {
   }
 
   /* ======================================================
-     BOOTSTRAP
+     TRIGGER WORKFLOW (once on mount)
+  ====================================================== */
+
+  const workflowTriggered = useRef(false);
+
+  useEffect(() => {
+    if (!storyId || workflowTriggered.current) return;
+
+    workflowTriggered.current = true;
+
+    // Trigger the workflow
+    fetch(`/api/stories/${storyId}/ensure-world`, {
+      method: "POST",
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Failed to start workflow: ${res.status}`);
+        }
+        console.log("✅ Workflow triggered successfully");
+      })
+      .catch((err) => {
+        console.error("❌ Failed to trigger workflow:", err);
+        setError("Failed to start world building. Please try again.");
+      });
+  }, [storyId]);
+
+  /* ======================================================
+     BOOTSTRAP POLLING
   ====================================================== */
 
   useEffect(() => {

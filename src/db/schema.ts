@@ -339,6 +339,9 @@ export const styleGuideImages = pgTable("style_guide_images", {
 
 export const storyPageCharacters = pgTable("story_page_characters", {
   id: uuid("id").primaryKey().defaultRandom(),
+  storyId: uuid("story_id")
+  .references(() => stories.id, { onDelete: "cascade" })
+  .notNull(),
 
   pageId: uuid("page_id")
     .references(() => storyPages.id, { onDelete: "cascade" })
@@ -365,6 +368,10 @@ export const storyPageCharacters = pgTable("story_page_characters", {
 
 export const storyPageLocations = pgTable("story_page_locations", {
   id: uuid("id").primaryKey().defaultRandom(),
+  storyId: uuid("story_id")
+  .references(() => stories.id, { onDelete: "cascade" }),
+  // .notNull(),
+
 
   pageId: uuid("page_id")
     .references(() => storyPages.id, { onDelete: "cascade" })

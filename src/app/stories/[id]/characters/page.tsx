@@ -6,7 +6,6 @@ import { storyWorkflowProgress } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import CharactersClient from "@/app/stories/[id]/characters/CharactersClient";
 
-
 type Props = {
   params: Promise<{ id: string }>;
 };
@@ -19,13 +18,13 @@ export default async function CharactersPage({ params }: Props) {
 
   const { story, characters: dbCharacters } = data;
 
-  // ✅ Check workflow progress instead of redirecting to hub
+  // ✅ Check workflow progress
   const progress = await db.query.storyWorkflowProgress.findFirst({
     where: eq(storyWorkflowProgress.storyId, storyId),
   });
 
-  // ⏳ Extraction still running → show loading state IN characters
-  if (!progress || !progress.worldExtracted) {
+  // ⏳ Extraction still running → show loading state
+  if (!progress || !progress.worldComplete) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-slate-600">Preparing your characters…</p>

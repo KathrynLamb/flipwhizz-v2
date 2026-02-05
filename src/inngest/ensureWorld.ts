@@ -404,20 +404,28 @@ Rules:
           // Clear existing
           await tx.delete(storySpreads).where(eq(storySpreads.storyId, storyId));
 
-          // Insert new
+          // Insert new spreads
+          let spreadIndex = 1;
           for (const s of data.spreads ?? []) {
             if (!s.pageNumbers || s.pageNumbers.length === 0) continue;
+
+            // Find the actual page IDs from the context
+            const leftPageNum = s.pageNumbers[0];
+            const rightPageNum = s.pageNumbers[1] || null;
+
+            const leftPage = context.pages.find((p) => p.pageNumber === leftPageNum);
+            const rightPage = rightPageNum
+              ? context.pages.find((p) => p.pageNumber === rightPageNum)
+              : null;
 
             await tx.insert(storySpreads).values({
               id: uuid(),
               storyId,
-              spreadNumber: s.pageNumbers[0], // Use first page as spread number
-              pageNumbers: s.pageNumbers,
-              sceneDescription: cap(s.sceneDescription, 500),
-              visualFocus: cap(s.visualFocus, 200),
-              mood: cap(s.mood, 100),
+              spreadIndex: spreadIndex++,
+              sceneSummary: cap(s.sceneDescription, 500),
+              leftPageId: leftPage?.id || null,
+              rightPageId: rightPage?.id || null,
               createdAt: new Date(),
-              updatedAt: new Date(),
             });
           }
 
@@ -466,10 +474,14 @@ Rules:
           .join("\n");
 
         const spreadList = allSpreads
-          .map(
-            (s) =>
-              `Spread ${s.spreadNumber} (pages ${s.pageNumbers.join(", ")}): ${s.sceneDescription}`
-          )
+          .map((s) => {
+            const pages = [s.leftPageId, s.rightPageId]
+              .filter(Boolean)
+              .map((pageId) => context.pages.find((p) => p.id === pageId)?.pageNumber)
+              .filter(Boolean)
+              .join(", ");
+            return `Spread ${s.spreadIndex} (pages ${pages}): ${s.sceneSummary || ""}`;
+          })
           .join("\n");
 
         const res = await client.messages.create({
@@ -479,7 +491,7 @@ Rules:
 {
   "assignments": [
     {
-      "spreadNumber": 1,
+      "spreadIndex": 1,
       "characterNames": ["Character A", "Character B"]
     }
   ]
@@ -499,27 +511,21 @@ Only include characters that should appear in each spread's illustration.`,
         // Save assignments
         await db.transaction(async (tx) => {
           // Clear existing
-          const pageIds = context.pages.map((p) => p.id);
-          if (pageIds.length > 0) {
-            await tx
-              .delete(storyPageCharacters)
-              .where(
-                and(
-                  eq(storyPageCharacters.storyId, storyId)
-                )
-              );
-          }
+          await tx
+            .delete(storyPageCharacters)
+            .where(eq(storyPageCharacters.storyId, storyId));
 
           // Insert new assignments
           for (const assignment of data.assignments ?? []) {
             const spread = allSpreads.find(
-              (s) => s.spreadNumber === assignment.spreadNumber
+              (s) => s.spreadIndex === assignment.spreadIndex
             );
             if (!spread) continue;
 
             // Find pages in this spread
+            const spreadPageIds = [spread.leftPageId, spread.rightPageId].filter(Boolean);
             const spreadPages = context.pages.filter((p) =>
-              spread.pageNumbers.includes(p.pageNumber)
+              spreadPageIds.includes(p.id)
             );
 
             // Assign each character to each page in the spread
@@ -589,10 +595,14 @@ Only include characters that should appear in each spread's illustration.`,
           .join("\n");
 
         const spreadList = allSpreads
-          .map(
-            (s) =>
-              `Spread ${s.spreadNumber} (pages ${s.pageNumbers.join(", ")}): ${s.sceneDescription}`
-          )
+          .map((s) => {
+            const pages = [s.leftPageId, s.rightPageId]
+              .filter(Boolean)
+              .map((pageId) => context.pages.find((p) => p.id === pageId)?.pageNumber)
+              .filter(Boolean)
+              .join(", ");
+            return `Spread ${s.spreadIndex} (pages ${pages}): ${s.sceneSummary || ""}`;
+          })
           .join("\n");
 
         const res = await client.messages.create({
@@ -602,7 +612,7 @@ Only include characters that should appear in each spread's illustration.`,
 {
   "assignments": [
     {
-      "spreadNumber": 1,
+      "spreadIndex": 1,
       "locationName": "Location Name"
     }
   ]
@@ -622,21 +632,14 @@ Each spread should have ONE primary location where the scene takes place.`,
         // Save assignments
         await db.transaction(async (tx) => {
           // Clear existing
-          const pageIds = context.pages.map((p) => p.id);
-          if (pageIds.length > 0) {
-            await tx
-              .delete(storyPageLocations)
-              .where(
-                and(
-                  eq(storyPageLocations.storyId, storyId)
-                )
-              );
-          }
+          await tx
+            .delete(storyPageLocations)
+            .where(eq(storyPageLocations.storyId, storyId));
 
           // Insert new assignments
           for (const assignment of data.assignments ?? []) {
             const spread = allSpreads.find(
-              (s) => s.spreadNumber === assignment.spreadNumber
+              (s) => s.spreadIndex === assignment.spreadIndex
             );
             if (!spread) continue;
 
@@ -648,8 +651,9 @@ Each spread should have ONE primary location where the scene takes place.`,
             if (!storyLoc) continue;
 
             // Find pages in this spread
+            const spreadPageIds = [spread.leftPageId, spread.rightPageId].filter(Boolean);
             const spreadPages = context.pages.filter((p) =>
-              spread.pageNumbers.includes(p.pageNumber)
+              spreadPageIds.includes(p.id)
             );
 
             // Assign location to each page in the spread

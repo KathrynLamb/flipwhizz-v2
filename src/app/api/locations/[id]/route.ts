@@ -81,7 +81,7 @@ export async function POST(
 
   if (!characters.length || !locations.length || !presence.length) {
     await inngest.send({
-      name: "story/extract-world",
+      name: "story/ensure-world",
       data: { storyId },
     });
     dispatched = true;

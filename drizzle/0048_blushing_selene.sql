@@ -1,0 +1,1 @@
+ALTER TABLE "story_page_characters" ALTER COLUMN "story_id" SET NOT NULL;

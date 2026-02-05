@@ -1,0 +1,2 @@
+ALTER TABLE "story_page_locations" ADD COLUMN "story_id" uuid;--> statement-breakpoint
+ALTER TABLE "story_page_locations" ADD CONSTRAINT "story_page_locations_story_id_stories_id_fk" FOREIGN KEY ("story_id") REFERENCES "public"."stories"("id") ON DELETE cascade ON UPDATE no action;
