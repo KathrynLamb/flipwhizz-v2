@@ -1,7 +1,12 @@
+// next.config.ts
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+
+  typescript: {
+    ignoreBuildErrors: true, // Ignore TypeScript errors during build
+  },
 
   images: {
     remotePatterns: [

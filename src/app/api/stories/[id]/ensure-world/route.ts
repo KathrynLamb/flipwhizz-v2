@@ -15,6 +15,7 @@ import {
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
+export const runtime = "nodejs"; // Add this line
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
