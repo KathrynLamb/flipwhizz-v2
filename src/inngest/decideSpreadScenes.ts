@@ -4,18 +4,19 @@ import {
   storySpreads,
   storyPages,
   storyCharacters,
+  storyLocations,
   characters,
+  locations,
   storyWorkflowProgress,
   storySpreadPresence,
-  locations,
-  storyLocations,
+  storySpreadScene,
 } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
-import { v4 as uuid } from "uuid";
+import { eq, inArray, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
 
 /* ======================================================
-   CLIENT
+   CONFIG
 ====================================================== */
 
 const client = new Anthropic({
@@ -25,99 +26,70 @@ const client = new Anthropic({
 const MODEL = "claude-sonnet-4-20250514";
 
 /* ======================================================
-   TYPE HELPERS
+   ZOD CONTRACT (SOURCE OF TRUTH)
 ====================================================== */
 
-type NonNull<T> = T extends null | undefined ? never : T;
+const SpreadDecisionSchema = z.object({
+  spreadIndex: z.number(),
+  characterIds: z.array(z.string()),
+  primaryLocationId: z.string().nullable(),
+  sceneSummary: z.string(),
+  illustrationPrompt: z.string(),
+  mood: z.string(),
+});
 
-function isNonNull<T>(v: T | null | undefined): v is NonNull<T> {
-  return v !== null && v !== undefined;
-}
+const DecisionResponseSchema = z.object({
+  spreads: z.array(SpreadDecisionSchema),
+});
 
 /* ======================================================
-   CLAUDE TOOL (STRICT CONTRACT)
+   SAFE JSON EXTRACTION (CLAUDE)
 ====================================================== */
 
-const decideScenesTool = {
-  name: "decide_spread_scenes",
-  description:
-    "Assign characters and a primary location to each story spread based on the text.",
-  input_schema: {
-    type: "object",
-    required: ["spreads"] as string[],
-    properties: {
-      spreads: {
-        type: "array",
-        items: {
-          type: "object",
-          required: [
-            "spreadIndex",
-            "primaryLocationId",
-            "characters",
-            "reasoning",
-          ] as string[],
-          properties: {
-            spreadIndex: { type: "number" },
-            primaryLocationId: { type: ["string", "null"] },
-            characters: {
-              type: "array",
-              items: {
-                type: "object",
-                required: ["characterId", "role", "confidence"] as string[],
-                properties: {
-                  characterId: { type: "string" },
-                  role: {
-                    type: "string",
-                    enum: ["primary", "secondary", "background"],
-                  },
-                  confidence: {
-                    type: "number",
-                    minimum: 0,
-                    maximum: 1,
-                  },
-                  reason: { type: "string" },
-                },
-              },
-            },
-            reasoning: { type: "string" },
-          },
-        },
-      },
-    },
-  },
-} as const;
+function extractJson(raw: string): unknown {
+  const fenced = raw.match(/```json\s*([\s\S]*?)```/i);
+  const text = (fenced?.[1] ?? raw).trim();
+
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
+
+  if (first === -1 || last === -1) {
+    throw new Error("No JSON object found in Claude response");
+  }
+
+  const cleaned = text
+    .slice(first, last + 1)
+    .replace(/,(\s*[}\]])/g, "$1"); // remove trailing commas
+
+  return JSON.parse(cleaned);
+}
 
 /* ======================================================
    INNGEST FUNCTION
 ====================================================== */
 
 export const decideScenes = inngest.createFunction(
-  {
-    id: "decide-scenes-v2",
-    retries: 2,
-  },
+  { id: "decide-scenes-v3", retries: 2 },
   { event: "story/decide-spread-scenes" },
-  async ({ event, step }) => {
+  async ({ event }) => {
     const { storyId } = event.data as { storyId: string };
 
-    console.log("🔵 [decide-scenes] Starting:", storyId);
-
     /* --------------------------------------------------
-       1. Load spreads (ordered, canonical)
+       1. Load spreads
     -------------------------------------------------- */
 
-    const spreads = await step.run("load-spreads", async () =>
-      db.query.storySpreads.findMany({
-        where: eq(storySpreads.storyId, storyId),
-        orderBy: (s, { asc }) => [asc(s.spreadIndex)],
-      })
-    );
+    const spreads = await db.query.storySpreads.findMany({
+      where: eq(storySpreads.storyId, storyId),
+      orderBy: asc(storySpreads.spreadIndex),
+    });
 
     if (spreads.length === 0) {
-      throw new Error("No spreads found");
+      throw new Error("No spreads found for story");
     }
 
-    const spreadByIndex = new Map(spreads.map((s) => [s.spreadIndex, s]));
+    const spreadByIndex = new Map(
+      spreads.map((s) => [s.spreadIndex, s])
+    );
 
     /* --------------------------------------------------
        2. Load pages
@@ -125,180 +97,163 @@ export const decideScenes = inngest.createFunction(
 
     const pageIds = spreads
       .flatMap((s) => [s.leftPageId, s.rightPageId])
-      .filter(isNonNull);
+      .filter((v): v is string => Boolean(v));
 
-    const pages = await step.run("load-pages", async () =>
-      db.query.storyPages.findMany({
-        where: inArray(storyPages.id, pageIds),
-      })
+    const pages = await db.query.storyPages.findMany({
+      where: inArray(storyPages.id, pageIds),
+    });
+
+    const pageMap = new Map(
+      pages.map((p) => [p.id, p.text ?? ""])
     );
-
-    const pageMap = new Map(pages.map((p) => [p.id, p]));
 
     /* --------------------------------------------------
        3. Load characters
     -------------------------------------------------- */
 
-    const storyChars = await step.run("load-story-characters", async () =>
-      db.query.storyCharacters.findMany({
-        where: eq(storyCharacters.storyId, storyId),
-      })
-    );
+    const storyChars = await db.query.storyCharacters.findMany({
+      where: eq(storyCharacters.storyId, storyId),
+    });
 
-    const charIds = storyChars.map((sc) => sc.characterId);
-
-    const chars = await step.run("load-characters", async () =>
-      charIds.length === 0
+    const chars =
+      storyChars.length === 0
         ? []
-        : db.query.characters.findMany({
-            where: inArray(characters.id, charIds),
-          })
-    );
-
-    const safeChars = chars.filter(isNonNull);
+        : await db.query.characters.findMany({
+            where: inArray(
+              characters.id,
+              storyChars.map((c) => c.characterId)
+            ),
+          });
 
     /* --------------------------------------------------
        4. Load locations
     -------------------------------------------------- */
 
-    const storyLocs = await step.run("load-story-locations", async () =>
-      db.query.storyLocations.findMany({
-        where: eq(storyLocations.storyId, storyId),
-      })
-    );
+    const storyLocs = await db.query.storyLocations.findMany({
+      where: eq(storyLocations.storyId, storyId),
+    });
 
-    const locIds = storyLocs.map((sl) => sl.locationId);
-
-    const locs = await step.run("load-locations", async () =>
-      locIds.length === 0
+    const locs =
+      storyLocs.length === 0
         ? []
-        : db.query.locations.findMany({
-            where: inArray(locations.id, locIds),
-          })
-    );
-
-    const safeLocs = locs.filter(isNonNull);
+        : await db.query.locations.findMany({
+            where: inArray(
+              locations.id,
+              storyLocs.map((l) => l.locationId)
+            ),
+          });
 
     /* --------------------------------------------------
-       5. Ask Claude (TOOLS + CLEAR TASK)
+       5. Build Claude prompt
     -------------------------------------------------- */
 
-    const assignments = await step.run("decide-with-claude", async () => {
-      const spreadText = spreads
-        .map((s) => {
-          const left =
-            s.leftPageId && pageMap.get(s.leftPageId)
-              ? pageMap.get(s.leftPageId)!.text ?? ""
-              : "";
-          const right =
-            s.rightPageId && pageMap.get(s.rightPageId)
-              ? pageMap.get(s.rightPageId)!.text ?? ""
-              : "";
-          return `SPREAD ${s.spreadIndex}\nLeft: ${left}\nRight: ${right}`;
-        })
-        .join("\n\n");
+    const spreadText = spreads
+      .map((s) => {
+        const left = s.leftPageId
+          ? pageMap.get(s.leftPageId) ?? ""
+          : "";
+        const right = s.rightPageId
+          ? pageMap.get(s.rightPageId) ?? ""
+          : "";
 
-      const charList = safeChars
-        .map((c) => `${c.name} (${c.id})`)
-        .join(", ");
+        return `SPREAD ${s.spreadIndex}
+LEFT: ${left}
+RIGHT: ${right}`;
+      })
+      .join("\n\n");
 
-      const locList = safeLocs
-        .map((l) => `${l.name} (${l.id})`)
-        .join(", ");
+    const res = await client.messages.create({
+      model: MODEL,
+      max_tokens: 2000,
+      system: `
+You are planning illustrations for a children's picture book.
 
-      const res = await client.messages.create({
-        model: MODEL,
-        max_tokens: 3000,
-        tools: [decideScenesTool],
-        tool_choice: {
-          type: "tool",
-          name: "decide_spread_scenes",
-        },
-        system: `
-You are a story illustrator planner.
+For EACH spread:
+- Decide which characters appear (IDs only)
+- Choose ONE primary location ID or null
+- Write a short scene summary
+- Write a vivid illustration prompt
+- Choose a simple mood word
 
-For each spread:
-- Decide which characters appear
-- Choose ONE primary location (or null)
-- Use ONLY provided character and location IDs
-- Return structured decisions via the tool
-- Do NOT write text outside the tool
-        `.trim(),
-        messages: [
-          {
-            role: "user",
-            content: `
+Return ONLY valid JSON in this format:
+{
+  "spreads": [
+    {
+      "spreadIndex": 1,
+      "characterIds": ["uuid"],
+      "primaryLocationId": "uuid-or-null",
+      "sceneSummary": "...",
+      "illustrationPrompt": "...",
+      "mood": "warm"
+    }
+  ]
+}
+`.trim(),
+      messages: [
+        {
+          role: "user",
+          content: `
 Characters:
-${charList}
+${chars.map((c) => `${c.name} (${c.id})`).join(", ")}
 
 Locations:
-${locList}
+${locs.map((l) => `${l.name} (${l.id})`).join(", ")}
 
-Story spreads:
 ${spreadText}
-            `.trim(),
-          },
-        ],
-      });
-
-      const toolUse = res.content.find(
-        (c) => c.type === "tool_use" && c.name === "decide_spread_scenes"
-      ) as
-        | { type: "tool_use"; input: { spreads: any[] } }
-        | undefined;
-
-      if (!toolUse?.input?.spreads) {
-        throw new Error("Claude did not return spread decisions");
-      }
-
-      return toolUse.input;
+`.trim(),
+        },
+      ],
     });
+
+    const text = res.content
+    .filter((p) => p.type === "text")
+    .map((p) => (p as any).text as string)
+    .join("\n");
+  
+
+    const parsed = DecisionResponseSchema.parse(extractJson(text));
 
     /* --------------------------------------------------
-       6. Persist presence
+       6. Persist (SCHEMA-SAFE)
     -------------------------------------------------- */
 
-    await step.run("save-spread-presence", async () => {
-      for (const assignment of assignments.spreads) {
-        const spread = spreadByIndex.get(assignment.spreadIndex);
+    for (const d of parsed.spreads) {
+      const spread = spreadByIndex.get(d.spreadIndex);
+      if (!spread) continue;
 
-        if (!spread) {
-          throw new Error(
-            `Invalid spreadIndex: ${assignment.spreadIndex}`
-          );
-        }
+      await db.insert(storySpreadPresence).values({
+        spreadId: spread.id,
+        primaryLocationId: d.primaryLocationId,
+        characters: d.characterIds.map((id) => ({
+          characterId: id,
+          role: "primary",          // schema-required
+          confidence: 1,             // schema-required
+          reason: "Present in scene" // schema-required
+        })),
+        source: "claude",
+        locked: true,
+      });
 
-        await db.insert(storySpreadPresence).values({
-          id: uuid(),
-          spreadId: spread.id,
-          primaryLocationId: assignment.primaryLocationId,
-          characters: assignment.characters,
-          excludedCharacters: [],
-          reasoning: assignment.reasoning,
-          source: "claude",
-          locked: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-      }
-    });
+      await db.insert(storySpreadScene).values({
+        spreadId: spread.id,
+        sceneSummary: d.sceneSummary,
+        illustrationPrompt: d.illustrationPrompt,
+        mood: d.mood,
+      });
+    }
 
     /* --------------------------------------------------
        7. Mark workflow complete
     -------------------------------------------------- */
 
-    await step.run("mark-complete", async () => {
-      await db
-        .update(storyWorkflowProgress)
-        .set({
-          scenesDecided: true,
-          scenesDecidedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(storyWorkflowProgress.storyId, storyId));
-    });
-
-    console.log("✅ [decide-scenes] Complete");
+    await db
+      .update(storyWorkflowProgress)
+      .set({
+        scenesDecided: true,
+        scenesDecidedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(storyWorkflowProgress.storyId, storyId));
 
     return { ok: true };
   }
