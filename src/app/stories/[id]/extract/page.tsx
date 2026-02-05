@@ -15,19 +15,32 @@ import {
   BookOpen,
   Eye,
   XCircle,
+  UserCheck,
+  MapPinned,
 } from "lucide-react";
 
 /* ======================================================
    TYPES
 ====================================================== */
 
-type Phase = "extracting" | "building_spreads" | "deciding_scenes" | "ready";
+type Phase =
+  | "extracting_characters"
+  | "extracting_locations"
+  | "extracting_style"
+  | "building_spreads"
+  | "assigning_characters"
+  | "assigning_locations"
+  | "ready";
 
 type ProgressData = {
   phase: Phase;
-  worldExtracted: boolean;
+  charactersExtracted: boolean;
+  locationsExtracted: boolean;
+  styleExtracted: boolean;
   spreadsBuilt: boolean;
-  scenesDecided: boolean;
+  charactersAssigned: boolean;
+  locationsAssigned: boolean;
+  worldComplete: boolean;
 };
 
 type ActivityItem = {
@@ -51,12 +64,16 @@ export default function ExtractWorldPage() {
   }, [params]);
 
   // State
-  const [phase, setPhase] = useState<Phase>("extracting");
+  const [phase, setPhase] = useState<Phase>("extracting_characters");
   const [progress, setProgress] = useState<ProgressData>({
-    phase: "extracting",
-    worldExtracted: false,
+    phase: "extracting_characters",
+    charactersExtracted: false,
+    locationsExtracted: false,
+    styleExtracted: false,
     spreadsBuilt: false,
-    scenesDecided: false,
+    charactersAssigned: false,
+    locationsAssigned: false,
+    worldComplete: false,
   });
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +81,7 @@ export default function ExtractWorldPage() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const errorCount = useRef(0);
+  const lastPhaseRef = useRef<Phase>("extracting_characters");
 
   /* ======================================================
      ADD ACTIVITY ITEM
@@ -76,8 +94,23 @@ export default function ExtractWorldPage() {
       type,
       timestamp: Date.now(),
     };
-    setActivity((prev) => [item, ...prev].slice(0, 5)); // Keep last 5
+    setActivity((prev) => [item, ...prev].slice(0, 8)); // Keep last 8
   };
+
+  /* ======================================================
+     DETERMINE CURRENT PHASE FROM PROGRESS
+  ====================================================== */
+
+  function getCurrentPhase(prog: ProgressData): Phase {
+    if (prog.worldComplete) return "ready";
+    if (!prog.charactersExtracted) return "extracting_characters";
+    if (!prog.locationsExtracted) return "extracting_locations";
+    if (!prog.styleExtracted) return "extracting_style";
+    if (!prog.spreadsBuilt) return "building_spreads";
+    if (!prog.charactersAssigned) return "assigning_characters";
+    if (!prog.locationsAssigned) return "assigning_locations";
+    return "ready";
+  }
 
   /* ======================================================
      POLL WORKFLOW STATUS
@@ -87,9 +120,7 @@ export default function ExtractWorldPage() {
     if (!storyId) return;
 
     try {
-      const res = await fetch(`/api/stories/${storyId}/ensure-world`, {
-        method: "POST",
-      });
+      const res = await fetch(`/api/stories/${storyId}/workflow-progress`);
 
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
@@ -97,40 +128,55 @@ export default function ExtractWorldPage() {
 
       const data = await res.json();
 
-      if (data.status === "complete") {
-        setPhase("ready");
-        setProgress({
-          phase: "ready",
-          worldExtracted: true,
-          spreadsBuilt: true,
-          scenesDecided: true,
-        });
-        addActivity("All phases complete! 🎉", "success");
-        if (pollRef.current) clearInterval(pollRef.current);
+      if (!data.progress) {
+        // No progress yet, workflow might not be started
         return;
       }
 
-      if (data.status === "processing" && data.progress) {
-        const newProgress: ProgressData = {
-          phase: data.mode,
-          worldExtracted: data.progress.worldExtracted,
-          spreadsBuilt: data.progress.spreadsBuilt,
-          scenesDecided: data.progress.scenesDecided,
-        };
+      const newProgress: ProgressData = {
+        phase: getCurrentPhase(data.progress),
+        charactersExtracted: data.progress.charactersExtracted || false,
+        locationsExtracted: data.progress.locationsExtracted || false,
+        styleExtracted: data.progress.styleExtracted || false,
+        spreadsBuilt: data.progress.spreadsBuilt || false,
+        charactersAssigned: data.progress.charactersAssigned || false,
+        locationsAssigned: data.progress.locationsAssigned || false,
+        worldComplete: data.progress.worldComplete || false,
+      };
 
-        // Detect phase changes and add activity
-        if (newProgress.phase !== progress.phase) {
-          if (newProgress.phase === "building_spreads") {
-            addActivity("World extracted successfully", "success");
-            addActivity("Building page spreads...", "loading");
-          } else if (newProgress.phase === "deciding_scenes") {
-            addActivity("Spreads built successfully", "success");
-            addActivity("Planning illustrations with Claude...", "loading");
-          }
+      const currentPhase = getCurrentPhase(newProgress);
+
+      // Detect phase changes and add activity
+      if (currentPhase !== lastPhaseRef.current) {
+        if (currentPhase === "extracting_locations") {
+          addActivity("✅ Characters extracted", "success");
+          addActivity("🗺️  Extracting locations...", "loading");
+        } else if (currentPhase === "extracting_style") {
+          addActivity("✅ Locations extracted", "success");
+          addActivity("🎨 Extracting style guide...", "loading");
+        } else if (currentPhase === "building_spreads") {
+          addActivity("✅ Style guide created", "success");
+          addActivity("📖 Building spreads...", "loading");
+        } else if (currentPhase === "assigning_characters") {
+          addActivity("✅ Spreads built", "success");
+          addActivity("👤 Assigning characters to pages...", "loading");
+        } else if (currentPhase === "assigning_locations") {
+          addActivity("✅ Characters assigned", "success");
+          addActivity("📍 Assigning locations to pages...", "loading");
+        } else if (currentPhase === "ready") {
+          addActivity("✅ Locations assigned", "success");
+          addActivity("🎉 World building complete!", "success");
         }
 
-        setPhase(newProgress.phase);
-        setProgress(newProgress);
+        lastPhaseRef.current = currentPhase;
+      }
+
+      setPhase(currentPhase);
+      setProgress(newProgress);
+
+      // Stop polling if complete
+      if (newProgress.worldComplete) {
+        if (pollRef.current) clearInterval(pollRef.current);
       }
 
       errorCount.current = 0; // Reset on success
@@ -152,13 +198,13 @@ export default function ExtractWorldPage() {
   useEffect(() => {
     if (!storyId) return;
 
-    addActivity("Starting workflow...", "loading");
+    addActivity("🚀 Starting world building...", "loading");
 
     // Initial call
     checkProgress();
 
-    // Poll every 1.5 seconds
-    pollRef.current = setInterval(checkProgress, 1500);
+    // Poll every 2 seconds
+    pollRef.current = setInterval(checkProgress, 2000);
 
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -173,7 +219,7 @@ export default function ExtractWorldPage() {
     if (phase === "ready" && storyId) {
       setTimeout(() => {
         router.push(`/stories/${storyId}/characters`);
-      }, 2000);
+      }, 2500);
     }
   }, [phase, storyId, router]);
 
@@ -182,29 +228,50 @@ export default function ExtractWorldPage() {
   ====================================================== */
 
   const phaseConfig = {
-    extracting: {
-      title: "Building Your World",
-      subtitle: "Discovering characters, locations, and style",
-      icon: Sparkles,
+    extracting_characters: {
+      title: "Discovering Characters",
+      subtitle: "Finding every person in your story",
+      icon: Users,
       color: "from-purple-500 to-pink-500",
-      estimate: "1-2 minutes",
+      estimate: "30 seconds",
     },
-    building_spreads: {
-      title: "Structuring Your Book",
-      subtitle: "Pairing pages into double-page spreads",
-      icon: BookOpen,
+    extracting_locations: {
+      title: "Mapping Locations",
+      subtitle: "Identifying all the places in your world",
+      icon: MapPin,
       color: "from-blue-500 to-cyan-500",
       estimate: "30 seconds",
     },
-    deciding_scenes: {
-      title: "Planning Illustrations",
-      subtitle: "Claude is deciding which characters appear on each spread",
-      icon: Eye,
+    extracting_style: {
+      title: "Creating Style Guide",
+      subtitle: "Defining the visual look and feel",
+      icon: Palette,
+      color: "from-pink-500 to-orange-500",
+      estimate: "30 seconds",
+    },
+    building_spreads: {
+      title: "Building Spreads",
+      subtitle: "Organizing pages into double-page spreads",
+      icon: BookOpen,
+      color: "from-indigo-500 to-purple-500",
+      estimate: "45 seconds",
+    },
+    assigning_characters: {
+      title: "Assigning Characters",
+      subtitle: "Deciding who appears on each page",
+      icon: UserCheck,
       color: "from-green-500 to-emerald-500",
-      estimate: "2-3 minutes",
+      estimate: "45 seconds",
+    },
+    assigning_locations: {
+      title: "Placing Scenes",
+      subtitle: "Setting where each page takes place",
+      icon: MapPinned,
+      color: "from-teal-500 to-cyan-500",
+      estimate: "45 seconds",
     },
     ready: {
-      title: "Your World Is Ready!",
+      title: "World Complete!",
       subtitle: "Redirecting to character design...",
       icon: CheckCircle,
       color: "from-emerald-500 to-green-500",
@@ -221,9 +288,12 @@ export default function ExtractWorldPage() {
 
   const overallProgress = useMemo(() => {
     const phases = [
-      progress.worldExtracted,
+      progress.charactersExtracted,
+      progress.locationsExtracted,
+      progress.styleExtracted,
       progress.spreadsBuilt,
-      progress.scenesDecided,
+      progress.charactersAssigned,
+      progress.locationsAssigned,
     ];
     return (phases.filter(Boolean).length / phases.length) * 100;
   }, [progress]);
@@ -345,42 +415,37 @@ export default function ExtractWorldPage() {
               )}
             </div>
 
-            {/* Progress Dots */}
-            <div className="flex justify-center items-center gap-3">
-              <PhaseStep
-                label="World"
-                complete={progress.worldExtracted}
-                active={phase === "extracting"}
+            {/* Progress Steps */}
+            <div className="flex flex-col gap-2">
+              <ProgressStep
+                label="Extract Characters"
+                complete={progress.charactersExtracted}
+                active={phase === "extracting_characters"}
               />
-              <div className="w-8 h-0.5 bg-gray-300">
-                <motion.div
-                  className="h-full bg-gradient-to-r from-purple-500 to-pink-500"
-                  initial={{ width: "0%" }}
-                  animate={{
-                    width: progress.worldExtracted ? "100%" : "0%",
-                  }}
-                  transition={{ duration: 0.5 }}
-                />
-              </div>
-              <PhaseStep
-                label="Spreads"
+              <ProgressStep
+                label="Extract Locations"
+                complete={progress.locationsExtracted}
+                active={phase === "extracting_locations"}
+              />
+              <ProgressStep
+                label="Extract Style"
+                complete={progress.styleExtracted}
+                active={phase === "extracting_style"}
+              />
+              <ProgressStep
+                label="Build Spreads"
                 complete={progress.spreadsBuilt}
                 active={phase === "building_spreads"}
               />
-              <div className="w-8 h-0.5 bg-gray-300">
-                <motion.div
-                  className="h-full bg-gradient-to-r from-blue-500 to-cyan-500"
-                  initial={{ width: "0%" }}
-                  animate={{
-                    width: progress.spreadsBuilt ? "100%" : "0%",
-                  }}
-                  transition={{ duration: 0.5 }}
-                />
-              </div>
-              <PhaseStep
-                label="Scenes"
-                complete={progress.scenesDecided}
-                active={phase === "deciding_scenes"}
+              <ProgressStep
+                label="Assign Characters"
+                complete={progress.charactersAssigned}
+                active={phase === "assigning_characters"}
+              />
+              <ProgressStep
+                label="Assign Locations"
+                complete={progress.locationsAssigned}
+                active={phase === "assigning_locations"}
               />
             </div>
 
@@ -404,10 +469,10 @@ export default function ExtractWorldPage() {
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
                 <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
                   <h3 className="text-sm font-bold text-gray-900">
-                    Activity
+                    Activity Log
                   </h3>
                 </div>
-                <div className="divide-y divide-gray-100">
+                <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
                   <AnimatePresence>
                     {activity.map((item) => (
                       <motion.div
@@ -442,23 +507,23 @@ export default function ExtractWorldPage() {
                 <InfoCard
                   icon={Users}
                   label="Characters"
-                  status={progress.worldExtracted ? "done" : "pending"}
+                  status={progress.charactersExtracted ? "done" : "pending"}
                 />
                 <InfoCard
                   icon={MapPin}
                   label="Locations"
-                  status={progress.worldExtracted ? "done" : "pending"}
+                  status={progress.locationsExtracted ? "done" : "pending"}
                 />
                 <InfoCard
                   icon={Palette}
                   label="Style"
-                  status={progress.worldExtracted ? "done" : "pending"}
+                  status={progress.styleExtracted ? "done" : "pending"}
                 />
               </div>
             )}
 
             {/* Warning for slow progress */}
-            {elapsedTime > 120 && phase !== "ready" && (
+            {elapsedTime > 180 && phase !== "ready" && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -470,7 +535,7 @@ export default function ExtractWorldPage() {
                     Taking longer than usual
                   </p>
                   <p className="text-yellow-700 mt-1">
-                    Large stories can take 3-5 minutes. Hang tight!
+                    Complex stories can take 4-5 minutes. Hang tight!
                   </p>
                 </div>
               </motion.div>
@@ -486,7 +551,7 @@ export default function ExtractWorldPage() {
    COMPONENTS
 ====================================================== */
 
-function PhaseStep({
+function ProgressStep({
   label,
   complete,
   active,
@@ -496,26 +561,29 @@ function PhaseStep({
   active: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex items-center gap-3">
       <motion.div
         animate={{
-          scale: active ? [1, 1.1, 1] : 1,
+          scale: active ? [1, 1.15, 1] : 1,
         }}
         transition={{
           duration: 2,
           repeat: active ? Infinity : 0,
           ease: "easeInOut",
         }}
-        className={`w-3 h-3 rounded-full ${
+        className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
           complete
             ? "bg-gradient-to-r from-green-500 to-emerald-500"
             : active
             ? "bg-gradient-to-r from-blue-500 to-purple-500"
             : "bg-gray-300"
         }`}
-      />
+      >
+        {complete && <CheckCircle className="w-4 h-4 text-white" />}
+        {active && <Loader2 className="w-4 h-4 text-white animate-spin" />}
+      </motion.div>
       <span
-        className={`text-xs font-medium ${
+        className={`text-sm font-medium ${
           complete || active ? "text-gray-900" : "text-gray-400"
         }`}
       >

@@ -618,22 +618,50 @@ export const storySpreads = pgTable("story_spreads", {
 
 // src/db/schema.ts (ADD THIS TABLE)
 
+// UPDATED storyWorkflowProgress table
+// Replace your existing table definition with this
+
 export const storyWorkflowProgress = pgTable("story_workflow_progress", {
   storyId: uuid("story_id").primaryKey().references(() => stories.id, { onDelete: "cascade" }),
   
-  // Completion flags
-  worldExtracted: boolean("world_extracted").notNull().default(false),
-  spreadsBuilt: boolean("spreads_built").notNull().default(false),
-  scenesDecided: boolean("scenes_decided").notNull().default(false),
+  // ========== NEW: Granular World Building Progress ==========
   
-  // Timestamps
-  worldExtractedAt: timestamp("world_extracted_at"),
+  // Phase 1: World Extraction
+  charactersExtracted: boolean("characters_extracted").notNull().default(false),
+  charactersExtractedAt: timestamp("characters_extracted_at"),
+  
+  locationsExtracted: boolean("locations_extracted").notNull().default(false),
+  locationsExtractedAt: timestamp("locations_extracted_at"),
+  
+  styleExtracted: boolean("style_extracted").notNull().default(false),
+  styleExtractedAt: timestamp("style_extracted_at"),
+  
+  // Phase 2: Spread Building
+  spreadsBuilt: boolean("spreads_built").notNull().default(false),
   spreadsBuiltAt: timestamp("spreads_built_at"),
+  
+  // Phase 3: Scene Composition
+  charactersAssigned: boolean("characters_assigned").notNull().default(false),
+  charactersAssignedAt: timestamp("characters_assigned_at"),
+  
+  locationsAssigned: boolean("locations_assigned").notNull().default(false),
+  locationsAssignedAt: timestamp("locations_assigned_at"),
+  
+  // Overall Status
+  worldComplete: boolean("world_complete").notNull().default(false),
+  worldCompleteAt: timestamp("world_complete_at"),
+  
+  // ========== LEGACY: Keep for backward compatibility ==========
+  worldExtracted: boolean("world_extracted").notNull().default(false),
+  worldExtractedAt: timestamp("world_extracted_at"),
+  scenesDecided: boolean("scenes_decided").notNull().default(false),
   scenesDecidedAt: timestamp("scenes_decided_at"),
   
+  // Timestamps
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
 
 
 export const storyIntent = pgTable("story_intent", {

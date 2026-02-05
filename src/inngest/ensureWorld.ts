@@ -1,0 +1,727 @@
+// src/inngest/ensureWorld.ts
+import { inngest } from "@/inngest/client";
+import { db } from "@/db";
+import {
+  stories,
+  storyPages,
+  characters,
+  storyCharacters,
+  locations,
+  storyLocations,
+  storyStyleGuide,
+  storyWorkflowProgress,
+  storySpreads,
+  storyPageCharacters,
+  storyPageLocations,
+  projects,
+} from "@/db/schema";
+import { eq, asc, and } from "drizzle-orm";
+import { v4 as uuid } from "uuid";
+import Anthropic from "@anthropic-ai/sdk";
+
+export const runtime = "nodejs";
+
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+});
+
+const MODEL = "claude-sonnet-4-20250514";
+
+/* ============================================================================
+   UTILITY FUNCTIONS
+============================================================================ */
+
+function extractJson(raw: string) {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const text = (fenced?.[1] ?? raw).trim();
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
+  const json = first !== -1 && last !== -1 ? text.slice(first, last + 1) : text;
+  return JSON.parse(json);
+}
+
+function extractClaudeText(content: any): string {
+  return (Array.isArray(content) ? content : [])
+    .map((b) => (b?.type === "text" ? String(b.text ?? "") : ""))
+    .join("\n")
+    .trim();
+}
+
+const cap = (v: unknown, max: number) =>
+  typeof v === "string" ? v.trim().slice(0, max) : null;
+
+const jsonOrNull = (v: unknown) => (v && typeof v === "object" ? v : null);
+
+/* ============================================================================
+   MAIN ORCHESTRATOR FUNCTION
+============================================================================ */
+
+export const ensureWorld = inngest.createFunction(
+  {
+    id: "ensure-world",
+    retries: 2,
+  },
+  { event: "story/ensure-world" },
+  async ({ event, step }) => {
+    const { storyId } = event.data as { storyId: string };
+
+    console.log("🌍 [ensure-world] Starting orchestration for story:", storyId);
+
+    /* --------------------------------------------------
+       STEP 0: Load story data and check progress
+    -------------------------------------------------- */
+    const context = await step.run("load-context", async () => {
+      const story = await db.query.stories.findFirst({
+        where: eq(stories.id, storyId),
+      });
+      if (!story) throw new Error("Story not found");
+
+      const project = await db.query.projects.findFirst({
+        where: eq(projects.id, story.projectId),
+      });
+      if (!project?.userId) throw new Error("Missing user");
+
+      const pages = await db.query.storyPages.findMany({
+        where: eq(storyPages.storyId, storyId),
+        orderBy: asc(storyPages.pageNumber),
+      });
+
+      // Get or create progress tracker
+      let progress = await db.query.storyWorkflowProgress.findFirst({
+        where: eq(storyWorkflowProgress.storyId, storyId),
+      });
+
+      if (!progress) {
+        // Create initial progress record
+        await db.insert(storyWorkflowProgress).values({
+          storyId,
+          charactersExtracted: false,
+          locationsExtracted: false,
+          styleExtracted: false,
+          spreadsBuilt: false,
+          charactersAssigned: false,
+          locationsAssigned: false,
+          worldComplete: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        progress = await db.query.storyWorkflowProgress.findFirst({
+          where: eq(storyWorkflowProgress.storyId, storyId),
+        });
+      }
+
+      return { story, project, pages, progress: progress! };
+    });
+
+    console.log("📊 Current progress:", {
+      charactersExtracted: context.progress.charactersExtracted,
+      locationsExtracted: context.progress.locationsExtracted,
+      styleExtracted: context.progress.styleExtracted,
+      spreadsBuilt: context.progress.spreadsBuilt,
+      charactersAssigned: context.progress.charactersAssigned,
+      locationsAssigned: context.progress.locationsAssigned,
+    });
+
+    /* --------------------------------------------------
+       STEP 1: Extract Characters (if not done)
+    -------------------------------------------------- */
+    if (!context.progress.charactersExtracted) {
+      await step.run("extract-characters", async () => {
+        console.log("👥 Extracting characters...");
+
+        const text = context.pages
+          .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
+          .join("\n");
+
+        const res = await client.messages.create({
+          model: MODEL,
+          max_tokens: 2000,
+          system: `Extract ALL characters from this story. Return ONLY this JSON:
+{
+  "characters": [
+    {
+      "name": "Character Name",
+      "description": "personality, traits, behavior",
+      "appearance": "detailed physical description for illustration",
+      "role": "main/supporting/minor"
+    }
+  ]
+}
+
+Include:
+- Main characters (protagonists, important figures)
+- Supporting characters (friends, family, helpers)
+- Minor characters (briefly mentioned)
+
+For appearance, be specific: age, hair color/style, clothing, distinctive features, body type, etc.`,
+          messages: [{ role: "user", content: text }],
+        });
+
+        const data = extractJson(extractClaudeText(res.content));
+
+        // Save characters
+        await db.transaction(async (tx) => {
+          // Clear existing
+          await tx
+            .delete(storyCharacters)
+            .where(eq(storyCharacters.storyId, storyId));
+
+          // Insert new
+          for (const c of data.characters ?? []) {
+            if (!c.name) continue;
+
+            const characterId = uuid();
+            await tx.insert(characters).values({
+              id: characterId,
+              userId: context.project.userId!,
+              name: cap(c.name, 80)!,
+              description: cap(c.description, 500),
+              appearance: cap(c.appearance, 500),
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            });
+
+            await tx.insert(storyCharacters).values({
+              storyId,
+              characterId,
+              role: cap(c.role, 40),
+              arcSummary: null,
+            });
+          }
+
+          console.log(`✅ Created ${data.characters?.length || 0} characters`);
+        });
+
+        // Mark progress
+        await db
+          .update(storyWorkflowProgress)
+          .set({
+            charactersExtracted: true,
+            charactersExtractedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
+      });
+    } else {
+      console.log("✓ Characters already extracted, skipping");
+    }
+
+    /* --------------------------------------------------
+       STEP 2: Extract Locations (if not done)
+    -------------------------------------------------- */
+    if (!context.progress.locationsExtracted) {
+      await step.run("extract-locations", async () => {
+        console.log("🗺️  Extracting locations...");
+
+        const text = context.pages
+          .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
+          .join("\n");
+
+        const res = await client.messages.create({
+          model: MODEL,
+          max_tokens: 1500,
+          system: `Extract ALL locations/settings from this story. Return ONLY this JSON:
+{
+  "locations": [
+    {
+      "name": "Location Name",
+      "description": "detailed visual description for illustration"
+    }
+  ]
+}
+
+Include:
+- Major settings (home, school, forest, castle, etc.)
+- Minor settings (rooms, specific places briefly mentioned)
+
+For description, focus on visual details: architecture, natural features, atmosphere, colors, lighting, etc.`,
+          messages: [{ role: "user", content: text }],
+        });
+
+        const data = extractJson(extractClaudeText(res.content));
+
+        // Save locations
+        await db.transaction(async (tx) => {
+          // Clear existing
+          await tx
+            .delete(storyLocations)
+            .where(eq(storyLocations.storyId, storyId));
+
+          // Insert new
+          for (const l of data.locations ?? []) {
+            if (!l.name) continue;
+
+            const locationId = uuid();
+            await tx.insert(locations).values({
+              id: locationId,
+              userId: context.project.userId!,
+              name: cap(l.name, 80)!,
+              description: cap(l.description, 500),
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            });
+
+            await tx.insert(storyLocations).values({
+              storyId,
+              locationId,
+              significance: null,
+            });
+          }
+
+          console.log(`✅ Created ${data.locations?.length || 0} locations`);
+        });
+
+        // Mark progress
+        await db
+          .update(storyWorkflowProgress)
+          .set({
+            locationsExtracted: true,
+            locationsExtractedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
+      });
+    } else {
+      console.log("✓ Locations already extracted, skipping");
+    }
+
+    /* --------------------------------------------------
+       STEP 3: Extract Style Guide (if not done)
+    -------------------------------------------------- */
+    if (!context.progress.styleExtracted) {
+      await step.run("extract-style", async () => {
+        console.log("🎨 Extracting style guide...");
+
+        const text = context.pages
+          .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
+          .join("\n");
+
+        const res = await client.messages.create({
+          model: MODEL,
+          max_tokens: 1500,
+          system: `Analyze this story and create a visual style guide for illustrations. Return ONLY this JSON:
+{
+  "style": {
+    "summary": "one-sentence overall style description",
+    "artStyle": "medium and technique (watercolor, digital, pencil, etc.)",
+    "visualThemes": "mood, atmosphere, artistic approach",
+    "colorPalette": {
+      "primary": ["color1", "color2"],
+      "secondary": ["color3", "color4"],
+      "accent": ["color5"]
+    },
+    "negativePrompt": "what to avoid (modern elements, photorealism, etc.)"
+  }
+}
+
+Consider:
+- Story tone (whimsical, serious, adventurous, etc.)
+- Target age group
+- Setting time period
+- Cultural context`,
+          messages: [{ role: "user", content: text }],
+        });
+
+        const data = extractJson(extractClaudeText(res.content));
+
+        // Save style guide
+        await db.transaction(async (tx) => {
+          // Clear existing
+          await tx
+            .delete(storyStyleGuide)
+            .where(eq(storyStyleGuide.storyId, storyId));
+
+          // Insert new
+          await tx.insert(storyStyleGuide).values({
+            id: uuid(),
+            storyId,
+            summary: cap(data.style?.summary, 100),
+            negativePrompt: cap(data.style?.negativePrompt, 100),
+            artStyle: cap(data.style?.artStyle, 100),
+            visualThemes: cap(data.style?.visualThemes, 100),
+            colorPalette: jsonOrNull(data.style?.colorPalette),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+
+          console.log("✅ Style guide saved");
+        });
+
+        // Mark progress
+        await db
+          .update(storyWorkflowProgress)
+          .set({
+            styleExtracted: true,
+            styleExtractedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
+      });
+    } else {
+      console.log("✓ Style already extracted, skipping");
+    }
+
+    /* --------------------------------------------------
+       STEP 4: Build Spreads (if not done)
+    -------------------------------------------------- */
+    if (!context.progress.spreadsBuilt) {
+      await step.run("build-spreads", async () => {
+        console.log("📖 Building spreads...");
+
+        const text = context.pages
+          .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
+          .join("\n");
+
+        const res = await client.messages.create({
+          model: MODEL,
+          max_tokens: 2500,
+          system: `Create illustration spreads for this children's book. Return ONLY this JSON:
+{
+  "spreads": [
+    {
+      "pageNumbers": [1, 2],
+      "sceneDescription": "what to illustrate",
+      "visualFocus": "main visual element or action",
+      "mood": "emotional tone"
+    }
+  ]
+}
+
+Rules:
+- Combine facing pages (1-2, 3-4, 5-6, etc.)
+- Cover and title pages get their own spreads
+- Each spread should show ONE key moment/scene
+- Describe scenes visually (not just repeating text)
+- Consider visual variety and pacing`,
+          messages: [{ role: "user", content: text }],
+        });
+
+        const data = extractJson(extractClaudeText(res.content));
+
+        // Save spreads
+        await db.transaction(async (tx) => {
+          // Clear existing
+          await tx.delete(storySpreads).where(eq(storySpreads.storyId, storyId));
+
+          // Insert new
+          for (const s of data.spreads ?? []) {
+            if (!s.pageNumbers || s.pageNumbers.length === 0) continue;
+
+            await tx.insert(storySpreads).values({
+              id: uuid(),
+              storyId,
+              spreadNumber: s.pageNumbers[0], // Use first page as spread number
+              pageNumbers: s.pageNumbers,
+              sceneDescription: cap(s.sceneDescription, 500),
+              visualFocus: cap(s.visualFocus, 200),
+              mood: cap(s.mood, 100),
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            });
+          }
+
+          console.log(`✅ Created ${data.spreads?.length || 0} spreads`);
+        });
+
+        // Mark progress
+        await db
+          .update(storyWorkflowProgress)
+          .set({
+            spreadsBuilt: true,
+            spreadsBuiltAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
+      });
+    } else {
+      console.log("✓ Spreads already built, skipping");
+    }
+
+    /* --------------------------------------------------
+       STEP 5: Assign Characters to Pages (if not done)
+    -------------------------------------------------- */
+    if (!context.progress.charactersAssigned) {
+      await step.run("assign-characters", async () => {
+        console.log("👤 Assigning characters to pages...");
+
+        // Get all characters and spreads
+        const allCharacters = await db.query.storyCharacters.findMany({
+          where: eq(storyCharacters.storyId, storyId),
+          with: { character: true },
+        });
+
+        const allSpreads = await db.query.storySpreads.findMany({
+          where: eq(storySpreads.storyId, storyId),
+        });
+
+        if (allCharacters.length === 0 || allSpreads.length === 0) {
+          console.log("⚠️  No characters or spreads found, skipping assignment");
+          return;
+        }
+
+        // Build prompt with characters and spreads
+        const characterList = allCharacters
+          .map((sc) => `- ${sc.character.name}: ${sc.character.description}`)
+          .join("\n");
+
+        const spreadList = allSpreads
+          .map(
+            (s) =>
+              `Spread ${s.spreadNumber} (pages ${s.pageNumbers.join(", ")}): ${s.sceneDescription}`
+          )
+          .join("\n");
+
+        const res = await client.messages.create({
+          model: MODEL,
+          max_tokens: 2000,
+          system: `Assign characters to illustration spreads. Return ONLY this JSON:
+{
+  "assignments": [
+    {
+      "spreadNumber": 1,
+      "characterNames": ["Character A", "Character B"]
+    }
+  ]
+}
+
+Only include characters that should appear in each spread's illustration.`,
+          messages: [
+            {
+              role: "user",
+              content: `CHARACTERS:\n${characterList}\n\nSPREADS:\n${spreadList}`,
+            },
+          ],
+        });
+
+        const data = extractJson(extractClaudeText(res.content));
+
+        // Save assignments
+        await db.transaction(async (tx) => {
+          // Clear existing
+          const pageIds = context.pages.map((p) => p.id);
+          if (pageIds.length > 0) {
+            await tx
+              .delete(storyPageCharacters)
+              .where(
+                and(
+                  eq(storyPageCharacters.storyId, storyId)
+                )
+              );
+          }
+
+          // Insert new assignments
+          for (const assignment of data.assignments ?? []) {
+            const spread = allSpreads.find(
+              (s) => s.spreadNumber === assignment.spreadNumber
+            );
+            if (!spread) continue;
+
+            // Find pages in this spread
+            const spreadPages = context.pages.filter((p) =>
+              spread.pageNumbers.includes(p.pageNumber)
+            );
+
+            // Assign each character to each page in the spread
+            for (const characterName of assignment.characterNames ?? []) {
+              const storyChar = allCharacters.find(
+                (sc) =>
+                  sc.character.name.toLowerCase() === characterName.toLowerCase()
+              );
+              if (!storyChar) continue;
+
+              for (const page of spreadPages) {
+                await tx.insert(storyPageCharacters).values({
+                  id: uuid(),
+                  storyId,
+                  pageId: page.id,
+                  characterId: storyChar.characterId,
+                  prominence: null,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                });
+              }
+            }
+          }
+
+          console.log(`✅ Assigned characters to spreads`);
+        });
+
+        // Mark progress
+        await db
+          .update(storyWorkflowProgress)
+          .set({
+            charactersAssigned: true,
+            charactersAssignedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
+      });
+    } else {
+      console.log("✓ Characters already assigned, skipping");
+    }
+
+    /* --------------------------------------------------
+       STEP 6: Assign Locations to Pages (if not done)
+    -------------------------------------------------- */
+    if (!context.progress.locationsAssigned) {
+      await step.run("assign-locations", async () => {
+        console.log("📍 Assigning locations to pages...");
+
+        // Get all locations and spreads
+        const allLocations = await db.query.storyLocations.findMany({
+          where: eq(storyLocations.storyId, storyId),
+          with: { location: true },
+        });
+
+        const allSpreads = await db.query.storySpreads.findMany({
+          where: eq(storySpreads.storyId, storyId),
+        });
+
+        if (allLocations.length === 0 || allSpreads.length === 0) {
+          console.log("⚠️  No locations or spreads found, skipping assignment");
+          return;
+        }
+
+        // Build prompt
+        const locationList = allLocations
+          .map((sl) => `- ${sl.location.name}: ${sl.location.description}`)
+          .join("\n");
+
+        const spreadList = allSpreads
+          .map(
+            (s) =>
+              `Spread ${s.spreadNumber} (pages ${s.pageNumbers.join(", ")}): ${s.sceneDescription}`
+          )
+          .join("\n");
+
+        const res = await client.messages.create({
+          model: MODEL,
+          max_tokens: 2000,
+          system: `Assign locations to illustration spreads. Return ONLY this JSON:
+{
+  "assignments": [
+    {
+      "spreadNumber": 1,
+      "locationName": "Location Name"
+    }
+  ]
+}
+
+Each spread should have ONE primary location where the scene takes place.`,
+          messages: [
+            {
+              role: "user",
+              content: `LOCATIONS:\n${locationList}\n\nSPREADS:\n${spreadList}`,
+            },
+          ],
+        });
+
+        const data = extractJson(extractClaudeText(res.content));
+
+        // Save assignments
+        await db.transaction(async (tx) => {
+          // Clear existing
+          const pageIds = context.pages.map((p) => p.id);
+          if (pageIds.length > 0) {
+            await tx
+              .delete(storyPageLocations)
+              .where(
+                and(
+                  eq(storyPageLocations.storyId, storyId)
+                )
+              );
+          }
+
+          // Insert new assignments
+          for (const assignment of data.assignments ?? []) {
+            const spread = allSpreads.find(
+              (s) => s.spreadNumber === assignment.spreadNumber
+            );
+            if (!spread) continue;
+
+            const storyLoc = allLocations.find(
+              (sl) =>
+                sl.location.name.toLowerCase() ===
+                assignment.locationName?.toLowerCase()
+            );
+            if (!storyLoc) continue;
+
+            // Find pages in this spread
+            const spreadPages = context.pages.filter((p) =>
+              spread.pageNumbers.includes(p.pageNumber)
+            );
+
+            // Assign location to each page in the spread
+            for (const page of spreadPages) {
+              await tx.insert(storyPageLocations).values({
+                id: uuid(),
+                storyId,
+                pageId: page.id,
+                locationId: storyLoc.locationId,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              });
+            }
+          }
+
+          console.log(`✅ Assigned locations to spreads`);
+        });
+
+        // Mark progress
+        await db
+          .update(storyWorkflowProgress)
+          .set({
+            locationsAssigned: true,
+            locationsAssignedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
+      });
+    } else {
+      console.log("✓ Locations already assigned, skipping");
+    }
+
+    /* --------------------------------------------------
+       STEP 7: Mark world as complete
+    -------------------------------------------------- */
+    await step.run("mark-world-complete", async () => {
+      console.log("🎉 Marking world as complete...");
+
+      await db
+        .update(storyWorkflowProgress)
+        .set({
+          worldComplete: true,
+          worldCompleteAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(storyWorkflowProgress.storyId, storyId));
+
+      // Update story status
+      await db
+        .update(stories)
+        .set({
+          status: "ready",
+          updatedAt: new Date(),
+        })
+        .where(eq(stories.id, storyId));
+
+      console.log("✅ [ensure-world] Complete! World is ready for illustrations.");
+    });
+
+    /* --------------------------------------------------
+       STEP 8: Trigger next workflow (if configured)
+    -------------------------------------------------- */
+    await step.run("trigger-next", async () => {
+      // You can trigger illustration generation here if you want
+      // await inngest.send({
+      //   name: "story/generate-illustrations",
+      //   data: { storyId },
+      // });
+
+      console.log("🎬 World building complete. Ready for next phase.");
+    });
+
+    return { ok: true, worldComplete: true };
+  }
+);

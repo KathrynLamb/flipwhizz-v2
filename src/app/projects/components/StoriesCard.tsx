@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+
 import {
   BookOpen,
   Sparkles,
@@ -22,6 +23,7 @@ type Story = {
   coverImageUrl: string | null;
 };
 
+
 const STATUS_CONFIG: Record<string, {
   label: string;
   icon: any;
@@ -31,19 +33,19 @@ const STATUS_CONFIG: Record<string, {
   draft: {
     label: "Draft",
     icon: BookOpen,
-    href: id => `/stories/${id}/hub`,
+    href: id => `/stories/${id}/extract`,
     badge: "bg-amber-100 text-amber-800",
   },
   extracting: {
     label: "Finding characters",
     icon: Sparkles,
-    href: id => `/stories/${id}/hub`,
+    href: id => `/stories/${id}/extract`,
     badge: "bg-fuchsia-100 text-fuchsia-700",
   },
   world_ready: {
     label: "Characters",
     icon: Users2,
-    href: id => `/stories/${id}/characters`,
+    href: id => `/stories/${id}/extract`,
     badge: "bg-indigo-100 text-indigo-700",
   },
   style_ready: {
@@ -83,6 +85,9 @@ const STATUS_CONFIG: Record<string, {
   const config = STATUS_CONFIG[story.status] ?? STATUS_CONFIG.draft;
   const StatusIcon = config.icon;
 
+
+
+
   console.log("Story", story)
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -102,7 +107,7 @@ const STATUS_CONFIG: Record<string, {
       "
     >
 
-{/* COVER */}
+
 {/* COVER */}
 <div className="relative w-full overflow-hidden">
       {story.coverImageUrl || story.coverSpread ? (
@@ -174,6 +179,25 @@ const STATUS_CONFIG: Record<string, {
         >
           Open story
         </Link>
+
+
+{/* <button
+
+          onClick={() => router.push(`/stories/${story.id}/extract`)}
+          className="
+            mt-2 inline-flex items-center justify-center
+            rounded-full
+            bg-gradient-to-r from-pink-500 to-purple-400
+            px-6 py-3
+            text-sm font-black text-white
+            shadow-md
+            transition
+            hover:scale-[1.04]
+            hover:shadow-lg
+          "
+        > */}
+          {/* Open story
+        </button> */}
       </div>
     </li>
   );

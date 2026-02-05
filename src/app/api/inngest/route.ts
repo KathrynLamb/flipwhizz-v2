@@ -3,7 +3,8 @@ import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
 
 // Core narrative
-import { globalRewriteJob, extractWorldJob } from "@/inngest/functions";
+import { globalRewriteJob } from "@/inngest/functions";
+import { ensureWorld } from "@/inngest/ensureWorld"; // ✅ NEW IMPORT
 
 import { decideScenes } from "@/inngest/decideSpreadScenes";
 
@@ -19,7 +20,7 @@ export const { GET, POST, PUT } = serve({
   functions: [
     // Core pipeline
     globalRewriteJob,
-    extractWorldJob,
+    ensureWorld,        // ✅ CHANGED: was extractWorldJob
     buildSpreads,
     decideScenes,
 
@@ -29,7 +30,5 @@ export const { GET, POST, PUT } = serve({
     generateSingleSpread,   // ✅ Worker
     reviseSingleSpread,
     generateCoverSpreadPhaseB,
-
-
   ],
 });
