@@ -78,7 +78,7 @@ const decideSpreadScenesTool: Anthropic.Tool = {
 /* -------------------------------------------------------------------------- */
 
 export const decideScenes = inngest.createFunction(
-  { id: "decide-scenes-v4", retries: 2 },
+  { id: "decide-scenes-v2", retries: 2 },
   { event: "story/decide-spread-scenes" },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
