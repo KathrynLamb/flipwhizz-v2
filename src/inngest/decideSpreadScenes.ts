@@ -32,7 +32,7 @@ const MODEL = "claude-sonnet-4-20250514";
 const decideSpreadScenesTool: Anthropic.Tool = {
   name: "decide_spread_scenes",
   description:
-    "Assign characters and locations to the left and right page of each spread",
+    "Assign characters and locations to each spread in the story",
   input_schema: {
     type: "object",
     required: ["spreads"],
@@ -41,30 +41,20 @@ const decideSpreadScenesTool: Anthropic.Tool = {
         type: "array",
         items: {
           type: "object",
-          required: ["spreadIndex", "left", "right"],
+          required: ["spreadIndex", "characterIds"],
           properties: {
-            spreadIndex: { type: "number" },
-            left: {
-              type: "object",
-              required: ["characterIds", "locationId"],
-              properties: {
-                characterIds: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                locationId: { type: ["string", "null"] },
-              },
+            spreadIndex: { 
+              type: "number",
+              description: "The spread number (1-based index)"
             },
-            right: {
-              type: "object",
-              required: ["characterIds", "locationId"],
-              properties: {
-                characterIds: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                locationId: { type: ["string", "null"] },
-              },
+            characterIds: {
+              type: "array",
+              description: "Array of character IDs that appear in this spread",
+              items: { type: "string" },
+            },
+            locationId: { 
+              type: "string",
+              description: "The primary location ID for this spread, or empty string if none"
             },
           },
         },
@@ -74,16 +64,19 @@ const decideSpreadScenesTool: Anthropic.Tool = {
 };
 
 /* -------------------------------------------------------------------------- */
-/*                               INNGEST STEP                                 */
+/*                               INNGEST FUNCTION                             */
 /* -------------------------------------------------------------------------- */
 
 export const decideScenes = inngest.createFunction(
-  { id: "decide-scenes-v2", retries: 2 },
+  { 
+    id: "decide-scenes-v3",  // Changed version to force re-registration
+    retries: 2 
+  },
   { event: "story/decide-spread-scenes" },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
 
-    console.log("🟣 [decide-scenes] Starting:", storyId);
+    console.log("🟣 [decide-scenes-v3] Starting:", storyId);
 
     /* ------------------------------------------------------------------ */
     /* Load spreads                                                        */
@@ -103,6 +96,8 @@ export const decideScenes = inngest.createFunction(
     const spreadByIndex = new Map(
       spreads.map((s) => [s.spreadIndex, s])
     );
+
+    console.log(`📚 Loaded ${spreads.length} spreads`);
 
     /* ------------------------------------------------------------------ */
     /* Load page text                                                      */
@@ -142,6 +137,8 @@ export const decideScenes = inngest.createFunction(
       });
     });
 
+    console.log(`👥 Loaded ${chars.length} characters`);
+
     /* ------------------------------------------------------------------ */
     /* Load locations                                                      */
     /* ------------------------------------------------------------------ */
@@ -161,6 +158,8 @@ export const decideScenes = inngest.createFunction(
         ),
       });
     });
+
+    console.log(`📍 Loaded ${locs.length} locations`);
 
     /* ------------------------------------------------------------------ */
     /* Build Claude input                                                  */
@@ -188,21 +187,23 @@ ${right}
       .join("\n\n");
 
     const characterList = chars
-      .map((c) => `${c.name} (${c.id})`)
-      .join(", ");
+      .map((c) => `${c.name} (ID: ${c.id})`)
+      .join("\n");
 
     const locationList = locs
-      .map((l) => `${l.name} (${l.id})`)
-      .join(", ");
+      .map((l) => `${l.name} (ID: ${l.id})`)
+      .join("\n");
 
     /* ------------------------------------------------------------------ */
     /* Claude (TOOLS — NO JSON PARSING)                                    */
     /* ------------------------------------------------------------------ */
 
     const result = await step.run("decide-with-claude", async () => {
+      console.log("🤖 Calling Claude with tool...");
+      
       return client.messages.create({
         model: MODEL,
-        max_tokens: 1800,
+        max_tokens: 2000,
         tools: [decideSpreadScenesTool],
         tool_choice: {
           type: "tool",
@@ -211,23 +212,27 @@ ${right}
         system: `
 You are performing a STRUCTURAL planning task.
 
+For each spread, decide which characters appear and what the primary location is.
+
 Rules:
-- Use ONLY the IDs provided
-- Do NOT invent anything
-- Do NOT explain
-- Output ONLY via the provided tool
-- Every spreadIndex must be included exactly once
+- Use ONLY the character and location IDs provided in the user message
+- Do NOT invent or guess IDs
+- If no location is relevant, use empty string ""
+- If no characters appear, use empty array []
+- Every spreadIndex from the input must be included exactly once
+- Output ONLY via the decide_spread_scenes tool
 `.trim(),
         messages: [
           {
             role: "user",
             content: `
-CHARACTERS:
+AVAILABLE CHARACTERS:
 ${characterList || "None"}
 
-LOCATIONS:
+AVAILABLE LOCATIONS:
 ${locationList || "None"}
 
+SPREADS TO ANALYZE:
 ${spreadText}
 `.trim(),
           },
@@ -238,6 +243,8 @@ ${spreadText}
     /* ------------------------------------------------------------------ */
     /* Extract tool use                                                    */
     /* ------------------------------------------------------------------ */
+
+    console.log("🔍 Extracting tool use from Claude response...");
 
     const toolUse = result.content.find(
       (c) =>
@@ -258,6 +265,8 @@ ${spreadText}
       throw new Error(`Invalid tool output structure. Expected spreads array, got: ${typeof toolUse.input?.spreads}`);
     }
 
+    console.log(`✅ Claude returned decisions for ${toolUse.input.spreads.length} spreads`);
+
     /* ------------------------------------------------------------------ */
     /* Persist                                                            */
     /* ------------------------------------------------------------------ */
@@ -274,35 +283,29 @@ ${spreadText}
           );
         }
 
-        const allCharacterIds = Array.from(
-          new Set([
-            ...(decision.left.characterIds || []),
-            ...(decision.right.characterIds || []),
-          ])
-        );
+        const characterIds = decision.characterIds || [];
+        const locationId = decision.locationId && decision.locationId !== "" ? decision.locationId : null;
 
-        console.log(`✅ Spread ${decision.spreadIndex}: ${allCharacterIds.length} characters`);
+        console.log(`✅ Spread ${decision.spreadIndex}: ${characterIds.length} characters, location: ${locationId || 'none'}`);
 
         await db.insert(storySpreadPresence).values({
           id: uuid(),
           spreadId: spread.id,
-          characters: allCharacterIds.map((characterId) => ({
+          characters: characterIds.map((characterId: string) => ({
             characterId,
             role: "primary",
             confidence: 0.8,
             reason: "Derived from spread text",
           })),
-          primaryLocationId:
-            decision.left.locationId === decision.right.locationId
-              ? decision.left.locationId
-              : decision.left.locationId ??
-                decision.right.locationId,
+          primaryLocationId: locationId,
           source: "claude",
           locked: true,
           createdAt: new Date(),
           updatedAt: new Date(),
         });
       }
+
+      console.log(`✅ Saved ${toolUse.input.spreads.length} spread presence records`);
     });
 
     /* ------------------------------------------------------------------ */
@@ -319,9 +322,9 @@ ${spreadText}
         })
         .where(eq(storyWorkflowProgress.storyId, storyId));
 
-      console.log("✅ [decide-scenes] Complete");
+      console.log("✅ [decide-scenes-v3] Workflow complete!");
     });
 
-    return { ok: true };
+    return { ok: true, spreadsProcessed: toolUse.input.spreads.length };
   }
 );
