@@ -29,7 +29,7 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   async function waitForPagesAndNavigate(storyId: string) {
-    const maxAttempts = 30; // ~30 seconds
+    const maxAttempts = 30;
     const delay = 1000;
   
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -41,7 +41,6 @@ export default function ChatPage() {
           router.push(`/stories/${storyId}/pages`);
           return;
         }
-        
       } catch (err) {
         console.warn("Waiting for pages…", err);
       }
@@ -52,8 +51,6 @@ export default function ChatPage() {
     console.error("Timed out waiting for pages");
   }
 
-  console.log(' in chat ')
-
   // Initial Load
   useEffect(() => {
     async function initializeStudio() {
@@ -61,8 +58,6 @@ export default function ChatPage() {
 
       try {
         const chatRes = await fetch(`/api/chat/history?projectId=${projectId}`);
-        console.log('CHAT RES', chatRes);
-
         const chatData = await chatRes.json();
         if (chatData.messages) {
           setMessages(chatData.messages);
@@ -158,45 +153,45 @@ export default function ChatPage() {
     }
   }
   
-  
   if (!projectId) return (
-    <div className="flex h-screen items-center justify-center bg-white">
+    <div className="flex h-screen items-center justify-center bg-gray-50">
       <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-gray-50">
       
-      {/* Top Bar */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+      {/* Top Bar - iOS Style */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200/50">
+        <div className="px-4 py-3 flex items-center justify-between">
           <button
             onClick={() => router.push("/projects")}
-            className="flex items-center gap-2 text-gray-600 hover:text-black transition-colors font-medium"
+            className="flex items-center gap-2 text-purple-600 active:opacity-60 transition-opacity font-semibold text-[15px] min-h-[44px] -ml-2 pl-2 pr-3"
           >
             <ArrowLeft className="w-5 h-5" />
             <span>Projects</span>
           </button>
 
-          <div className="flex items-center gap-2 px-4 py-2 bg-purple-100 rounded-full">
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
             {isSyncing ? (
               <>
-                <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
-                <span className="text-sm font-bold text-purple-900">Syncing...</span>
+                <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
+                <span className="text-sm font-semibold text-gray-600">Syncing...</span>
               </>
             ) : (
               <>
-                <div className="w-2 h-2 rounded-full bg-purple-500" />
-                <span className="text-sm font-bold text-purple-900">Saved</span>
+                <div className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="text-sm font-semibold text-gray-900">Story Studio</span>
               </>
             )}
           </div>
         </div>
       </div>
 
-      <div className="pt-24 pb-32 px-6">
-        <div className="max-w-4xl mx-auto">
+      {/* Messages Container */}
+      <div className="pt-[60px] pb-[140px] px-4">
+        <div className="max-w-2xl mx-auto">
           
           {/* Welcome State */}
           <AnimatePresence>
@@ -204,53 +199,77 @@ export default function ChatPage() {
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="text-center py-24 space-y-8"
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="text-center py-16 px-4 space-y-6"
               >
-                <div className="inline-flex items-center gap-2 mb-4">
-                  {[...Array(3)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="w-3 h-3 rounded-full bg-gradient-to-r from-pink-500 to-purple-500"
-                    />
-                  ))}
+                <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
+                  <Sparkles className="w-10 h-10 text-white" />
                 </div>
 
-                <h1 className="text-7xl font-black bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent mb-6">
-                  Let's Write!
-                </h1>
-                
-                <p className="text-xl text-gray-600 max-w-2xl mx-auto font-medium">
-                  Tell me about a character, a magical place, or an adventure. I'll help bring your story to life! ✨
-                </p>
+                <div className="space-y-3">
+                  <h1 className="text-4xl font-black text-gray-900">
+                    Let's Create Magic! ✨
+                  </h1>
+                  
+                  <p className="text-[17px] text-gray-600 leading-relaxed max-w-sm mx-auto">
+                    Tell me about your character, their world, or the adventure you want to go on
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2 justify-center pt-4">
+                  <button 
+                    onClick={() => setInput("A brave dragon who's afraid of heights")}
+                    className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
+                  >
+                    🐉 Brave Dragon
+                  </button>
+                  <button 
+                    onClick={() => setInput("A magical forest where trees can talk")}
+                    className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
+                  >
+                    🌳 Magical Forest
+                  </button>
+                  <button 
+                    onClick={() => setInput("An underwater adventure with friendly dolphins")}
+                    className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
+                  >
+                    🐬 Ocean Quest
+                  </button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
 
           {/* Messages */}
-          <div className="space-y-6">
+          <div className="space-y-3">
             {messages.map((msg, i) => (
               <motion.div
                 key={i}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 {msg.role === "user" ? (
-                  <div className="max-w-[80%]">
-                    <div className="bg-gradient-to-br from-purple-500 to-pink-500 text-white px-6 py-4 rounded-3xl shadow-lg">
-                      <p className="text-base font-medium leading-relaxed">{msg.content}</p>
+                  // User Message - iMessage Style
+                  <div className="max-w-[85%]">
+                    <div className="bg-purple-500 text-white px-5 py-3 rounded-[20px] rounded-tr-[4px] shadow-sm">
+                      <p className="text-[16px] leading-[1.4] font-normal whitespace-pre-wrap break-words">
+                        {msg.content}
+                      </p>
                     </div>
                   </div>
                 ) : (
+                  // AI Message - Wider, cleaner design
                   <div className="max-w-[85%]">
-                    <div className="flex gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center flex-shrink-0">
-                        <Sparkles className="w-5 h-5 text-white" />
+                    <div className="flex gap-2 items-end">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center flex-shrink-0 shadow-sm">
+                        <Sparkles className="w-4 h-4 text-white" />
                       </div>
-                      <div className="bg-gray-100 text-gray-900 px-6 py-4 rounded-3xl shadow-sm">
-                        <p className="text-base font-medium leading-relaxed">{msg.content}</p>
+                      <div className="bg-white px-5 py-3 rounded-[20px] rounded-bl-[4px] shadow-sm border border-gray-100">
+                        <p className="text-[16px] leading-[1.4] text-gray-900 font-normal whitespace-pre-wrap break-words">
+                          {msg.content}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -258,38 +277,36 @@ export default function ChatPage() {
               </motion.div>
             ))}
 
-            {/* Loading */}
+            {/* Typing Indicator */}
             {loading && (
               <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex items-center gap-3"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex items-end gap-2"
               >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center">
-                  <Sparkles className="w-5 h-5 text-white" />
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center shadow-sm">
+                  <Sparkles className="w-4 h-4 text-white" />
                 </div>
-                <div className="flex gap-2">
+                <div className="bg-white px-5 py-3 rounded-[20px] rounded-bl-[4px] shadow-sm border border-gray-100 flex gap-1.5">
                   <motion.div 
-                    animate={{ scale: [1, 1.2, 1] }} 
-                    transition={{ repeat: Infinity, duration: 0.8 }}
-                    className="w-2 h-2 bg-purple-500 rounded-full" 
+                    animate={{ y: [0, -4, 0] }} 
+                    transition={{ repeat: Infinity, duration: 0.6, delay: 0 }}
+                    className="w-2 h-2 bg-gray-400 rounded-full" 
                   />
                   <motion.div 
-                    animate={{ scale: [1, 1.2, 1] }} 
-                    transition={{ repeat: Infinity, duration: 0.8, delay: 0.2 }}
-                    className="w-2 h-2 bg-pink-500 rounded-full" 
+                    animate={{ y: [0, -4, 0] }} 
+                    transition={{ repeat: Infinity, duration: 0.6, delay: 0.1 }}
+                    className="w-2 h-2 bg-gray-400 rounded-full" 
                   />
                   <motion.div 
-                    animate={{ scale: [1, 1.2, 1] }} 
-                    transition={{ repeat: Infinity, duration: 0.8, delay: 0.4 }}
-                    className="w-2 h-2 bg-blue-500 rounded-full" 
+                    animate={{ y: [0, -4, 0] }} 
+                    transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }}
+                    className="w-2 h-2 bg-gray-400 rounded-full" 
                   />
                 </div>
               </motion.div>
             )}
 
-
-            
             <div ref={bottomRef} />
           </div>
         </div>
@@ -298,110 +315,112 @@ export default function ChatPage() {
       {/* Floating Create Story Button */}
       {messages.length >= 3 && !storyId && (
         <motion.div
-          initial={{ opacity: 0, y: 100, scale: 0.8 }}
+          initial={{ opacity: 0, y: 20, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ type: "spring", damping: 20 }}
-          className="fixed bottom-32 right-6 z-50"
+          exit={{ opacity: 0, y: 20, scale: 0.9 }}
+          transition={{ type: "spring", damping: 25, stiffness: 300 }}
+          className="fixed bottom-[100px] left-0 right-0 z-40 px-4"
         >
-          <button
-            onClick={createStoryFromChat}
-            disabled={storyCreating}
-            className="
-              group relative
-              bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500
-              text-white rounded-2xl
-              px-6 py-4
-              font-black text-base
-              shadow-2xl
-              hover:scale-105 active:scale-95
-              transition-transform
-              disabled:opacity-70
-              flex items-center gap-3
-            "
-          >
-            {/* Pulse ring */}
-            {!storyCreating && (
-              <span className="absolute -inset-1 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 rounded-2xl opacity-75 blur-lg animate-pulse" />
-            )}
-            
-            <span className="relative flex items-center gap-3">
-              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-2xl">
-                {storyCreating ? <Loader2 className="w-6 h-6 animate-spin" /> : "📖"}
-              </div>
-              
-              <div className="text-left">
-                <div className="text-sm opacity-90">Ready!</div>
-                <div className="text-base font-black">Create My Book</div>
-              </div>
-            </span>
-          </button>
+          <div className="max-w-2xl mx-auto">
+            <button
+              onClick={createStoryFromChat}
+              disabled={storyCreating}
+              className="
+                w-full
+                bg-gradient-to-r from-purple-500 to-pink-500
+                text-white rounded-2xl
+                px-6 py-4
+                font-bold text-[17px]
+                shadow-lg
+                active:scale-[0.98]
+                transition-transform
+                disabled:opacity-60
+                flex items-center justify-center gap-3
+                min-h-[56px]
+              "
+            >
+              {storyCreating ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Creating Your Book...</span>
+                </>
+              ) : (
+                <>
+                  <BookOpen className="w-5 h-5" />
+                  <span>Create My Book</span>
+                  <span className="text-2xl">📖</span>
+                </>
+              )}
+            </button>
+          </div>
         </motion.div>
       )}
 
-      {/* Input Area */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-white via-white to-transparent pt-8 pb-6">
-        <div className="max-w-4xl mx-auto px-6">
-          <div className={`
-            relative bg-white rounded-3xl border-4 transition-colors
-            ${input.trim() ? 'border-purple-500' : 'border-black'}
-            shadow-2xl overflow-hidden
-          `}>
-            <div className="flex items-end gap-2 p-2">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                  }
-                }}
-                placeholder="Tell me about your story..."
-                className="
-                  w-full max-h-32 bg-transparent border-0 
-                  focus:ring-0 focus:outline-none
-                  text-lg text-black placeholder:text-gray-400
-                  py-4 px-6 resize-none font-medium
-                "
-                rows={1}
-              />
+      {/* Input Area - iMessage Style */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border-t border-gray-200/50">
+        <div className="px-4 py-3">
+          <div className="max-w-2xl mx-auto">
+            
+            {/* Progress Indicator */}
+            {messages.length > 0 && messages.length < 3 && (
+              <div className="mb-2 px-1">
+                <div className="flex items-center gap-2 text-xs font-semibold text-purple-600">
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>{3 - messages.length} more message{3 - messages.length !== 1 ? 's' : ''} to unlock book creation</span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-end gap-2">
+              {/* Text Input */}
+              <div className="flex-1 bg-gray-100 rounded-[20px] min-h-[44px] flex items-center px-4 py-2">
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                  placeholder="Message"
+                  className="
+                    w-full max-h-[100px] bg-transparent border-0 
+                    focus:ring-0 focus:outline-none
+                    text-[16px] text-gray-900 placeholder:text-gray-500
+                    resize-none font-normal
+                  "
+                  rows={1}
+                  style={{ lineHeight: '1.4' }}
+                />
+              </div>
               
+              {/* Send Button */}
               <button
                 onClick={sendMessage}
                 disabled={!input.trim() || loading}
                 className={`
-                  mb-2 mr-2 w-12 h-12 rounded-2xl
+                  w-11 h-11 rounded-full flex-shrink-0
                   flex items-center justify-center
-                  transition-all duration-300
+                  transition-all duration-200
                   ${input.trim() 
-                    ? "bg-black text-white hover:scale-110 active:scale-95 shadow-lg" 
-                    : "bg-gray-200 text-gray-400 cursor-not-allowed"}
+                    ? "bg-purple-500 text-white active:scale-90 shadow-md" 
+                    : "bg-gray-200 text-gray-400"}
                 `}
               >
                 {loading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
-                  <Send className="w-5 h-5" />
+                  <Send className="w-5 h-5" style={{ transform: 'translateX(1px)' }} />
                 )}
               </button>
             </div>
-            
-            {/* Progress Indicator */}
-            {messages.length > 0 && messages.length < 3 && (
-              <div className="px-6 pb-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-purple-600">
-                  <Zap className="w-3 h-3" />
-                  <span>{3 - messages.length} more detail{3 - messages.length !== 1 ? 's' : ''} to create your book</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-3 text-center text-xs font-medium text-gray-400">
-            Press Enter to send • Shift + Enter for new line
           </div>
         </div>
+
+        {/* Safe area spacing for iOS */}
+        <div className="h-[env(safe-area-inset-bottom)]" />
       </div>
     </div>
   );
