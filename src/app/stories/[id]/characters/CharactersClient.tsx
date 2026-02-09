@@ -14,7 +14,8 @@ import {
 import { MobileCharacterStack } from '@/app/stories/[id]/characters/components/MobileCharacterCard';
 import type { StepKey } from '@/lib/storySteps';
 import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
-import { CharacterCard } from '@/components/CharacterCard';
+import CharactersCard from '@/app/stories/[id]/characters/components/CharacterCard';
+// import { CharacterCard } from '@/components/CharacterCard';
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
@@ -205,12 +206,12 @@ export default function CharactersClient({
                     layout: { duration: 0.3 }
                   }}
                 >
-                  <CharacterCard
-                    character={char}
-                    // index={idx}
-                    // onDelete={handleDelete}
-                    // storyId={storyId}
-                  />
+                    <CharactersCard
+                      character={char}
+                      storyId={storyId} // ✅ Pass storyId
+                      index={idx}
+                      onUpdate={() => router.refresh()} // ✅ Pass update callback
+                    />
                 </motion.div>
               ))}
             </div>

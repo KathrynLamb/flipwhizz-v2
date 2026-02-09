@@ -1,3 +1,4 @@
+// api/style-guide/[styleGuideId]/images/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyStyleGuide, styleGuideImages } from "@/db/schema";

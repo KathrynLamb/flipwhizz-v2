@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-
 import {
   BookOpen,
   Sparkles,
@@ -22,7 +21,6 @@ type Story = {
   status: string;
   coverImageUrl: string | null;
 };
-
 
 const STATUS_CONFIG: Record<string, {
   label: string;
@@ -80,68 +78,32 @@ const STATUS_CONFIG: Record<string, {
   },
 };
 
-// export default function StoriesCard({ story }: { story: Story }) {
-  export default function StoriesCard({ story }: { story: any }) {
+export default function StoriesCard({ story }: { story: any }) {
   const config = STATUS_CONFIG[story.status] ?? STATUS_CONFIG.draft;
   const StatusIcon = config.icon;
 
-
-
-
-  console.log("Story", story)
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
   return (
-    <li
-      className="
-        group relative
-        bg-white
-        rounded-md
-        border border-slate-200
-        overflow-hidden
-        shadow-[0_20px_40px_-20px_rgba(0,0,0,0.25)]
-        transition
-        hover:-translate-y-1
-        hover:shadow-[0_30px_70px_-25px_rgba(168,85,247,0.45)]
-      "
-    >
-
-
-{/* COVER */}
-<div className="relative w-full overflow-hidden">
-      {story.coverImageUrl || story.coverSpread ? (
+    <li className="group relative bg-white rounded-md border border-slate-200 overflow-hidden shadow-[0_20px_40px_-20px_rgba(0,0,0,0.25)] transition hover:-translate-y-1 hover:shadow-[0_30px_70px_-25px_rgba(168,85,247,0.45)]">
+      {/* COVER */}
+      <div className="relative w-full overflow-hidden">
+        {story.coverImageUrl || story.coverSpread ? (
           <img
             src={story.coverSpread || story.coverImageUrl}
             alt={story.title}
-            className="
-              w-full h-auto block
-              transition-transform duration-500
-              group-hover:scale-[1.05]
-            "
+            className="w-full h-auto block transition-transform duration-500 group-hover:scale-[1.05]"
           />
         ) : (
-          <div className="
-            aspect-[4/3]
-            flex items-center justify-center
-            bg-gradient-to-br from-pink-100 via-violet-100 to-blue-100
-          ">
+          <div className="aspect-[4/3] flex items-center justify-center bg-gradient-to-br from-pink-100 via-violet-100 to-blue-100">
             <BookOpen className="w-16 h-16 text-violet-400" />
           </div>
         )}
 
         {/* STATUS BADGE */}
         <div className="absolute top-4 left-4">
-          <span
-            className={`
-              inline-flex items-center gap-1.5
-              px-3 py-1.5
-              rounded-full
-              text-xs font-semibold
-              backdrop-blur
-              ${config.badge}
-            `}
-          >
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur ${config.badge}`}>
             <StatusIcon className="w-3.5 h-3.5" />
             {config.label}
           </span>
@@ -165,39 +127,10 @@ const STATUS_CONFIG: Record<string, {
 
         <Link
           href={config.href(story.id)}
-          className="
-            mt-2 inline-flex items-center justify-center
-            rounded-full
-            bg-gradient-to-r from-pink-500 to-purple-400
-            px-6 py-3
-            text-sm font-black text-white
-            shadow-md
-            transition
-            hover:scale-[1.04]
-            hover:shadow-lg
-          "
+          className="mt-2 inline-flex items-center justify-center rounded-full bg-gradient-to-r from-pink-500 to-purple-400 px-6 py-3 text-sm font-black text-white shadow-md transition hover:scale-[1.04] hover:shadow-lg"
         >
           Open story
         </Link>
-
-
-{/* <button
-
-          onClick={() => router.push(`/stories/${story.id}/extract`)}
-          className="
-            mt-2 inline-flex items-center justify-center
-            rounded-full
-            bg-gradient-to-r from-pink-500 to-purple-400
-            px-6 py-3
-            text-sm font-black text-white
-            shadow-md
-            transition
-            hover:scale-[1.04]
-            hover:shadow-lg
-          "
-        > */}
-          {/* Open story
-        </button> */}
       </div>
     </li>
   );

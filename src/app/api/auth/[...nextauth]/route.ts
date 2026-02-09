@@ -16,6 +16,11 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
 
+  pages: {
+    signIn: '/auth/signin', // ✅ Use your custom page instead of NextAuth's default
+  },
+
+
   session: { strategy: "jwt" },
 
   callbacks: {

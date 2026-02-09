@@ -11,39 +11,57 @@ import { inngest } from "@/inngest/client";
  * Triggers the world-building orchestrator for a story.
  * This is idempotent and resumable - it will pick up where it left off.
  * 
- * Use cases:
- * - Auto-triggered after story generation
- * - Manual retry if world extraction failed
- * - User clicks "regenerate world" button
+ * Safeguards against stuck jobs:
+ * - Force parameter to override stuck state
+ * - Timeout detection (>5 min = probably stuck)
+ * - Manual retry capability
  */
 export async function POST(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await context.params;
+  
+  // Check for force parameter
+  const url = new URL(req.url);
+  const force = url.searchParams.get('force') === 'true';
 
-  console.log("🌍 [API] Ensure-world requested for:", storyId);
+  console.log("🌍 [API] Ensure-world requested for:", storyId, { force });
 
   // Validate story exists
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
-    columns: { id: true, status: true },
+    columns: { 
+      id: true, 
+      status: true, 
+      updatedAt: true 
+    },
   });
 
   if (!story) {
     return NextResponse.json({ error: "Story not found" }, { status: 404 });
   }
 
-  // Check if already processing
-  if (story.status === "extracting") {
-    console.log("⏭️  World extraction already in progress, skipping");
-    return NextResponse.json({
-      ok: true,
-      message: "World extraction already in progress",
-    });
+  // Check if already processing (unless forced)
+  if (story.status === "extracting" && !force) {
+    // Check if it's been stuck for more than 5 minutes
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const isStuck = story.updatedAt && story.updatedAt < fiveMinutesAgo;
+
+    if (isStuck) {
+      console.log("⚠️  World extraction appears stuck (>5min), forcing restart");
+      // Fall through to restart
+    } else {
+      console.log("⏭️  World extraction already in progress, skipping");
+      return NextResponse.json({
+        ok: true,
+        message: "World extraction already in progress",
+        canForce: true, // Tell frontend they can force if needed
+      });
+    }
   }
 
-  // Mark as extracting
+  // Mark as extracting with fresh timestamp
   await db
     .update(stories)
     .set({ 
@@ -62,6 +80,8 @@ export async function POST(
 
   return NextResponse.json({
     ok: true,
-    message: "World extraction started (resumable from last checkpoint)",
+    message: force 
+      ? "World extraction restarted (forced)" 
+      : "World extraction started (resumable from last checkpoint)",
   });
 }

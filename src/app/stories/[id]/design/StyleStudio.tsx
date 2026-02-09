@@ -1,33 +1,24 @@
+// src/app/stories/[id]/design/DesignClient.tsx
 "use client";
 
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Wand2,
   Upload,
-  BookOpen,
+  Sparkles,
+  ChevronLeft,
   Palette,
-  Users,
-  Lock,
-  Loader,
-  X,
+  BookOpen,
+  Check,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
-
-import LocationCardDesign from "@/app/stories/[id]/design/components/LocationCardDesign";
-import { SampleImageCharacterCard } from "@/components/SampleImageCharacterCard";
+import Link from "next/link";
 
 /* -----------------------------
    TYPES
 ------------------------------ */
-
-type Entity = {
-  id: string;
-  name: string;
-  description: string | null;
-  appearance?: string | null;
-  referenceImageUrl?: string | null;
-};
 
 type StudioData = {
   storyId: string;
@@ -39,238 +30,345 @@ type StudioData = {
     referenceImages: any[];
     sampleUrl: string | null;
   };
-  characters: Entity[];
+  characters: any[];
   locations: any[];
-  presenceReady: boolean;
 };
 
 /* -----------------------------
    COMPONENT
 ------------------------------ */
 
-export default function StyleStudio({ data }: { data: StudioData }) {
-  const [localCharacters, setLocalCharacters] = useState<Entity[]>(
-    data.characters ?? []
-  );
-
-  const [activeTab, setActiveTab] = useState<"style" | "entities">("style");
-  const [stylePrompt, setStylePrompt] = useState(data.style.summary);
-  const [generatedImage, setGeneratedImage] = useState<string | null>(
-    data.style.sampleUrl
-  );
-  const [showStory, setShowStory] = useState(false);
-
-  const [styleReferenceUrl, setStyleReferenceUrl] = useState<string | null>(null);
+export default function DesignPage({ data }: { data: StudioData }) {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<"style" | "preview">("style");
+  const [stylePrompt, setStylePrompt] = useState(data.style.summary || "");
   const [uploading, setUploading] = useState(false);
-
   const [isGenerating, setIsGenerating] = useState(false);
-  const [loadingPhase, setLoadingPhase] = useState("");
-
-  /* -----------------------------
-     PRESENCE HINT
-  ------------------------------ */
-
-  const [showPresenceHint, setShowPresenceHint] = useState(
-    Boolean(data.presenceReady)
-  );
-
-  useEffect(() => {
-    if (!data.presenceReady) return;
-    const t = setTimeout(() => setShowPresenceHint(false), 3000);
-    return () => clearTimeout(t);
-  }, [data.presenceReady]);
-
-  /* -----------------------------
-     HELPERS
-  ------------------------------ */
-
-  function updateCharacter(id: string, updates: Partial<Entity>) {
-    setLocalCharacters((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, ...updates } : c))
-    );
-  }
+  const [error, setError] = useState<string | null>(null);
 
   async function uploadReference(file: File) {
     setUploading(true);
+    setError(null);
+    
     try {
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("storyId", data.storyId);
 
       const res = await fetch("/api/uploads/reference", {
         method: "POST",
         body: fd,
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error();
-
-      setStyleReferenceUrl(data.url);
-
-      await fetch("/api/style-guide/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          storyId: data.storyId,
-          styleGuideImage: data.url,
-        }),
-      });
-    } catch {
-      alert("Failed to upload reference image");
+      if (!res.ok) throw new Error("Upload failed");
+      
+      router.refresh();
+    } catch (err) {
+      setError("Failed to upload reference image");
     } finally {
       setUploading(false);
     }
   }
 
-  /* -----------------------------
-     RENDER
-  ------------------------------ */
+  async function generateStyleSample() {
+    setIsGenerating(true);
+    setError(null);
+    
+    try {
+      const references = [
+        ...data.characters.map(c => ({
+          type: "character" as const,
+          name: c.name,
+          ...(c.portraitImageUrl || c.referenceImageUrl 
+            ? { url: c.portraitImageUrl || c.referenceImageUrl }
+            : { description: c.appearance || c.description || `A character named ${c.name}` }
+          ),
+        })),
+        ...data.locations.map(l => ({
+          type: "location" as const,
+          name: l.name,
+          ...(l.portraitImageUrl || l.referenceImageUrl
+            ? { url: l.portraitImageUrl || l.referenceImageUrl }
+            : { description: l.description || `A location called ${l.name}` }
+          ),
+        })),
+      ];
+
+      const leftText = data.pages[0] || "";
+      const rightText = data.pages[1] || "";
+
+      const res = await fetch("/api/style/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storyId: data.storyId,
+          description: stylePrompt,
+          leftText,
+          rightText,
+          references,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Generation failed");
+      }
+
+      // Poll for results
+      let attempts = 0;
+      const maxAttempts = 60; // 60 seconds
+      
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        
+        if (attempts > maxAttempts) {
+          clearInterval(pollInterval);
+          setIsGenerating(false);
+          setError("Generation timed out. Please refresh the page.");
+          return;
+        }
+        
+        // Check if sample is ready
+        const checkRes = await fetch(`/api/stories/${data.storyId}`);
+        if (checkRes.ok) {
+          const storyData = await checkRes.json();
+          if (storyData.style?.sampleUrl) {
+            clearInterval(pollInterval);
+            setIsGenerating(false);
+            router.refresh();
+          }
+        }
+      }, 1000);
+      
+    } catch (err: any) {
+      setError(err.message || "Failed to generate style sample");
+      setIsGenerating(false);
+    }
+  }
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen overflow-hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0b0b10] to-black">
-      {/* LEFT – STORY */}
-      {!showStory && (
-        <button
-          className="text-sm text-slate-300 hover:text-white"
-          onClick={() => setShowStory(true)}
-        >
-          Show Story Sample Pages
-        </button>
-      )}
-
-      {showStory && (
-        <div className="lg:w-1/3 p-6 border-r border-white/5 overflow-y-auto">
-          <button onClick={() => setShowStory(false)}>
-            <X className="text-white mb-4" />
-          </button>
-
-          <h1 className="font-serif text-3xl text-white mb-6">
-            {data.title}
-          </h1>
-
-          {data.pages.map((text, i) => (
-            <div
-              key={i}
-              className="bg-white/5 border border-white/10 p-6 rounded-md mb-4"
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
+      
+      {/* Header */}
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-purple-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            
+            {/* Back Button */}
+            <Link 
+              href={`/stories/${data.storyId}/locations`}
+              className="flex items-center gap-2 text-gray-700 hover:text-purple-600 transition-colors font-medium"
             >
-              <div className="text-xs text-white/40 mb-2">
-                Page {i + 1}
-              </div>
-              <p className="font-serif text-lg text-white whitespace-pre-line">
-                {text}
-              </p>
+              <ChevronLeft className="w-5 h-5" />
+              <span>Back to Locations</span>
+            </Link>
+
+            {/* Tabs */}
+            <div className="flex gap-2 bg-purple-100 p-1 rounded-xl">
+              <button
+                onClick={() => setActiveTab("style")}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                  activeTab === "style"
+                    ? "bg-white text-purple-700 shadow-sm"
+                    : "text-purple-600 hover:text-purple-700"
+                }`}
+              >
+                <Palette className="w-4 h-4 inline mr-2" />
+                Style
+              </button>
+              <button
+                onClick={() => setActiveTab("preview")}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                  activeTab === "preview"
+                    ? "bg-white text-purple-700 shadow-sm"
+                    : "text-purple-600 hover:text-purple-700"
+                }`}
+              >
+                <BookOpen className="w-4 h-4 inline mr-2" />
+                Preview
+              </button>
             </div>
-          ))}
+
+            {/* Refresh Button */}
+            <button
+              onClick={() => router.refresh()}
+              className="p-2 hover:bg-purple-100 rounded-lg transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw className="w-5 h-5 text-purple-600" />
+            </button>
+          </div>
         </div>
-      )}
+      </header>
 
-      {/* RIGHT – STUDIO */}
-      <div className="lg:w-2/3 flex flex-col h-full">
-        <header className="h-20 border-b border-white/5 flex items-center px-8 gap-6">
-          <button
-            onClick={() => setActiveTab("style")}
-            className={activeTab === "style" ? "text-white" : "text-white/40"}
-          >
-            <Palette className="inline w-4 h-4 mr-2" />
-            Visual Style
-          </button>
+      {/* Main Content */}
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* Hero Section - Compact */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/60 backdrop-blur-sm border border-purple-200 mb-3">
+            <Sparkles className="w-4 h-4 text-purple-500" />
+            <span className="text-sm font-semibold text-purple-700">Design Your Style</span>
+          </div>
+          
+          <h1 className="text-3xl sm:text-4xl font-black mb-2 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent leading-tight">
+            Visual Style Guide
+          </h1>
+          
+          <p className="text-gray-600 max-w-2xl mx-auto">
+            Define the look and feel of your story's illustrations ✨
+          </p>
+        </div>
 
-          <button
-            onClick={() => setActiveTab("entities")}
-            className={activeTab === "entities" ? "text-white" : "text-white/40"}
-          >
-            <Users className="inline w-4 h-4 mr-2" />
-            Cast & Locations
-          </button>
-        </header>
+        {/* Error Display */}
+        {error && (
+          <div className="mb-6">
+            <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 text-red-700 text-sm">
+              {error}
+            </div>
+          </div>
+        )}
 
-        <div className="flex-1 overflow-y-auto p-10">
-          <AnimatePresence mode="wait">
-            {activeTab === "style" && (
-              <motion.div
-                key="style"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="max-w-2xl mx-auto space-y-6"
-              >
-                <textarea
-                  value={stylePrompt}
-                  onChange={(e) => setStylePrompt(e.target.value)}
-                  className="w-full h-32 bg-white/5 border border-white/10 rounded-xl p-4 text-white"
-                />
-
-                <div className="relative bg-black/10 h-48 rounded-xl flex items-center justify-center">
-                  {styleReferenceUrl ? (
-                    <img
-                      src={styleReferenceUrl}
-                      className="w-full h-full object-cover rounded-xl"
-                    />
-                  ) : (
-                    <label className="cursor-pointer text-white/50 hover:text-white">
-                      {uploading ? (
-                        <Loader className="animate-spin" />
-                      ) : (
-                        <Upload />
-                      )}
-                      <input
-                        type="file"
-                        className="hidden"
-                        onChange={(e) =>
-                          e.target.files &&
-                          uploadReference(e.target.files[0])
-                        }
-                      />
-                    </label>
-                  )}
-                </div>
-              </motion.div>
-            )}
-
-            {activeTab === "entities" && (
-              <motion.div
-                key="entities"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="max-w-3xl mx-auto"
-              >
-                {showPresenceHint && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    className="inline-flex mb-4 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 text-xs"
+        {/* Content */}
+        {activeTab === "style" ? (
+          <div className="space-y-6">
+            
+            {/* Generated Sample - Show First if exists */}
+            {data.style.sampleUrl && (
+              <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
+                <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Check className="w-5 h-5 text-green-500" />
+                    <h2 className="text-xl font-black text-gray-900">
+                      Generated Style Sample
+                    </h2>
+                  </div>
+                  <button
+                    onClick={generateStyleSample}
+                    disabled={isGenerating}
+                    className="text-sm text-purple-600 hover:text-purple-700 font-semibold"
                   >
-                    ✨ Cast & locations prepared from this spread
-                  </motion.div>
-                )}
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  {localCharacters.map((c) => (
-                    <SampleImageCharacterCard
-                      key={c.id}
-                      character={c}
-                      onUpdated={(u) => updateCharacter(c.id, u)}
-                    />
-                  ))}
-
-                  {data.locations.map((loc) => (
-                    <LocationCardDesign key={loc.id} location={loc} />
-                  ))}
+                    Regenerate
+                  </button>
                 </div>
-              </motion.div>
+                <img
+                  src={data.style.sampleUrl}
+                  alt="Generated style sample"
+                  className="w-full"
+                />
+              </div>
             )}
-          </AnimatePresence>
-        </div>
 
-        {/* BOTTOM */}
-        <div className="border-t border-white/10 p-6">
-          <button className="ml-auto flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-3 rounded-full text-white font-bold">
-            <Wand2 />
-            Generate Sample Magic
-          </button>
-        </div>
-      </div>
+            {/* Style Description */}
+            <div className="bg-white rounded-3xl shadow-xl p-6">
+              <h2 className="text-xl font-black text-gray-900 mb-3">
+                Style Description
+              </h2>
+              <textarea
+                value={stylePrompt}
+                onChange={(e) => setStylePrompt(e.target.value)}
+                rows={4}
+                className="w-full rounded-xl border-2 border-gray-200 focus:border-purple-400 focus:outline-none px-4 py-3 text-gray-900 resize-none text-sm"
+                placeholder="e.g., Whimsical watercolor style with soft pastel colors, dreamy atmosphere, gentle brush strokes..."
+              />
+            </div>
+
+            {/* Reference Image Upload - Compact */}
+            <div className="bg-white rounded-3xl shadow-xl p-6">
+              <h2 className="text-xl font-black text-gray-900 mb-3">
+                Reference Image
+                <span className="text-sm text-gray-500 font-normal ml-2">(Optional)</span>
+              </h2>
+
+              <div className="relative h-48 bg-gradient-to-br from-purple-100 to-pink-100 rounded-2xl overflow-hidden border-2 border-dashed border-purple-300 hover:border-purple-400 transition-colors">
+                {data.style.referenceImages?.[0] ? (
+                  <img
+                    src={data.style.referenceImages[0]}
+                    alt="Style reference"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <label className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer hover:bg-purple-50/50 transition-colors">
+                    {uploading ? (
+                      <>
+                        <Loader2 className="w-8 h-8 text-purple-500 animate-spin mb-2" />
+                        <span className="text-sm font-semibold text-purple-700">Uploading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-8 h-8 text-purple-400 mb-2" />
+                        <span className="text-sm font-semibold text-purple-700">Click to upload</span>
+                        <span className="text-xs text-purple-600 mt-1">PNG, JPG up to 10MB</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => e.target.files && uploadReference(e.target.files[0])}
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* Generate Button */}
+            <div className="text-center pt-4">
+              <button
+                onClick={generateStyleSample}
+                disabled={isGenerating || !stylePrompt.trim()}
+                className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 text-white rounded-2xl font-black text-lg hover:scale-105 transition-transform shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Generating Magic...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="w-5 h-5" />
+                    {data.style.sampleUrl ? "Regenerate Style Sample" : "Generate Style Sample"}
+                  </>
+                )}
+              </button>
+              
+              {isGenerating && (
+                <p className="text-sm text-purple-600 mt-3">
+                  This may take 30-60 seconds...
+                </p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-3xl shadow-xl p-8">
+            <h2 className="text-2xl font-black text-gray-900 mb-6">
+              {data.title}
+            </h2>
+
+            <div className="space-y-4">
+              {data.pages.slice(0, 4).map((text, i) => (
+                <div
+                  key={i}
+                  className="p-5 rounded-xl bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-100"
+                >
+                  <div className="text-xs font-bold text-purple-600 mb-2">
+                    Page {i + 1}
+                  </div>
+                  <p className="text-base text-gray-800 leading-relaxed">
+                    {text}
+                  </p>
+                </div>
+              ))}
+              
+              {data.pages.length > 4 && (
+                <p className="text-center text-sm text-gray-500 pt-2">
+                  + {data.pages.length - 4} more pages
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

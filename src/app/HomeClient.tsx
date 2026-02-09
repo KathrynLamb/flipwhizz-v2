@@ -88,7 +88,7 @@ export default function HomeClient({ session, fonts }: Props) {
                 href="/projects"
                 className="px-6 py-2 rounded-full bg-[#F4A261] text-[#0F2236] font-bold hover:bg-[#E76F51]"
               >
-                My Library
+                My Library!!!!
               </Link>
             )}
           </nav>

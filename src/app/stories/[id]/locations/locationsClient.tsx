@@ -14,7 +14,8 @@ import {
 import { MobileLocationStack } from '@/app/stories/[id]/locations/components/MobileLocationCard';
 import type { StepKey } from '@/lib/storySteps';
 import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
-import { LocationCard } from '@/app/stories/[id]/locations/components/LocationCard';
+import LocationCard from '@/app/stories/[id]/locations/components/LocationCard';
+// import { LocationCard } from '@/app/stories/[id]/locations/components/LocationCard';
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
@@ -125,6 +126,7 @@ export default function LocationsClient({
         showGenerateAll={!!isPurchased && !allLocked && !storyConfirmed}
         onGenerateAll={generateAIAvatars}
         isGenerating={generatingAvatars}
+        designUnlocked={allLocked}
       />
 
       {/* ── BODY ── */}
@@ -204,6 +206,7 @@ export default function LocationsClient({
                     location={location}
                     index={idx}
                     onDelete={handleDelete}
+                    storyId={storyId}
                   />
                 </motion.div>
               ))}

@@ -114,6 +114,7 @@ export default function UnifiedStoryHeader({
   showGenerateAll,
   onGenerateAll,
   isGenerating,
+  designUnlocked,
 }: {
   storyId: string;
   title: string;
@@ -127,6 +128,8 @@ export default function UnifiedStoryHeader({
   showGenerateAll?: boolean;
   onGenerateAll?: () => void;
   isGenerating?: boolean;
+  designUnlocked?: boolean;
+
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -152,7 +155,12 @@ export default function UnifiedStoryHeader({
 
     if (mounted && step.match(pathname, storyId)) return "active";
     if (safeCompletedSteps.includes(step.key)) return "completed";
+    if (step.key === "design" && designUnlocked) {
+      return "idle";
+    }
+    
     if (idx > highestReached) return "locked";
+    
 
     return "idle";
   }

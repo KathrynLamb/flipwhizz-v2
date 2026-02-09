@@ -1,12 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { signOut } from "next-auth/react";
+
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function Header({ session }: { session: any }) {
   const [isOpen, setIsOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    await signOut({ callbackUrl: "/" }); // redirect after logout
+  };
 
   return (
     <header className="relative z-50 w-full px-6 py-6 md:px-12 flex justify-between items-center">
@@ -28,8 +34,17 @@ export default function Header({ session }: { session: any }) {
           </Link>
         ) : (
           <Link href="/projects" className="px-6 py-2 rounded-full bg-[#F4A261] text-[#0F2236] font-bold hover:bg-[#E76F51] transition shadow-lg">
-            My Library
+            My Library HEADER
           </Link>
+        )}
+
+
+      {session && (
+          <button 
+            onClick={handleSignOut}
+            className="px-6 py-2 rounded-full border border-[#FDF8F0]/30 hover:bg-[#FDF8F0] hover:text-[#0F2236] transition duration-300">
+            Sign OUt
+          </button>
         )}
       </nav>
 
@@ -64,7 +79,21 @@ export default function Header({ session }: { session: any }) {
                     My Library
                 </Link>
                 )}
+
             </div>
+
+            {session && (
+  <button
+    onClick={() => {
+      setIsOpen(false);
+      handleSignOut();
+    }}
+    className="px-8 py-3 rounded-full border border-[#FDF8F0]/30 text-xl"
+  >
+    Sign Out
+  </button>
+)}
+
           </motion.div>
         )}
       </AnimatePresence>

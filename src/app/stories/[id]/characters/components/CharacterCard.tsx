@@ -1,23 +1,9 @@
+// src/app/stories/[id]/characters/components/CharacterCard.tsx
 "use client";
 
 import { useState } from "react";
-import { motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
-import {
-  Trash2,
-  Lock,
-  Unlock,
-  Loader2,
-  X,
-  Check,
-  Sparkles,
-  Upload,
-  Edit3,
-} from "lucide-react";
 import { useRouter } from "next/navigation";
-
-/* ------------------------------------------------------------------ */
-/* TYPES                                                               */
-/* ------------------------------------------------------------------ */
+import { Lock, Unlock, Upload, Sparkles, Star } from "lucide-react";
 
 type Character = {
   id: string;
@@ -28,84 +14,77 @@ type Character = {
   portraitImageUrl: string | null;
   referenceImageUrl: string | null;
   locked: boolean;
+  role?: string | null;
+  age?: string | null;
 };
 
-/* Vibrant accent gradients */
-const CARD_ACCENTS = [
-  { from: "#f59e0b", to: "#ef4444" },
-  { from: "#ec4899", to: "#8b5cf6" },
-  { from: "#8b5cf6", to: "#06b6d4" },
-  { from: "#06b6d4", to: "#10b981" },
-  { from: "#84cc16", to: "#06b6d4" },
-  { from: "#f59e0b", to: "#ec4899" },
-  { from: "#d946ef", to: "#ec4899" },
-  { from: "#14b8a6", to: "#06b6d4" },
+const VIBRANT_GRADIENTS = [
+  "from-pink-400 via-purple-400 to-blue-400",
+  "from-orange-400 via-pink-400 to-purple-400",
+  "from-yellow-400 via-orange-400 to-pink-400",
+  "from-green-400 via-teal-400 to-blue-400",
+  "from-purple-400 via-pink-400 to-red-400",
+  "from-blue-400 via-purple-400 to-pink-400",
 ];
 
-/* ------------------------------------------------------------------ */
-/* MOBILE TINDER-STYLE CARD                                           */
-/* ------------------------------------------------------------------ */
-
-export function MobileCharacterCard({
-  storyId,
+export default function CharacterCard({
   character,
-  index,
-  onDelete,
-  onLockToggle,
+  storyId, // ✅ Pass this as prop from parent
+  index = 0,
+  onUpdate,
 }: {
-  storyId: string;
   character: Character;
-  index: number;
-  onDelete?: (id: string) => void;
-  onLockToggle?: (id: string, locked: boolean) => void;
+  storyId: string; // ✅ Required prop
+  index?: number;
+  onUpdate?: () => void;
 }) {
   const router = useRouter();
-  const accent = CARD_ACCENTS[index % CARD_ACCENTS.length];
-
   const [locked, setLocked] = useState(character.locked);
-  const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [editData, setEditData] = useState({
+    description: character.description || "",
+    appearance: character.appearance || "",
+    personalityTraits: character.personalityTraits || "",
+  });
 
-  const x = useMotionValue(0);
-  const rotate = useTransform(x, [-200, 0, 200], [-15, 0, 15]);
-  const opacity = useTransform(x, [-200, -100, 0, 100, 200], [0, 1, 1, 1, 0]);
-
+  const gradient = VIBRANT_GRADIENTS[index % VIBRANT_GRADIENTS.length];
   const imageUrl = character.portraitImageUrl || character.referenceImageUrl;
   const traits = character.personalityTraits
-    ? character.personalityTraits.split(",").map((t) => t.trim()).slice(0, 3)
+    ? character.personalityTraits.split(",").map(t => t.trim()).filter(Boolean).slice(0, 3)
     : [];
 
-  /* ── Actions ── */
-  async function handleLock() {
+  async function toggleLock() {
     const endpoint = locked ? "/api/characters/unlock" : "/api/characters/lock";
-    await fetch(endpoint, {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ characterId: character.id }),
     });
-    const newLocked = !locked;
-    setLocked(newLocked);
-    onLockToggle?.(character.id, newLocked);
-  }
-
-  async function handleDelete() {
-    if (!confirm(`Delete ${character.name}?`)) return;
-    setDeleting(true);
-    onDelete?.(character.id);
-    await fetch(`/api/characters/${character.id}`, { method: "DELETE" });
-    router.refresh();
+    
+    if (res.ok) {
+      setLocked(!locked);
+      onUpdate?.();
+    }
   }
 
   async function uploadReference(file: File) {
     if (locked) return;
     setUploading(true);
+    
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("characterId", character.id);
-      const res = await fetch("/api/characters/upload-reference", { method: "POST", body: fd });
-      if (res.ok) router.refresh();
+      const res = await fetch("/api/characters/upload-reference", { 
+        method: "POST", 
+        body: fd 
+      });
+      
+      if (res.ok) {
+        onUpdate?.();
+        router.refresh();
+      }
     } finally {
       setUploading(false);
     }
@@ -114,120 +93,130 @@ export function MobileCharacterCard({
   async function useAiImage() {
     if (locked) return;
     setUploading(true);
+    
     try {
       const res = await fetch("/api/characters/use-ai-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId: character.id }),
       });
-      if (res.ok) router.refresh();
+      
+      if (res.ok) {
+        onUpdate?.();
+        router.refresh();
+      }
     } finally {
       setUploading(false);
     }
   }
 
-  function handleDragEnd(event: any, info: PanInfo) {
-    if (Math.abs(info.offset.x) > 150) {
-      // Swiped far enough - lock/unlock
-      handleLock();
+  async function saveEdit() {
+    const res = await fetch(`/api/characters/${character.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(editData),
+    });
+    
+    if (res.ok) {
+      setShowEdit(false);
+      onUpdate?.();
+      router.refresh();
     }
   }
 
-  /* ── Render ── */
   return (
-    <motion.div
-      drag="x"
-      dragConstraints={{ left: 0, right: 0 }}
-      onDragEnd={handleDragEnd}
-      style={{ x, rotate, opacity }}
-      className="w-full h-full cursor-grab active:cursor-grabbing"
-    >
-      <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white isolate">
+    <>
+      <div className="group relative bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden">
         
-        {/* ── Image Background ── */}
-        <div className="absolute inset-0 z-0">
+        {/* Lock Badge */}
+        {locked && (
+          <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-green-400 to-emerald-400 text-white text-xs font-bold shadow-lg">
+            <Star className="w-3 h-3 fill-current" />
+            Locked
+          </div>
+        )}
+
+        {/* Image Section */}
+        <div className="relative aspect-[3/4] overflow-hidden">
           {imageUrl ? (
-            <img src={imageUrl} alt={character.name} className="w-full h-full object-cover" />
+            <img 
+              src={imageUrl} 
+              alt={character.name} 
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            />
           ) : (
-            <div
-              className="w-full h-full flex items-center justify-center"
-              style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}
-            >
+            <div className={`w-full h-full bg-gradient-to-br ${gradient} flex items-center justify-center`}>
               <span className="text-9xl font-black text-white/20">
                 {character.name.charAt(0)}
               </span>
             </div>
           )}
-          
-          {/* Dark gradient overlay for text readability */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+          {/* Overlay Gradient */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+          {/* Upload Buttons */}
+          {!locked && !uploading && (
+            <div className="absolute top-4 left-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => {
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = "image/*";
+                  input.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) uploadReference(file);
+                  };
+                  input.click();
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-sm text-gray-900 text-xs font-semibold hover:bg-white transition-colors shadow-lg"
+              >
+                <Upload className="w-3 h-3" />
+                Photo
+              </button>
+              
+              <button
+                onClick={useAiImage}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500 text-white text-xs font-semibold hover:bg-purple-600 transition-colors shadow-lg"
+              >
+                <Sparkles className="w-3 h-3" />
+                AI
+              </button>
+            </div>
+          )}
+
+          {/* Uploading Overlay */}
+          {uploading && (
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+              <Sparkles className="w-8 h-8 text-white animate-spin" />
+            </div>
+          )}
+
+          {/* Name Overlay */}
+          <div className="absolute bottom-0 left-0 right-0 p-6">
+            <h3 className="text-2xl font-black text-white drop-shadow-lg mb-2">
+              {character.name}
+            </h3>
+            {character.role && (
+              <p className="text-sm text-white/90 font-medium">
+                {character.role}
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* ── Locked Badge ── */}
-        {locked && (
-          <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600 text-white shadow-lg">
-            <Lock className="w-3 h-3" />
-            Locked
-          </div>
-        )}
-
-        {/* ── Upload Buttons (when unlocked) ── */}
-        {!locked && !uploading && (
-          <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
-            <button
-              onClick={() => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = "image/*";
-                input.onchange = (e) => {
-                  const file = (e.target as HTMLInputElement).files?.[0];
-                  if (file) uploadReference(file);
-                };
-                input.click();
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/90 text-stone-900 shadow-lg backdrop-blur-sm active:scale-95 transition-transform"
-            >
-              <Upload className="w-3 h-3" />
-              Photo
-            </button>
-            
-            <button
-              onClick={useAiImage}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600 text-white shadow-lg active:scale-95 transition-transform"
-            >
-              <Sparkles className="w-3 h-3" />
-              AI
-            </button>
-          </div>
-        )}
-
-        {/* ── Uploading Overlay ── */}
-        {uploading && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
-            <div className="flex flex-col items-center gap-2">
-              <Loader2 className="w-8 h-8 text-white animate-spin" />
-              <span className="text-sm font-semibold text-white">Processing…</span>
-            </div>
-          </div>
-        )}
-
-        {/* ── Info Overlay (Bottom) ── */}
-        <div className="absolute bottom-0 left-0 right-0 z-10 p-5 space-y-3">
+        {/* Content Section */}
+        <div className="p-6 space-y-4">
           
-          {/* Name */}
-          <h2 className="text-3xl font-bold text-white drop-shadow-lg">
-            {character.name}
-          </h2>
-
           {/* Traits */}
           {traits.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {traits.map((t, i) => (
+              {traits.map((trait, i) => (
                 <span
                   key={i}
-                  className="px-3 py-1 rounded-full text-xs font-semibold bg-white/90 text-stone-900 backdrop-blur-sm"
+                  className="px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-semibold"
                 >
-                  {t}
+                  {trait}
                 </span>
               ))}
             </div>
@@ -235,115 +224,111 @@ export function MobileCharacterCard({
 
           {/* Description Preview */}
           {character.description && (
-            <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">
+            <p className="text-sm text-gray-600 line-clamp-3">
               {character.description}
             </p>
           )}
 
-          {/* Edit button */}
-          <button
-            onClick={() => setShowEdit(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-md text-white text-sm font-semibold border border-white/20 active:scale-95 transition-transform"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-            Edit Details
-          </button>
-        </div>
-
-        {/* ── Action Buttons (Bottom Fixed) ── */}
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4">
-          
-          {/* Delete */}
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="w-14 h-14 rounded-full bg-white shadow-xl flex items-center justify-center text-red-500 hover:scale-110 active:scale-95 transition-transform disabled:opacity-40"
-          >
-            {deleting ? (
-              <Loader2 className="w-6 h-6 animate-spin" />
-            ) : (
-              <X className="w-7 h-7 stroke-[2.5]" />
-            )}
-          </button>
-
-          {/* Lock/Unlock */}
-          <button
-            onClick={handleLock}
-            className="w-16 h-16 rounded-full shadow-xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-transform"
-            style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}
-          >
-            {locked ? (
-              <Unlock className="w-7 h-7 stroke-[2.5]" />
-            ) : (
-              <Lock className="w-7 h-7 stroke-[2.5]" />
-            )}
-          </button>
-
-          {/* Confirm (checkmark for locked) */}
-          {locked && (
+          {/* Action Buttons */}
+          <div className="flex gap-2 pt-2">
             <button
-              className="w-14 h-14 rounded-full bg-emerald-500 shadow-xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-transform"
+              onClick={() => setShowEdit(true)}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold text-sm transition-colors"
             >
-              <Check className="w-7 h-7 stroke-[2.5]" />
+              Edit Details
             </button>
-          )}
+            
+            <button
+              onClick={toggleLock}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+                locked
+                  ? "bg-gradient-to-r from-green-400 to-emerald-400 text-white hover:shadow-lg"
+                  : "bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:shadow-lg"
+              }`}
+            >
+              {locked ? (
+                <>
+                  <Unlock className="w-4 h-4" />
+                  Unlock
+                </>
+              ) : (
+                <>
+                  <Lock className="w-4 h-4" />
+                  Lock In
+                </>
+              )}
+            </button>
+          </div>
         </div>
-
-        {/* ── Swipe Indicators ── */}
-        <motion.div
-          style={{
-            opacity: useTransform(x, [-200, -50, 0], [1, 0.5, 0]),
-          }}
-          className="absolute top-1/3 left-8 z-10 px-6 py-3 rounded-2xl bg-red-500 text-white font-bold text-xl rotate-[-20deg] shadow-2xl border-4 border-white"
-        >
-          SKIP
-        </motion.div>
-
-        <motion.div
-          style={{
-            opacity: useTransform(x, [0, 50, 200], [0, 0.5, 1]),
-          }}
-          className="absolute top-1/3 right-8 z-10 px-6 py-3 rounded-2xl bg-emerald-500 text-white font-bold text-xl rotate-[20deg] shadow-2xl border-4 border-white"
-        >
-          LOCK
-        </motion.div>
       </div>
 
-      {/* ── Edit Modal (Full Screen) ── */}
+      {/* Edit Modal */}
       {showEdit && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end">
-          <div className="w-full bg-white rounded-t-3xl p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-stone-900">Edit Character</h3>
-              <button onClick={() => setShowEdit(false)} className="p-2 hover:bg-stone-100 rounded-full">
-                <X className="w-5 h-5 text-stone-600" />
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-8 py-6 rounded-t-3xl">
+              <h2 className="text-2xl font-black text-gray-900">
+                Edit {character.name}
+              </h2>
             </div>
 
-            <div className="space-y-4">
+            {/* Modal Content */}
+            <div className="p-8 space-y-6">
+              
               <div>
-                <label className="text-xs font-bold text-stone-700 mb-2 block">Description</label>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Description
+                </label>
                 <textarea
-                  defaultValue={character.description || ""}
+                  value={editData.description}
+                  onChange={(e) => setEditData({ ...editData, description: e.target.value })}
                   rows={4}
-                  className="w-full rounded-xl p-3 text-sm border border-stone-200 focus:border-violet-400 focus:outline-none resize-none"
-                  placeholder="Personality, background, role in story..."
+                  className="w-full rounded-xl border-2 border-gray-200 focus:border-purple-400 focus:outline-none px-4 py-3 text-gray-900"
+                  placeholder="Personality, background, role in the story..."
                 />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-stone-700 mb-2 block">Appearance</label>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Appearance
+                </label>
                 <textarea
-                  defaultValue={character.appearance || ""}
+                  value={editData.appearance}
+                  onChange={(e) => setEditData({ ...editData, appearance: e.target.value })}
                   rows={4}
-                  className="w-full rounded-xl p-3 text-sm border border-stone-200 focus:border-violet-400 focus:outline-none resize-none"
-                  placeholder="Physical features, clothing, colors..."
+                  className="w-full rounded-xl border-2 border-gray-200 focus:border-purple-400 focus:outline-none px-4 py-3 text-gray-900"
+                  placeholder="Physical features, clothing, colors, distinguishing features..."
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Personality Traits
+                  <span className="text-gray-500 font-normal ml-2">(comma separated)</span>
+                </label>
+                <input
+                  type="text"
+                  value={editData.personalityTraits}
+                  onChange={(e) => setEditData({ ...editData, personalityTraits: e.target.value })}
+                  className="w-full rounded-xl border-2 border-gray-200 focus:border-purple-400 focus:outline-none px-4 py-3 text-gray-900"
+                  placeholder="brave, funny, kind, curious"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-8 py-6 rounded-b-3xl flex gap-3">
               <button
-                className="w-full py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-purple-600 active:scale-[0.98] transition-transform"
                 onClick={() => setShowEdit(false)}
+                className="flex-1 px-6 py-3 rounded-xl bg-white border-2 border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEdit}
+                className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-bold hover:shadow-lg transition-all"
               >
                 Save Changes
               </button>
@@ -351,108 +336,6 @@ export function MobileCharacterCard({
           </div>
         </div>
       )}
-    </motion.div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* MOBILE CARD STACK CONTAINER                                        */
-/* ------------------------------------------------------------------ */
-
-export function MobileCharacterStack({
-  storyId,
-  characters,
-  onDelete,
-  onLockToggle,
-}: {
-  storyId: string;
-  characters: Character[];
-  onDelete?: (id: string) => void;
-  onLockToggle?: (id: string, locked: boolean) => void;
-}) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const visibleCards = characters.slice(currentIndex, currentIndex + 3);
-  
-  const handleDelete = (id: string) => {
-    onDelete?.(id);
-    setCurrentIndex(prev => Math.min(prev, characters.length - 2));
-  };
-
-  const handleLockToggle = (id: string, locked: boolean) => {
-    onLockToggle?.(id, locked);
-    if (locked) {
-      // Move to next card after locking
-      setTimeout(() => {
-        setCurrentIndex(prev => Math.min(prev + 1, characters.length - 1));
-      }, 300);
-    }
-  };
-  
-  return (
-    <div className="relative w-full mx-auto max-w-md" style={{ height: "calc(100vh - 280px)", minHeight: "500px" }}>
-      {visibleCards.map((char, idx) => {
-        const isTop = idx === 0;
-        
-        return (
-          <div
-            key={`${char.id}-${currentIndex}-${idx}`}
-            className="absolute inset-0"
-            style={{
-              zIndex: 10 - idx,
-              pointerEvents: isTop ? 'auto' : 'none',
-              isolation: 'isolate',
-            }}
-          >
-            <div
-              style={{
-                transform: `scale(${1 - idx * 0.03}) translateY(${-idx * 8}px)`,
-                opacity: isTop ? 1 : 0.7,
-                transition: 'transform 0.3s ease, opacity 0.3s ease',
-              }}
-              className="w-full h-full"
-            >
-              {isTop ? (
-                <MobileCharacterCard
-                  storyId={storyId}
-                  character={char}
-                  index={currentIndex + idx}
-                  onDelete={handleDelete}
-                  onLockToggle={handleLockToggle}
-                />
-              ) : (
-                <CardPreview character={char} index={currentIndex + idx} />
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* CARD PREVIEW (for cards behind)                                    */
-/* ------------------------------------------------------------------ */
-
-function CardPreview({ character, index }: { character: Character; index: number }) {
-  const accent = CARD_ACCENTS[index % CARD_ACCENTS.length];
-  const imageUrl = character.portraitImageUrl || character.referenceImageUrl;
-
-  return (
-    <div className="w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white">
-      {imageUrl ? (
-        <img src={imageUrl} alt={character.name} className="w-full h-full object-cover" />
-      ) : (
-        <div
-          className="w-full h-full flex items-center justify-center"
-          style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}
-        >
-          <span className="text-9xl font-black text-white/20">
-            {/* {character.name.charAt(0)} */}
-            THIS IS PREVIEW 
-          </span>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

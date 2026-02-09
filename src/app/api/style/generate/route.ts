@@ -1,3 +1,4 @@
+// api/style/generate/route.ts
 import { NextResponse } from "next/server";
 import { inngest } from "@/inngest/client";
 
