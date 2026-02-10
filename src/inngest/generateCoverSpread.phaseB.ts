@@ -233,17 +233,89 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
     const parts: any[] = [];
 
     // 🔒 Layout enforcement
-    parts.push(await getImagePart(COVER_TEMPLATE_PATH));
-    parts.push({
-      text: `
-↑ STRICT WRAP-AROUND COVER TEMPLATE ↑
-LEFT = BACK COVER
-CENTER = SPINE
-RIGHT = FRONT COVER
-DO NOT SHOW GUIDES
-ALL TEXT MUST STAY IN SAFE ZONES
+// src/inngest/generateCoverSpread.phaseB.ts
+// Around line 174, replace the template instruction with:
+
+// 🔒 Layout enforcement
+parts.push(await getImagePart(COVER_TEMPLATE_PATH));
+parts.push({
+  text: `
+↑ LAYOUT GUIDE ONLY - DO NOT RENDER ↑
+
+The image above shows SAFE ZONES for text placement.
+This is a REFERENCE GUIDE ONLY.
+
+CRITICAL INSTRUCTIONS:
+- DO NOT draw the guide boxes, labels, or template overlay in your illustration
+- DO NOT show "TEXT SAFE ZONE" labels or any guide markers
+- DO NOT show any guide lines, boxes, or template elements
+- The template is INVISIBLE - it only shows you WHERE to place text
+- Create a natural, seamless cover with NO visible guides
+
+COVER LAYOUT:
+- LEFT THIRD = Back cover (left safe zone for back cover text)
+- CENTER = Spine (vertical text area)
+- RIGHT = Front cover (right safe zone for title/author)
+- Keep all important visual elements AWAY from the outer crop zones
 `,
-    });
+});
+
+// Then update the main prompt around line 225:
+
+parts.push({
+  text: `
+TASK:
+Create ONE continuous wrap-around children's book cover illustration.
+
+FORMAT:
+- Aspect ratio ${ASPECT_RATIO}
+- Print-ready, seamless illustration
+- NO visible guides, boxes, or template markers
+- Professional children's book quality
+
+LAYOUT (DO NOT SHOW THESE DIVISIONS):
+- Left = Back cover
+- Center = Spine  
+- Right = Front cover
+
+TEXT TO RENDER (EXACT):
+
+FRONT COVER (right third):
+TITLE: "${coverPlan.front.titleText}"
+${coverPlan.front.authorText ? `AUTHOR: "${coverPlan.front.authorText}"` : ""}
+
+SPINE (center, vertical):
+"${coverPlan.spine.spineText}"
+
+BACK COVER (left third):
+${coverPlan.back.blurbText ?? ""}
+${coverPlan.back.dedicationText ?? ""}
+
+VISUAL INTENT:
+
+FRONT:
+${coverPlan.front.visualIntent}
+
+BACK:
+${coverPlan.back.visualIntent}
+
+STYLE:
+${style?.summary ?? "Whimsical children's illustration"}
+
+AVOID:
+${style?.negativePrompt ?? "Logos, watermarks, guide lines, template markers, text boxes, 'Text Safe Zone' labels"}
+
+IMPORTANT - DO NOT INCLUDE:
+- "Text Safe Zone" labels
+- Guide boxes or borders
+- Template overlay
+- Any reference markers or division lines
+- The guide is invisible - create a clean, polished, professional cover
+- Text should be naturally integrated into the design
+
+Create a seamless, professional children's book wrap-around cover now.
+`,
+});
 
     // 🌍 Location reference
     if (location?.imageUrl && !isDataUrl(location.imageUrl)) {

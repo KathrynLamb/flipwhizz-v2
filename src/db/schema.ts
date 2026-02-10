@@ -553,6 +553,18 @@ export const coverChatSessions = pgTable("cover_chat_sessions", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+/* ==================== COVER CONVERSATIONS ==================== */
+
+export const coverConversations = pgTable("cover_conversations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storyId: uuid("story_id")
+    .notNull()
+    .references(() => stories.id, { onDelete: "cascade" }),
+  role: varchar("role", { length: 20 }).notNull(), // "user" | "assistant"
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const coverChatMessages = pgTable("cover_chat_messages", {
   id: uuid("id").primaryKey().defaultRandom(),
   sessionId: uuid("session_id").notNull().references(() => coverChatSessions.id, { onDelete: "cascade" }),

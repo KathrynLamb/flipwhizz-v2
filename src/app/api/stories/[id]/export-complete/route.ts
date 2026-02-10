@@ -38,15 +38,15 @@ export async function POST(
     }
 
     /* --------------------------------------------------
-       2. Validate cover (SINGLE WRAP SPREAD MODEL)
+       2. Validate cover
     -------------------------------------------------- */
 
-    if (!story.coverSpreadUrl) {
-      return NextResponse.json(
-        { error: "Cover not generated yet" },
-        { status: 400 }
-      );
-    }
+    // if (!story.coverSpreadUrl) {
+    //   return NextResponse.json(
+    //     { error: "Cover not generated yet" },
+    //     { status: 400 }
+    //   );
+    // }
 
     /* --------------------------------------------------
        3. Load interior pages
@@ -57,68 +57,74 @@ export async function POST(
       orderBy: asc(storyPages.pageNumber),
     });
 
-    // ✅ NEW: Group pages into spreads (pairs of 2)
-    const spreads: Array<{ left: typeof pages[0], right: typeof pages[0] | null }> = [];
-    for (let i = 0; i < pages.length; i += 2) {
-      spreads.push({
-        left: pages[i],
-        right: pages[i + 1] || null,
-      });
-    }
-
-    // ✅ NEW: Convert spreads into individual printable pages with side info
-    const printable: Array<{ 
-      pageNumber: number; 
-      spreadImageUrl: string; 
-      side: 'left' | 'right' 
-    }> = [];
-
-    for (const spread of spreads) {
-      if (spread.left.imageUrl) {
-        // Add left page
-        printable.push({
-          pageNumber: spread.left.pageNumber,
-          spreadImageUrl: spread.left.imageUrl,
-          side: 'left',
-        });
-
-        // Add right page if it exists (using same spread image)
-        if (spread.right) {
-          printable.push({
-            pageNumber: spread.right.pageNumber,
-            spreadImageUrl: spread.left.imageUrl, // Same spread image!
-            side: 'right',
-          });
-        }
-      }
-    }
-
-    if (!printable.length) {
+    // Check all pages have images
+    const allGenerated = pages.every(p => p.imageUrl);
+    if (!allGenerated) {
       return NextResponse.json(
-        { error: "No illustrated pages to export" },
+        { error: "Not all pages have been illustrated yet" },
         { status: 400 }
       );
     }
 
+    // ✅ Build the correct structure: each spread image becomes TWO pages
+    const interiorPages: Array<{
+      pageNumber: number;
+      spreadImageUrl: string;
+      side: 'left' | 'right';
+    }> = [];
+
+    // Group pages into spreads
+    for (let i = 0; i < pages.length; i += 2) {
+      const leftPage = pages[i];
+      const rightPage = pages[i + 1];
+
+      if (!leftPage.imageUrl) continue;
+
+      // Left side of spread
+      interiorPages.push({
+        pageNumber: leftPage.pageNumber,
+        spreadImageUrl: leftPage.imageUrl,
+        side: 'left',
+      });
+
+      // Right side of spread (if it exists)
+      if (rightPage) {
+        interiorPages.push({
+          pageNumber: rightPage.pageNumber,
+          spreadImageUrl: leftPage.imageUrl, // Same spread image!
+          side: 'right',
+        });
+      }
+    }
+
+    console.log("📄 Exporting PDF:", {
+      storyId,
+      coverUrl: story.coverSpreadUrl,
+      totalPages: interiorPages.length,
+    });
+
     /* --------------------------------------------------
        4. Generate complete Gelato-ready PDF
-       (Cover wrap + interior pages)
     -------------------------------------------------- */
 
     const pdfBuffer = await exportCompletePDF(
       {
         coverSpreadUrl: story.coverSpreadUrl,
-        interiorPages: printable,
+        interiorPages,
       },
       process.env.GELATO_PRODUCT_UID!,
       process.env.GELATO_API_KEY!
     );
+
+    console.log("✅ PDF generated, size:", pdfBuffer.length, "bytes");
 
     /* --------------------------------------------------
        5. Upload to Firebase
     -------------------------------------------------- */
 
     const pdfUrl = await uploadPdfToFirebase(pdfBuffer, storyId);
+
+    console.log("✅ PDF uploaded to:", pdfUrl);
 
     /* --------------------------------------------------
        6. Persist PDF URL

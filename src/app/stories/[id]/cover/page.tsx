@@ -1,75 +1,40 @@
-import {
-  stories,
-  characters,
-  locations,
-  projects,
-  storyCharacters as storyCharactersTable,
-  storyLocations as storyLocationsTable,
-  storyStyleGuide,
-} from "@/db/schema";
-
+// src/app/stories/[id]/cover/page.tsx
 import { db } from "@/db";
-import { eq } from "drizzle-orm";
-import CoverDesignPage from "@/app/stories/[id]/cover/CoverDesignPage";
+import { coverConversations, stories } from "@/db/schema";
+import { eq, asc } from "drizzle-orm";
+import { notFound } from "next/navigation";
+import CoverDesignChat from "./CoverDesignChat";
 
-export const dynamic = "force-dynamic";
-
-type Props = {
+export default async function CoverPage({
+  params,
+}: {
   params: Promise<{ id: string }>;
-};
-
-export default async function Page({ params }: Props) {
-  const { id } = await params;
-
-  /* -------------------- 1️⃣ Story -------------------- */
+}) {
+  const { id: storyId } = await params;
 
   const story = await db.query.stories.findFirst({
-    where: eq(stories.id, id),
+    where: eq(stories.id, storyId),
   });
 
-  if (!story) {
-    throw new Error("Story not found");
-  }
+  if (!story) return notFound();
 
-  /* -------------------- 2️⃣ Characters (JOIN) -------------------- */
-
-  const storyCharacters = await db
-    .select({ character: characters })
-    .from(storyCharactersTable)
-    .innerJoin(
-      characters,
-      eq(storyCharactersTable.characterId, characters.id)
-    )
-    .where(eq(storyCharactersTable.storyId, story.id))
-    .then((rows) => rows.map((r) => r.character));
-
-  /* -------------------- 3️⃣ Locations (JOIN) -------------------- */
-
-  const storyLocations = await db
-    .select({ location: locations })
-    .from(storyLocationsTable)
-    .innerJoin(
-      locations,
-      eq(storyLocationsTable.locationId, locations.id)
-    )
-    .where(eq(storyLocationsTable.storyId, story.id))
-    .then((rows) => rows.map((r) => r.location));
-
-  /* -------------------- 4️⃣ Style Guide (story-level) -------------------- */
-
-  const styleGuide = await db.query.storyStyleGuide.findFirst({
-    where: eq(storyStyleGuide.storyId, story.id),
+  // Load existing conversation messages
+  const existingMessages = await db.query.coverConversations.findMany({
+    where: eq(coverConversations.storyId, storyId),
+    orderBy: asc(coverConversations.createdAt),
   });
 
-  /* -------------------- Render -------------------- */
+  const messages = existingMessages.map(msg => ({
+    role: msg.role as "user" | "assistant",
+    content: msg.content,
+  }));
 
   return (
-    <CoverDesignPage
+    <CoverDesignChat
+      storyId={story.id}
+      projectId={story.projectId}
       story={story}
-      characters={storyCharacters}
-      locations={storyLocations}
-      styleGuide={styleGuide ?? null}
+      initialMessages={messages}
     />
-
   );
 }

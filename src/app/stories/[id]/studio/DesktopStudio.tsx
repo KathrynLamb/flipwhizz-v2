@@ -228,6 +228,7 @@ export default function DesktopStudio({
         method: "POST",
       });
       const data = await res.json();
+      console.log("DATA", data)
       if (!res.ok) throw new Error();
       window.open(data.url, "_blank");
     } catch {
@@ -302,7 +303,7 @@ export default function DesktopStudio({
               )}
 
               {/* Export Button */}
-              <button
+              {/* <button
                 onClick={handleExportPDF}
                 disabled={isExporting || !allGenerated}
                 className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
@@ -316,6 +317,24 @@ export default function DesktopStudio({
                   <>
                     <Download className="w-4 h-4" />
                     Export PDF
+                  </>
+                )}
+              </button> */}
+
+                <button
+           onClick={() => router.push(`/stories/${story.id}/cover`)}
+                disabled={isExporting || !allGenerated}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
+              >
+                {isExporting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                      Design Covers
                   </>
                 )}
               </button>
