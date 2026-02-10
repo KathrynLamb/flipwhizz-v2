@@ -298,29 +298,24 @@ export const storyLocations = pgTable("story_locations", {
 
 /* ==================== STORY STYLE GUIDE ==================== */
 
+// In your schema file (src/db/schema.ts or wherever it is)
 export const storyStyleGuide = pgTable("story_style_guide", {
   id: uuid("id").primaryKey().defaultRandom(),
-  storyId: uuid("story_id")
-    .references(() => stories.id, { onDelete: "cascade" })
-    .notNull()
-    .unique(),
+  storyId: uuid("story_id").notNull().references(() => stories.id, { onDelete: "cascade" }),
   summary: text("summary"),
-  negativePrompt: text("negative_prompt"),
-  userNotes: text("user_notes"),
-
-  generationId: text("generation_id"),
-  
-  // NEW: Enhanced style tracking
-  artStyle: varchar("art_style", { length: 100 }), // watercolor, digital, cartoon, realistic, etc.
-  colorPalette: jsonb("color_palette"), // { primary: [], secondary: [], accent: [] }
-  visualThemes: text("visual_themes"), // recurring visual motifs
-  
-  sampleIllustrationUrl: text("sample_illustration_url"),
-  styleGuideImage: text("style_guide_image"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  sampleIllustrationUrl: text("sample_illustration_url"),
+  negativePrompt: text("negative_prompt"),
+  userNotes: text("user_notes"),
+  styleGuideImage: text("style_guide_image"),
+  artStyle: varchar("art_style"),
+  colorPalette: jsonb("color_palette"),
+  visualThemes: text("visual_themes"),
+  generationId: text("generation_id"),
+  approved: boolean("approved").default(false),
+  feedback: text("feedback"),
 });
-
 /* ==================== STYLE GUIDE IMAGES ==================== */
 
 export const styleGuideImages = pgTable("style_guide_images", {

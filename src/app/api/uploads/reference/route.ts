@@ -1,87 +1,83 @@
+// src/app/api/uploads/reference/route.ts
 import { NextResponse } from "next/server";
-import { v4 as uuid } from "uuid";
-import { Readable } from "node:stream";
 import { v2 as cloudinary } from "cloudinary";
-
-export const runtime = "nodejs";
+import heicConvert from "heic-convert";
 
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-  api_key: process.env.CLOUDINARY_API_KEY!,
-  api_secret: process.env.CLOUDINARY_API_SECRET!,
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-function isHeic(file: File) {
-  const name = file.name?.toLowerCase() ?? "";
-  const type = file.type ?? "";
-  return (
-    type === "image/heic" ||
-    type === "image/heif" ||
-    name.endsWith(".heic") ||
-    name.endsWith(".heif")
-  );
-}
+async function maybeConvertHeic(buffer: Buffer, filename: string) {
+  const isHeic = filename.toLowerCase().endsWith(".heic") || 
+                 filename.toLowerCase().endsWith(".heif");
 
-async function maybeConvertHeic(buffer: Buffer, file: File) {
-  if (!isHeic(file)) {
-    return { buffer, contentType: file.type || "application/octet-stream" };
+  if (!isHeic) {
+    return { buffer, format: "jpeg" };
   }
 
   try {
-    const heicConvert = (await import("heic-convert")).default;
-    const output = await heicConvert({
+    const outputBuffer = await heicConvert({
       buffer,
       format: "JPEG",
       quality: 0.9,
     });
-    return { buffer: Buffer.from(output), contentType: "image/jpeg" };
+    return { buffer: Buffer.from(outputBuffer), format: "jpeg" };
   } catch (err) {
-    console.warn("HEIC convert failed, uploading raw:", err);
-    return { buffer, contentType: file.type };
+    console.error("HEIC conversion failed:", err);
+    return { buffer, format: "jpeg" };
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const form = await req.formData();
-    const file = form.get("file") as File | null;
-    console.log("file", file)
-    
-    // ✅ FIX: Allow userId to be optional, fallback to 'anonymous' or a general folder
-    const userId = (form.get("userId") as string | null) || "anonymous";
+    const formData = await req.formData();
+    const file = formData.get("file");
+    const storyId = formData.get("storyId") as string;
 
-    if (!file) return NextResponse.json({ error: "Missing file" }, { status: 400 });
+    console.log("file", file);
 
+    if (!file || !(file instanceof File)) {
+      console.error("Invalid file:", file);
+      return NextResponse.json({ error: "Missing or invalid file" }, { status: 400 });
+    }
+
+    // Convert File to Buffer
     const arrayBuffer = await file.arrayBuffer();
     const originalBuffer = Buffer.from(arrayBuffer);
 
-    const { buffer } = await maybeConvertHeic(originalBuffer, file);
-    console.log("buffer", buffer)
+    const { buffer, format } = await maybeConvertHeic(originalBuffer, file.name);
 
-    const result: any = await new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
+    // Upload to Cloudinary
+    const uploadResult = await new Promise<any>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
         {
-          // ✅ FIX: Ensure folder structure doesn't break if userId is generic
-          folder: `flipwhizz/reference/${userId}`,
-          filename_override: uuid(),
-          resource_type: "image", 
+          folder: `flipwhizz/style-references/${storyId}`,
+          resource_type: "image",
+          format,
         },
-        (err, res) => {
-          if (err) reject(err);
-          else resolve(res);
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
         }
       );
 
-      Readable.from(buffer).pipe(stream);
+      uploadStream.end(buffer);
     });
-    console.log("result", result)
+
+    console.log("✅ Uploaded to Cloudinary:", uploadResult.secure_url);
+
     return NextResponse.json({
-      ok: true,
-      url: result.secure_url,
-      publicId: result.public_id,
+      url: uploadResult.secure_url,
+      storyId,
     });
+
   } catch (err: any) {
     console.error("UPLOAD ERROR:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message || "Upload failed" },
+      { status: 500 }
+    );
   }
 }

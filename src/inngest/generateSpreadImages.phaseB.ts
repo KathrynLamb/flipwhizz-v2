@@ -160,7 +160,7 @@ function extractInlineImage(result: any) {
 
 export const generateBookSpreads = inngest.createFunction(
   { id: "generate-book-spreads", concurrency: 5, retries: 2 },
-  { event: "story/generate.spreads" },
+  { event: "story/generate-spreads" },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId?: string };
     assertNonEmpty(storyId, "storyId");
@@ -326,16 +326,26 @@ export const generateSingleSpread = inngest.createFunction(
       parts.push(await getImagePart(SPREAD_TEMPLATE_PATH));
       parts.push({
         text: `
-↑ THIS IS A STRICT LAYOUT TEMPLATE ↑
+        ↑ LAYOUT GUIDE ONLY - DO NOT RENDER ↑
 
-This template defines SAFE ZONES and NO-TEXT AREAS.
-You MUST obey it exactly.
+        The image above shows SAFE ZONES for text placement.
+        This is a REFERENCE GUIDE ONLY.
+        
+        CRITICAL INSTRUCTIONS:
+        - DO NOT draw the guide boxes, labels, or template overlay in your illustration
+        - DO NOT show "TEXT SAFE ZONE" labels
+        - DO NOT show any guide lines, boxes, or markers
+        - The template is INVISIBLE - it's only showing you WHERE to place text
+        - Create a natural, seamless illustration with NO visible guides
+        
+        TEXT PLACEMENT RULES:
+        - Place LEFT page text within the left safe zone area (top-left portion)
+        - Place RIGHT page text within the right safe zone area (top-right portion)  
+        - Keep all text AWAY from the center gutter
+        - Keep all critical visual elements AWAY from the outer crop zones
+        `.trim(),
+        });
 
-CRITICAL:
-- DO NOT show the template/guide lines in the final illustration.
-- Keep all important characters, faces, and action OUT of the forbidden zones.
-`.trim(),
-      });
 
       // 1b️⃣ Optional location ref (if available and valid)
       if (locationRef) {
@@ -375,43 +385,51 @@ Match this character EXACTLY. No redesign, no stylisation, no outfit changes.
       // 3️⃣ SCENE (text will be drawn by Gemini in-image; we still enforce layout)
       parts.push({
         text: `
-ILLUSTRATION TASK:
-
-- Create ONE continuous double-page illustration (landscape).
-- Aspect ratio: ${IMAGE_ASPECT_RATIO}.
-- This will be cropped into TWO square pages (left half and right half).
-- RESPECT the template’s forbidden zones and safe zones.
-- KEEP the center gutter area clear of critical content.
-
-TEXT REQUIREMENT:
-- You MUST include the story text directly in the image.
-- Place the LEFT text only within the LEFT "TEXT SAFE ZONE" area of the template.
-- Place the RIGHT text only within the RIGHT "TEXT SAFE ZONE" area of the template.
-- Do NOT place any text outside those safe zones.
-- Ensure high contrast and large, child-friendly type.
-
-STYLE:
-${style?.summary ?? "Whimsical children's illustration"}
-
-AVOID:
-${style?.negativePrompt ?? "Logos, watermarks"}
-- No watermarks, no logos, no UI elements.
-
-SCENE:
-${spread.illustrationPrompt ?? spread.sceneSummary ?? ""}
-
-MOOD: ${spread.mood ?? "Warm"}
-
-LEFT PAGE TEXT (must be placed in LEFT TEXT SAFE ZONE):
-${left?.text ?? ""}
-
-RIGHT PAGE TEXT (must be placed in RIGHT TEXT SAFE ZONE):
-${right?.text ?? ""}
-
-${feedback ? `REVISION REQUEST:\n${feedback}\n` : ""}
-
-Create the illustration now.
-`.trim(),
+      ILLUSTRATION TASK:
+      
+      CREATE A SEAMLESS DOUBLE-PAGE SPREAD:
+      - ONE continuous landscape illustration
+      - Aspect ratio: ${IMAGE_ASPECT_RATIO}
+      - Will be split into two square pages (left half, right half)
+      - NO visible guides, boxes, or template markers
+      - Natural, professional children's book illustration
+      
+      TEXT INTEGRATION:
+      - Embed the story text DIRECTLY into the illustration
+      - LEFT text goes in upper-left quadrant (as shown in the invisible guide)
+      - RIGHT text goes in upper-right quadrant (as shown in the invisible guide)
+      - Keep text CLEAR of the center spine/gutter
+      - Use large, child-friendly typography with excellent contrast
+      - Text should feel natural, not overlaid
+      
+      IMPORTANT - DO NOT INCLUDE:
+      - "TEXT SAFE ZONE" labels
+      - Guide boxes or borders
+      - Template overlay
+      - Any reference markers
+      - The guide is invisible - your illustration should be clean and polished
+      
+      STYLE:
+      ${style?.summary ?? "Whimsical children's illustration"}
+      
+      AVOID:
+      ${style?.negativePrompt ?? "Logos, watermarks, guide lines, template markers, text boxes"}
+      
+      SCENE:
+      ${spread.illustrationPrompt ?? spread.sceneSummary ?? ""}
+      
+      MOOD: ${spread.mood ?? "Warm"}
+      
+      LEFT PAGE TEXT (integrate naturally in upper-left area):
+      ${left?.text ?? ""}
+      
+      RIGHT PAGE TEXT (integrate naturally in upper-right area):
+      ${right?.text ?? ""}
+      
+      ${feedback ? `REVISION REQUEST:\n${feedback}\n` : ""}
+      
+      Create a clean, professional illustration with seamlessly integrated text.
+      `.trim(),
       });
 
       const response = await client.models.generateContent({

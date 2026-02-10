@@ -147,6 +147,8 @@ function FeedbackModal({
 /*                               Desktop Studio                               */
 /* -------------------------------------------------------------------------- */
 
+// Update the DesktopStudio component to add the generation buttons
+
 export default function DesktopStudio({
   story,
   pages: initialPages,
@@ -167,6 +169,7 @@ export default function DesktopStudio({
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false); // ✅ Add this
 
   const spreads = useMemo(() => groupIntoSpreads(pages), [pages]);
 
@@ -186,6 +189,7 @@ export default function DesktopStudio({
 
       if (updatedPages.every((p) => p.imageUrl)) {
         setIsPolling(false);
+        setIsGenerating(false); // ✅ Add this
       }
     }, 3000);
 
@@ -193,6 +197,27 @@ export default function DesktopStudio({
   }, [isPolling, story.id]);
 
   /* ------------------------------- Actions -------------------------------- */
+
+  // ✅ Add this function
+  async function handleGenerateAll() {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    setIsPolling(true);
+
+    try {
+      const res = await fetch(`/api/stories/${story.id}/generate-all`, {
+        method: "POST",
+      });
+      
+      if (!res.ok) {
+        throw new Error("Failed to start generation");
+      }
+    } catch (err) {
+      alert("Failed to start generation");
+      setIsGenerating(false);
+      setIsPolling(false);
+    }
+  }
 
   async function handleExportPDF() {
     if (isExporting) return;
@@ -216,6 +241,7 @@ export default function DesktopStudio({
 
   const completedCount = pages.filter((p) => p.imageUrl).length;
   const totalCount = pages.length;
+  const allGenerated = completedCount === totalCount;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-40">
@@ -230,15 +256,87 @@ export default function DesktopStudio({
         )}
       </AnimatePresence>
 
- {/* FLOATING EXPORT BUTTON */}
- <button
-        onClick={handleExportPDF}
-        disabled={isExporting}
-        className="fixed bottom-8 right-8 z-40 bg-gray-900 text-white px-5 py-3 rounded-2xl flex items-center gap-2 shadow-lg hover:shadow-xl transition-shadow"
-      >
-        {isExporting ? <Loader2 className="animate-spin w-4 h-4" /> : <Download className="w-4 h-4" />}
-        Export PDF
-      </button>
+      {/* ✅ HEADER WITH GENERATION CONTROLS */}
+      <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200">
+        <div className="max-w-[1400px] mx-auto px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link
+                href={`/stories/${story.id}/design`}
+                className="flex items-center gap-2 text-gray-700 hover:text-purple-600 transition-colors font-medium"
+              >
+                <ChevronLeft className="w-5 h-5" />
+                <span>Back to Design</span>
+              </Link>
+              
+              <div className="h-6 w-px bg-gray-300" />
+              
+              <div className="text-sm">
+                <span className="font-bold text-gray-900">{story.title}</span>
+                <span className="text-gray-500 ml-2">
+                  {completedCount} / {totalCount} illustrations
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Generation Status/Button */}
+              {!allGenerated && (
+                <button
+                  onClick={handleGenerateAll}
+                  disabled={isGenerating}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating {completedCount}/{totalCount}...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Generate All Illustrations
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* Export Button */}
+              <button
+                onClick={handleExportPDF}
+                disabled={isExporting || !allGenerated}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
+              >
+                {isExporting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    Export PDF
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          {isGenerating && (
+            <div className="mt-3">
+              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-purple-600 to-pink-600"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(completedCount / totalCount) * 100}%` }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* CONTENT */}
       <div className="max-w-[1400px] mx-auto p-8 space-y-8">
@@ -251,15 +349,23 @@ export default function DesktopStudio({
             key={spread.id}
             className="bg-white rounded-2xl border overflow-hidden"
           >
-            <div className="aspect-[2/1] bg-gray-100">
+            <div className="aspect-[2/1] bg-gray-100 relative">
               {spread.left.imageUrl ? (
                 <img
                   src={spread.left.imageUrl}
                   className="w-full h-full object-contain"
+                  alt={`Pages ${spread.left.pageNumber}${spread.right ? `-${spread.right.pageNumber}` : ''}`}
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-gray-400">
-                  <ImagePlus />
+                  {isGenerating ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="w-8 h-8 animate-spin" />
+                      <p className="text-sm">Generating...</p>
+                    </div>
+                  ) : (
+                    <ImagePlus className="w-12 h-12" />
+                  )}
                 </div>
               )}
             </div>

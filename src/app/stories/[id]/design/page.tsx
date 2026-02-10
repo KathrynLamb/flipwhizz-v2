@@ -1,4 +1,5 @@
 // src/app/stories/[id]/design/page.tsx
+import DesignClient from "@/app/stories/[id]/design/StyleStudio";
 import { db } from "@/db";
 import {
   stories,
@@ -12,7 +13,7 @@ import {
 } from "@/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
-import StyleStudio from "./StyleStudio";
+
 
 export default async function DesignPage({
   params,
@@ -21,38 +22,25 @@ export default async function DesignPage({
 }) {
   const { id: storyId } = await params;
 
-  /* --------------------------------------------------
-     1. Check if workflow is complete
-  -------------------------------------------------- */
   const progress = await db.query.storyWorkflowProgress.findFirst({
     where: eq(storyWorkflowProgress.storyId, storyId),
   });
 
-  // If workflow not complete, redirect to extract page
   if (!progress || !progress.worldExtracted || !progress.spreadsBuilt || !progress.scenesDecided) {
     redirect(`/stories/${storyId}/extract`);
   }
 
-  /* --------------------------------------------------
-     2. Load story
-  -------------------------------------------------- */
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
   });
 
   if (!story) return notFound();
 
-  /* --------------------------------------------------
-     3. Load pages
-  -------------------------------------------------- */
   const pages = await db.query.storyPages.findMany({
     where: eq(storyPages.storyId, storyId),
     orderBy: asc(storyPages.pageNumber),
   });
 
-  /* --------------------------------------------------
-     4. Load characters
-  -------------------------------------------------- */
   const storyChars = await db.query.storyCharacters.findMany({
     where: eq(storyCharacters.storyId, storyId),
   });
@@ -67,9 +55,6 @@ export default async function DesignPage({
         })
       : [];
 
-  /* --------------------------------------------------
-     5. Load locations
-  -------------------------------------------------- */
   const storyLocs = await db.query.storyLocations.findMany({
     where: eq(storyLocations.storyId, storyId),
   });
@@ -84,18 +69,18 @@ export default async function DesignPage({
         })
       : [];
 
-  /* --------------------------------------------------
-     6. Load style guide
-  -------------------------------------------------- */
   const style = await db.query.storyStyleGuide.findFirst({
     where: eq(storyStyleGuide.storyId, storyId),
   });
 
-  /* --------------------------------------------------
-     7. Render StyleStudio
-  -------------------------------------------------- */
+  console.log("📊 Style guide loaded:", {
+    exists: !!style,
+    styleGuideImage: style?.styleGuideImage,
+    sampleIllustrationUrl: style?.sampleIllustrationUrl,
+  });
+
   return (
-    <StyleStudio
+    <DesignClient
       data={{
         storyId: story.id,
         title: story.title || "Untitled Story",
@@ -103,8 +88,8 @@ export default async function DesignPage({
         style: {
           summary: style?.summary || "",
           negativePrompt: style?.negativePrompt || "",
-          referenceImages: [],
-          sampleUrl: style?.sampleIllustrationUrl || null,
+          referenceImages: style?.styleGuideImage ? [style.styleGuideImage] : [], // ✅ Fixed
+          sampleIllustrationUrl: style?.sampleIllustrationUrl || null, // ✅ Fixed
         },
         characters: chars.map((c) => ({
           id: c.id,
@@ -112,14 +97,15 @@ export default async function DesignPage({
           description: c.description,
           appearance: c.appearance,
           referenceImageUrl: c.referenceImageUrl,
+          portraitImageUrl: c.portraitImageUrl, // ✅ Added
         })),
         locations: locs.map((l) => ({
           id: l.id,
           name: l.name,
           description: l.description,
           referenceImageUrl: l.referenceImageUrl,
+          portraitImageUrl: l.portraitImageUrl, // ✅ Added
         })),
-        presenceReady: true,
       }}
     />
   );

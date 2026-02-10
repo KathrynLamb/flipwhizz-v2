@@ -351,6 +351,13 @@
       "when": 1770308511590,
       "tag": "0049_material_pride",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1770681220019,
+      "tag": "0050_narrow_wendell_rand",
+      "breakpoints": true
     }
   ]
 }

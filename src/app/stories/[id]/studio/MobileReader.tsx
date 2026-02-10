@@ -103,6 +103,7 @@ export default function MobileStudio({
   const [isPolling, setIsPolling] = useState(
     mode === "live" || story.status === "generating"
   );
+  const [isGenerating, setIsGenerating] = useState(false); // ✅ Add this
   const [isExporting, setIsExporting] = useState(false);
 
   const [index, setIndex] = useState(0);
@@ -131,6 +132,11 @@ export default function MobileStudio({
       ? (slides[index] as Spread)
       : null;
 
+  // ✅ Add completion tracking
+  const completedCount = pages.filter((p) => p.imageUrl).length;
+  const totalCount = pages.length;
+  const allGenerated = completedCount === totalCount;
+
   /* ------------------------------ Measure width ---------------------------- */
 
   useEffect(() => {
@@ -151,6 +157,28 @@ export default function MobileStudio({
       window.removeEventListener("orientationchange", measure);
     };
   }, [index, x]);
+
+  /* ✅ Add polling effect */
+  useEffect(() => {
+    if (!isPolling) return;
+
+    const interval = setInterval(async () => {
+      const res = await fetch(`/api/stories/${story.id}/pages`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+
+      const updatedPages: Page[] = await res.json();
+      setPages(updatedPages);
+
+      if (updatedPages.every((p) => p.imageUrl)) {
+        setIsPolling(false);
+        setIsGenerating(false);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [isPolling, story.id]);
 
   /* ------------------------------ Navigation -------------------------------- */
 
@@ -182,6 +210,27 @@ export default function MobileStudio({
       snapTo(index - 1);
     } else {
       snapTo(index);
+    }
+  }
+
+  /* ✅ Add generate all function */
+  async function handleGenerateAll() {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    setIsPolling(true);
+
+    try {
+      const res = await fetch(`/api/stories/${story.id}/generate-all`, {
+        method: "POST",
+      });
+      
+      if (!res.ok) {
+        throw new Error("Failed to start generation");
+      }
+    } catch (err) {
+      alert("Failed to start generation");
+      setIsGenerating(false);
+      setIsPolling(false);
     }
   }
 
@@ -224,6 +273,33 @@ export default function MobileStudio({
         paddingBottom: "env(safe-area-inset-bottom)",
       }}
     >
+      {/* ✅ TOP BAR */}
+      <div className="absolute top-0 inset-x-0 px-4 pt-3 pb-6 flex justify-between items-center bg-gradient-to-b from-black/90 via-black/60 to-transparent z-10">
+        <div className="text-xs text-white/60">
+          {completedCount} / {totalCount}
+        </div>
+        
+        {!allGenerated && (
+          <button
+            onClick={handleGenerateAll}
+            disabled={isGenerating}
+            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 disabled:opacity-50"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3 h-3" />
+                Generate All
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
       {/* ============================ SWIPE TRACK ============================ */}
       <motion.div
         className="flex h-full"
@@ -270,8 +346,17 @@ export default function MobileStudio({
                   </>
                 ) : (
                   <div className="flex flex-col items-center justify-center text-white/40">
-                    <ImagePlus className="w-8 h-8 mb-2" />
-                    <span className="text-xs">Not generated</span>
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="w-8 h-8 mb-2 animate-spin" />
+                        <span className="text-xs">Generating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ImagePlus className="w-8 h-8 mb-2" />
+                        <span className="text-xs">Not generated</span>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -285,7 +370,7 @@ export default function MobileStudio({
       <div className="absolute bottom-0 inset-x-0 px-4 pb-3 pt-6 flex justify-center bg-gradient-to-t from-black/90 via-black/60 to-transparent">
         <button
           onClick={handleExportPDF}
-          disabled={isExporting}
+          disabled={isExporting || !allGenerated}
           className="bg-white/10 text-white px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 border border-white/10 disabled:opacity-50"
         >
           {isExporting ? (

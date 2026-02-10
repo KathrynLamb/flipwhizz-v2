@@ -5,7 +5,7 @@ import { db } from "@/db";
 
 export const generateBookSpreads = inngest.createFunction(
   { id: "generate-book-spreads", concurrency: 5, retries: 2 },
-  { event: "story/generate.spreads" },
+  { event: "story/generate-spreads" }, // ✅ Fixed: dash instead of dot
   async ({ event, step }) => {
     const { storyId } = event.data;
 
@@ -26,7 +26,7 @@ export const generateBookSpreads = inngest.createFunction(
       const right = pages[i + 1] ?? null;
 
       events.push({
-        name: "story/generate.single.spread",
+        name: "story/generate.single.spread", // This one is fine with a dot
         data: {
           storyId,
           leftPageId: left.id,
