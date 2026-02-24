@@ -70,14 +70,14 @@ const coverByStoryId = new Map(selectedCovers.map((c) => [c.storyId, c.imageUrl]
   // Check if user has projects
   let hasProjects = false;
 
-  // if (session?.user?.id) {
-  //   const userProjects = await db
-  //     .select({ count: sql<number>`count(*)` })
-  //     .from(projects)
-  //     .where(eq(projects.userId, session.user.id));
+  if (session?.user?.id) {
+    const userProjects = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(projects)
+      .where(eq(projects.userId, session.user.id));
     
-  //   hasProjects = userProjects[0].count > 0;
-  // }
+    hasProjects = userProjects[0].count > 0;
+  }
   return (
   <main
   className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans bg-[#FDF8F0] text-slate-900 overflow-x-hidden`}

@@ -24,6 +24,9 @@ export default function HeroButton({
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
 
+
+  console.log("HAS PROJECTS??", hasProjects)
+
   const base =
   "inline-flex items-center justify-center px-10 py-5 text-lg font-serif font-bold rounded-full transition-all duration-300 transform disabled:opacity-70 disabled:cursor-not-allowed";
 
