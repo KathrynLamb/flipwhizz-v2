@@ -1,5 +1,3 @@
-
-
 import {
   pgTable,
   text,
@@ -9,7 +7,8 @@ import {
   uuid,
   boolean,
   jsonb,
-  index
+  index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 /* ==================== USERS ==================== */
@@ -101,9 +100,7 @@ export const stories = pgTable("stories", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-
-/* ==================== STORY PAGES ==================== */
-
+/* ==================== STORY PRODUCTS ==================== */
 
 export const storyProducts = pgTable("story_products", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -113,9 +110,8 @@ export const storyProducts = pgTable("story_products", {
     .notNull(),
 
   // What the user is intending to buy (can change)
-  productType: varchar("product_type", { length: 30 })
-    .default("undecided"), 
-    // 'undecided' | 'digital' | 'print' | 'gift'
+  productType: varchar("product_type", { length: 30 }).default("undecided"),
+  // 'undecided' | 'digital' | 'print' | 'gift'
 
   // Snapshot of pricing at time of checkout (not authoritative yet)
   estimatedPrice: integer("estimated_price"), // in cents
@@ -124,7 +120,7 @@ export const storyProducts = pgTable("story_products", {
   // Fulfilment flags
   requiresShipping: boolean("requires_shipping").default(false),
   requiresPdf: boolean("requires_pdf").default(true),
-  
+
   locked: boolean("locked").default(false),
   // Lock once paid
   lockedAt: timestamp("locked_at"),
@@ -133,6 +129,7 @@ export const storyProducts = pgTable("story_products", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+/* ==================== STORY PAGES ==================== */
 
 export const storyPages = pgTable("story_pages", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -144,13 +141,13 @@ export const storyPages = pgTable("story_pages", {
   illustrationPrompt: text("illustration_prompt"),
   imageId: uuid("image_id"),
   imageUrl: text("image_url"),
-  
-  // NEW: Scene metadata
+
+  // Scene metadata
   timeOfDay: varchar("time_of_day", { length: 40 }), // morning, afternoon, evening, night, etc.
   weather: varchar("weather", { length: 60 }), // sunny, rainy, stormy, etc.
   atmosphere: varchar("atmosphere", { length: 100 }), // tense, joyful, mysterious, etc.
   sceneType: varchar("scene_type", { length: 40 }), // action, dialogue, transition, climax, etc.
-  
+
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -167,38 +164,34 @@ export const pageImages = pgTable("page_images", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-
-
 /* ==================== Story Edit Chat ==================== */
 
 export const storyEditSessions = pgTable("story_edit_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
-  
+
   storyId: uuid("story_id")
     .references(() => stories.id, { onDelete: "cascade" })
     .notNull()
     .unique(), // One active edit session per story
-  
+
   lastMessageAt: timestamp("last_message_at").defaultNow(),
-  
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const storyEditMessages = pgTable("story_edit_messages", {
   id: uuid("id").primaryKey().defaultRandom(),
-  
+
   sessionId: uuid("session_id")
     .references(() => storyEditSessions.id, { onDelete: "cascade" })
     .notNull(),
-  
+
   role: varchar("role", { length: 20 }).notNull(), // 'user' | 'assistant'
   content: text("content").notNull(),
-  
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
-
-
 
 /* ==================== CHARACTERS ==================== */
 
@@ -211,22 +204,143 @@ export const characters = pgTable("characters", {
   description: text("description"),
   appearance: text("appearance"),
   aiSummary: text("ai_summary"),
-  
-  // NEW: Visual consistency fields
-  visualDetails: jsonb("visual_details"), // { hairColor, eyeColor, clothing, age, height, etc. }
+
+  visualDetails: jsonb("visual_details"),
   personalityTraits: text("personality_traits"),
 
   locked: boolean("locked").default(false).notNull(),
   lockedAt: timestamp("locked_at"),
-  
+
+  // Reference images (URLs, not base64)
   portraitImageUrl: text("portrait_image_url"),
   fullBodyImageUrl: text("full_body_image_url"),
-
   referenceImageUrl: text("reference_image_url"),
 
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+/* ==================== CHARACTER OUTFITS (LEGACY - IMAGE BASED) ==================== */
+
+/**
+ * Legacy table for image-based outfit references.
+ * Kept for backward compatibility.
+ * For prompt-based outfit descriptions, use characterStoryOutfits instead.
+ */
+export const characterOutfits = pgTable("character_outfits", {
+  id: uuid("id").primaryKey().defaultRandom(),
+
+  characterId: uuid("character_id")
+    .notNull()
+    .references(() => characters.id, { onDelete: "cascade" }),
+
+  outfitType: varchar("outfit_type", { length: 50 }).notNull(),
+  // e.g., "casual", "winter", "swimwear", "formal", "custom-beach-party"
+
+  name: varchar("name", { length: 100 }),
+  // Optional friendly name: "Snow Gear", "Beach Outfit"
+
+  description: text("description"),
+  // What makes this outfit unique
+
+  imageUrl: text("image_url").notNull(),
+  // The actual portrait image
+
+  isDefault: boolean("is_default").default(false),
+  // Mark one as the fallback
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/* ==================== CHARACTER STORY OUTFITS (NEW - PROMPT BASED) ==================== */
+
+/**
+ * Story-specific outfit definitions for prompt injection.
+ * These are TEXT DESCRIPTIONS designed to be injected into Gemini prompts.
+ * Each character can have multiple outfit types per story (ski_gear, swimwear, etc.)
+ */
+export const characterStoryOutfits = pgTable(
+  "character_story_outfits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    storyId: uuid("story_id")
+      .references(() => stories.id, { onDelete: "cascade" })
+      .notNull(),
+
+    characterId: uuid("character_id")
+      .references(() => characters.id, { onDelete: "cascade" })
+      .notNull(),
+
+    outfitKey: varchar("outfit_key", { length: 50 }).notNull(),
+    // e.g., "ski_gear", "hot_tub", "indoor_casual", "sleeping", "default"
+
+    outfitDescription: text("outfit_description").notNull(),
+    // Detailed visual description for prompts, e.g.:
+    // "Bright turquoise zip-up ski jacket with white trim, matching turquoise
+    //  snow pants, pink knit beanie with white pom-pom, white ski gloves"
+
+    triggerConditions: text("trigger_conditions"),
+    // When this outfit should be used, e.g.:
+    // "outdoor winter scenes, skiing, playing in snow, walking to ski lift"
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    // Ensure unique outfit key per character per story
+    uniqueOutfitKey: uniqueIndex("character_story_outfits_unique_key").on(
+      t.storyId,
+      t.characterId,
+      t.outfitKey
+    ),
+    // Fast lookup by story
+    storyIdx: index("character_story_outfits_story_idx").on(t.storyId),
+    // Fast lookup by character
+    characterIdx: index("character_story_outfits_character_idx").on(
+      t.characterId
+    ),
+  })
+);
+
+/* ==================== SPREAD CHARACTER OUTFITS (NEW) ==================== */
+
+/**
+ * Which outfit each character wears in each spread.
+ * Links spreads to characterStoryOutfits via outfitKey.
+ * outfitDescription is denormalized for fast prompt building.
+ */
+export const spreadCharacterOutfits = pgTable(
+  "spread_character_outfits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    spreadId: uuid("spread_id")
+      .references(() => storySpreads.id, { onDelete: "cascade" })
+      .notNull(),
+
+    characterId: uuid("character_id")
+      .references(() => characters.id, { onDelete: "cascade" })
+      .notNull(),
+
+    outfitKey: varchar("outfit_key", { length: 50 }).notNull(),
+    // Links to characterStoryOutfits.outfitKey
+
+    outfitDescription: text("outfit_description").notNull(),
+    // Denormalized for fast prompt building - copied from characterStoryOutfits
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    // Ensure one outfit per character per spread
+    uniqueCharacterSpread: uniqueIndex("spread_character_outfits_unique").on(
+      t.spreadId,
+      t.characterId
+    ),
+    // Fast lookup by spread
+    spreadIdx: index("spread_character_outfits_spread_idx").on(t.spreadId),
+  })
+);
 
 /* ==================== LOCATIONS ==================== */
 
@@ -238,8 +352,8 @@ export const locations = pgTable("locations", {
   name: varchar("name", { length: 200 }).notNull(),
   description: text("description"),
   aiSummary: text("ai_summary"),
-  
-  // NEW: Visual consistency fields
+
+  // Visual consistency fields
   visualDetails: jsonb("visual_details"), // { architecture, colors, lighting, keyFeatures, etc. }
 
   locked: boolean("locked").default(false).notNull(),
@@ -278,8 +392,8 @@ export const storyCharacters = pgTable("story_characters", {
   characterId: uuid("character_id")
     .references(() => characters.id, { onDelete: "cascade" })
     .notNull(),
-  
-  // NEW: Character arc tracking
+
+  // Character arc tracking
   role: varchar("role", { length: 40 }), // protagonist, antagonist, supporting, etc.
   arcSummary: text("arc_summary"), // Overall character journey in this story
 });
@@ -293,17 +407,18 @@ export const storyLocations = pgTable("story_locations", {
   locationId: uuid("location_id")
     .references(() => locations.id, { onDelete: "cascade" })
     .notNull(),
-  
-  // NEW: Location significance
+
+  // Location significance
   significance: varchar("significance", { length: 40 }), // primary, secondary, minor
 });
 
 /* ==================== STORY STYLE GUIDE ==================== */
 
-// In your schema file (src/db/schema.ts or wherever it is)
 export const storyStyleGuide = pgTable("story_style_guide", {
   id: uuid("id").primaryKey().defaultRandom(),
-  storyId: uuid("story_id").notNull().references(() => stories.id, { onDelete: "cascade" }),
+  storyId: uuid("story_id")
+    .notNull()
+    .references(() => stories.id, { onDelete: "cascade" }),
   summary: text("summary"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -318,6 +433,7 @@ export const storyStyleGuide = pgTable("story_style_guide", {
   approved: boolean("approved").default(false),
   feedback: text("feedback"),
 });
+
 /* ==================== STYLE GUIDE IMAGES ==================== */
 
 export const styleGuideImages = pgTable("style_guide_images", {
@@ -332,13 +448,13 @@ export const styleGuideImages = pgTable("style_guide_images", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-/* ==================== PAGE CHARACTER PRESENCE (enhanced) ==================== */
+/* ==================== PAGE CHARACTER PRESENCE ==================== */
 
 export const storyPageCharacters = pgTable("story_page_characters", {
   id: uuid("id").primaryKey().defaultRandom(),
   storyId: uuid("story_id")
-  .references(() => stories.id, { onDelete: "cascade" })
-  .notNull(),
+    .references(() => stories.id, { onDelete: "cascade" })
+    .notNull(),
 
   pageId: uuid("page_id")
     .references(() => storyPages.id, { onDelete: "cascade" })
@@ -348,7 +464,7 @@ export const storyPageCharacters = pgTable("story_page_characters", {
     .references(() => characters.id, { onDelete: "cascade" })
     .notNull(),
 
-  // 🔴 LEGACY COLUMN — MUST EXIST
+  // LEGACY COLUMN — MUST EXIST
   canonical: boolean("canonical").default(true),
 
   source: varchar("source", { length: 20 }).default("ai"),
@@ -358,17 +474,16 @@ export const storyPageCharacters = pgTable("story_page_characters", {
   prominence: varchar("prominence", { length: 20 }),
 
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-
-/* ==================== PAGE LOCATION PRESENCE (enhanced) ==================== */
+/* ==================== PAGE LOCATION PRESENCE ==================== */
 
 export const storyPageLocations = pgTable("story_page_locations", {
   id: uuid("id").primaryKey().defaultRandom(),
-  storyId: uuid("story_id")
-  .references(() => stories.id, { onDelete: "cascade" }),
-  // .notNull(),
-
+  storyId: uuid("story_id").references(() => stories.id, {
+    onDelete: "cascade",
+  }),
 
   pageId: uuid("page_id")
     .references(() => storyPages.id, { onDelete: "cascade" })
@@ -378,7 +493,7 @@ export const storyPageLocations = pgTable("story_page_locations", {
     .references(() => locations.id, { onDelete: "cascade" })
     .notNull(),
 
-  // 🔴 LEGACY COLUMN — MUST EXIST
+  // LEGACY COLUMN — MUST EXIST
   canonical: boolean("canonical").default(true),
 
   source: varchar("source", { length: 20 }).default("ai"),
@@ -387,8 +502,8 @@ export const storyPageLocations = pgTable("story_page_locations", {
   visualFocus: text("visual_focus"),
 
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
-
 
 /* ==================== NARRATIVE BEATS ==================== */
 
@@ -425,7 +540,9 @@ export const sceneTransitions = pgTable("scene_transitions", {
 export const readers = pgTable("readers", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
-  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").references(() => projects.id, {
+    onDelete: "cascade",
+  }),
   name: varchar("name", { length: 120 }),
   dateOfBirth: varchar("dob", { length: 40 }),
   relationship: varchar("relationship", { length: 80 }),
@@ -438,9 +555,12 @@ export const readers = pgTable("readers", {
 
 export const chatSessions = pgTable("chat_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id")
-    .references(() => projects.id, { onDelete: "cascade" }),
-  readerId: uuid("reader_id").references(() => readers.id, { onDelete: "set null" }),
+  projectId: uuid("project_id").references(() => projects.id, {
+    onDelete: "cascade",
+  }),
+  readerId: uuid("reader_id").references(() => readers.id, {
+    onDelete: "set null",
+  }),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
   status: varchar("status", { length: 20 }).default("open"),
   lastMessageAt: timestamp("last_message_at").defaultNow(),
@@ -467,7 +587,7 @@ export const pageEntities = pgTable("page_entities", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Add this to src/db/schema.ts
+/* ==================== BOOK COVERS ==================== */
 
 export const bookCovers = pgTable(
   "book_covers",
@@ -506,30 +626,14 @@ export const bookCovers = pgTable(
       .default([]),
 
     // Location IDs intentionally referenced on the cover
-    locationsShown: jsonb("locations_shown")
-      .$type<string[]>()
-      .default([]),
+    locationsShown: jsonb("locations_shown").$type<string[]>().default([]),
 
     // Snapshot of style at time of generation
     styleSnapshot: jsonb("style_snapshot"),
-    /*
-      {
-        artStyle,
-        colorPalette,
-        visualThemes,
-        negativePrompt
-      }
-    */
 
     /* ---------------- LAYOUT / COMPOSITION ---------------- */
 
     layoutNotes: text("layout_notes"),
-    /*
-      e.g.
-      - Front: Sophia riding upside-down on sheep
-      - Back: Woolton village skyline, space for blurb
-      - Spine: vertical title, sheep tail overlapping
-    */
 
     createdAt: timestamp("created_at").defaultNow(),
   },
@@ -539,6 +643,7 @@ export const bookCovers = pgTable(
   })
 );
 
+/* ==================== COVER CHAT SESSIONS ==================== */
 
 export const coverChatSessions = pgTable("cover_chat_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -546,10 +651,10 @@ export const coverChatSessions = pgTable("cover_chat_sessions", {
     .notNull()
     .references(() => stories.id, { onDelete: "cascade" }),
 
-  // ✅ NEW: latest structured plan (json)
+  // Latest structured plan (json)
   coverPlan: jsonb("cover_plan"),
 
-  // ✅ NEW: plan updated time
+  // Plan updated time
   planUpdatedAt: timestamp("plan_updated_at"),
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -569,11 +674,15 @@ export const coverConversations = pgTable("cover_conversations", {
 
 export const coverChatMessages = pgTable("cover_chat_messages", {
   id: uuid("id").primaryKey().defaultRandom(),
-  sessionId: uuid("session_id").notNull().references(() => coverChatSessions.id, { onDelete: "cascade" }),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => coverChatSessions.id, { onDelete: "cascade" }),
   role: varchar("role", { length: 20 }).notNull(),
   content: text("content").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+/* ==================== ORDERS ==================== */
 
 export const orders = pgTable("orders", {
   id: text("id").primaryKey(),
@@ -596,10 +705,9 @@ export const orders = pgTable("orders", {
   gelatoOrderId: text("gelato_order_id"),
   gelatoStatus: text("gelato_status"),
 
-  storyProductId: uuid("story_product_id")
-  .references(() => storyProducts.id, { onDelete: "cascade" }),
-  // .notNull(),
-
+  storyProductId: uuid("story_product_id").references(() => storyProducts.id, {
+    onDelete: "cascade",
+  }),
 
   status: text("status").notNull().default("pending"),
   submittedAt: timestamp("submitted_at"),
@@ -608,6 +716,7 @@ export const orders = pgTable("orders", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+/* ==================== STORY SPREADS ==================== */
 
 export const storySpreads = pgTable("story_spreads", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -617,68 +726,78 @@ export const storySpreads = pgTable("story_spreads", {
     .notNull(),
 
   spreadIndex: integer("spread_index").notNull(), // 1-based
+
   sceneSummary: text("scene_summary"),
 
+  leftPageId: uuid("left_page_id").references(() => storyPages.id, {
+    onDelete: "set null",
+  }),
 
-  leftPageId: uuid("left_page_id")
-    .references(() => storyPages.id, { onDelete: "set null" }),
-
-  rightPageId: uuid("right_page_id")
-    .references(() => storyPages.id, { onDelete: "set null" }),
+  rightPageId: uuid("right_page_id").references(() => storyPages.id, {
+    onDelete: "set null",
+  }),
 
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Add this to your db/schema.ts file
-
-
-// src/db/schema.ts (ADD THIS TABLE)
-
-// UPDATED storyWorkflowProgress table
-// Replace your existing table definition with this
+/* ==================== STORY WORKFLOW PROGRESS ==================== */
 
 export const storyWorkflowProgress = pgTable("story_workflow_progress", {
-  storyId: uuid("story_id").primaryKey().references(() => stories.id, { onDelete: "cascade" }),
-  
-  // ========== NEW: Granular World Building Progress ==========
-  
-  // Phase 1: World Extraction
+  storyId: uuid("story_id")
+    .primaryKey()
+    .references(() => stories.id, { onDelete: "cascade" }),
+
+  /* ========== Phase 1: World Extraction ========== */
+
   charactersExtracted: boolean("characters_extracted").notNull().default(false),
   charactersExtractedAt: timestamp("characters_extracted_at"),
-  
+
   locationsExtracted: boolean("locations_extracted").notNull().default(false),
   locationsExtractedAt: timestamp("locations_extracted_at"),
-  
+
   styleExtracted: boolean("style_extracted").notNull().default(false),
   styleExtractedAt: timestamp("style_extracted_at"),
-  
-  // Phase 2: Spread Building
+
+  /* ========== Phase 2: Spread Building ========== */
+
   spreadsBuilt: boolean("spreads_built").notNull().default(false),
   spreadsBuiltAt: timestamp("spreads_built_at"),
-  
-  // Phase 3: Scene Composition
+
+  /* ========== Phase 3: Scene Composition ========== */
+
   charactersAssigned: boolean("characters_assigned").notNull().default(false),
   charactersAssignedAt: timestamp("characters_assigned_at"),
-  
+
   locationsAssigned: boolean("locations_assigned").notNull().default(false),
   locationsAssignedAt: timestamp("locations_assigned_at"),
-  
-  // Overall Status
+
+  /* ========== Phase 4: Outfit Management (NEW) ========== */
+
+  outfitsExtracted: boolean("outfits_extracted").notNull().default(false),
+  outfitsExtractedAt: timestamp("outfits_extracted_at"),
+
+  outfitsAssigned: boolean("outfits_assigned").notNull().default(false),
+  outfitsAssignedAt: timestamp("outfits_assigned_at"),
+
+  /* ========== Overall Status ========== */
+
   worldComplete: boolean("world_complete").notNull().default(false),
   worldCompleteAt: timestamp("world_complete_at"),
-  
-  // ========== LEGACY: Keep for backward compatibility ==========
+
+  /* ========== LEGACY: Keep for backward compatibility ========== */
+
   worldExtracted: boolean("world_extracted").notNull().default(false),
   worldExtractedAt: timestamp("world_extracted_at"),
   scenesDecided: boolean("scenes_decided").notNull().default(false),
   scenesDecidedAt: timestamp("scenes_decided_at"),
-  
-  // Timestamps
+
+  /* ========== Timestamps ========== */
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-
+/* ==================== STORY INTENT ==================== */
 
 export const storyIntent = pgTable("story_intent", {
   id: uuid("id").primaryKey(),
@@ -690,9 +809,7 @@ export const storyIntent = pgTable("story_intent", {
   primaryPurpose: text("primary_purpose").notNull(),
   intendedRecipient: text("intended_recipient").notNull(),
 
-  emotionalTone: jsonb("emotional_tone")
-    .$type<string[]>()
-    .notNull(),
+  emotionalTone: jsonb("emotional_tone").$type<string[]>().notNull(),
 
   occasion: text("occasion"),
 
@@ -700,19 +817,17 @@ export const storyIntent = pgTable("story_intent", {
     .$type<"playful" | "keepsake" | "legacy">()
     .notNull(),
 
-  thingsToEmphasise: jsonb("things_to_emphasise")
-    .$type<string[]>()
-    .notNull(),
+  thingsToEmphasise: jsonb("things_to_emphasise").$type<string[]>().notNull(),
 
-  thingsToAvoid: jsonb("things_to_avoid")
-    .$type<string[]>()
-    .notNull(),
+  thingsToAvoid: jsonb("things_to_avoid").$type<string[]>().notNull(),
 
   authorPerspective: text("author_perspective"),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+/* ==================== STORY SPREAD PRESENCE ==================== */
 
 export const storySpreadPresence = pgTable("story_spread_presence", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -722,21 +837,27 @@ export const storySpreadPresence = pgTable("story_spread_presence", {
     .notNull()
     .unique(),
 
-  // 🔑 Claude’s decision (locked)
-  primaryLocationId: uuid("primary_location_id")
-    .references(() => locations.id, { onDelete: "set null" }),
+  // Claude's decision (locked)
+  primaryLocationId: uuid("primary_location_id").references(
+    () => locations.id,
+    { onDelete: "set null" }
+  ),
 
-  characters: jsonb("characters").$type<{
-    characterId: string;
-    role: "primary" | "secondary" | "background";
-    confidence: number; // 0–1
-    reason: string;
-  }[]>(),
+  characters: jsonb("characters").$type<
+    {
+      characterId: string;
+      role: "primary" | "secondary" | "background";
+      confidence: number; // 0–1
+      reason: string;
+    }[]
+  >(),
 
-  excludedCharacters: jsonb("excluded_characters").$type<{
-    characterId: string;
-    reason: string;
-  }[]>(),
+  excludedCharacters: jsonb("excluded_characters").$type<
+    {
+      characterId: string;
+      reason: string;
+    }[]
+  >(),
 
   reasoning: text("reasoning"),
 
@@ -747,6 +868,8 @@ export const storySpreadPresence = pgTable("story_spread_presence", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+/* ==================== STORY SPREAD SCENE ==================== */
 
 export const storySpreadScene = pgTable("story_spread_scene", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -762,15 +885,11 @@ export const storySpreadScene = pgTable("story_spread_scene", {
   // This is what Gemini will receive
   illustrationPrompt: text("illustration_prompt").notNull(),
 
-  compositionNotes: jsonb("composition_notes")
-    .$type<string[]>()
-    .default([]),
+  compositionNotes: jsonb("composition_notes").$type<string[]>().default([]),
 
   mood: varchar("mood", { length: 80 }),
 
-  doNotInclude: jsonb("do_not_include")
-    .$type<string[]>()
-    .default([]),
+  doNotInclude: jsonb("do_not_include").$type<string[]>().default([]),
 
   // Safety + continuity
   negativePrompt: text("negative_prompt"),

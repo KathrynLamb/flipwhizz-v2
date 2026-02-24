@@ -7,8 +7,8 @@ import { eq } from "drizzle-orm";
 /**
  * GET /api/stories/[id]/workflow-progress
  * 
- * Returns the current progress of world-building workflow.
- * Used by frontend to poll for updates.
+ * Returns the current workflow progress for a story.
+ * Used by the ExtractWorldPage to poll for status updates.
  */
 export async function GET(
   req: Request,
@@ -16,43 +16,54 @@ export async function GET(
 ) {
   const { id: storyId } = await context.params;
 
-  try {
-    const progress = await db.query.storyWorkflowProgress.findFirst({
-      where: eq(storyWorkflowProgress.storyId, storyId),
-    });
+  const progress = await db.query.storyWorkflowProgress.findFirst({
+    where: eq(storyWorkflowProgress.storyId, storyId),
+  });
 
-    if (!progress) {
-      return NextResponse.json({
-        progress: null,
-        message: "Workflow not started yet",
-      });
-    }
-
+  if (!progress) {
     return NextResponse.json({
-      progress: {
-        charactersExtracted: progress.charactersExtracted,
-        locationsExtracted: progress.locationsExtracted,
-        styleExtracted: progress.styleExtracted,
-        spreadsBuilt: progress.spreadsBuilt,
-        charactersAssigned: progress.charactersAssigned,
-        locationsAssigned: progress.locationsAssigned,
-        worldComplete: progress.worldComplete,
-        
-        // Timestamps for debugging
-        charactersExtractedAt: progress.charactersExtractedAt,
-        locationsExtractedAt: progress.locationsExtractedAt,
-        styleExtractedAt: progress.styleExtractedAt,
-        spreadsBuiltAt: progress.spreadsBuiltAt,
-        charactersAssignedAt: progress.charactersAssignedAt,
-        locationsAssignedAt: progress.locationsAssignedAt,
-        worldCompleteAt: progress.worldCompleteAt,
-      },
+      progress: null,
+      message: "No progress record found. Workflow may not have started.",
     });
-  } catch (error) {
-    console.error("Error fetching workflow progress:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch progress" },
-      { status: 500 }
-    );
   }
+
+  return NextResponse.json({
+    progress: {
+      // Phase 1: World Extraction
+      charactersExtracted: progress.charactersExtracted,
+      charactersExtractedAt: progress.charactersExtractedAt,
+      
+      locationsExtracted: progress.locationsExtracted,
+      locationsExtractedAt: progress.locationsExtractedAt,
+      
+      styleExtracted: progress.styleExtracted,
+      styleExtractedAt: progress.styleExtractedAt,
+      
+      // Phase 2: Spread Building
+      spreadsBuilt: progress.spreadsBuilt,
+      spreadsBuiltAt: progress.spreadsBuiltAt,
+      
+      // Phase 3: Scene Composition
+      charactersAssigned: progress.charactersAssigned,
+      charactersAssignedAt: progress.charactersAssignedAt,
+      
+      locationsAssigned: progress.locationsAssigned,
+      locationsAssignedAt: progress.locationsAssignedAt,
+      
+      // Phase 4: Outfit Management (NEW)
+      outfitsExtracted: progress.outfitsExtracted,
+      outfitsExtractedAt: progress.outfitsExtractedAt,
+      
+      outfitsAssigned: progress.outfitsAssigned,
+      outfitsAssignedAt: progress.outfitsAssignedAt,
+      
+      // Overall Status
+      worldComplete: progress.worldComplete,
+      worldCompleteAt: progress.worldCompleteAt,
+      
+      // Timestamps
+      createdAt: progress.createdAt,
+      updatedAt: progress.updatedAt,
+    },
+  });
 }

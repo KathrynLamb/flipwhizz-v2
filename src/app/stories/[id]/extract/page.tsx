@@ -8,15 +8,15 @@ import {
   CheckCircle,
   Loader2,
   AlertCircle,
-  Sparkles,
   Users,
   MapPin,
   Palette,
   BookOpen,
-  Eye,
   XCircle,
   UserCheck,
   MapPinned,
+  Shirt,
+  Sparkles,
 } from "lucide-react";
 
 /* ======================================================
@@ -30,6 +30,8 @@ type Phase =
   | "building_spreads"
   | "assigning_characters"
   | "assigning_locations"
+  | "extracting_outfits"
+  | "assigning_outfits"
   | "ready";
 
 type ProgressData = {
@@ -40,6 +42,8 @@ type ProgressData = {
   spreadsBuilt: boolean;
   charactersAssigned: boolean;
   locationsAssigned: boolean;
+  outfitsExtracted: boolean;
+  outfitsAssigned: boolean;
   worldComplete: boolean;
 };
 
@@ -73,6 +77,8 @@ export default function ExtractWorldPage() {
     spreadsBuilt: false,
     charactersAssigned: false,
     locationsAssigned: false,
+    outfitsExtracted: false,
+    outfitsAssigned: false,
     worldComplete: false,
   });
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -94,7 +100,7 @@ export default function ExtractWorldPage() {
       type,
       timestamp: Date.now(),
     };
-    setActivity((prev) => [item, ...prev].slice(0, 8)); // Keep last 8
+    setActivity((prev) => [item, ...prev].slice(0, 10)); // Keep last 10
   };
 
   /* ======================================================
@@ -109,6 +115,8 @@ export default function ExtractWorldPage() {
     if (!prog.spreadsBuilt) return "building_spreads";
     if (!prog.charactersAssigned) return "assigning_characters";
     if (!prog.locationsAssigned) return "assigning_locations";
+    if (!prog.outfitsExtracted) return "extracting_outfits";
+    if (!prog.outfitsAssigned) return "assigning_outfits";
     return "ready";
   }
 
@@ -141,6 +149,8 @@ export default function ExtractWorldPage() {
         spreadsBuilt: data.progress.spreadsBuilt || false,
         charactersAssigned: data.progress.charactersAssigned || false,
         locationsAssigned: data.progress.locationsAssigned || false,
+        outfitsExtracted: data.progress.outfitsExtracted || false,
+        outfitsAssigned: data.progress.outfitsAssigned || false,
         worldComplete: data.progress.worldComplete || false,
       };
 
@@ -149,22 +159,28 @@ export default function ExtractWorldPage() {
       // Detect phase changes and add activity
       if (currentPhase !== lastPhaseRef.current) {
         if (currentPhase === "extracting_locations") {
-          addActivity("✅ Characters extracted", "success");
-          addActivity("🗺️  Extracting locations...", "loading");
+          addActivity("✅ Characters discovered", "success");
+          addActivity("🗺️ Mapping locations...", "loading");
         } else if (currentPhase === "extracting_style") {
-          addActivity("✅ Locations extracted", "success");
-          addActivity("🎨 Extracting style guide...", "loading");
+          addActivity("✅ Locations mapped", "success");
+          addActivity("🎨 Creating style guide...", "loading");
         } else if (currentPhase === "building_spreads") {
-          addActivity("✅ Style guide created", "success");
-          addActivity("📖 Building spreads...", "loading");
+          addActivity("✅ Style guide ready", "success");
+          addActivity("📖 Building page spreads...", "loading");
         } else if (currentPhase === "assigning_characters") {
           addActivity("✅ Spreads built", "success");
-          addActivity("👤 Assigning characters to pages...", "loading");
+          addActivity("👤 Placing characters in scenes...", "loading");
         } else if (currentPhase === "assigning_locations") {
-          addActivity("✅ Characters assigned", "success");
-          addActivity("📍 Assigning locations to pages...", "loading");
+          addActivity("✅ Characters placed", "success");
+          addActivity("📍 Setting scene locations...", "loading");
+        } else if (currentPhase === "extracting_outfits") {
+          addActivity("✅ Locations set", "success");
+          addActivity("👗 Designing character outfits...", "loading");
+        } else if (currentPhase === "assigning_outfits") {
+          addActivity("✅ Outfits designed", "success");
+          addActivity("👔 Assigning outfits to scenes...", "loading");
         } else if (currentPhase === "ready") {
-          addActivity("✅ Locations assigned", "success");
+          addActivity("✅ Outfits assigned", "success");
           addActivity("🎉 World building complete!", "success");
         }
 
@@ -254,48 +270,71 @@ export default function ExtractWorldPage() {
      PHASE CONFIG
   ====================================================== */
 
-  const phaseConfig = {
+  const phaseConfig: Record<
+    Phase,
+    {
+      title: string;
+      subtitle: string;
+      icon: any;
+      color: string;
+      estimate: string;
+    }
+  > = {
     extracting_characters: {
       title: "Discovering Characters",
       subtitle: "Finding every person in your story",
       icon: Users,
       color: "from-purple-500 to-pink-500",
-      estimate: "30 seconds",
+      estimate: "~30 seconds",
     },
     extracting_locations: {
       title: "Mapping Locations",
       subtitle: "Identifying all the places in your world",
       icon: MapPin,
       color: "from-blue-500 to-cyan-500",
-      estimate: "30 seconds",
+      estimate: "~30 seconds",
     },
     extracting_style: {
       title: "Creating Style Guide",
       subtitle: "Defining the visual look and feel",
       icon: Palette,
       color: "from-pink-500 to-orange-500",
-      estimate: "30 seconds",
+      estimate: "~30 seconds",
     },
     building_spreads: {
       title: "Building Spreads",
       subtitle: "Organizing pages into double-page spreads",
       icon: BookOpen,
       color: "from-indigo-500 to-purple-500",
-      estimate: "45 seconds",
+      estimate: "~45 seconds",
     },
     assigning_characters: {
-      title: "Assigning Characters",
+      title: "Placing Characters",
       subtitle: "Deciding who appears on each page",
       icon: UserCheck,
       color: "from-green-500 to-emerald-500",
-      estimate: "45 seconds",
+      estimate: "~45 seconds",
     },
     assigning_locations: {
-      title: "Placing Scenes",
-      subtitle: "Setting where each page takes place",
+      title: "Setting Scenes",
+      subtitle: "Determining where each page takes place",
       icon: MapPinned,
       color: "from-teal-500 to-cyan-500",
-      estimate: "45 seconds",
+      estimate: "~45 seconds",
+    },
+    extracting_outfits: {
+      title: "Designing Outfits",
+      subtitle: "Creating unique clothing for each character",
+      icon: Shirt,
+      color: "from-rose-500 to-pink-500",
+      estimate: "~60 seconds",
+    },
+    assigning_outfits: {
+      title: "Dressing Characters",
+      subtitle: "Matching outfits to each scene",
+      icon: Sparkles,
+      color: "from-amber-500 to-orange-500",
+      estimate: "~45 seconds",
     },
     ready: {
       title: "World Complete!",
@@ -321,6 +360,8 @@ export default function ExtractWorldPage() {
       progress.spreadsBuilt,
       progress.charactersAssigned,
       progress.locationsAssigned,
+      progress.outfitsExtracted,
+      progress.outfitsAssigned,
     ];
     return (phases.filter(Boolean).length / phases.length) * 100;
   }, [progress]);
@@ -436,9 +477,7 @@ export default function ExtractWorldPage() {
                 {currentPhase.subtitle}
               </p>
               {currentPhase.estimate && (
-                <p className="text-sm text-gray-500">
-                  Estimated: {currentPhase.estimate}
-                </p>
+                <p className="text-sm text-gray-500">{currentPhase.estimate}</p>
               )}
             </div>
 
@@ -473,6 +512,16 @@ export default function ExtractWorldPage() {
                 label="Assign Locations"
                 complete={progress.locationsAssigned}
                 active={phase === "assigning_locations"}
+              />
+              <ProgressStep
+                label="Design Outfits"
+                complete={progress.outfitsExtracted}
+                active={phase === "extracting_outfits"}
+              />
+              <ProgressStep
+                label="Assign Outfits"
+                complete={progress.outfitsAssigned}
+                active={phase === "assigning_outfits"}
               />
             </div>
 
@@ -530,7 +579,7 @@ export default function ExtractWorldPage() {
 
             {/* Info Cards (only show during processing) */}
             {phase !== "ready" && (
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-2">
                 <InfoCard
                   icon={Users}
                   label="Characters"
@@ -546,11 +595,16 @@ export default function ExtractWorldPage() {
                   label="Style"
                   status={progress.styleExtracted ? "done" : "pending"}
                 />
+                <InfoCard
+                  icon={Shirt}
+                  label="Outfits"
+                  status={progress.outfitsExtracted ? "done" : "pending"}
+                />
               </div>
             )}
 
             {/* Warning for slow progress */}
-            {elapsedTime > 180 && phase !== "ready" && (
+            {elapsedTime > 240 && phase !== "ready" && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -562,7 +616,8 @@ export default function ExtractWorldPage() {
                     Taking longer than usual
                   </p>
                   <p className="text-yellow-700 mt-1">
-                    Complex stories can take 4-5 minutes. Hang tight!
+                    Complex stories with many characters can take 5-6 minutes.
+                    Hang tight!
                   </p>
                 </div>
               </motion.div>
@@ -602,8 +657,8 @@ function ProgressStep({
           complete
             ? "bg-gradient-to-r from-green-500 to-emerald-500"
             : active
-            ? "bg-gradient-to-r from-blue-500 to-purple-500"
-            : "bg-gray-300"
+              ? "bg-gradient-to-r from-blue-500 to-purple-500"
+              : "bg-gray-300"
         }`}
       >
         {complete && <CheckCircle className="w-4 h-4 text-white" />}
@@ -631,25 +686,25 @@ function InfoCard({
 }) {
   return (
     <div
-      className={`rounded-xl p-3 text-center transition-all ${
+      className={`rounded-xl p-2 sm:p-3 text-center transition-all ${
         status === "done"
           ? "bg-green-50 border-2 border-green-200"
           : "bg-gray-50 border-2 border-gray-200"
       }`}
     >
       <Icon
-        className={`w-6 h-6 mx-auto mb-1 ${
+        className={`w-5 h-5 sm:w-6 sm:h-6 mx-auto mb-1 ${
           status === "done" ? "text-green-600" : "text-gray-400"
         }`}
         strokeWidth={2}
       />
-      <div className="text-xs font-semibold text-gray-900">{label}</div>
+      <div className="text-xs font-semibold text-gray-900 truncate">{label}</div>
       <div
         className={`text-xs font-medium mt-0.5 ${
           status === "done" ? "text-green-600" : "text-gray-500"
         }`}
       >
-        {status === "done" ? "Ready" : "..."}
+        {status === "done" ? "✓" : "..."}
       </div>
     </div>
   );

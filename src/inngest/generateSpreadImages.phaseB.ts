@@ -12,6 +12,7 @@ import {
   storySpreadScene,
   storySpreadPresence,
   storyCharacters,
+  spreadCharacterOutfits,
 } from "@/db/schema";
 import { db } from "@/db";
 import { v2 as cloudinary } from "cloudinary";
@@ -229,6 +230,9 @@ export const generateSingleSpread = inngest.createFunction(
     assertNonEmpty(leftPageId, "leftPageId");
 
     const imageUrl = await step.run("generate-and-upload", async () => {
+      // ========================================
+      // LOAD PAGE TEXT
+      // ========================================
       const left = await db.query.storyPages.findFirst({
         where: eq(storyPages.id, leftPageId),
         columns: { text: true },
@@ -241,12 +245,19 @@ export const generateSingleSpread = inngest.createFunction(
           })
         : null;
 
+      // ========================================
+      // LOAD STYLE GUIDE
+      // ========================================
       const style = await db.query.storyStyleGuide.findFirst({
         where: eq(storyStyleGuide.storyId, storyId),
       });
 
+      // ========================================
+      // LOAD SPREAD DATA
+      // ========================================
       const spread = await db
         .select({
+          spreadId: storySpreads.id,
           illustrationPrompt: storySpreadScene.illustrationPrompt,
           sceneSummary: storySpreadScene.sceneSummary,
           mood: storySpreadScene.mood,
@@ -275,36 +286,61 @@ export const generateSingleSpread = inngest.createFunction(
 
       if (!spread) throw new Error(`No spread plan for ${pageLabel}`);
 
-      // Character IDs in this spread
-      const charIds = (Array.isArray(spread.charactersJson)
-        ? spread.charactersJson
-        : []
+      // ========================================
+      // LOAD CHARACTER OUTFITS FOR THIS SPREAD
+      // ========================================
+      const outfitAssignments = spread.spreadId
+        ? await db.query.spreadCharacterOutfits.findMany({
+            where: eq(spreadCharacterOutfits.spreadId, spread.spreadId),
+          })
+        : [];
+
+      const outfitByCharacterId = new Map(
+        outfitAssignments.map((o) => [o.characterId, o])
+      );
+
+      console.log(
+        `👗 Loaded ${outfitAssignments.length} outfit assignments for spread`
+      );
+
+      // ========================================
+      // LOAD CHARACTERS
+      // ========================================
+      const charIds = (
+        Array.isArray(spread.charactersJson) ? spread.charactersJson : []
       )
         .map((c: any) => c?.characterId)
         .filter(Boolean);
 
-      // Pull character reference urls (may contain base64 in legacy data)
       const charRefs = await db
         .select({
+          id: characters.id,
           name: characters.name,
           imageUrl: sql<string>`COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})`,
           description: characters.description,
           appearance: characters.appearance,
         })
         .from(characters)
-        .where(inArray(characters.id, charIds));
+        .where(inArray(characters.id, charIds.length > 0 ? charIds : ["__none__"]));
 
-        console.log("🎭 Characters in spread:", charRefs.map(c => ({
+      console.log(
+        "🎭 Characters in spread:",
+        charRefs.map((c) => ({
           name: c.name,
           hasImage: !!c.imageUrl,
-          isBase64: c.imageUrl ? isDataUrl(c.imageUrl) : false,
-          url: c.imageUrl ? c.imageUrl.substring(0, 80) : null,
-        })));
+          hasOutfit: outfitByCharacterId.has(c.id),
+          outfit: outfitByCharacterId.get(c.id)?.outfitKey ?? "none",
+        }))
+      );
 
-      // Optional location reference (same rules as characters)
-      let locationRef:
-        | null
-        | { name: string; imageUrl: string; description: string | null } = null;
+      // ========================================
+      // LOAD LOCATION (optional)
+      // ========================================
+      let locationRef: null | {
+        name: string;
+        imageUrl: string;
+        description: string | null;
+      } = null;
 
       if (spread.primaryLocationId) {
         const loc = await db
@@ -327,41 +363,46 @@ export const generateSingleSpread = inngest.createFunction(
         }
       }
 
-      console.log("🗺️ Location ref:", locationRef ? {
-        name: locationRef.name,
-        hasImage: !!locationRef.imageUrl,
-        isBase64: isDataUrl(locationRef.imageUrl ?? ""),
-        url: locationRef.imageUrl?.substring(0, 80),
-      } : "NONE");
+      console.log(
+        "🗺️ Location ref:",
+        locationRef
+          ? {
+              name: locationRef.name,
+              hasImage: !!locationRef.imageUrl,
+            }
+          : "NONE"
+      );
 
+      // ========================================
+      // BUILD GEMINI PROMPT PARTS
+      // ========================================
       const parts: any[] = [];
 
       // 1️⃣ TEMPLATE (FILESYSTEM)
       parts.push(await getImagePart(SPREAD_TEMPLATE_PATH));
       parts.push({
         text: `
-        ↑ LAYOUT GUIDE ONLY - DO NOT RENDER ↑
+↑ LAYOUT GUIDE ONLY - DO NOT RENDER ↑
 
-        The image above shows SAFE ZONES for text placement.
-        This is a REFERENCE GUIDE ONLY.
-        
-        CRITICAL INSTRUCTIONS:
-        - DO NOT draw the guide boxes, labels, or template overlay in your illustration
-        - DO NOT show "TEXT SAFE ZONE" labels
-        - DO NOT show any guide lines, boxes, or markers
-        - The template is INVISIBLE - it's only showing you WHERE to place text
-        - Create a natural, seamless illustration with NO visible guides
-        
-        TEXT PLACEMENT RULES:
-        - Place LEFT page text within the left safe zone area (top-left portion)
-        - Place RIGHT page text within the right safe zone area (top-right portion)  
-        - Keep all text AWAY from the center gutter
-        - Keep all critical visual elements AWAY from the outer crop zones
-        `.trim(),
-        });
+The image above shows SAFE ZONES for text placement.
+This is a REFERENCE GUIDE ONLY.
 
+CRITICAL INSTRUCTIONS:
+- DO NOT draw the guide boxes, labels, or template overlay in your illustration
+- DO NOT show "TEXT SAFE ZONE" labels
+- DO NOT show any guide lines, boxes, or markers
+- The template is INVISIBLE - it's only showing you WHERE to place text
+- Create a natural, seamless illustration with NO visible guides
 
-      // 1b️⃣ Optional location ref (if available and valid)
+TEXT PLACEMENT RULES:
+- Place LEFT page text within the left safe zone area (top-left portion)
+- Place RIGHT page text within the right safe zone area (top-right portion)  
+- Keep all text AWAY from the center gutter
+- Keep all critical visual elements AWAY from the outer crop zones
+`.trim(),
+      });
+
+      // 2️⃣ LOCATION REFERENCE (if available)
       if (locationRef) {
         parts.push(await getImagePart(locationRef.imageUrl));
         parts.push({
@@ -373,16 +414,7 @@ Use it as the setting across the full spread.
         });
       }
 
-      console.log("📋 Raw charactersJson from spread:", JSON.stringify(spread.charactersJson, null, 2));
-
-
-      console.log("📦 Parts being sent to Gemini:", parts.map((p, i) => ({
-        index: i,
-        type: p.text ? "text" : p.inlineData ? "image" : "unknown",
-        preview: p.text ? p.text.substring(0, 60) : `image/${p.inlineData?.mimeType}`,
-      })));
-
-      // 2️⃣ CHARACTERS (skip base64 refs, warn loudly)
+      // 3️⃣ CHARACTERS WITH OUTFIT INSTRUCTIONS
       for (const c of charRefs) {
         if (!c.imageUrl) {
           console.warn(`⚠️ Missing character image for ${c.name}.`);
@@ -396,65 +428,120 @@ Use it as the setting across the full spread.
           continue;
         }
 
+        const outfit = outfitByCharacterId.get(c.id);
+
         parts.push(await getImagePart(c.imageUrl));
-        parts.push({
-          text: `
+
+        if (outfit) {
+          // ✅ WE HAVE AN OUTFIT ASSIGNMENT - USE IT
+          parts.push({
+            text: `
 ↑ THIS IS ${c.name.toUpperCase()} ↑
-Match this character EXACTLY. No redesign, no stylisation, no outfit changes.
+
+FACE & BODY: Match this character's face, hair color, eye color, skin tone, and body type EXACTLY.
+
+🎽 OUTFIT FOR THIS SCENE (${outfit.outfitKey.toUpperCase()}):
+${outfit.outfitDescription}
+
+CRITICAL: Draw ${c.name} wearing EXACTLY the outfit described above.
+DO NOT use the clothing shown in the reference image - only use the face and body.
+The reference image is for IDENTITY only, not for clothing.
 `.trim(),
-        });
+          });
+
+          console.log(
+            `✅ ${c.name}: Using outfit "${outfit.outfitKey}" - ${outfit.outfitDescription.substring(0, 50)}...`
+          );
+        } else {
+          // ⚠️ NO OUTFIT ASSIGNMENT - FALLBACK TO REFERENCE
+          parts.push({
+            text: `
+↑ THIS IS ${c.name.toUpperCase()} ↑
+Match this character EXACTLY - face, body, and general appearance.
+Use appropriate clothing for the scene context.
+`.trim(),
+          });
+
+          console.log(`⚠️ ${c.name}: No outfit assigned, using reference fallback`);
+        }
       }
 
-      // 3️⃣ SCENE (text will be drawn by Gemini in-image; we still enforce layout)
+      // 4️⃣ SCENE INSTRUCTIONS
       parts.push({
         text: `
-      ILLUSTRATION TASK:
-      
-      CREATE A SEAMLESS DOUBLE-PAGE SPREAD:
-      - ONE continuous landscape illustration
-      - Aspect ratio: ${IMAGE_ASPECT_RATIO}
-      - Will be split into two square pages (left half, right half)
-      - NO visible guides, boxes, or template markers
-      - Natural, professional children's book illustration
-      
-      TEXT INTEGRATION:
-      - Embed the story text DIRECTLY into the illustration
-      - LEFT text goes in upper-left quadrant (as shown in the invisible guide)
-      - RIGHT text goes in upper-right quadrant (as shown in the invisible guide)
-      - Keep text CLEAR of the center spine/gutter
-      - Use large, child-friendly typography with excellent contrast
-      - Text should feel natural, not overlaid
-      
-      IMPORTANT - DO NOT INCLUDE:
-      - "TEXT SAFE ZONE" labels
-      - Guide boxes or borders
-      - Template overlay
-      - Any reference markers
-      - The guide is invisible - your illustration should be clean and polished
-      
-      STYLE:
-      ${style?.summary ?? "Whimsical children's illustration"}
-      
-      AVOID:
-      ${style?.negativePrompt ?? "Logos, watermarks, guide lines, template markers, text boxes"}
-      
-      SCENE:
-      ${spread.illustrationPrompt ?? spread.sceneSummary ?? ""}
-      
-      MOOD: ${spread.mood ?? "Warm"}
-      
-      LEFT PAGE TEXT (integrate naturally in upper-left area):
-      ${left?.text ?? ""}
-      
-      RIGHT PAGE TEXT (integrate naturally in upper-right area):
-      ${right?.text ?? ""}
-      
-      ${feedback ? `REVISION REQUEST:\n${feedback}\n` : ""}
-      
-      Create a clean, professional illustration with seamlessly integrated text.
-      `.trim(),
+ILLUSTRATION TASK:
+
+CREATE A SEAMLESS DOUBLE-PAGE SPREAD:
+- ONE continuous landscape illustration
+- Aspect ratio: ${IMAGE_ASPECT_RATIO}
+- Will be split into two square pages (left half, right half)
+- NO visible guides, boxes, or template markers
+- Natural, professional children's book illustration
+
+TEXT INTEGRATION:
+- Embed the story text DIRECTLY into the illustration
+- LEFT text goes in upper-left quadrant (as shown in the invisible guide)
+- RIGHT text goes in upper-right quadrant (as shown in the invisible guide)
+- Keep text CLEAR of the center spine/gutter
+- Use large, child-friendly typography with excellent contrast
+- Text should feel natural, not overlaid
+
+IMPORTANT - DO NOT INCLUDE:
+- "TEXT SAFE ZONE" labels
+- Guide boxes or borders
+- Template overlay
+- Any reference markers
+- The guide is invisible - your illustration should be clean and polished
+
+STYLE:
+${style?.summary ?? "Whimsical children's illustration"}
+
+AVOID:
+${style?.negativePrompt ?? "Logos, watermarks, guide lines, template markers, text boxes"}
+
+SCENE:
+${spread.illustrationPrompt ?? spread.sceneSummary ?? ""}
+
+MOOD: ${spread.mood ?? "Warm"}
+
+LEFT PAGE TEXT (integrate naturally in upper-left area):
+${left?.text ?? ""}
+
+RIGHT PAGE TEXT (integrate naturally in upper-right area):
+${right?.text ?? ""}
+
+${feedback ? `REVISION REQUEST:\n${feedback}\n` : ""}
+
+OUTFIT REMINDER:
+${
+  outfitAssignments.length > 0
+    ? outfitAssignments
+        .map((o) => {
+          const char = charRefs.find((c) => c.id === o.characterId);
+          return `- ${char?.name ?? "Character"}: ${o.outfitDescription}`;
+        })
+        .join("\n")
+    : "Use contextually appropriate clothing for each character."
+}
+
+Create a clean, professional illustration with seamlessly integrated text.
+`.trim(),
       });
 
+      console.log(
+        "📦 Parts being sent to Gemini:",
+        parts.map((p, i) => ({
+          index: i,
+          type: p.text ? "text" : p.inlineData ? "image" : "unknown",
+          preview: p.text
+            ? p.text.substring(0, 80).replace(/\n/g, " ")
+            : `image/${p.inlineData?.mimeType}`,
+        }))
+      );
+
+      // ========================================
+      // GENERATE IMAGE
+      // ========================================
       const response = await client.models.generateContent({
         model: GEMINI_IMAGE_MODEL,
         contents: [{ role: "user", parts }],
@@ -479,15 +566,15 @@ Match this character EXACTLY. No redesign, no stylisation, no outfit changes.
       return saveImageToStorage(image.data, image.mimeType, storyId);
     });
 
+    // ========================================
+    // SAVE URL TO DATABASE
+    // ========================================
     await step.run("save-url", async () => {
       await db
         .update(storyPages)
         .set({ imageUrl })
         .where(
-          inArray(
-            storyPages.id,
-            [leftPageId, ...(rightPageId ? [rightPageId] : [])]
-          )
+          inArray(storyPages.id, [leftPageId, ...(rightPageId ? [rightPageId] : [])])
         );
     });
 

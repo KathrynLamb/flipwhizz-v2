@@ -13,9 +13,11 @@ import {
   storySpreads,
   storyPageCharacters,
   storyPageLocations,
+  characterStoryOutfits,
+  spreadCharacterOutfits,
   projects,
 } from "@/db/schema";
-import { eq, asc, and } from "drizzle-orm";
+import { eq, asc, and, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -101,6 +103,8 @@ export const ensureWorld = inngest.createFunction(
           spreadsBuilt: false,
           charactersAssigned: false,
           locationsAssigned: false,
+          outfitsExtracted: false,
+          outfitsAssigned: false,
           worldComplete: false,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -121,6 +125,8 @@ export const ensureWorld = inngest.createFunction(
       spreadsBuilt: context.progress.spreadsBuilt,
       charactersAssigned: context.progress.charactersAssigned,
       locationsAssigned: context.progress.locationsAssigned,
+      outfitsExtracted: context.progress.outfitsExtracted,
+      outfitsAssigned: context.progress.outfitsAssigned,
     });
 
     /* --------------------------------------------------
@@ -154,7 +160,8 @@ Include:
 - Supporting characters (friends, family, helpers)
 - Minor characters (briefly mentioned)
 
-For appearance, be specific: age, hair color/style, clothing, distinctive features, body type, etc.`,
+For appearance, be specific: age, hair color/style, eye color, skin tone, body type, distinctive features.
+DO NOT include clothing in appearance - that will be handled separately per scene.`,
           messages: [{ role: "user", content: text }],
         });
 
@@ -687,7 +694,348 @@ Each spread should have ONE primary location where the scene takes place.`,
     }
 
     /* --------------------------------------------------
-       STEP 7: Mark world as complete
+       STEP 7: Extract Outfit Types (NEW)
+    -------------------------------------------------- */
+    if (!context.progress.outfitsExtracted) {
+      await step.run("extract-outfit-types", async () => {
+        console.log("👗 Extracting character outfit types...");
+
+        const allCharacters = await db.query.storyCharacters.findMany({
+          where: eq(storyCharacters.storyId, storyId),
+          with: { character: true },
+        });
+
+        if (allCharacters.length === 0) {
+          console.log("⚠️  No characters found, skipping outfit extraction");
+          await db
+            .update(storyWorkflowProgress)
+            .set({
+              outfitsExtracted: true,
+              outfitsExtractedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(storyWorkflowProgress.storyId, storyId));
+          return;
+        }
+
+        const storyText = context.pages
+          .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
+          .join("\n");
+
+        const characterDescriptions = allCharacters
+          .map((sc) => `- ${sc.character.name}: ${sc.character.appearance || sc.character.description || "No description"}`)
+          .join("\n");
+
+        const res = await client.messages.create({
+          model: MODEL,
+          max_tokens: 4000,
+          system: `Analyze this children's story and identify all DISTINCT OUTFITS each character would need throughout the story.
+
+Characters change clothes when:
+- Weather/environment changes (indoor → outdoor, warm → cold)
+- Activity changes (swimming, sleeping, formal events, sports)
+- Time passes significantly (next day, next morning)
+- Scene context demands it (bath time, bedtime, beach, skiing)
+
+For each character, define SPECIFIC, CONSISTENT outfit descriptions that will be reused across multiple scenes.
+
+Return ONLY this JSON:
+{
+  "characterOutfits": [
+    {
+      "characterName": "Sophia",
+      "outfits": [
+        {
+          "key": "ski_gear",
+          "description": "Bright turquoise zip-up ski jacket with white zipper and trim, matching turquoise snow pants, pink knit beanie with fluffy white pom-pom, white waterproof ski gloves, pink snow boots with white laces and fur trim",
+          "triggers": "outdoor winter scenes, skiing, playing in snow, walking to ski lift, snowball fights"
+        },
+        {
+          "key": "hot_tub",
+          "description": "Light purple one-piece swimsuit with small white polka dots, hair pulled up in a messy bun with loose strands framing face",
+          "triggers": "hot tub scene, swimming pool, water play, spa"
+        },
+        {
+          "key": "indoor_casual",
+          "description": "Soft lavender long-sleeve thermal shirt, comfortable grey jogger pants, fuzzy white slipper socks, hair down and natural",
+          "triggers": "inside cabin or chalet, eating meals indoors, relaxing by fireplace, morning scenes indoors"
+        },
+        {
+          "key": "sleepwear",
+          "description": "Cozy pink flannel pajamas with tiny white stars pattern, matching pink fuzzy slippers, hair in loose side braid",
+          "triggers": "bedtime, waking up, nighttime scenes, getting ready for bed"
+        }
+      ]
+    }
+  ]
+}
+
+CRITICAL RULES:
+1. Be EXTREMELY specific about colors, patterns, materials, and small details
+2. Each outfit must be visually DISTINCT and MEMORABLE
+3. Include hair styling if it would logically change (ponytail for sports, bun for swimming, down for casual)
+4. Keep descriptions between 30-50 words - detailed but concise
+5. Every character MUST have at least a "default" outfit
+6. Use a CONSISTENT color palette per character across all their outfits (e.g., if a character wears pink in one outfit, incorporate pink accents in others)
+7. Consider age-appropriate clothing for children
+8. Make outfits practical for the activity (waterproof for rain, warm for cold, etc.)`,
+          messages: [
+            {
+              role: "user",
+              content: `CHARACTERS:\n${characterDescriptions}\n\nFULL STORY:\n${storyText}`,
+            },
+          ],
+        });
+
+        const data = extractJson(extractClaudeText(res.content));
+
+        // Save outfit types
+        await db.transaction(async (tx) => {
+          // Clear existing outfits for this story
+          const characterIds = allCharacters.map((sc) => sc.characterId);
+          if (characterIds.length > 0) {
+            await tx
+              .delete(characterStoryOutfits)
+              .where(
+                and(
+                  eq(characterStoryOutfits.storyId, storyId),
+                  inArray(characterStoryOutfits.characterId, characterIds)
+                )
+              );
+          }
+
+          let totalOutfits = 0;
+
+          for (const charOutfit of data.characterOutfits ?? []) {
+            const storyChar = allCharacters.find(
+              (sc) =>
+                sc.character.name.toLowerCase() ===
+                charOutfit.characterName?.toLowerCase()
+            );
+            if (!storyChar) {
+              console.warn(`⚠️  Character not found: ${charOutfit.characterName}`);
+              continue;
+            }
+
+            for (const outfit of charOutfit.outfits ?? []) {
+              if (!outfit.key || !outfit.description) continue;
+
+              await tx.insert(characterStoryOutfits).values({
+                id: uuid(),
+                storyId,
+                characterId: storyChar.characterId,
+                outfitKey: outfit.key.toLowerCase().replace(/\s+/g, "_"),
+                outfitDescription: outfit.description,
+                triggerConditions: outfit.triggers || null,
+                createdAt: new Date(),
+              });
+              totalOutfits++;
+            }
+          }
+
+          console.log(`✅ Created ${totalOutfits} outfit definitions for ${data.characterOutfits?.length || 0} characters`);
+        });
+
+        // Mark progress
+        await db
+          .update(storyWorkflowProgress)
+          .set({
+            outfitsExtracted: true,
+            outfitsExtractedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
+      });
+    } else {
+      console.log("✓ Outfits already extracted, skipping");
+    }
+
+    /* --------------------------------------------------
+       STEP 8: Assign Outfits to Spreads (NEW)
+    -------------------------------------------------- */
+    if (!context.progress.outfitsAssigned) {
+      await step.run("assign-outfits-to-spreads", async () => {
+        console.log("👔 Assigning outfits to spreads...");
+
+        // Load all the data we need
+        const allSpreads = await db.query.storySpreads.findMany({
+          where: eq(storySpreads.storyId, storyId),
+          orderBy: asc(storySpreads.spreadIndex),
+        });
+
+        const allCharacters = await db.query.storyCharacters.findMany({
+          where: eq(storyCharacters.storyId, storyId),
+          with: { character: true },
+        });
+
+        const outfitTypes = await db.query.characterStoryOutfits.findMany({
+          where: eq(characterStoryOutfits.storyId, storyId),
+        });
+
+        if (allSpreads.length === 0 || outfitTypes.length === 0) {
+          console.log("⚠️  No spreads or outfit types found, skipping assignment");
+          await db
+            .update(storyWorkflowProgress)
+            .set({
+              outfitsAssigned: true,
+              outfitsAssignedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(storyWorkflowProgress.storyId, storyId));
+          return;
+        }
+
+        // Build context for Claude
+        const outfitsByCharacter = new Map<string, typeof outfitTypes>();
+        for (const outfit of outfitTypes) {
+          const existing = outfitsByCharacter.get(outfit.characterId) ?? [];
+          existing.push(outfit);
+          outfitsByCharacter.set(outfit.characterId, existing);
+        }
+
+        // Get which characters appear in which spreads (from page assignments)
+        const pageCharacters = await db.query.storyPageCharacters.findMany({
+          where: eq(storyPageCharacters.storyId, storyId),
+        });
+
+        const spreadContext = allSpreads.map((s) => {
+          const leftPage = context.pages.find((p) => p.id === s.leftPageId);
+          const rightPage = context.pages.find((p) => p.id === s.rightPageId);
+
+          // Find characters assigned to pages in this spread
+          const spreadPageIds = [s.leftPageId, s.rightPageId].filter(Boolean);
+          const charactersInSpread = pageCharacters
+            .filter((pc) => spreadPageIds.includes(pc.pageId))
+            .map((pc) => pc.characterId);
+          const uniqueCharacterIds = [...new Set(charactersInSpread)];
+
+          return {
+            spreadIndex: s.spreadIndex,
+            text: [leftPage?.text, rightPage?.text].filter(Boolean).join(" "),
+            sceneSummary: s.sceneSummary,
+            characterIds: uniqueCharacterIds,
+          };
+        });
+
+        const outfitOptions = allCharacters.map((sc) => ({
+          characterId: sc.characterId,
+          characterName: sc.character.name,
+          outfits:
+            outfitsByCharacter.get(sc.characterId)?.map((o) => ({
+              key: o.outfitKey,
+              triggers: o.triggerConditions,
+            })) ?? [],
+        }));
+
+        const res = await client.messages.create({
+          model: MODEL,
+          max_tokens: 3000,
+          system: `For each spread, decide which outfit each character should wear based on the scene context.
+
+RULES:
+1. Match outfit to scene context - use the trigger conditions as hints
+2. Maintain CONTINUITY - if two consecutive spreads are clearly the same scene/moment, use the same outfit
+3. Only change outfits when the story clearly indicates a change:
+   - New location type (outdoor → indoor)
+   - Time skip ("the next morning", "later that night")
+   - Activity change (skiing → hot tub)
+4. If a character appears in a spread but you're unsure which outfit, choose the most contextually appropriate one
+5. Only assign outfits to characters that actually appear in that spread
+
+Return ONLY this JSON:
+{
+  "assignments": [
+    {
+      "spreadIndex": 1,
+      "characters": [
+        { "characterId": "uuid-here", "outfitKey": "ski_gear" },
+        { "characterId": "uuid-here", "outfitKey": "winter_coat" }
+      ]
+    },
+    {
+      "spreadIndex": 2,
+      "characters": [
+        { "characterId": "uuid-here", "outfitKey": "ski_gear" }
+      ]
+    }
+  ]
+}
+
+Note: If a spread has no characters, use an empty array for "characters".`,
+          messages: [
+            {
+              role: "user",
+              content: `CHARACTERS AND THEIR AVAILABLE OUTFITS:\n${JSON.stringify(outfitOptions, null, 2)}\n\nSPREADS TO ASSIGN (with characters present):\n${JSON.stringify(spreadContext, null, 2)}`,
+            },
+          ],
+        });
+
+        const data = extractJson(extractClaudeText(res.content));
+
+        // Save assignments
+        await db.transaction(async (tx) => {
+          // Clear existing spread outfit assignments
+          const spreadIds = allSpreads.map((s) => s.id);
+          if (spreadIds.length > 0) {
+            await tx
+              .delete(spreadCharacterOutfits)
+              .where(inArray(spreadCharacterOutfits.spreadId, spreadIds));
+          }
+
+          let totalAssignments = 0;
+
+          for (const assignment of data.assignments ?? []) {
+            const spread = allSpreads.find(
+              (s) => s.spreadIndex === assignment.spreadIndex
+            );
+            if (!spread) continue;
+
+            for (const charAssign of assignment.characters ?? []) {
+              // Look up the full outfit description
+              const outfitType = outfitTypes.find(
+                (o) =>
+                  o.characterId === charAssign.characterId &&
+                  o.outfitKey === charAssign.outfitKey
+              );
+
+              if (!outfitType) {
+                console.warn(
+                  `⚠️  Outfit not found: ${charAssign.outfitKey} for character ${charAssign.characterId}`
+                );
+                continue;
+              }
+
+              await tx.insert(spreadCharacterOutfits).values({
+                id: uuid(),
+                spreadId: spread.id,
+                characterId: charAssign.characterId,
+                outfitKey: charAssign.outfitKey,
+                outfitDescription: outfitType.outfitDescription,
+                createdAt: new Date(),
+              });
+              totalAssignments++;
+            }
+          }
+
+          console.log(`✅ Created ${totalAssignments} outfit assignments across ${data.assignments?.length || 0} spreads`);
+        });
+
+        // Mark progress
+        await db
+          .update(storyWorkflowProgress)
+          .set({
+            outfitsAssigned: true,
+            outfitsAssignedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
+      });
+    } else {
+      console.log("✓ Outfits already assigned, skipping");
+    }
+
+    /* --------------------------------------------------
+       STEP 9: Mark world as complete
     -------------------------------------------------- */
     await step.run("mark-world-complete", async () => {
       console.log("🎉 Marking world as complete...");
@@ -714,15 +1062,9 @@ Each spread should have ONE primary location where the scene takes place.`,
     });
 
     /* --------------------------------------------------
-       STEP 8: Trigger next workflow (if configured)
+       STEP 10: Trigger next workflow (if configured)
     -------------------------------------------------- */
     await step.run("trigger-next", async () => {
-      // You can trigger illustration generation here if you want
-      // await inngest.send({
-      //   name: "story/generate-illustrations",
-      //   data: { storyId },
-      // });
-
       console.log("🎬 World building complete. Ready for next phase.");
     });
 
