@@ -29,26 +29,31 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   async function waitForPagesAndNavigate(storyId: string) {
-    const maxAttempts = 30;
-    const delay = 1000;
-  
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    console.log("🔄 Starting to poll for pages:", storyId);
+    
+    for (let attempt = 0; attempt < 30; attempt++) {
       try {
+        console.log(`📡 Attempt ${attempt + 1}/30...`);
         const res = await fetch(`/api/stories/${storyId}/pages`);
         const data = await res.json();
-
+        
+        console.log("📦 Pages response:", data);
+  
         if (Array.isArray(data) && data.length > 0) {
+          console.log("✅ Pages found! Navigating...");
           router.push(`/stories/${storyId}/pages`);
           return;
         }
       } catch (err) {
-        console.warn("Waiting for pages…", err);
+        console.error("❌ Polling error:", err);
       }
   
-      await new Promise((r) => setTimeout(r, delay));
+      await new Promise((r) => setTimeout(r, 1000));
     }
   
-    console.error("Timed out waiting for pages");
+    console.error("⏰ Timed out waiting for pages");
+    // Fallback: navigate anyway
+    router.push(`/stories/${storyId}/pages`);
   }
 
   // Initial Load
