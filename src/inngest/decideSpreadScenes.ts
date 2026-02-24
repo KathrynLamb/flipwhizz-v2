@@ -287,7 +287,6 @@ ${spreadText}
         const locationId = decision.locationId && decision.locationId !== "" ? decision.locationId : null;
 
         console.log(`✅ Spread ${decision.spreadIndex}: ${characterIds.length} characters, location: ${locationId || 'none'}`);
-
         await db.insert(storySpreadPresence).values({
           id: uuid(),
           spreadId: spread.id,
@@ -302,6 +301,19 @@ ${spreadText}
           locked: true,
           createdAt: new Date(),
           updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: storySpreadPresence.spreadId,
+          set: {
+            characters: characterIds.map((characterId: string) => ({
+              characterId,
+              role: "primary",
+              confidence: 0.8,
+              reason: "Derived from spread text",
+            })),
+            primaryLocationId: locationId,
+            updatedAt: new Date(),
+          },
         });
       }
 
@@ -311,7 +323,6 @@ ${spreadText}
     /* ------------------------------------------------------------------ */
     /* Mark workflow complete                                              */
     /* ------------------------------------------------------------------ */
-
     await step.run("mark-complete", async () => {
       await db
         .update(storyWorkflowProgress)
@@ -321,10 +332,15 @@ ${spreadText}
           updatedAt: new Date(),
         })
         .where(eq(storyWorkflowProgress.storyId, storyId));
-
-      console.log("✅ [decide-scenes-v3] Workflow complete!");
+    
+      await inngest.send({
+        name: "story/generate-spreads",
+        data: { storyId },
+      });
     });
-
+    
+    console.log("✅ [decide-scenes-v3] Workflow complete!");
+    
     return { ok: true, spreadsProcessed: toolUse.input.spreads.length };
   }
 );

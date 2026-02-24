@@ -1,77 +1,65 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import admin from "@/lib/firebase-admin.node";
-import { v4 as uuid } from "uuid";
+import { v2 as cloudinary } from "cloudinary";
+import heicConvert from "heic-convert";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { adminStorage } from "@/lib/firebase-admin.node";
 
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
+async function maybeConvertHeic(buffer: Buffer, filename: string) {
+  const isHeic =
+    filename.toLowerCase().endsWith(".heic") ||
+    filename.toLowerCase().endsWith(".heif");
 
-/* ---------- HEIC HELPERS ---------- */
+  if (!isHeic) return { buffer, format: "jpeg" };
 
-function isHeic(file: File) {
-  const name = file.name.toLowerCase();
-  return (
-    file.type === "image/heic" ||
-    file.type === "image/heif" ||
-    name.endsWith(".heic") ||
-    name.endsWith(".heif")
-  );
+  try {
+    const outputBuffer = await heicConvert({ buffer, format: "JPEG", quality: 0.9 });
+    return { buffer: Buffer.from(outputBuffer), format: "jpeg" };
+  } catch (err) {
+    console.error("HEIC conversion failed:", err);
+    return { buffer, format: "jpeg" };
+  }
 }
-
-async function convertHeic(buffer: Buffer) {
-  const heicConvert = (await import("heic-convert")).default;
-
-  const output = await heicConvert({
-    buffer,
-    format: "JPEG",
-    quality: 0.9,
-  });
-
-  return Buffer.from(output);
-}
-
-/* ---------- ROUTE ---------- */
 
 export async function POST(req: Request) {
   try {
     const form = await req.formData();
-    const file = form.get("file") as File | null;
+    const file = form.get("file");
     const characterId = form.get("characterId") as string | null;
 
-    if (!file || !characterId) {
+    if (!file || !(file instanceof File) || !characterId) {
       return NextResponse.json({ error: "Missing data" }, { status: 400 });
     }
 
-    let buffer = Buffer.from(await file.arrayBuffer());
+    const originalBuffer = Buffer.from(await file.arrayBuffer());
+    const { buffer, format } = await maybeConvertHeic(originalBuffer, file.name);
 
-    // ✅ HEIC → JPEG
-    if (isHeic(file)) {
-      buffer = await convertHeic(buffer);
-    }
-
-    const bucket = adminStorage();
-    const filename = `reference/characters/${characterId}/${uuid()}.jpg`;
-    const fileRef = bucket.file(filename);
-    
-    await fileRef.save(buffer, {
-      metadata: {
-        contentType: "image/jpeg",
-      },
-      resumable: false,
+    const uploadResult = await new Promise<any>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: `flipwhizz/characters/${characterId}/reference`,
+          resource_type: "image",
+          format,
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      uploadStream.end(buffer);
     });
-    
-    await fileRef.makePublic();
-    
-    const url = `https://storage.googleapis.com/${bucket.name}/${filename}`;
-    
-    console.log("REFERENCE IMAGE URL:", url);
 
+    const url = uploadResult.secure_url;
+    console.log("✅ Character reference uploaded:", url);
 
-    // ✅ Save reference ONLY (invalidate portrait)
     await db
       .update(characters)
       .set({
@@ -82,12 +70,8 @@ export async function POST(req: Request) {
       .where(eq(characters.id, characterId));
 
     return NextResponse.json({ ok: true, url });
-  } catch (err) {
-    console.error("CHARACTER UPLOAD ERROR", {
-      message: err instanceof Error ? err.message : err,
-      stack: err instanceof Error ? err.stack : null,
-    });
-    
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+  } catch (err: any) {
+    console.error("CHARACTER UPLOAD ERROR:", err);
+    return NextResponse.json({ error: err.message || "Upload failed" }, { status: 500 });
   }
 }

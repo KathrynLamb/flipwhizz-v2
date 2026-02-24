@@ -34,7 +34,7 @@ export default function Header({ session }: { session: any }) {
           </Link>
         ) : (
           <Link href="/projects" className="px-6 py-2 rounded-full bg-[#F4A261] text-[#0F2236] font-bold hover:bg-[#E76F51] transition shadow-lg">
-            My Library HEADER
+            My Library
           </Link>
         )}
 
@@ -43,7 +43,7 @@ export default function Header({ session }: { session: any }) {
           <button 
             onClick={handleSignOut}
             className="px-6 py-2 rounded-full border border-[#FDF8F0]/30 hover:bg-[#FDF8F0] hover:text-[#0F2236] transition duration-300">
-            Sign OUt
+            Sign Out
           </button>
         )}
       </nav>

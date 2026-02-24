@@ -35,12 +35,10 @@ export async function POST(
 
     // Trigger Inngest function to generate all spreads
     await inngest.send({
-      name: "story/generate-spreads",
-      data: {
-        storyId,
-      },
+      name: "story/build-spreads",
+      data: { storyId },
     });
-
+    
     console.log("✅ Generation job queued successfully");
 
     return NextResponse.json({

@@ -294,6 +294,13 @@ export const generateSingleSpread = inngest.createFunction(
         .from(characters)
         .where(inArray(characters.id, charIds));
 
+        console.log("🎭 Characters in spread:", charRefs.map(c => ({
+          name: c.name,
+          hasImage: !!c.imageUrl,
+          isBase64: c.imageUrl ? isDataUrl(c.imageUrl) : false,
+          url: c.imageUrl ? c.imageUrl.substring(0, 80) : null,
+        })));
+
       // Optional location reference (same rules as characters)
       let locationRef:
         | null
@@ -319,6 +326,13 @@ export const generateSingleSpread = inngest.createFunction(
           );
         }
       }
+
+      console.log("🗺️ Location ref:", locationRef ? {
+        name: locationRef.name,
+        hasImage: !!locationRef.imageUrl,
+        isBase64: isDataUrl(locationRef.imageUrl ?? ""),
+        url: locationRef.imageUrl?.substring(0, 80),
+      } : "NONE");
 
       const parts: any[] = [];
 
@@ -358,6 +372,15 @@ Use it as the setting across the full spread.
 `.trim(),
         });
       }
+
+      console.log("📋 Raw charactersJson from spread:", JSON.stringify(spread.charactersJson, null, 2));
+
+
+      console.log("📦 Parts being sent to Gemini:", parts.map((p, i) => ({
+        index: i,
+        type: p.text ? "text" : p.inlineData ? "image" : "unknown",
+        preview: p.text ? p.text.substring(0, 60) : `image/${p.inlineData?.mimeType}`,
+      })));
 
       // 2️⃣ CHARACTERS (skip base64 refs, warn loudly)
       for (const c of charRefs) {

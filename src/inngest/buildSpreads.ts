@@ -52,7 +52,8 @@ export const buildSpreads = inngest.createFunction(
         spreadIndex++;
       }
 
-      await db.insert(storySpreads).values(inserts);
+// Replace the insert in create-spreads step with:
+await db.insert(storySpreads).values(inserts).onConflictDoNothing();
       return inserts.length;
     });
 

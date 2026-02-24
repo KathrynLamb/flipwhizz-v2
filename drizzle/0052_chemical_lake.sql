@@ -1,0 +1,1 @@
+ALTER TABLE "stories" ADD COLUMN "public" boolean DEFAULT false NOT NULL;

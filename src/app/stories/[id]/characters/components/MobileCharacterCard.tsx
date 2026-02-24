@@ -62,6 +62,9 @@ export function MobileCharacterCard({
   const router = useRouter();
   const accent = CARD_ACCENTS[index % CARD_ACCENTS.length];
 
+  const [imageUrl, setImageUrl] = useState(character.portraitImageUrl || character.referenceImageUrl);
+
+
   const [locked, setLocked] = useState(character.locked);
   const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -71,7 +74,6 @@ export function MobileCharacterCard({
   const rotate = useTransform(x, [-200, 0, 200], [-15, 0, 15]);
   const opacity = useTransform(x, [-200, -100, 0, 100, 200], [0, 1, 1, 1, 0]);
 
-  const imageUrl = character.portraitImageUrl || character.referenceImageUrl;
   const traits = character.personalityTraits
     ? character.personalityTraits.split(",").map((t) => t.trim()).slice(0, 3)
     : [];
@@ -105,7 +107,11 @@ export function MobileCharacterCard({
       fd.append("file", file);
       fd.append("characterId", character.id);
       const res = await fetch("/api/characters/upload-reference", { method: "POST", body: fd });
-      if (res.ok) router.refresh();
+      if (res.ok) {
+        const data = await res.json();
+        setImageUrl(data.url);  // ✅ Update local state immediately
+        router.refresh();
+      }
     } finally {
       setUploading(false);
     }

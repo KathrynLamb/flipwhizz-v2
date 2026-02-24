@@ -1,43 +1,41 @@
-// api/characters/use-ai-images
+// api/characters/use-ai-image/route.ts
 import { NextResponse } from "next/server";
+import { v2 as cloudinary } from "cloudinary";
 import { db } from "@/db";
-import { 
-  characters, 
-  storyCharacters, 
-  storyStyleGuide, 
-  stories 
+import {
+  characters,
+  storyCharacters,
+  storyStyleGuide,
+  stories,
 } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { GoogleGenAI } from "@google/genai";
 
-// Initialize Gemini
-const gemini = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY!,
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const MODEL = "gemini-3-pro-image-preview";
 
-// Helper to fetch remote image and convert to Gemini part
 async function getImagePart(urlOrBase64: string) {
   try {
     if (!urlOrBase64) return null;
 
-    // 1. If it's already a Data URI (Base64)
     if (urlOrBase64.startsWith("data:image")) {
-      const base64Data = urlOrBase64.split(",")[1];
       return {
         inlineData: {
-          data: base64Data,
+          data: urlOrBase64.split(",")[1],
           mimeType: "image/jpeg",
         },
       };
     }
 
-    // 2. If it's a remote URL (Cloudinary/S3)
     const res = await fetch(urlOrBase64);
     if (!res.ok) throw new Error(`Failed to fetch: ${res.statusText}`);
-    const arrayBuffer = await res.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const buffer = Buffer.from(await res.arrayBuffer());
     return {
       inlineData: {
         data: buffer.toString("base64"),
@@ -55,25 +53,19 @@ export async function POST(req: Request) {
     const { characterId } = await req.json();
 
     if (!characterId) {
-      return NextResponse.json(
-        { error: "Character ID is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Character ID is required" }, { status: 400 });
     }
 
-    // 1. Fetch Character Details
+    // 1. Fetch character
     const character = await db.query.characters.findFirst({
       where: eq(characters.id, characterId),
     });
 
     if (!character) {
-      return NextResponse.json(
-        { error: "Character not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Character not found" }, { status: 404 });
     }
 
-    // 2. Fetch Associated Story Style
+    // 2. Fetch associated story style
     const linkedStory = await db
       .select({
         styleSummary: storyStyleGuide.summary,
@@ -88,40 +80,40 @@ export async function POST(req: Request) {
       .limit(1)
       .then((rows) => rows[0]);
 
-    // 3. Construct the Text Prompt
+    // 3. Build prompt
     const visualDesc = [
       character.appearance,
       character.description,
-      character.visualDetails 
+      character.visualDetails
         ? Object.entries(character.visualDetails as Record<string, string>)
             .map(([k, v]) => `${k}: ${v}`)
             .join(", ")
-        : null
-    ].filter(Boolean).join(". ");
+        : null,
+    ]
+      .filter(Boolean)
+      .join(". ");
 
-    const traits = character.personalityTraits 
-      ? `Personality: ${character.personalityTraits}` 
+    const traits = character.personalityTraits
+      ? `Personality: ${character.personalityTraits}`
       : "";
 
-    const stylePrompt = linkedStory 
-      ? `
-        ART STYLE: ${linkedStory.artStyle || "Storybook illustration"}
-        STYLE DESCRIPTION: ${linkedStory.styleSummary || "Colorful and engaging"}
-      ` 
+    const stylePrompt = linkedStory
+      ? `ART STYLE: ${linkedStory.artStyle || "Storybook illustration"}
+         STYLE DESCRIPTION: ${linkedStory.styleSummary || "Colorful and engaging"}`
       : "ART STYLE: Professional Children's Book Illustration";
 
     const textPrompt = `
       Generate a character portrait for a children's book.
-      
+
       CHARACTER NAME: ${character.name}
-      
+
       VISUAL DESCRIPTION:
       ${visualDesc}
-      
+
       ${traits}
-      
+
       ${stylePrompt}
-      
+
       REQUIREMENTS:
       ${character.referenceImageUrl ? "- Use the attached reference image as the PRIMARY source for facial features, hair, and clothing." : ""}
       - Close-up or medium shot portrait.
@@ -130,21 +122,19 @@ export async function POST(req: Request) {
       - NO text in the image.
     `.trim();
 
-    // 4. Prepare Gemini Contents (Text + Optional Image)
+    // 4. Build parts (text + optional reference image)
     const parts: any[] = [{ text: textPrompt }];
 
-    // If a reference image exists (user upload), attach it
     if (character.referenceImageUrl) {
-      console.log("Found reference image, attaching to prompt...");
+      console.log("📎 Attaching reference image to prompt...");
       const imagePart = await getImagePart(character.referenceImageUrl);
       if (imagePart) {
         parts.push(imagePart);
-        // Add specific instruction for the image part
         parts.push({ text: "Use this image as a visual reference for the character's appearance." });
       }
     }
 
-    // 5. Generate Image
+    // 5. Generate with Gemini
     const response = await gemini.models.generateContent({
       model: MODEL,
       contents: [{ role: "user", parts }],
@@ -152,23 +142,41 @@ export async function POST(req: Request) {
         responseModalities: ["IMAGE"],
         imageConfig: {
           aspectRatio: "1:1",
-          imageSize: "1K", // "1K" is sufficient for avatars/cards
+          imageSize: "1K",
         },
       },
     });
 
     const imgPart = response.candidates?.[0]?.content?.parts?.find(
-      (p) => p.inlineData && p.inlineData.data
+      (p) => p.inlineData?.data
     );
 
     if (!imgPart?.inlineData?.data) {
-      throw new Error("Failed to generate image data");
+      throw new Error("Gemini did not return image data");
     }
 
-    // 6. "Upload" Image (Base64 for now)
-    const imageUrl = `data:image/jpeg;base64,${imgPart.inlineData.data}`;
+    // 6. Upload to Cloudinary
+    const imageBuffer = Buffer.from(imgPart.inlineData.data, "base64");
 
-    // 7. Update Database
+    const uploadResult = await new Promise<any>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: `flipwhizz/characters/${characterId}/portrait`,
+          resource_type: "image",
+          format: "jpeg",
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      uploadStream.end(imageBuffer);
+    });
+
+    const imageUrl = uploadResult.secure_url;
+    console.log("✅ Portrait uploaded to Cloudinary:", imageUrl);
+
+    // 7. Save to DB
     await db
       .update(characters)
       .set({
@@ -177,13 +185,9 @@ export async function POST(req: Request) {
       })
       .where(eq(characters.id, characterId));
 
-    return NextResponse.json({ url: imageUrl });
-
+    return NextResponse.json({ ok: true, url: imageUrl });
   } catch (error) {
     console.error("Generate Character Image Error:", error);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

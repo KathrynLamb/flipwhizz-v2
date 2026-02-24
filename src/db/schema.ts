@@ -55,6 +55,8 @@ export const stories = pgTable("stories", {
   status: varchar("status", { length: 30 }).default("planning"),
   storyConfirmed: boolean("story_confirmed").default(false).notNull(),
 
+  public: boolean("public").default(false).notNull(),
+
   /* ---------------- COVER (PRINT CANONICAL) ---------------- */
 
   /**

@@ -54,6 +54,10 @@ export default function CharacterCard({
     ? character.personalityTraits.split(",").map(t => t.trim()).filter(Boolean).slice(0, 3)
     : [];
 
+    const [currentImageUrl, setCurrentImageUrl] = useState(
+      character.portraitImageUrl || character.referenceImageUrl
+    );
+
   async function toggleLock() {
     const endpoint = locked ? "/api/characters/unlock" : "/api/characters/lock";
     const res = await fetch(endpoint, {
@@ -71,17 +75,14 @@ export default function CharacterCard({
   async function uploadReference(file: File) {
     if (locked) return;
     setUploading(true);
-    
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("characterId", character.id);
-      const res = await fetch("/api/characters/upload-reference", { 
-        method: "POST", 
-        body: fd 
-      });
-      
+      const res = await fetch("/api/characters/upload-reference", { method: "POST", body: fd });
       if (res.ok) {
+        const data = await res.json();
+        setCurrentImageUrl(data.url);  // ✅ Update local state immediately
         onUpdate?.();
         router.refresh();
       }
