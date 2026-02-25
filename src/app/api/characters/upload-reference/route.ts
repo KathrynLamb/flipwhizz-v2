@@ -4,8 +4,9 @@ import { NextResponse } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
 import heicConvert from "heic-convert";
 import { db } from "@/db";
-import { characters } from "@/db/schema";
+import { characters, storyCharacters } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { inngest } from "@/inngest/client";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -60,14 +61,54 @@ export async function POST(req: Request) {
     const url = uploadResult.secure_url;
     console.log("✅ Character reference uploaded:", url);
 
+    // Fetch existing visualDetails so we don't clobber other data
+    const character = await db.query.characters.findFirst({
+      where: eq(characters.id, characterId),
+    });
+
+    const existingVisualDetails =
+      (character?.visualDetails as Record<string, any>) || {};
+
+    // Save URL, clear AI portrait, set analysis to pending
     await db
       .update(characters)
       .set({
         referenceImageUrl: url,
         portraitImageUrl: null,
+        visualDetails: {
+          ...existingVisualDetails,
+          photoAnalysis: {
+            status: "pending",
+            startedAt: new Date().toISOString(),
+            imageUrl: url,
+          },
+        },
         updatedAt: new Date(),
       })
       .where(eq(characters.id, characterId));
+
+    // Find the associated storyId for the analysis
+    const storyLink = await db
+      .select({ storyId: storyCharacters.storyId })
+      .from(storyCharacters)
+      .where(eq(storyCharacters.characterId, characterId))
+      .limit(1)
+      .then((rows) => rows[0]);
+
+    // Fire background analysis (non-blocking)
+    inngest
+      .send({
+        name: "character/reference-photo.uploaded",
+        data: {
+          characterId,
+          storyId: storyLink?.storyId || "",
+          imageUrl: url,
+        },
+      })
+      .catch((err) => {
+        // Don't fail the upload if Inngest send fails
+        console.error("⚠️ Failed to send Inngest event:", err);
+      });
 
     return NextResponse.json({ ok: true, url });
   } catch (err: any) {

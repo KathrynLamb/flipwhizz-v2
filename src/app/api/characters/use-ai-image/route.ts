@@ -7,8 +7,9 @@ import {
   storyCharacters,
   storyStyleGuide,
   stories,
+  characterStoryOutfits,
 } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { GoogleGenAI } from "@google/genai";
 
 cloudinary.config({
@@ -50,10 +51,17 @@ async function getImagePart(urlOrBase64: string) {
 
 export async function POST(req: Request) {
   try {
-    const { characterId } = await req.json();
+    const { characterId, outfitMode } = await req.json();
+    // outfitMode: "story" | "reference" | undefined
+    // "story" = redress to match the story's default outfit
+    // "reference" = keep the reference photo's clothing
+    // undefined = no reference image, always use story outfit
 
     if (!characterId) {
-      return NextResponse.json({ error: "Character ID is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Character ID is required" },
+        { status: 400 }
+      );
     }
 
     // 1. Fetch character
@@ -62,12 +70,16 @@ export async function POST(req: Request) {
     });
 
     if (!character) {
-      return NextResponse.json({ error: "Character not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Character not found" },
+        { status: 404 }
+      );
     }
 
-    // 2. Fetch associated story style
+    // 2. Fetch associated story + style
     const linkedStory = await db
       .select({
+        storyId: stories.id,
         styleSummary: storyStyleGuide.summary,
         artStyle: storyStyleGuide.artStyle,
         negativePrompt: storyStyleGuide.negativePrompt,
@@ -80,7 +92,53 @@ export async function POST(req: Request) {
       .limit(1)
       .then((rows) => rows[0]);
 
-    // 3. Build prompt
+    // 3. Fetch default outfit for this character in this story
+    let defaultOutfit: { outfitKey: string; outfitDescription: string } | null =
+      null;
+
+    if (linkedStory?.storyId) {
+      // First try to find one tagged as default
+      const tagged = await db
+        .select({
+          outfitKey: characterStoryOutfits.outfitKey,
+          outfitDescription: characterStoryOutfits.outfitDescription,
+        })
+        .from(characterStoryOutfits)
+        .where(
+          and(
+            eq(characterStoryOutfits.storyId, linkedStory.storyId),
+            eq(characterStoryOutfits.characterId, characterId),
+            eq(characterStoryOutfits.isDefault, true)
+          )
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+
+      if (tagged) {
+        defaultOutfit = tagged;
+      } else {
+        // Fallback: use the first outfit (by creation date)
+        const fallback = await db
+          .select({
+            outfitKey: characterStoryOutfits.outfitKey,
+            outfitDescription: characterStoryOutfits.outfitDescription,
+          })
+          .from(characterStoryOutfits)
+          .where(
+            and(
+              eq(characterStoryOutfits.storyId, linkedStory.storyId),
+              eq(characterStoryOutfits.characterId, characterId)
+            )
+          )
+          .orderBy(characterStoryOutfits.createdAt)
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+
+        defaultOutfit = fallback;
+      }
+    }
+
+    // 4. Build visual description
     const visualDesc = [
       character.appearance,
       character.description,
@@ -102,27 +160,60 @@ export async function POST(req: Request) {
          STYLE DESCRIPTION: ${linkedStory.styleSummary || "Colorful and engaging"}`
       : "ART STYLE: Professional Children's Book Illustration";
 
+    // 5. Determine outfit instructions based on mode
+    const hasReference = !!character.referenceImageUrl;
+    const useStoryOutfit =
+      !hasReference || outfitMode === "story" || outfitMode === undefined;
+
+    let outfitInstructions = "";
+
+    if (defaultOutfit && useStoryOutfit) {
+      outfitInstructions = `
+      OUTFIT / CLOTHING:
+      The character should be wearing their default outfit: "${defaultOutfit.outfitKey.replace(/_/g, " ")}".
+      Detailed clothing description: ${defaultOutfit.outfitDescription}
+      This outfit description MUST take priority over any clothing visible in the reference photo.
+      `;
+    } else if (hasReference && outfitMode === "reference") {
+      outfitInstructions = `
+      OUTFIT / CLOTHING:
+      Keep the clothing/outfit from the reference photo as-is. Match it faithfully.
+      `;
+    }
+
+    // 6. Build the text prompt
     const textPrompt = `
-      Generate a character portrait for a children's book.
+Generate a character portrait for a children's book.
 
-      CHARACTER NAME: ${character.name}
+CHARACTER NAME: ${character.name}
 
-      VISUAL DESCRIPTION:
-      ${visualDesc}
+VISUAL DESCRIPTION:
+${visualDesc}
 
-      ${traits}
+${traits}
 
-      ${stylePrompt}
+${outfitInstructions}
 
-      REQUIREMENTS:
-      ${character.referenceImageUrl ? "- Use the attached reference image as the PRIMARY source for facial features, hair, and clothing." : ""}
-      - Close-up or medium shot portrait.
-      - Neutral background or simple environmental hint.
-      - High quality, consistent with the described art style.
-      - NO text in the image.
+${stylePrompt}
+
+REQUIREMENTS:
+${
+  hasReference
+    ? `- Use the attached reference image as the PRIMARY source for facial features, body shape, hair style, and skin tone.
+${
+  useStoryOutfit && defaultOutfit
+    ? "- REPLACE the clothing from the reference image with the outfit described above."
+    : "- Preserve the clothing from the reference image."
+}`
+    : ""
+}
+- Close-up or medium shot portrait showing face and upper body.
+- Neutral background or simple environmental hint.
+- High quality, consistent with the described art style.
+- NO text in the image.
     `.trim();
 
-    // 4. Build parts (text + optional reference image)
+    // 7. Build parts (text + optional reference image)
     const parts: any[] = [{ text: textPrompt }];
 
     if (character.referenceImageUrl) {
@@ -130,11 +221,13 @@ export async function POST(req: Request) {
       const imagePart = await getImagePart(character.referenceImageUrl);
       if (imagePart) {
         parts.push(imagePart);
-        parts.push({ text: "Use this image as a visual reference for the character's appearance." });
+        parts.push({
+          text: "Use this image as a visual reference for the character's appearance.",
+        });
       }
     }
 
-    // 5. Generate with Gemini
+    // 8. Generate with Gemini
     const response = await gemini.models.generateContent({
       model: MODEL,
       contents: [{ role: "user", parts }],
@@ -155,7 +248,7 @@ export async function POST(req: Request) {
       throw new Error("Gemini did not return image data");
     }
 
-    // 6. Upload to Cloudinary
+    // 9. Upload to Cloudinary
     const imageBuffer = Buffer.from(imgPart.inlineData.data, "base64");
 
     const uploadResult = await new Promise<any>((resolve, reject) => {
@@ -176,7 +269,7 @@ export async function POST(req: Request) {
     const imageUrl = uploadResult.secure_url;
     console.log("✅ Portrait uploaded to Cloudinary:", imageUrl);
 
-    // 7. Save to DB
+    // 10. Save to DB
     await db
       .update(characters)
       .set({
@@ -188,6 +281,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, url: imageUrl });
   } catch (error) {
     console.error("Generate Character Image Error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }

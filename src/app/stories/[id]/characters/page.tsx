@@ -2,8 +2,8 @@
 import { notFound } from "next/navigation";
 import { getStoryForHub } from "@/lib/story/getStoryForHub";
 import { db } from "@/db";
-import { storyWorkflowProgress } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { storyWorkflowProgress, characterStoryOutfits } from "@/db/schema";
+import { eq, and } from "drizzle-orm";
 import CharactersClient from "@/app/stories/[id]/characters/CharactersClient";
 
 type Props = {
@@ -32,6 +32,20 @@ export default async function CharactersPage({ params }: Props) {
     );
   }
 
+  // ✅ Fetch all outfits for this story in one query
+  const allOutfits = await db
+    .select()
+    .from(characterStoryOutfits)
+    .where(eq(characterStoryOutfits.storyId, storyId));
+
+  // Group outfits by characterId
+  const outfitsByCharacter = new Map<string, typeof allOutfits>();
+  for (const outfit of allOutfits) {
+    const existing = outfitsByCharacter.get(outfit.characterId) || [];
+    existing.push(outfit);
+    outfitsByCharacter.set(outfit.characterId, existing);
+  }
+
   const characters = dbCharacters.map((char) => ({
     id: char.id,
     name: char.name,
@@ -41,6 +55,13 @@ export default async function CharactersPage({ params }: Props) {
     referenceImageUrl: char.referenceImageUrl ?? null,
     portraitImageUrl: char.portraitImageUrl ?? null,
     locked: char.locked,
+    visualDetails: (char.visualDetails as Record<string, any>) ?? null,
+    outfits: (outfitsByCharacter.get(char.id) || []).map((o) => ({
+      id: o.id,
+      outfitKey: o.outfitKey,
+      outfitDescription: o.outfitDescription,
+      triggerConditions: o.triggerConditions ?? null,
+    })),
   }));
 
   return (

@@ -264,6 +264,7 @@ export const characterStoryOutfits = pgTable(
   "character_story_outfits",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    isDefault: boolean("is_default").default(false).notNull(),
 
     storyId: uuid("story_id")
       .references(() => stories.id, { onDelete: "cascade" })

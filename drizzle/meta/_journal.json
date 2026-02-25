@@ -386,6 +386,13 @@
       "when": 1771948666576,
       "tag": "0054_normal_bruce_banner",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1772028657033,
+      "tag": "0055_next_sasquatch",
+      "breakpoints": true
     }
   ]
 }

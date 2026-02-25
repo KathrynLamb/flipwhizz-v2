@@ -14,6 +14,8 @@ import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateSpr
 import { reviseSingleSpread } from "@/inngest/reviseSingleSpread";
 import { generateCoverSpreadPhaseB } from "@/inngest/generateCoverSpread.phaseB";
 import { buildSpreads } from "@/inngest/buildSpreads";
+import { analyseReferencePhoto } from "@/inngest/analyseReferencePhoto";
+
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -30,5 +32,6 @@ export const { GET, POST, PUT } = serve({
     generateSingleSpread,   // ✅ Worker
     reviseSingleSpread,
     generateCoverSpreadPhaseB,
+    analyseReferencePhoto
   ],
 });
