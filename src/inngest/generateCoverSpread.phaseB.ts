@@ -146,8 +146,13 @@ async function uploadToCloudinary(base64: string, storyId: string) {
         folder: `flipwhizz/stories/${storyId}/covers`,
         filename_override: uuid(),
         resource_type: "image",
+        timeout: 60000, // ← add explicit 60s timeout
       },
-      (err, res) => (err ? reject(err) : resolve(res!.secure_url))
+      (err, res) => {
+        if (err) return reject(err);
+        if (!res?.secure_url) return reject(new Error("Cloudinary returned no URL"));
+        resolve(res.secure_url);
+      }
     );
 
     Readable.from(buffer).pipe(stream);
