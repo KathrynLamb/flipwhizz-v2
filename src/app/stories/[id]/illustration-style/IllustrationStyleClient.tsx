@@ -173,7 +173,9 @@ export default function IllustrationStyleClient({
     setColorPalette(styleGuide?.colorPalette ?? null);
     setSampleIllustrationUrl(styleGuide?.sampleIllustrationUrl ?? null);
     setLocked(styleGuide?.approved ?? false);
-  }, [styleGuide?.id]);
+  // Include colorPalette in deps: old rows without hex will re-sync cleanly
+  // Include sampleIllustrationUrl: image appears after upload without hard refresh
+  }, [styleGuide?.id, styleGuide?.sampleIllustrationUrl, styleGuide?.colorPalette]);
 
   /* ── Dirty check (user-facing fields only) ── */
   const dirty = useMemo(() => {
@@ -449,7 +451,7 @@ export default function IllustrationStyleClient({
 
             {/* ── Colour Palette card (shown after analysis) ── */}
             <AnimatePresence>
-              {colorPalette && (
+              {colorPalette && (colorPalette.hex?.length ?? 0) > 0 && (
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -463,7 +465,7 @@ export default function IllustrationStyleClient({
 
                   {/* Swatches */}
                   <div className="flex gap-2 mb-2">
-                    {colorPalette.hex.slice(0, 3).map((hex, i) => (
+                    {(colorPalette.hex ?? []).slice(0, 3).map((hex, i) => (
                       <div
                         key={i}
                         className="flex-1 h-10 rounded-lg shadow-sm border border-black/5"

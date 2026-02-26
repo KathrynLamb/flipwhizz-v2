@@ -39,6 +39,7 @@ export default async function IllustrationStylePage({ params }: Props) {
         // 🔑 correct field name — was mapped to referenceImageUrl before
         sampleIllustrationUrl: sg.sampleIllustrationUrl ?? null,
         approved:             sg.approved             ?? false,
+        // note: field name matches DB column
         updatedAt:            sg.updatedAt            ?? null,
         // 🔒 promptBase / negativePrompt intentionally excluded —
         //    they live in userNotes/negativePrompt on the DB row
@@ -50,7 +51,7 @@ export default async function IllustrationStylePage({ params }: Props) {
     <IllustrationStyleClient
       storyId={storyId}
       storyTitle="Illustration Style"
-      storyConfirmed={story.confirmed ?? false}
+      storyConfirmed={story.storyConfirmed ?? false}
       styleGuide={styleGuide}
       currentStep="studio"
       completedSteps={[]}
