@@ -25,7 +25,7 @@ import type { StepKey } from "@/lib/storySteps";
 
 const STEP_ORDER: StepKey[] = [
   "write",
-  "extract",
+  "characters",
   "locations",
   "design",
   "studio",
@@ -63,7 +63,17 @@ const STEPS: Step[] = [
       p.startsWith(`/stories/${id}/hub`),
   },
   {
-    key: "extract",
+    key: "design",
+    label: "Design",
+    shortLabel: "Style",
+    icon: Palette,
+    // href: (id) => `/stories/${id}/design`,
+    // match: (p, id) => p.startsWith(`/stories/${id}/design`),
+    href: (id) => `/stories/${id}/illustration-style`,
+    match: (p, id) => p.startsWith(`/stories/${id}/illustration-style`),
+  },
+  {
+    key: "characters",
     label: "Characters",
     shortLabel: "Cast",
     icon: Users,
@@ -78,16 +88,7 @@ const STEPS: Step[] = [
     href: (id) => `/stories/${id}/locations`,
     match: (p, id) => p.startsWith(`/stories/${id}/locations`),
   },
-  {
-    key: "design",
-    label: "Design",
-    shortLabel: "Style",
-    icon: Palette,
-    // href: (id) => `/stories/${id}/design`,
-    // match: (p, id) => p.startsWith(`/stories/${id}/design`),
-    href: (id) => `/stories/${id}/illustration-style`,
-    match: (p, id) => p.startsWith(`/stories/${id}/illustration-style`),
-  },
+
   {
     key: "studio",
     label: "Studio",

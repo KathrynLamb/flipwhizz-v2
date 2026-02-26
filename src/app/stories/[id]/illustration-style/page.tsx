@@ -16,40 +16,35 @@ type Props = {
 export default async function IllustrationStylePage({ params }: Props) {
   const { id: storyId } = await params;
 
-  /* ------------------ STORY ------------------ */
-
+  /* ── Story ── */
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
   });
 
   if (!story) notFound();
 
-  /* ------------------ STYLE GUIDE ------------------ */
-
+  /* ── Style guide ── */
   const sg = await db.query.storyStyleGuide.findFirst({
     where: eq(storyStyleGuide.storyId, storyId),
   });
 
-  let styleGuide: StyleGuide | null = null;
-
-  if (sg) {
-    styleGuide = {
-      id: sg.id,
-      storyId: sg.storyId,
-      summary: sg.summary ?? null,
-      artStyle: sg.artStyle ?? null,
-
-      // 🔁 map DB → client naming
-      referenceImageUrl: sg.sampleIllustrationUrl ?? null,
-
-      // optional fields (only if exist in schema)
-      promptBase: (sg as any).promptBase ?? null,
-      negativePrompt: sg.negativePrompt ?? null,
-      locked: (sg as any).locked ?? false,
-
-      updatedAt: sg.updatedAt ?? null,
-    };
-  }
+  const styleGuide: StyleGuide | null = sg
+    ? {
+        id:                   sg.id,
+        storyId:              sg.storyId,
+        summary:              sg.summary              ?? null,
+        artStyle:             sg.artStyle             ?? null,
+        visualThemes:         sg.visualThemes         ?? null,
+        colorPalette:         (sg.colorPalette as any) ?? null,
+        // 🔑 correct field name — was mapped to referenceImageUrl before
+        sampleIllustrationUrl: sg.sampleIllustrationUrl ?? null,
+        approved:             sg.approved             ?? false,
+        updatedAt:            sg.updatedAt            ?? null,
+        // 🔒 promptBase / negativePrompt intentionally excluded —
+        //    they live in userNotes/negativePrompt on the DB row
+        //    but are never passed to the client
+      }
+    : null;
 
   return (
     <IllustrationStyleClient

@@ -2,7 +2,7 @@
 
 export const STEP_ORDER = [
   "write",
-  "extract",
+  "characters",
   "locations",
   "design",
   "studio",
