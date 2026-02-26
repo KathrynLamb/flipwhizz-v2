@@ -261,7 +261,7 @@ export default function ExtractWorldPage() {
   useEffect(() => {
     if (phase === "ready" && storyId) {
       setTimeout(() => {
-        router.push(`/stories/${storyId}/characters`);
+        router.push(`/stories/${storyId}/illustration-style`);
       }, 2500);
     }
   }, [phase, storyId, router]);
