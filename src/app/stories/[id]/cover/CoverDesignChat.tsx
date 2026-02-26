@@ -8,14 +8,14 @@ import {
   Sparkles,
   Wand2,
   Check,
-  ChevronLeft,
-  RefreshCw,
   ImagePlus,
-  ThumbsUp,
-  ThumbsDown,
+  Palette,
+  MessageCircle,
 } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import type { StepKey } from "@/lib/storySteps";
+import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
 
 /* -------------------------------------------------------------------------- */
 /*                                   TYPES                                    */
@@ -40,7 +40,23 @@ type Props = {
   projectId: string;
   story: Story;
   initialMessages: ChatMsg[];
+  currentStep?: StepKey;
+  completedSteps?: StepKey[];
 };
+
+/* -------------------------------------------------------------------------- */
+/*                              FONT LOADER                                   */
+/* -------------------------------------------------------------------------- */
+
+function FontLoader() {
+  return (
+    // eslint-disable-next-line @next/next/no-page-custom-font
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,600;12..96,700;12..96,800&family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap"
+      rel="stylesheet"
+    />
+  );
+}
 
 /* -------------------------------------------------------------------------- */
 /*                              MAIN COMPONENT                                */
@@ -51,9 +67,11 @@ export default function CoverDesignChat({
   story,
   projectId,
   initialMessages,
+  currentStep = "studio",
+  completedSteps = [],
 }: Props) {
   const router = useRouter();
-  
+
   /* ----------------------------- LOCAL STATE ----------------------------- */
 
   const [localStory, setLocalStory] = useState<Story>(story);
@@ -89,15 +107,14 @@ export default function CoverDesignChat({
         clearInterval(interval);
         setLocalStory(data.story);
 
-        // Add auto-message when cover is ready
         const autoMessage: ChatMsg = {
           role: "assistant",
-          content: "🎉 Your cover is ready! Take a look at the preview on the right. What do you think? Feel free to ask for any changes you'd like!",
+          content:
+            "Your cover is ready! Take a look at the preview — what do you think? Feel free to ask for any changes.",
         };
-        
-        setMessages(prev => [...prev, autoMessage]);
 
-        // Save to database
+        setMessages((prev) => [...prev, autoMessage]);
+
         fetch("/api/stories/cover-chat/save-message", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -118,7 +135,7 @@ export default function CoverDesignChat({
   useEffect(() => {
     if (hasStartedChatRef.current) return;
     if (!storyId) return;
-    
+
     if (initialMessages.length > 0) {
       hasStartedChatRef.current = true;
       return;
@@ -180,14 +197,14 @@ export default function CoverDesignChat({
       });
 
       const data = await res.json();
-      setMessages([...nextMessages, { role: "assistant", content: data.reply }]);
+      setMessages([
+        ...nextMessages,
+        { role: "assistant", content: data.reply },
+      ]);
     } catch {
       setMessages([
         ...nextMessages,
-        {
-          role: "assistant",
-          content: "Sorry — something went wrong.",
-        },
+        { role: "assistant", content: "Sorry — something went wrong." },
       ]);
     } finally {
       setIsLoading(false);
@@ -212,17 +229,19 @@ export default function CoverDesignChat({
 
       if (!res.ok) throw new Error();
 
-      const updated = await fetch(`/api/stories/${storyId}`).then(r => r.json());
+      const updated = await fetch(`/api/stories/${storyId}`).then((r) =>
+        r.json()
+      );
       setLocalStory(updated.story);
 
       const lockMessage: ChatMsg = {
         role: "assistant",
-        content: "Perfect — your cover design is locked. I'll start generating the artwork now. This may take 30-60 seconds...",
+        content:
+          "Perfect — your cover design is locked. Generating artwork now, this may take 30–60 seconds…",
       };
 
       setMessages((m) => [...m, lockMessage]);
 
-      // Save message
       fetch("/api/stories/cover-chat/save-message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -245,10 +264,7 @@ export default function CoverDesignChat({
 
   async function triggerCoverGeneration() {
     try {
-      setLocalStory((s) => ({
-        ...s,
-        status: "generating_covers",
-      }));
+      setLocalStory((s) => ({ ...s, status: "generating_covers" }));
 
       await fetch("/api/inngest/trigger-covers", {
         method: "POST",
@@ -261,26 +277,15 @@ export default function CoverDesignChat({
   }
 
   async function handleRegenerateWithFeedback(feedback: string) {
-    // Add user feedback as a message
-    const feedbackMsg: ChatMsg = {
-      role: "user",
-      content: feedback,
-    };
+    const feedbackMsg: ChatMsg = { role: "user", content: feedback };
+    setMessages((prev) => [...prev, feedbackMsg]);
 
-    setMessages(prev => [...prev, feedbackMsg]);
-
-    // Save feedback message
     await fetch("/api/stories/cover-chat/save-message", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        storyId,
-        role: "user",
-        content: feedback,
-      }),
+      body: JSON.stringify({ storyId, role: "user", content: feedback }),
     }).catch(() => {});
 
-    // Update cover plan with feedback
     try {
       await fetch("/api/stories/generate-cover-prompt", {
         method: "POST",
@@ -295,12 +300,12 @@ export default function CoverDesignChat({
 
       const regenMsg: ChatMsg = {
         role: "assistant",
-        content: "Got it! I'll regenerate the cover with your feedback. This will take about 30-60 seconds...",
+        content:
+          "Got it! Regenerating your cover with those changes — about 30–60 seconds…",
       };
 
-      setMessages(prev => [...prev, regenMsg]);
+      setMessages((prev) => [...prev, regenMsg]);
 
-      // Save assistant response
       await fetch("/api/stories/cover-chat/save-message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -328,237 +333,491 @@ export default function CoverDesignChat({
   /* -------------------------------------------------------------------------- */
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
-      
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-purple-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            
-            <Link 
-              href={`/stories/${storyId}/studio`}
-              className="flex items-center gap-2 text-gray-700 hover:text-purple-600 transition-colors font-medium"
-            >
-              <ChevronLeft className="w-5 h-5" />
-              <span>Back to Studio</span>
-            </Link>
+    <>
+      <FontLoader />
 
-            <h1 className="text-lg font-black bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">
-              Cover Design
-            </h1>
-
-            <button
-              onClick={() => router.refresh()}
-              className="p-2 hover:bg-purple-100 rounded-lg transition-colors"
-              title="Refresh"
-            >
-              <RefreshCw className="w-5 h-5 text-purple-600" />
-            </button>
-          </div>
+      <div
+        className="min-h-screen relative"
+        style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}
+      >
+        {/* ── Background ──────────────────────────────────────────────────── */}
+        <div
+          className="fixed inset-0 -z-10"
+          style={{
+            background: `
+              radial-gradient(ellipse 80% 60% at 20% 10%, rgba(232,190,255,0.3) 0%, transparent 60%),
+              radial-gradient(ellipse 70% 50% at 85% 80%, rgba(255,182,210,0.25) 0%, transparent 55%),
+              radial-gradient(ellipse 50% 40% at 50% 50%, rgba(200,210,255,0.15) 0%, transparent 50%),
+              #F9F5FF
+            `,
+          }}
+        >
+          <div
+            className="absolute inset-0 opacity-50"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c4b5d4' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+            }}
+          />
         </div>
-      </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* CHAT COLUMN */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
-              
-              {/* Messages */}
-              <div className="h-[500px] overflow-y-auto p-6 space-y-4 bg-gray-50">
-                {messages.length === 0 && isLoading && (
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center">
-                      <Loader2 className="animate-spin w-5 h-5 text-purple-600" />
-                    </div>
-                    <div className="bg-white rounded-2xl px-4 py-3 border border-gray-100">
-                      <p className="text-sm text-gray-600">Starting our conversation...</p>
-                    </div>
+        <style jsx global>{`
+          .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+          .scrollbar-hide::-webkit-scrollbar { display: none; }
+        `}</style>
+
+        {/* ── Header ──────────────────────────────────────────────────────── */}
+        <UnifiedStoryHeader
+          storyId={storyId}
+          title={story.title || "Cover Design"}
+          currentStep={currentStep}
+          completedSteps={completedSteps}
+        />
+
+        {/* ── Body ────────────────────────────────────────────────────────── */}
+        <main className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+          {/* Intro */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center mb-8"
+          >
+            <div
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold mb-3"
+              style={{ background: "rgba(199,125,255,0.1)", color: "#9B59D0" }}
+            >
+              <Palette className="w-3.5 h-3.5" />
+              Cover Designer
+            </div>
+            <h2
+              className="text-2xl sm:text-3xl font-extrabold mb-2"
+              style={{ color: "#2D2235", letterSpacing: "-0.03em" }}
+            >
+              Design Your Cover
+            </h2>
+            <p
+              className="text-sm sm:text-base max-w-lg mx-auto leading-relaxed"
+              style={{ color: "#7B6E90" }}
+            >
+              Chat about your vision — colours, mood, layout — and I'll bring
+              it to life.
+            </p>
+          </motion.div>
+
+          {/* ── Main grid ─────────────────────────────────────────────────── */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+            {/* ── CHAT (3/5) ─────────────────────────────────────────────── */}
+            <div className="lg:col-span-3">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="overflow-hidden rounded-[22px]"
+                style={{
+                  background: "white",
+                  border: "1px solid rgba(180,150,210,0.12)",
+                  boxShadow: "0 2px 12px rgba(100,60,140,0.06)",
+                }}
+              >
+                {/* Chat bar */}
+                <div
+                  className="flex items-center gap-3 px-5 py-3.5"
+                  style={{
+                    borderBottom: "1px solid rgba(180,150,210,0.08)",
+                    background: "rgba(249,245,255,0.5)",
+                  }}
+                >
+                  <div
+                    className="w-8 h-8 rounded-xl flex items-center justify-center"
+                    style={{ background: "rgba(199,125,255,0.1)" }}
+                  >
+                    <MessageCircle className="w-4 h-4" style={{ color: "#B05CE6" }} />
                   </div>
-                )}
-
-                {messages.length === 0 && !isLoading && (
-                  <div className="flex flex-col items-center justify-center h-full text-center">
-                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center mb-6">
-                      <Sparkles className="w-10 h-10 text-purple-400" />
-                    </div>
-                    <h3 className="text-2xl font-black text-gray-900 mb-3">
-                      Let's Design Your Cover!
-                    </h3>
-                    <p className="text-gray-600 max-w-md">
-                      I'll help you create the perfect cover by asking about your vision and style preferences.
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: "#2D2235" }}>
+                      Design Conversation
+                    </p>
+                    <p className="text-[11px]" style={{ color: "#A897BD" }}>
+                      Describe your perfect cover
                     </p>
                   </div>
-                )}
+                </div>
 
-                {messages.map((m, i) => (
-                  <div
-                    key={i}
-                    className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[80%] p-4 rounded-2xl ${
-                        m.role === "user"
-                          ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white"
-                          : "bg-white text-gray-900 border border-gray-100"
-                      }`}
-                    >
-                      <p className="text-sm leading-relaxed">{m.content}</p>
+                {/* Messages */}
+                <div
+                  className="h-[480px] sm:h-[520px] overflow-y-auto p-5 space-y-4 scrollbar-hide"
+                  style={{ background: "rgba(249,245,255,0.25)" }}
+                >
+                  {messages.length === 0 && isLoading && (
+                    <div className="flex items-start gap-3">
+                      <AvatarAssistant />
+                      <Bubble side="left">
+                        <Loader2 className="w-4 h-4 animate-spin" style={{ color: "#B05CE6" }} />
+                      </Bubble>
                     </div>
-                  </div>
-                ))}
+                  )}
 
-                {isLoading && messages.length > 0 && (
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center">
-                      <Loader2 className="animate-spin w-5 h-5 text-purple-600" />
-                    </div>
-                    <div className="bg-white rounded-2xl px-4 py-3 border border-gray-100">
-                      <p className="text-sm text-gray-600">Thinking...</p>
-                    </div>
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Input Area */}
-              <div className="border-t border-gray-100 p-6 bg-white">
-                {!hasCovers ? (
-                  <div className="space-y-3">
-                    <div className="flex gap-3">
-                      <input
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            sendMessage();
-                          }
-                        }}
-                        className="flex-1 border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-400 text-sm"
-                        placeholder="Describe your cover vision..."
-                        disabled={isLoading || isFinalising || isGeneratingCovers}
-                      />
-                      <button
-                        onClick={sendMessage}
-                        disabled={!input.trim() || isLoading || isFinalising || isGeneratingCovers}
-                        className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  {messages.length === 0 && !isLoading && (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                      <div
+                        className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
+                        style={{ background: "rgba(199,125,255,0.1)" }}
                       >
-                        <Send className="w-5 h-5" />
+                        <Sparkles className="w-8 h-8" style={{ color: "#C77DFF" }} />
+                      </div>
+                      <h3 className="text-xl font-extrabold mb-2" style={{ color: "#2D2235" }}>
+                        Let's Design Your Cover
+                      </h3>
+                      <p className="text-sm max-w-sm leading-relaxed" style={{ color: "#7B6E90" }}>
+                        Tell me about your vision and I'll create a cover that brings your story to life.
+                      </p>
+                    </div>
+                  )}
+
+                  {messages.map((m, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className={`flex items-start gap-3 ${m.role === "user" ? "flex-row-reverse" : ""}`}
+                    >
+                      {m.role === "assistant" ? <AvatarAssistant /> : <AvatarUser />}
+                      <Bubble side={m.role === "user" ? "right" : "left"}>
+                        <p className="whitespace-pre-wrap">{m.content}</p>
+                      </Bubble>
+                    </motion.div>
+                  ))}
+
+                  {isLoading && messages.length > 0 && (
+                    <div className="flex items-start gap-3">
+                      <AvatarAssistant />
+                      <Bubble side="left">
+                        <div className="flex items-center gap-1.5">
+                          {[0, 150, 300].map((delay) => (
+                            <span
+                              key={delay}
+                              className="w-2 h-2 rounded-full animate-bounce"
+                              style={{ background: "#C4A8E0", animationDelay: `${delay}ms` }}
+                            />
+                          ))}
+                        </div>
+                      </Bubble>
+                    </div>
+                  )}
+
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Input */}
+                <div className="p-4" style={{ borderTop: "1px solid rgba(180,150,210,0.08)" }}>
+                  {!hasCovers ? (
+                    <div className="space-y-3">
+                      <div className="flex gap-2.5">
+                        <InputField
+                          value={input}
+                          onChange={setInput}
+                          onSubmit={sendMessage}
+                          placeholder="Describe your cover vision…"
+                          disabled={isLoading || isFinalising || isGeneratingCovers}
+                        />
+                        <SendButton
+                          onClick={sendMessage}
+                          disabled={!input.trim() || isLoading || isFinalising || isGeneratingCovers}
+                          loading={false}
+                        />
+                      </div>
+
+                      <button
+                        onClick={finalizeCoverPlan}
+                        disabled={isFinalising || messages.length < 2 || isGeneratingCovers}
+                        className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 active:scale-[0.98]"
+                        style={{
+                          background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                          boxShadow: "0 4px 16px rgba(176,92,230,0.25)",
+                          border: "none",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        {isFinalising || isGeneratingCovers ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            {isGeneratingCovers ? "Generating…" : "Creating Design…"}
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 className="w-4 h-4" />
+                            Finalise &amp; Generate Cover
+                          </>
+                        )}
                       </button>
                     </div>
-
-                    <button
-                      onClick={finalizeCoverPlan}
-                      disabled={isFinalising || messages.length < 2 || isGeneratingCovers}
-                      className="w-full py-4 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-bold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {isFinalising || isGeneratingCovers ? (
-                        <>
-                          <Loader2 className="animate-spin w-5 h-5" />
-                          {isGeneratingCovers ? "Generating..." : "Creating Design..."}
-                        </>
-                      ) : (
-                        <>
-                          <Wand2 className="w-5 h-5" />
-                          Finalize & Generate Cover
-                        </>
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
+                  ) : (
+                    <div className="flex gap-2.5">
+                      <InputField
+                        value={input}
+                        onChange={setInput}
+                        onSubmit={() => {
                           if (input.trim()) {
                             handleRegenerateWithFeedback(input);
                             setInput("");
                           }
-                        }
-                      }}
-                      className="flex-1 border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-400 text-sm"
-                      placeholder="Request changes to the cover..."
-                      disabled={isLoading || isGeneratingCovers}
-                    />
-                    <button
-                      onClick={() => {
-                        if (input.trim()) {
-                          handleRegenerateWithFeedback(input);
-                          setInput("");
-                        }
-                      }}
-                      disabled={!input.trim() || isLoading || isGeneratingCovers}
-                      className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50"
-                    >
-                      {isGeneratingCovers ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <Send className="w-5 h-5" />
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
+                        }}
+                        placeholder="Request changes to the cover…"
+                        disabled={isLoading || isGeneratingCovers}
+                      />
+                      <SendButton
+                        onClick={() => {
+                          if (input.trim()) {
+                            handleRegenerateWithFeedback(input);
+                            setInput("");
+                          }
+                        }}
+                        disabled={!input.trim() || isLoading || isGeneratingCovers}
+                        loading={isGeneratingCovers}
+                      />
+                    </div>
+                  )}
+                </div>
+              </motion.div>
             </div>
-          </div>
 
-          {/* PREVIEW SIDEBAR */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-3xl shadow-xl p-6 sticky top-24">
-              <h3 className="text-xl font-black text-gray-900 mb-4 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-purple-500" />
-                Cover Preview
-              </h3>
-
-              {hasCovers && !isGeneratingCovers ? (
-                <div className="space-y-4">
-                  <div className="relative rounded-2xl overflow-hidden shadow-md">
-                    <img 
-                      src={localStory.coverSpreadUrl!} 
-                      alt="Cover"
-                      className="w-full"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleApprove}
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold hover:shadow-lg transition-all"
+            {/* ── PREVIEW (2/5) ──────────────────────────────────────────── */}
+            <div className="lg:col-span-2">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="sticky top-24 overflow-hidden rounded-[22px]"
+                style={{
+                  background: "white",
+                  border: "1px solid rgba(180,150,210,0.12)",
+                  boxShadow: "0 2px 12px rgba(100,60,140,0.06)",
+                }}
+              >
+                <div
+                  className="flex items-center gap-3 px-5 py-3.5"
+                  style={{
+                    borderBottom: "1px solid rgba(180,150,210,0.08)",
+                    background: "rgba(249,245,255,0.5)",
+                  }}
+                >
+                  <div
+                    className="w-8 h-8 rounded-xl flex items-center justify-center"
+                    style={{ background: "rgba(199,125,255,0.1)" }}
                   >
-                    <Check className="w-5 h-5" />
-                    Approve & Continue to Export
-                  </button>
-
-                  <p className="text-xs text-center text-gray-500">
-                    or request changes in the chat
-                  </p>
-                </div>
-              ) : isGeneratingCovers ? (
-                <div className="bg-gradient-to-br from-purple-100 to-pink-100 rounded-2xl h-64 animate-pulse flex items-center justify-center">
-                  <div className="text-center">
-                    <Wand2 className="w-12 h-12 text-purple-400 mx-auto mb-3 animate-spin" />
-                    <p className="text-purple-700 font-bold">Creating magic...</p>
+                    <Sparkles className="w-4 h-4" style={{ color: "#B05CE6" }} />
                   </div>
-                </div>
-              ) : (
-                <div className="bg-gray-50 rounded-2xl p-8 text-center">
-                  <ImagePlus className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500 text-sm">
-                    Your cover will appear here once generated
+                  <p className="text-sm font-bold" style={{ color: "#2D2235" }}>
+                    Cover Preview
                   </p>
                 </div>
-              )}
+
+                <div className="p-5">
+                  {hasCovers && !isGeneratingCovers ? (
+                    <div className="space-y-4">
+                      <div
+                        className="relative overflow-hidden rounded-2xl"
+                        style={{
+                          boxShadow: "0 8px 30px rgba(100,60,140,0.12), 0 2px 8px rgba(100,60,140,0.06)",
+                          border: "1px solid rgba(180,150,210,0.1)",
+                        }}
+                      >
+                        <img src={localStory.coverSpreadUrl!} alt="Cover preview" className="w-full" />
+                      </div>
+
+                      <button
+                        onClick={handleApprove}
+                        className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
+                        style={{
+                          background: "linear-gradient(135deg, #43B89C, #2FA482)",
+                          boxShadow: "0 4px 16px rgba(67,184,156,0.25)",
+                          border: "none",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        <Check className="w-4 h-4" />
+                        Approve &amp; Continue
+                      </button>
+
+                      <p className="text-center text-xs" style={{ color: "#A897BD" }}>
+                        or request changes in the chat
+                      </p>
+                    </div>
+                  ) : isGeneratingCovers ? (
+                    <div
+                      className="flex flex-col items-center justify-center h-64 rounded-2xl"
+                      style={{
+                        background: "linear-gradient(135deg, rgba(249,245,255,0.8), rgba(255,240,248,0.6))",
+                        border: "1px solid rgba(180,150,210,0.1)",
+                      }}
+                    >
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
+                        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+                        style={{
+                          background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                          boxShadow: "0 4px 16px rgba(176,92,230,0.25)",
+                        }}
+                      >
+                        <Wand2 className="w-6 h-6 text-white" />
+                      </motion.div>
+                      <p className="text-sm font-bold" style={{ color: "#2D2235" }}>
+                        Creating your cover…
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: "#A897BD" }}>
+                        This takes about 30–60 seconds
+                      </p>
+                    </div>
+                  ) : (
+                    <div
+                      className="flex flex-col items-center justify-center h-64 rounded-2xl"
+                      style={{ border: "2px dashed rgba(180,150,210,0.2)", background: "rgba(249,245,255,0.3)" }}
+                    >
+                      <ImagePlus className="w-10 h-10 mb-3" style={{ color: "#D4C6E6" }} />
+                      <p className="text-sm font-medium" style={{ color: "#A897BD" }}>
+                        Your cover will appear here
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: "#C4B5D4" }}>
+                        once you finalise the design
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
             </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  SHARED SUB-COMPONENTS                                                      */
+/* -------------------------------------------------------------------------- */
+
+function AvatarAssistant() {
+  return (
+    <div
+      className="w-8 h-8 flex-shrink-0 rounded-xl flex items-center justify-center"
+      style={{
+        background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
+        boxShadow: "0 2px 8px rgba(176,92,230,0.2)",
+      }}
+    >
+      <Sparkles className="w-4 h-4 text-white" />
     </div>
+  );
+}
+
+function AvatarUser() {
+  return (
+    <div
+      className="w-8 h-8 flex-shrink-0 rounded-xl flex items-center justify-center"
+      style={{ background: "rgba(199,125,255,0.1)" }}
+    >
+      <span className="text-[10px] font-bold" style={{ color: "#9B59D0" }}>You</span>
+    </div>
+  );
+}
+
+function Bubble({
+  side,
+  children,
+}: {
+  side: "left" | "right";
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`max-w-[78%] px-4 py-3 text-sm leading-relaxed ${
+        side === "right"
+          ? "rounded-2xl rounded-tr-md text-white"
+          : "rounded-2xl rounded-tl-md"
+      }`}
+      style={
+        side === "right"
+          ? {
+              background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
+              boxShadow: "0 3px 12px rgba(176,92,230,0.2)",
+            }
+          : {
+              background: "white",
+              color: "#2D2235",
+              border: "1px solid rgba(180,150,210,0.12)",
+              boxShadow: "0 1px 4px rgba(100,60,140,0.04)",
+            }
+      }
+    >
+      {children}
+    </div>
+  );
+}
+
+function InputField({
+  value,
+  onChange,
+  onSubmit,
+  placeholder,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  placeholder: string;
+  disabled: boolean;
+}) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          onSubmit();
+        }
+      }}
+      className="flex-1 rounded-xl px-4 py-3 text-sm transition-all focus:outline-none"
+      style={{
+        background: "rgba(249,245,255,0.6)",
+        border: "1.5px solid rgba(180,150,210,0.15)",
+        color: "#2D2235",
+        fontFamily: "inherit",
+      }}
+      placeholder={placeholder}
+      disabled={disabled}
+    />
+  );
+}
+
+function SendButton({
+  onClick,
+  disabled,
+  loading,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  loading: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-12 h-12 flex-shrink-0 rounded-xl flex items-center justify-center text-white transition-all disabled:opacity-40 active:scale-95"
+      style={{
+        background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
+        boxShadow: "0 3px 12px rgba(176,92,230,0.2)",
+        border: "none",
+        fontFamily: "inherit",
+      }}
+    >
+      {loading ? (
+        <Loader2 className="w-4 h-4 animate-spin" />
+      ) : (
+        <Send className="w-4 h-4" />
+      )}
+    </button>
   );
 }

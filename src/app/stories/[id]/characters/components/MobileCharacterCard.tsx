@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { motion, useMotionValue, useTransform, PanInfo, AnimatePresence } from "framer-motion";
+import {
+  motion,
+  useMotionValue,
+  useTransform,
+  useAnimationControls,
+  PanInfo,
+  AnimatePresence,
+} from "framer-motion";
 import {
   Trash2,
   Lock,
@@ -16,7 +23,8 @@ import {
   Shirt,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { CharacterOutfit } from "./CharactersClient";
+import { CharacterOutfit } from "@/app/stories/[id]/characters/CharactersClient";
+// import type { CharacterOutfit } from "./CharactersClient";
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
@@ -75,10 +83,20 @@ export function MobileCharacterCard({
   const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
+  // Motion values
+  const controls = useAnimationControls();
   const x = useMotionValue(0);
-  const rotate = useTransform(x, [-200, 0, 200], [-15, 0, 15]);
-  const opacity = useTransform(x, [-200, -100, 0, 100, 200], [0, 1, 1, 1, 0]);
+  const y = useMotionValue(0);
+
+  // Rotate based on x drag — stronger rotation feels more physical
+  const rotate = useTransform(x, [-250, 0, 250], [-22, 0, 22]);
+
+  // Skip overlay (left drag)
+  const skipOpacity = useTransform(x, [-150, -30, 0], [1, 0.3, 0]);
+  // Lock overlay (right drag)
+  const lockOpacity = useTransform(x, [0, 30, 150], [0, 0.3, 1]);
 
   const traits = character.personalityTraits
     ? character.personalityTraits.split(",").map((t) => t.trim()).slice(0, 3)
@@ -142,19 +160,86 @@ export function MobileCharacterCard({
     }
   }
 
-  function handleDragEnd(event: any, info: PanInfo) {
-    if (Math.abs(info.offset.x) > 150) {
-      handleLock();
+  // Throw the card off screen in a direction, then call the action
+  async function throwCard(direction: "left" | "right") {
+    const xTarget = direction === "right" ? 600 : -600;
+    const rotateTarget = direction === "right" ? 30 : -30;
+    await controls.start({
+      x: xTarget,
+      y: 60,
+      rotate: rotateTarget,
+      opacity: 0,
+      transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] },
+    });
+    if (direction === "right") {
+      await handleLock();
     }
+    // Reset position silently for re-use (parent handles card removal)
+    controls.set({ x: 0, y: 0, rotate: 0, opacity: 1 });
+  }
+
+  // Snap card back to centre with a satisfying spring
+  async function snapBack() {
+    await controls.start({
+      x: 0,
+      y: 0,
+      rotate: 0,
+      opacity: 1,
+      transition: {
+        type: "spring",
+        stiffness: 400,
+        damping: 30,
+        mass: 0.8,
+      },
+    });
+  }
+
+  async function handleDragEnd(event: any, info: PanInfo) {
+    setIsDragging(false);
+    const SWIPE_DISTANCE = 100;
+    const SWIPE_VELOCITY = 500;
+
+    const swipedRight =
+      info.offset.x > SWIPE_DISTANCE || info.velocity.x > SWIPE_VELOCITY;
+    const swipedLeft =
+      info.offset.x < -SWIPE_DISTANCE || info.velocity.x < -SWIPE_VELOCITY;
+
+    if (swipedRight) {
+      await throwCard("right");
+    } else if (swipedLeft) {
+      await throwCard("left");
+    } else {
+      await snapBack();
+    }
+  }
+
+  // Programmatic swipe from buttons
+  async function swipeLeft() {
+    await controls.start({
+      x: -600,
+      y: 60,
+      rotate: -30,
+      opacity: 0,
+      transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] },
+    });
+    handleDelete();
+  }
+
+  async function swipeRight() {
+    await throwCard("right");
   }
 
   return (
     <motion.div
+      animate={controls}
       drag="x"
-      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.15}           // slight resistance at edges — feels physical
+      dragMomentum={false}         // we handle momentum ourselves in onDragEnd
+      onDragStart={() => setIsDragging(true)}
       onDragEnd={handleDragEnd}
-      style={{ x, rotate, opacity }}
-      className="w-full h-full cursor-grab active:cursor-grabbing"
+      style={{ x, y, rotate }}
+      className="w-full h-full cursor-grab active:cursor-grabbing select-none"
+      whileTap={{ scale: 0.98 }}
     >
       <div
         className="relative w-full h-full overflow-hidden isolate"
@@ -183,6 +268,40 @@ export function MobileCharacterCard({
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
         </div>
 
+        {/* ---- SWIPE OVERLAYS ---- */}
+
+        {/* SKIP (left) overlay */}
+        <motion.div
+          style={{ opacity: skipOpacity }}
+          className="absolute inset-0 z-20 pointer-events-none"
+        >
+          <div className="absolute top-10 left-6 px-5 py-2.5 rounded-2xl rotate-[-20deg]"
+            style={{
+              background: "rgba(239,68,68,0.92)",
+              border: "3px solid white",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+            }}
+          >
+            <span className="text-white font-extrabold text-2xl tracking-wide">SKIP</span>
+          </div>
+        </motion.div>
+
+        {/* LOCK (right) overlay */}
+        <motion.div
+          style={{ opacity: lockOpacity }}
+          className="absolute inset-0 z-20 pointer-events-none"
+        >
+          <div className="absolute top-10 right-6 px-5 py-2.5 rounded-2xl rotate-[20deg]"
+            style={{
+              background: "rgba(43,184,156,0.92)",
+              border: "3px solid white",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+            }}
+          >
+            <span className="text-white font-extrabold text-2xl tracking-wide">LOCK ✓</span>
+          </div>
+        </motion.div>
+
         {/* Locked badge */}
         {locked && (
           <div
@@ -199,11 +318,12 @@ export function MobileCharacterCard({
           </div>
         )}
 
-        {/* Upload buttons */}
-        {!locked && !uploading && (
+        {/* Upload buttons — only show when not dragging */}
+        {!locked && !uploading && !isDragging && (
           <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 const input = document.createElement("input");
                 input.type = "file";
                 input.accept = "image/*";
@@ -224,7 +344,7 @@ export function MobileCharacterCard({
               <Upload className="w-3 h-3" /> Photo
             </button>
             <button
-              onClick={useAiImage}
+              onClick={(e) => { e.stopPropagation(); useAiImage(); }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-transform"
               style={{
                 background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
@@ -307,7 +427,7 @@ export function MobileCharacterCard({
           )}
 
           <button
-            onClick={() => setShowEdit(true)}
+            onClick={(e) => { e.stopPropagation(); setShowEdit(true); }}
             className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold active:scale-95 transition-transform"
             style={{
               background: "rgba(255,255,255,0.12)",
@@ -323,7 +443,7 @@ export function MobileCharacterCard({
         {/* Action buttons */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4">
           <button
-            onClick={handleDelete}
+            onClick={(e) => { e.stopPropagation(); swipeLeft(); }}
             disabled={deleting}
             className="w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-red-400 hover:scale-110 active:scale-95 transition-transform disabled:opacity-40"
             style={{ background: "white", border: "none" }}
@@ -332,7 +452,7 @@ export function MobileCharacterCard({
           </button>
 
           <button
-            onClick={handleLock}
+            onClick={(e) => { e.stopPropagation(); swipeRight(); }}
             className="w-16 h-16 rounded-full shadow-xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-transform"
             style={{
               background: locked
@@ -356,46 +476,23 @@ export function MobileCharacterCard({
             </button>
           )}
         </div>
-
-        {/* Swipe indicators */}
-        <motion.div
-          style={{ opacity: useTransform(x, [-200, -50, 0], [1, 0.5, 0]) }}
-          className="absolute top-1/3 left-8 z-10 px-6 py-3 rounded-2xl text-white font-extrabold text-xl rotate-[-20deg]"
-          style2={{
-            background: "rgba(239,68,68,0.9)",
-            border: "3px solid white",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-          }}
-        >
-          SKIP
-        </motion.div>
-
-        <motion.div
-          style={{ opacity: useTransform(x, [0, 50, 200], [0, 0.5, 1]) }}
-          className="absolute top-1/3 right-8 z-10 px-6 py-3 rounded-2xl text-white font-extrabold text-xl rotate-[20deg]"
-          style2={{
-            background: "rgba(67,184,156,0.9)",
-            border: "3px solid white",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-          }}
-        >
-          LOCK
-        </motion.div>
       </div>
 
       {/* Edit Modal */}
-      {showEdit && (
-        <MobileEditModal
-          character={character}
-          storyId={storyId}
-          outfits={outfits}
-          onClose={() => setShowEdit(false)}
-          onSave={() => {
-            setShowEdit(false);
-            router.refresh();
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {showEdit && (
+          <MobileEditModal
+            character={character}
+            storyId={storyId}
+            outfits={outfits}
+            onClose={() => setShowEdit(false)}
+            onSave={() => {
+              setShowEdit(false);
+              router.refresh();
+            }}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -645,51 +742,71 @@ export function MobileCharacterStack({
     if (locked) {
       setTimeout(() => {
         setCurrentIndex((prev) => Math.min(prev + 1, characters.length - 1));
-      }, 300);
+      }, 350); // slightly longer than throw animation so card is off screen first
     }
   };
+
+  if (characters.length === 0) return null;
 
   return (
     <div
       className="relative w-full mx-auto max-w-md"
       style={{ height: "calc(100vh - 280px)", minHeight: "500px" }}
     >
-      {visibleCards.map((char, idx) => {
-        const isTop = idx === 0;
+      <AnimatePresence>
+        {visibleCards.map((char, idx) => {
+          const isTop = idx === 0;
 
-        return (
-          <div
-            key={`${char.id}-${currentIndex}-${idx}`}
-            className="absolute inset-0"
-            style={{
-              zIndex: 10 - idx,
-              pointerEvents: isTop ? "auto" : "none",
-              isolation: "isolate",
-            }}
-          >
+          return (
             <div
+              key={`${char.id}-${currentIndex}-${idx}`}
+              className="absolute inset-0"
               style={{
-                transform: `scale(${1 - idx * 0.03}) translateY(${-idx * 8}px)`,
-                opacity: isTop ? 1 : 0.7,
-                transition: "transform 0.3s ease, opacity 0.3s ease",
+                zIndex: 10 - idx,
+                pointerEvents: isTop ? "auto" : "none",
+                isolation: "isolate",
               }}
-              className="w-full h-full"
             >
-              {isTop ? (
-                <MobileCharacterCard
-                  storyId={storyId}
-                  character={char}
-                  index={currentIndex + idx}
-                  onDelete={handleDelete}
-                  onLockToggle={handleLockToggle}
-                />
-              ) : (
-                <CardPreview character={char} index={currentIndex + idx} />
-              )}
+              <motion.div
+                initial={isTop ? { scale: 0.95, opacity: 0 } : false}
+                animate={{
+                  scale: 1 - idx * 0.03,
+                  y: -idx * 8,
+                  opacity: isTop ? 1 : 0.7,
+                }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                className="w-full h-full"
+              >
+                {isTop ? (
+                  <MobileCharacterCard
+                    storyId={storyId}
+                    character={char}
+                    index={currentIndex + idx}
+                    onDelete={handleDelete}
+                    onLockToggle={handleLockToggle}
+                  />
+                ) : (
+                  <CardPreview character={char} index={currentIndex + idx} />
+                )}
+              </motion.div>
             </div>
+          );
+        })}
+      </AnimatePresence>
+
+      {/* Done state */}
+      {currentIndex >= characters.length && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          <div className="text-center space-y-3">
+            <div className="text-5xl">🎉</div>
+            <p className="text-lg font-bold" style={{ color: "#2D2235" }}>All characters reviewed!</p>
           </div>
-        );
-      })}
+        </motion.div>
+      )}
     </div>
   );
 }

@@ -46,7 +46,6 @@ type CoverPlan = {
   reasoning?: string;
 };
 
-
 /* -------------------------------------------------------------------------- */
 /* CONFIG                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -71,7 +70,6 @@ const COVER_TEMPLATE_PATH = path.resolve(
   "public",
   "templates",
   "spread-text-safe-template.png"
-
 );
 
 /* -------------------------------------------------------------------------- */
@@ -102,22 +100,22 @@ function assertCoverPlan(
   }
 }
 
-
-function guessMimeType(file: string) {
-  if (file.endsWith(".png")) return "image/png";
-  if (file.endsWith(".webp")) return "image/webp";
-  return "image/jpeg";
-}
-
 function isDataUrl(value: string) {
   return value.startsWith("data:image/");
+}
+
+function guessMimeType(file: string) {
+  const s = file.toLowerCase();
+  if (s.endsWith(".png")) return "image/png";
+  if (s.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
 }
 
 async function getImagePart(source: string) {
   if (isDataUrl(source)) {
     throw new Error(
       "❌ getImagePart received a data URL. " +
-      "Only file paths or http(s) URLs are allowed."
+        "Only file paths or http(s) URLs are allowed."
     );
   }
 
@@ -132,7 +130,6 @@ async function getImagePart(source: string) {
     },
   };
 }
-
 
 function extractInlineImage(result: any) {
   const parts = result?.candidates?.[0]?.content?.parts ?? [];
@@ -158,6 +155,108 @@ async function uploadToCloudinary(base64: string, storyId: string) {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                          STYLE GUIDE RESOLUTION                            */
+/*                                                                            */
+/*  🔒 IP BOUNDARY — mirrors spread generator logic:                          */
+/*  - userNotes      = promptBase (Gemini-optimised keywords) — internal only */
+/*  - negativePrompt = Gemini exclusions                      — internal only */
+/*  - artStyle / colorPalette = supplementary hints    — also shown in UI     */
+/*  - summary / visualThemes  = user-facing copy       — NEVER in prompts     */
+/* -------------------------------------------------------------------------- */
+
+type ColorPalette = {
+  primary?: string;
+  secondary?: string;
+  accent?: string;
+  mood?: string;
+  hex?: string[];
+};
+
+type ResolvedStyleGuide = {
+  geminiStyleBlock: string;
+  geminiAvoidBlock: string;
+  typographyBlock: string;
+};
+
+function resolveStyleGuide(
+  style: typeof storyStyleGuide.$inferSelect | null | undefined
+): ResolvedStyleGuide {
+  if (!style) {
+    return {
+      geminiStyleBlock:
+        "Whimsical, warm children's book illustration, storybook quality",
+      geminiAvoidBlock:
+        "Photorealism, CGI, harsh shadows, logos, watermarks, guide lines, template markers",
+      typographyBlock:
+        "Large, child-friendly hand-lettered text with excellent contrast",
+    };
+  }
+
+  const promptBase = style.userNotes?.trim();
+  const negativePrompt = style.negativePrompt?.trim();
+  const artStyle = style.artStyle?.trim();
+  const colorPalette = style.colorPalette as ColorPalette | null;
+
+  /* ── Build STYLE block ──────────────────────────────────────────────── */
+  const styleLines: string[] = [];
+
+  if (promptBase) {
+    styleLines.push(promptBase);
+  } else {
+    styleLines.push(
+      artStyle
+        ? `${artStyle}, children's book illustration, storybook quality`
+        : "Whimsical, warm children's book illustration, storybook quality"
+    );
+  }
+
+  if (artStyle) {
+    styleLines.push(`Art style: ${artStyle}`);
+  }
+
+  if (colorPalette?.primary) {
+    const paletteNames = [
+      colorPalette.primary,
+      colorPalette.secondary,
+      colorPalette.accent,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    styleLines.push(`Colour palette: ${paletteNames}`);
+
+    if (colorPalette.hex?.length) {
+      styleLines.push(`Exact palette hex values: ${colorPalette.hex.join(", ")}`);
+    }
+
+    if (colorPalette.mood) {
+      styleLines.push(`Palette mood: ${colorPalette.mood}`);
+    }
+  }
+
+  /* ── Build AVOID block ──────────────────────────────────────────────── */
+  const avoidParts: string[] = [];
+
+  if (negativePrompt) {
+    avoidParts.push(negativePrompt);
+  }
+
+  avoidParts.push(
+    "Logos, watermarks, guide lines, template markers, text boxes, UI elements, borders"
+  );
+
+  const typographyBlock =
+    style.typography?.trim() ??
+    "Large, child-friendly hand-lettered text with excellent contrast";
+
+  return {
+    geminiStyleBlock: styleLines.join("\n"),
+    geminiAvoidBlock: avoidParts.join(", "),
+    typographyBlock,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* JOB                                                                         */
 /* -------------------------------------------------------------------------- */
 
@@ -171,8 +270,6 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
   async ({ event, step }) => {
     const { storyId } = event.data;
     if (!storyId) throw new Error("storyId required");
-
-
 
     /* --------------------------------------------------
        1. LOAD STORY + LOCKED PLAN
@@ -188,18 +285,29 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
 
     const coverPlan = story.coverPlan as CoverPlan | null;
     assertCoverPlan(coverPlan);
-    
 
     /* --------------------------------------------------
-       2. STYLE GUIDE (OPTIONAL)
+       2. STYLE GUIDE + RESOLVE
     -------------------------------------------------- */
 
     const style = await db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),
     });
 
+    const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } =
+      resolveStyleGuide(style);
+
+    console.log("🎨 Style guide resolved:", {
+      hasPromptBase: !!style?.userNotes,
+      hasNegativePrompt: !!style?.negativePrompt,
+      hasArtStyle: !!style?.artStyle,
+      hasColorPalette: !!style?.colorPalette,
+      hasTypography: !!style?.typography,
+      hasSampleImage: !!style?.sampleIllustrationUrl,
+    });
+
     /* --------------------------------------------------
-       3. CHARACTER + LOCATION REFERENCES (OPTIONAL)
+       3. CHARACTER + LOCATION REFERENCES
     -------------------------------------------------- */
 
     const chars = await db
@@ -208,6 +316,7 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
         imageUrl: sql<string>`
           COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})
         `,
+        appearance: characters.appearance,
       })
       .from(storyCharacters)
       .innerJoin(characters, eq(storyCharacters.characterId, characters.id))
@@ -219,6 +328,7 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
         imageUrl: sql<string>`
           COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})
         `,
+        description: locations.description,
       })
       .from(storyLocations)
       .innerJoin(locations, eq(storyLocations.locationId, locations.id))
@@ -226,20 +336,34 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
       .limit(1)
       .then((r) => r[0]);
 
+    console.log("🎭 Characters for cover:", chars.map((c) => ({
+      name: c.name,
+      hasImage: !!c.imageUrl && !isDataUrl(c.imageUrl),
+    })));
+
+    console.log("🗺️ Location for cover:",
+      location
+        ? { name: location.name, hasImage: !!location.imageUrl && !isDataUrl(location.imageUrl) }
+        : "NONE"
+    );
+
     /* --------------------------------------------------
-       4. BUILD GEMINI INPUT (PLAN → IMAGE)
+       4. BUILD GEMINI INPUT
+       
+       ORDER MATTERS (matches spread generator):
+         1. Layout template    — spatial constraints
+         2. Style reference    — anchors visual language
+         3. Location reference — sets the environment
+         4. Characters         — who appears on cover
+         5. Cover instructions — drives generation
     -------------------------------------------------- */
 
     const parts: any[] = [];
 
-    // 🔒 Layout enforcement
-// src/inngest/generateCoverSpread.phaseB.ts
-// Around line 174, replace the template instruction with:
-
-// 🔒 Layout enforcement
-parts.push(await getImagePart(COVER_TEMPLATE_PATH));
-parts.push({
-  text: `
+    // ── 1️⃣ LAYOUT TEMPLATE ─────────────────────────────────────────────
+    parts.push(await getImagePart(COVER_TEMPLATE_PATH));
+    parts.push({
+      text: `
 ↑ LAYOUT GUIDE ONLY - DO NOT RENDER ↑
 
 The image above shows SAFE ZONES for text placement.
@@ -255,30 +379,96 @@ CRITICAL INSTRUCTIONS:
 COVER LAYOUT:
 - LEFT THIRD = Back cover (left safe zone for back cover text)
 - CENTER = Spine (vertical text area)
-- RIGHT = Front cover (right safe zone for title/author)
+- RIGHT THIRD = Front cover (right safe zone for title/author)
 - Keep all important visual elements AWAY from the outer crop zones
-`,
-});
+`.trim(),
+    });
 
-// Then update the main prompt around line 225:
+    // ── 2️⃣ STYLE REFERENCE IMAGE (if available) ────────────────────────
+    if (
+      style?.sampleIllustrationUrl &&
+      !isDataUrl(style.sampleIllustrationUrl)
+    ) {
+      try {
+        parts.push(await getImagePart(style.sampleIllustrationUrl));
+        parts.push({
+          text: `
+↑ ILLUSTRATION STYLE REFERENCE ↑
 
-parts.push({
-  text: `
-TASK:
-Create ONE continuous wrap-around children's book cover illustration.
+This image defines the EXACT visual style for the entire book, including this cover.
+Study it carefully and match:
+- Pencil/brush technique and stroke character
+- Line weight and ink outline style
+- Colour palette, saturation, and paper texture
+- How characters are rendered (face shape, proportions, expressiveness)
+- Background treatment and foliage/environment style
+- Overall warmth, charm, and hand-crafted quality
 
-FORMAT:
-- Aspect ratio ${ASPECT_RATIO}
-- Print-ready, seamless illustration
+This cover must feel like it was drawn by the same artist who created this image.
+Do NOT import a different style — stay true to this reference above all else.
+`.trim(),
+        });
+        console.log("🖼️ Style reference image included in cover prompt");
+      } catch (err) {
+        console.warn("⚠️ Could not load style reference image:", err);
+      }
+    } else {
+      console.log("🖼️ No style reference image — using keywords only");
+    }
+
+    // ── 3️⃣ LOCATION REFERENCE (if available) ───────────────────────────
+    if (location?.imageUrl && !isDataUrl(location.imageUrl)) {
+      try {
+        parts.push(await getImagePart(location.imageUrl));
+        parts.push({
+          text: `
+↑ THIS IS THE SETTING REFERENCE (${location.name.toUpperCase()}) ↑
+Use this environment as inspiration for the cover's background and atmosphere.
+Match the visual tone and setting details.
+`.trim(),
+        });
+      } catch (err) {
+        console.warn("⚠️ Could not load location reference image:", err);
+      }
+    }
+
+    // ── 4️⃣ CHARACTER REFERENCES ────────────────────────────────────────
+    for (const c of chars) {
+      if (!c.imageUrl || isDataUrl(c.imageUrl)) continue;
+
+      try {
+        parts.push(await getImagePart(c.imageUrl));
+        parts.push({
+          text: `
+↑ THIS IS ${c.name.toUpperCase()} ↑
+Match this character's face, hair colour, eye colour, skin tone, and body type EXACTLY.
+Use appropriate clothing for a book cover — the character should look their best.
+`.trim(),
+        });
+      } catch (err) {
+        console.warn(`⚠️ Could not load character image for ${c.name}:`, err);
+      }
+    }
+
+    // ── 5️⃣ COVER INSTRUCTIONS ──────────────────────────────────────────
+    parts.push({
+      text: `
+COVER ILLUSTRATION TASK:
+
+CREATE A SEAMLESS WRAP-AROUND BOOK COVER:
+- ONE continuous landscape illustration
+- Aspect ratio: ${ASPECT_RATIO}
+- Will be split into: back cover (left), spine (center), front cover (right)
 - NO visible guides, boxes, or template markers
-- Professional children's book quality
+- Professional children's book cover quality
 
-LAYOUT (DO NOT SHOW THESE DIVISIONS):
-- Left = Back cover
-- Center = Spine  
-- Right = Front cover
+TEXT INTEGRATION:
+- Embed ALL text DIRECTLY into the illustration
+- Typography: ${typographyBlock}
+- Text should feel natural and designed, not overlaid
+- Title should be prominent and eye-catching on the front cover
 
-TEXT TO RENDER (EXACT):
+TEXT TO RENDER (EXACT — do not invent or omit):
 
 FRONT COVER (right third):
 TITLE: "${coverPlan.front.titleText}"
@@ -288,8 +478,15 @@ SPINE (center, vertical):
 "${coverPlan.spine.spineText}"
 
 BACK COVER (left third):
-${coverPlan.back.blurbText ?? ""}
-${coverPlan.back.dedicationText ?? ""}
+${coverPlan.back.blurbText ? `"${coverPlan.back.blurbText}"` : ""}
+${coverPlan.back.dedicationText ? `"${coverPlan.back.dedicationText}"` : ""}
+
+IMPORTANT - DO NOT INCLUDE:
+- "TEXT SAFE ZONE" labels
+- Guide boxes or borders
+- Template overlay
+- Any reference markers or division lines
+- The guide is invisible — your cover should be clean and polished
 
 VISUAL INTENT:
 
@@ -300,90 +497,28 @@ BACK:
 ${coverPlan.back.visualIntent}
 
 STYLE:
-${style?.summary ?? "Whimsical children's illustration"}
+${geminiStyleBlock}
 
 AVOID:
-${style?.negativePrompt ?? "Logos, watermarks, guide lines, template markers, text boxes, 'Text Safe Zone' labels"}
+${geminiAvoidBlock}
 
-IMPORTANT - DO NOT INCLUDE:
-- "Text Safe Zone" labels
-- Guide boxes or borders
-- Template overlay
-- Any reference markers or division lines
-- The guide is invisible - create a clean, polished, professional cover
-- Text should be naturally integrated into the design
+${coverPlan.constraints?.keepBarcodeAreaClear ? "Keep the bottom-left area of the back cover clear for a barcode." : ""}
 
 Create a seamless, professional children's book wrap-around cover now.
-`,
-});
-
-    // 🌍 Location reference
-    if (location?.imageUrl && !isDataUrl(location.imageUrl)) {
-      parts.push(await getImagePart(location.imageUrl));
-      parts.push({ text: `SETTING REFERENCE: ${location.name}` });
-    }
-
-    if (style?.sampleIllustrationUrl && !isDataUrl(style.sampleIllustrationUrl)) {
-      parts.push(await getImagePart(style.sampleIllustrationUrl));
-      parts.push({ text: "STYLE REFERENCE — FOLLOW CLOSELY" });
-    }
-    
-    
-
-    // 👤 Character references
-    for (const c of chars) {
-      if (!c.imageUrl) continue;
-      if (isDataUrl(c.imageUrl)) continue; // 🔑 SKIP BASE64
-    
-      parts.push(await getImagePart(c.imageUrl));
-      parts.push({ text: `CHARACTER REFERENCE: ${c.name} — MATCH EXACTLY` });
-    }
-    
-
-    // 🎯 Deterministic instruction (NO inference)
-    parts.push({
-      text: `
-TASK:
-Create ONE continuous wrap-around children's book cover illustration.
-
-FORMAT:
-- Aspect ratio ${ASPECT_RATIO}
-- Print-ready
-- High-quality illustration
-
-TEXT TO RENDER (EXACT):
-
-FRONT COVER:
-TITLE: "${coverPlan.front.titleText}"
-${coverPlan.front.authorText ? `AUTHOR: "${coverPlan.front.authorText}"` : ""}
-
-SPINE:
-"${coverPlan.spine.spineText}"
-
-BACK COVER:
-${coverPlan.back.blurbText ?? ""}
-${coverPlan.back.dedicationText ?? ""}
-
-VISUAL INTENT (DO NOT CHANGE MEANING):
-
-FRONT:
-${coverPlan.front.visualIntent}
-
-BACK:
-${coverPlan.back.visualIntent}
-
-STYLE:
-${style?.summary ?? "Whimsical children's illustration"}
-
-AVOID:
-${style?.negativePrompt ?? "Logos, watermarks"}
-
-IMPORTANT:
-- No text outside safe zones
-- Do not invent wording
-- Do not omit provided text
-`,
+`.trim(),
     });
+
+    // ── Debug log ───────────────────────────────────────────────────────
+    console.log(
+      "📦 Parts being sent to Gemini:",
+      parts.map((p, i) => ({
+        index: i,
+        type: p.text ? "text" : p.inlineData ? "image" : "unknown",
+        preview: p.text
+          ? p.text.substring(0, 80).replace(/\n/g, " ")
+          : `image/${p.inlineData?.mimeType}`,
+      }))
+    );
 
     /* --------------------------------------------------
        5. GENERATE IMAGE
@@ -426,12 +561,6 @@ IMPORTANT:
        6. SAVE + MARK SELECTED
     -------------------------------------------------- */
 
-    console.log("🧠 Cover plan validated");
-console.log("🎨 Characters with image refs:", chars.map(c => ({
-  name: c.name,
-  type: c.imageUrl?.startsWith("data:") ? "base64" : "url"
-})));
-
     const url = await uploadToCloudinary(image.data, storyId);
 
     await db.transaction(async (tx) => {
@@ -449,13 +578,16 @@ console.log("🎨 Characters with image refs:", chars.map(c => ({
         createdAt: new Date(),
       });
 
-      await tx.update(stories)
+      await tx
+        .update(stories)
         .set({
           coverSpreadUrl: url,
           updatedAt: new Date(),
         })
         .where(eq(stories.id, storyId));
     });
+
+    console.log("✅ Cover generated and saved:", url);
 
     return { success: true, coverUrl: url };
   }
