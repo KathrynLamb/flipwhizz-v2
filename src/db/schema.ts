@@ -426,6 +426,7 @@ export const storyStyleGuide = pgTable("story_style_guide", {
   sampleIllustrationUrl: text("sample_illustration_url"),
   negativePrompt: text("negative_prompt"),
   userNotes: text("user_notes"),
+  typography: text("typography"), 
   styleGuideImage: text("style_guide_image"),
   artStyle: varchar("art_style"),
   colorPalette: jsonb("color_palette"),
@@ -433,6 +434,7 @@ export const storyStyleGuide = pgTable("story_style_guide", {
   generationId: text("generation_id"),
   approved: boolean("approved").default(false),
   feedback: text("feedback"),
+
 });
 
 /* ==================== STYLE GUIDE IMAGES ==================== */

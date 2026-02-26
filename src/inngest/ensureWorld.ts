@@ -318,6 +318,7 @@ For description, focus on visual details: architecture, natural features, atmosp
       "secondary": ["color3", "color4"],
       "accent": ["color5"]
     },
+    "typography": "Describe the ideal text style for this book: the narrative font feel, and how expressive moments (sound effects, shouts, whispers) should differ. One to two sentences, matching the art style and story energy."
     "negativePrompt": "what to avoid (modern elements, photorealism, etc.)"
   }
 }

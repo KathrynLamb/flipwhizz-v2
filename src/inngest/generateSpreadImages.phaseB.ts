@@ -2,7 +2,7 @@
 
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { eq, inArray, asc, or, sql, and } from "drizzle-orm";
+import { eq, inArray, asc, desc, or, sql, and } from "drizzle-orm";
 import {
   storyPages,
   storyStyleGuide,
@@ -175,6 +175,7 @@ type ColorPalette = {
 type ResolvedStyleGuide = {
   geminiStyleBlock: string;  // Full STYLE: section for Gemini prompt
   geminiAvoidBlock: string;  // Full AVOID: section for Gemini prompt
+  typographyBlock: string;
 };
 
 function resolveStyleGuide(
@@ -185,6 +186,8 @@ function resolveStyleGuide(
       geminiStyleBlock: "Whimsical, warm children's book illustration, storybook quality",
       geminiAvoidBlock:
         "Photorealism, CGI, harsh shadows, logos, watermarks, guide lines, template markers",
+        typographyBlock: "Large, child-friendly hand-lettered text with excellent contrast",
+
     };
   }
 
@@ -245,9 +248,14 @@ function resolveStyleGuide(
     "Logos, watermarks, guide lines, template markers, text boxes, UI elements, borders"
   );
 
+  const typographyBlock = style.typography?.trim()
+  ?? "Large, child-friendly hand-lettered text with excellent contrast";
+
+
   return {
     geminiStyleBlock: styleLines.join("\n"),
     geminiAvoidBlock: avoidParts.join(", "),
+    typographyBlock,
   };
 }
 
@@ -352,7 +360,7 @@ export const generateSingleSpread = inngest.createFunction(
         where: eq(storyStyleGuide.storyId, storyId),
       });
 
-      const { geminiStyleBlock, geminiAvoidBlock } = resolveStyleGuide(style);
+      const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } = resolveStyleGuide(style);
 
       console.log("🎨 Style guide resolved:", {
         hasPromptBase:      !!style?.userNotes,
@@ -386,6 +394,7 @@ export const generateSingleSpread = inngest.createFunction(
               )
             : eq(storySpreads.leftPageId, leftPageId)
         )
+        .orderBy(desc(storySpreads.createdAt))
         .limit(1)
         .then((r) => r[0]);
 
@@ -415,7 +424,7 @@ export const generateSingleSpread = inngest.createFunction(
         .map((c: any) => c?.characterId)
         .filter(Boolean);
 
-      const charRefs = await db
+      const charRefs = charIds.length === 0 ? [] : await db
         .select({
           id:          characters.id,
           name:        characters.name,
@@ -424,9 +433,7 @@ export const generateSingleSpread = inngest.createFunction(
           appearance:  characters.appearance,
         })
         .from(characters)
-        .where(
-          inArray(characters.id, charIds.length > 0 ? charIds : ["__none__"])
-        );
+        .where(inArray(characters.id, charIds));
 
       console.log(
         "🎭 Characters in spread:",
@@ -629,6 +636,7 @@ TEXT INTEGRATION:
 - RIGHT text goes in upper-right quadrant (as shown in the invisible guide)
 - Keep text CLEAR of the center spine/gutter
 - Use large, child-friendly typography with excellent contrast
+- Typography: ${typographyBlock}
 - Text should feel natural, not overlaid
 
 IMPORTANT - DO NOT INCLUDE:
