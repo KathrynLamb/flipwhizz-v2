@@ -13,6 +13,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 /* ---------------------------------- Types --------------------------------- */
 
@@ -262,6 +263,26 @@ export default function DesktopStudio({
         <div className="max-w-[1400px] mx-auto px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
+
+            {/* Brand */}
+            <Link
+              href="/"
+              className="flex items-center gap-0.5 md:gap-2 group"
+              aria-label="FlipWhizz home"
+            >
+              <Image
+                src="/Flipwhizz_logo.png"
+                alt=""
+                width={48}
+                height={48}
+                priority
+                className="transition-transform group-hover:scale-105"
+              />
+
+              <span className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+                FlipWhizz
+              </span>
+            </Link>
               <Link
                 href={`/stories/${story.id}/design`}
                 className="flex items-center gap-2 text-gray-700 hover:text-purple-600 transition-colors font-medium"

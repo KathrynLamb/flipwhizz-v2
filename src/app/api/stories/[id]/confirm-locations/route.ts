@@ -1,6 +1,7 @@
+// src/app/api/stories/[id]/confirm-locations/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { locations, storyLocations } from "@/db/schema";
+import { stories, locations, storyLocations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export async function POST(
@@ -9,10 +10,10 @@ export async function POST(
 ) {
   const { id: storyId } = await params;
 
-  // lock all locations linked to this story
+  // 1. Lock all locations linked to this story
   await db
     .update(locations)
-    .set({ locked: true })
+    .set({ locked: true, lockedAt: new Date() })
     .where(
       eq(
         locations.id,
@@ -22,6 +23,25 @@ export async function POST(
           .where(eq(storyLocations.storyId, storyId))
       )
     );
+
+  // 2. Add "locations" to completedSteps
+  const story = await db.query.stories.findFirst({
+    where: eq(stories.id, storyId),
+  });
+
+  if (story) {
+    const currentSteps = (story.completedSteps as string[]) || [];
+
+    if (!currentSteps.includes("locations")) {
+      await db
+        .update(stories)
+        .set({
+          completedSteps: [...currentSteps, "locations"],
+          updatedAt: new Date(),
+        })
+        .where(eq(stories.id, storyId));
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }

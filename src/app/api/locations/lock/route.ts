@@ -35,18 +35,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (location.locked) {
-    // Idempotent
-    return NextResponse.json({ ok: true });
-  }
+  const newLocked = !location.locked;
 
   await db
     .update(locations)
     .set({
-      locked: true,
+      locked: newLocked,
+      lockedAt: newLocked ? new Date() : null,
       updatedAt: new Date(),
     })
     .where(eq(locations.id, locationId));
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, locked: newLocked });
 }

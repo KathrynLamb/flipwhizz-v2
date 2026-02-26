@@ -82,7 +82,6 @@ function guessMimeTypeFromSource(source: string) {
   const s = source.toLowerCase();
   if (s.endsWith(".png")) return "image/png";
   if (s.endsWith(".webp")) return "image/webp";
-  // also handles .jpg/.jpeg + unknown
   return "image/jpeg";
 }
 
@@ -156,6 +155,103 @@ function extractInlineImage(result: any) {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                          STYLE GUIDE EXTRACTION                            */
+/*                                                                            */
+/*  🔒 IP BOUNDARY:                                                           */
+/*  - userNotes      = promptBase (Gemini-optimised keywords) — internal only */
+/*  - negativePrompt = Gemini exclusions                      — internal only */
+/*  - artStyle / colorPalette = supplementary hints    — also shown in UI     */
+/*  - summary / visualThemes  = user-facing copy       — NEVER in prompts     */
+/* -------------------------------------------------------------------------- */
+
+type ColorPalette = {
+  primary?: string;
+  secondary?: string;
+  accent?: string;
+  mood?: string;
+  hex?: string[];
+};
+
+type ResolvedStyleGuide = {
+  geminiStyleBlock: string;  // Full STYLE: section for Gemini prompt
+  geminiAvoidBlock: string;  // Full AVOID: section for Gemini prompt
+};
+
+function resolveStyleGuide(
+  style: typeof storyStyleGuide.$inferSelect | null | undefined
+): ResolvedStyleGuide {
+  if (!style) {
+    return {
+      geminiStyleBlock: "Whimsical, warm children's book illustration, storybook quality",
+      geminiAvoidBlock:
+        "Photorealism, CGI, harsh shadows, logos, watermarks, guide lines, template markers",
+    };
+  }
+
+  // 🔒 promptBase lives in `userNotes` — column name deliberately obscures purpose
+  const promptBase = style.userNotes?.trim();
+  const negativePrompt = style.negativePrompt?.trim();
+  const artStyle = style.artStyle?.trim();
+  const colorPalette = style.colorPalette as ColorPalette | null;
+
+  /* ── Build STYLE block ──────────────────────────────────────────────── */
+  const styleLines: string[] = [];
+
+  if (promptBase) {
+    styleLines.push(promptBase);
+  } else {
+    // Fallback: use artStyle as best available signal if analyze hasn't run yet
+    styleLines.push(
+      artStyle
+        ? `${artStyle}, children's book illustration, storybook quality`
+        : "Whimsical, warm children's book illustration, storybook quality"
+    );
+  }
+
+  if (artStyle) {
+    styleLines.push(`Art style: ${artStyle}`);
+  }
+
+  if (colorPalette?.primary) {
+    const paletteNames = [
+      colorPalette.primary,
+      colorPalette.secondary,
+      colorPalette.accent,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    styleLines.push(`Colour palette: ${paletteNames}`);
+
+    // Hex values give Gemini precise colour targets — much better than names alone
+    if (colorPalette.hex?.length) {
+      styleLines.push(`Exact palette hex values: ${colorPalette.hex.join(", ")}`);
+    }
+
+    if (colorPalette.mood) {
+      styleLines.push(`Palette mood: ${colorPalette.mood}`);
+    }
+  }
+
+  /* ── Build AVOID block ──────────────────────────────────────────────── */
+  const avoidParts: string[] = [];
+
+  if (negativePrompt) {
+    avoidParts.push(negativePrompt);
+  }
+
+  // Always append — protects layout integrity regardless of style guide content
+  avoidParts.push(
+    "Logos, watermarks, guide lines, template markers, text boxes, UI elements, borders"
+  );
+
+  return {
+    geminiStyleBlock: styleLines.join("\n"),
+    geminiAvoidBlock: avoidParts.join(", "),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /*                               ORCHESTRATOR                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -224,7 +320,8 @@ export const generateSingleSpread = inngest.createFunction(
     const parsed = GenerateSingleSpreadEventSchema.safeParse(event.data);
     if (!parsed.success) throw new Error("Invalid spread payload");
 
-    const { storyId, leftPageId, rightPageId, pageLabel, feedback } = parsed.data;
+    const { storyId, leftPageId, rightPageId, pageLabel, feedback } =
+      parsed.data;
 
     assertNonEmpty(storyId, "storyId");
     assertNonEmpty(leftPageId, "leftPageId");
@@ -247,9 +344,23 @@ export const generateSingleSpread = inngest.createFunction(
 
       // ========================================
       // LOAD STYLE GUIDE
+      // 🔒 userNotes      = Gemini promptBase (internal — never log content)
+      // 🔒 negativePrompt = Gemini exclusions (internal — never log content)
+      // ✅ summary / visualThemes = UI copy only, never used in prompts
       // ========================================
       const style = await db.query.storyStyleGuide.findFirst({
         where: eq(storyStyleGuide.storyId, storyId),
+      });
+
+      const { geminiStyleBlock, geminiAvoidBlock } = resolveStyleGuide(style);
+
+      console.log("🎨 Style guide resolved:", {
+        hasPromptBase:      !!style?.userNotes,
+        hasNegativePrompt:  !!style?.negativePrompt,
+        hasArtStyle:        !!style?.artStyle,
+        hasColorPalette:    !!style?.colorPalette,
+        hasSampleImage:     !!style?.sampleIllustrationUrl,
+        // 🔒 never log actual prompt content
       });
 
       // ========================================
@@ -257,26 +368,20 @@ export const generateSingleSpread = inngest.createFunction(
       // ========================================
       const spread = await db
         .select({
-          spreadId: storySpreads.id,
+          spreadId:           storySpreads.id,
           illustrationPrompt: storySpreadScene.illustrationPrompt,
-          sceneSummary: storySpreadScene.sceneSummary,
-          mood: storySpreadScene.mood,
-          charactersJson: storySpreadPresence.characters,
-          primaryLocationId: storySpreadPresence.primaryLocationId,
+          sceneSummary:       storySpreadScene.sceneSummary,
+          mood:               storySpreadScene.mood,
+          charactersJson:     storySpreadPresence.characters,
+          primaryLocationId:  storySpreadPresence.primaryLocationId,
         })
         .from(storySpreads)
-        .leftJoin(
-          storySpreadScene,
-          eq(storySpreads.id, storySpreadScene.spreadId)
-        )
-        .leftJoin(
-          storySpreadPresence,
-          eq(storySpreads.id, storySpreadPresence.spreadId)
-        )
+        .leftJoin(storySpreadScene,   eq(storySpreads.id, storySpreadScene.spreadId))
+        .leftJoin(storySpreadPresence, eq(storySpreads.id, storySpreadPresence.spreadId))
         .where(
           rightPageId
             ? or(
-                eq(storySpreads.leftPageId, leftPageId),
+                eq(storySpreads.leftPageId,  leftPageId),
                 eq(storySpreads.rightPageId, rightPageId)
               )
             : eq(storySpreads.leftPageId, leftPageId)
@@ -299,9 +404,7 @@ export const generateSingleSpread = inngest.createFunction(
         outfitAssignments.map((o) => [o.characterId, o])
       );
 
-      console.log(
-        `👗 Loaded ${outfitAssignments.length} outfit assignments for spread`
-      );
+      console.log(`👗 Loaded ${outfitAssignments.length} outfit assignments for spread`);
 
       // ========================================
       // LOAD CHARACTERS
@@ -314,22 +417,24 @@ export const generateSingleSpread = inngest.createFunction(
 
       const charRefs = await db
         .select({
-          id: characters.id,
-          name: characters.name,
-          imageUrl: sql<string>`COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})`,
+          id:          characters.id,
+          name:        characters.name,
+          imageUrl:    sql<string>`COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})`,
           description: characters.description,
-          appearance: characters.appearance,
+          appearance:  characters.appearance,
         })
         .from(characters)
-        .where(inArray(characters.id, charIds.length > 0 ? charIds : ["__none__"]));
+        .where(
+          inArray(characters.id, charIds.length > 0 ? charIds : ["__none__"])
+        );
 
       console.log(
         "🎭 Characters in spread:",
         charRefs.map((c) => ({
-          name: c.name,
+          name:     c.name,
           hasImage: !!c.imageUrl,
           hasOutfit: outfitByCharacterId.has(c.id),
-          outfit: outfitByCharacterId.get(c.id)?.outfitKey ?? "none",
+          outfit:   outfitByCharacterId.get(c.id)?.outfitKey ?? "none",
         }))
       );
 
@@ -345,8 +450,8 @@ export const generateSingleSpread = inngest.createFunction(
       if (spread.primaryLocationId) {
         const loc = await db
           .select({
-            name: locations.name,
-            imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
+            name:        locations.name,
+            imageUrl:    sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
             description: locations.description,
           })
           .from(locations)
@@ -366,19 +471,23 @@ export const generateSingleSpread = inngest.createFunction(
       console.log(
         "🗺️ Location ref:",
         locationRef
-          ? {
-              name: locationRef.name,
-              hasImage: !!locationRef.imageUrl,
-            }
+          ? { name: locationRef.name, hasImage: !!locationRef.imageUrl }
           : "NONE"
       );
 
       // ========================================
       // BUILD GEMINI PROMPT PARTS
+      //
+      // ORDER MATTERS for Gemini's attention:
+      //   1. Layout template    — establishes spatial constraints
+      //   2. Style reference    — anchors the visual language (NEW ✨)
+      //   3. Location reference — sets the environment
+      //   4. Characters         — establishes who is present
+      //   5. Scene instructions — drives the actual generation
       // ========================================
       const parts: any[] = [];
 
-      // 1️⃣ TEMPLATE (FILESYSTEM)
+      // ── 1️⃣ LAYOUT TEMPLATE (filesystem) ────────────────────────────────
       parts.push(await getImagePart(SPREAD_TEMPLATE_PATH));
       parts.push({
         text: `
@@ -396,25 +505,61 @@ CRITICAL INSTRUCTIONS:
 
 TEXT PLACEMENT RULES:
 - Place LEFT page text within the left safe zone area (top-left portion)
-- Place RIGHT page text within the right safe zone area (top-right portion)  
+- Place RIGHT page text within the right safe zone area (top-right portion)
 - Keep all text AWAY from the center gutter
 - Keep all critical visual elements AWAY from the outer crop zones
 `.trim(),
       });
 
-      // 2️⃣ LOCATION REFERENCE (if available)
+      // ── 2️⃣ STYLE REFERENCE IMAGE (if available) ─────────────────────────
+      // This is the single biggest quality lever — showing Gemini the actual
+      // style rather than just describing it in keywords.
+      // Guards: must be a URL (not base64), must exist.
+      if (
+        style?.sampleIllustrationUrl &&
+        !isDataUrl(style.sampleIllustrationUrl)
+      ) {
+        try {
+          parts.push(await getImagePart(style.sampleIllustrationUrl));
+          parts.push({
+            text: `
+↑ ILLUSTRATION STYLE REFERENCE ↑
+
+This image defines the EXACT visual style for the entire book.
+Study it carefully and match:
+- Pencil/brush technique and stroke character
+- Line weight and ink outline style
+- Colour palette, saturation, and paper texture
+- How characters are rendered (face shape, proportions, expressiveness)
+- Background treatment and foliage/environment style
+- Overall warmth, charm, and hand-crafted quality
+
+Every spread in this book must feel like it was drawn by the same artist who created this image.
+Do NOT import a different style — stay true to this reference above all else.
+`.trim(),
+          });
+          console.log("🖼️ Style reference image included in prompt");
+        } catch (err) {
+          // Non-fatal — generation continues without it
+          console.warn("⚠️ Could not load style reference image:", err);
+        }
+      } else {
+        console.log("🖼️ No style reference image — using keywords only");
+      }
+
+      // ── 3️⃣ LOCATION REFERENCE (if available) ───────────────────────────
       if (locationRef) {
         parts.push(await getImagePart(locationRef.imageUrl));
         parts.push({
           text: `
 ↑ THIS IS THE LOCATION REFERENCE (${locationRef.name.toUpperCase()}) ↑
-Match this environment/style/palette/layout exactly.
-Use it as the setting across the full spread.
+Match this environment, setting, and spatial layout exactly.
+Use it as the backdrop across the full spread.
 `.trim(),
         });
       }
 
-      // 3️⃣ CHARACTERS WITH OUTFIT INSTRUCTIONS
+      // ── 4️⃣ CHARACTERS WITH OUTFIT INSTRUCTIONS ──────────────────────────
       for (const c of charRefs) {
         if (!c.imageUrl) {
           console.warn(`⚠️ Missing character image for ${c.name}.`);
@@ -433,40 +578,40 @@ Use it as the setting across the full spread.
         parts.push(await getImagePart(c.imageUrl));
 
         if (outfit) {
-          // ✅ WE HAVE AN OUTFIT ASSIGNMENT - USE IT
+          // ✅ Outfit assigned — use it, override reference clothing
           parts.push({
             text: `
 ↑ THIS IS ${c.name.toUpperCase()} ↑
 
-FACE & BODY: Match this character's face, hair color, eye color, skin tone, and body type EXACTLY.
+FACE & BODY: Match this character's face, hair colour, eye colour, skin tone, and body type EXACTLY.
 
 🎽 OUTFIT FOR THIS SCENE (${outfit.outfitKey.toUpperCase()}):
 ${outfit.outfitDescription}
 
 CRITICAL: Draw ${c.name} wearing EXACTLY the outfit described above.
-DO NOT use the clothing shown in the reference image - only use the face and body.
+DO NOT copy the clothing shown in the reference image — use it for face and body only.
 The reference image is for IDENTITY only, not for clothing.
 `.trim(),
           });
 
           console.log(
-            `✅ ${c.name}: Using outfit "${outfit.outfitKey}" - ${outfit.outfitDescription.substring(0, 50)}...`
+            `✅ ${c.name}: outfit "${outfit.outfitKey}" — ${outfit.outfitDescription.substring(0, 50)}...`
           );
         } else {
-          // ⚠️ NO OUTFIT ASSIGNMENT - FALLBACK TO REFERENCE
+          // ⚠️ No outfit assigned — fall back to reference appearance
           parts.push({
             text: `
 ↑ THIS IS ${c.name.toUpperCase()} ↑
-Match this character EXACTLY - face, body, and general appearance.
+Match this character EXACTLY — face, body, and general appearance.
 Use appropriate clothing for the scene context.
 `.trim(),
           });
 
-          console.log(`⚠️ ${c.name}: No outfit assigned, using reference fallback`);
+          console.log(`⚠️ ${c.name}: no outfit assigned, using reference fallback`);
         }
       }
 
-      // 4️⃣ SCENE INSTRUCTIONS
+      // ── 5️⃣ SCENE INSTRUCTIONS ────────────────────────────────────────────
       parts.push({
         text: `
 ILLUSTRATION TASK:
@@ -491,13 +636,13 @@ IMPORTANT - DO NOT INCLUDE:
 - Guide boxes or borders
 - Template overlay
 - Any reference markers
-- The guide is invisible - your illustration should be clean and polished
+- The guide is invisible — your illustration should be clean and polished
 
 STYLE:
-${style?.summary ?? "Whimsical children's illustration"}
+${geminiStyleBlock}
 
 AVOID:
-${style?.negativePrompt ?? "Logos, watermarks, guide lines, template markers, text boxes"}
+${geminiAvoidBlock}
 
 SCENE:
 ${spread.illustrationPrompt ?? spread.sceneSummary ?? ""}
@@ -528,11 +673,12 @@ Create a clean, professional illustration with seamlessly integrated text.
 `.trim(),
       });
 
+      // ── Debug log ─────────────────────────────────────────────────────────
       console.log(
         "📦 Parts being sent to Gemini:",
         parts.map((p, i) => ({
           index: i,
-          type: p.text ? "text" : p.inlineData ? "image" : "unknown",
+          type:    p.text ? "text" : p.inlineData ? "image" : "unknown",
           preview: p.text
             ? p.text.substring(0, 80).replace(/\n/g, " ")
             : `image/${p.inlineData?.mimeType}`,
@@ -549,11 +695,11 @@ Create a clean, professional illustration with seamlessly integrated text.
           responseModalities: ["IMAGE"],
           imageConfig: {
             aspectRatio: IMAGE_ASPECT_RATIO,
-            imageSize: IMAGE_SIZE,
+            imageSize:   IMAGE_SIZE,
           },
           safetySettings: [
             {
-              category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+              category:  HarmCategory.HARM_CATEGORY_HARASSMENT,
               threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
             },
           ],
@@ -574,7 +720,10 @@ Create a clean, professional illustration with seamlessly integrated text.
         .update(storyPages)
         .set({ imageUrl })
         .where(
-          inArray(storyPages.id, [leftPageId, ...(rightPageId ? [rightPageId] : [])])
+          inArray(storyPages.id, [
+            leftPageId,
+            ...(rightPageId ? [rightPageId] : []),
+          ])
         );
     });
 

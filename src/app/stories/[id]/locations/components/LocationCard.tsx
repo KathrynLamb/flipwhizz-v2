@@ -3,6 +3,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Trash2,
   MapPin,
@@ -11,8 +12,9 @@ import {
   Loader2,
   Upload,
   Sparkles,
-  Star,
   X,
+  Check,
+  PenLine,
 } from "lucide-react";
 
 type Location = {
@@ -24,13 +26,13 @@ type Location = {
   locked: boolean;
 };
 
-const VIBRANT_GRADIENTS = [
-  "from-pink-400 via-purple-400 to-blue-400",
-  "from-orange-400 via-pink-400 to-purple-400",
-  "from-yellow-400 via-orange-400 to-pink-400",
-  "from-green-400 via-teal-400 to-blue-400",
-  "from-purple-400 via-pink-400 to-red-400",
-  "from-blue-400 via-purple-400 to-pink-400",
+const GRADIENTS = [
+  { from: "#C77DFF", to: "#E07ABA" },
+  { from: "#FFB347", to: "#FF8A65" },
+  { from: "#A78BFA", to: "#67E8F9" },
+  { from: "#F472B6", to: "#C084FC" },
+  { from: "#34D399", to: "#60A5FA" },
+  { from: "#FBBF24", to: "#F472B6" },
 ];
 
 export default function LocationCard({
@@ -48,7 +50,8 @@ export default function LocationCard({
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
-  
+  const grad = GRADIENTS[index % GRADIENTS.length];
+
   const [locked, setLocked] = useState(location.locked);
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -57,19 +60,20 @@ export default function LocationCard({
     description: location.description || "",
   });
 
-  const gradient = VIBRANT_GRADIENTS[index % VIBRANT_GRADIENTS.length];
   const imageUrl = location.portraitImageUrl || location.referenceImageUrl;
 
+  /* ── Actions ── */
+
   async function toggleLock() {
-    const endpoint = locked ? "/api/locations/unlock" : "/api/locations/lock";
-    const res = await fetch(endpoint, {
+    const res = await fetch("/api/locations/lock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ locationId: location.id }),
     });
-    
+
     if (res.ok) {
-      setLocked(!locked);
+      const data = await res.json();
+      setLocked(data.locked);
       onUpdate?.();
     }
   }
@@ -77,16 +81,14 @@ export default function LocationCard({
   async function uploadReference(file: File) {
     if (locked) return;
     setUploading(true);
-    
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("locationId", location.id);
-      const res = await fetch("/api/locations/upload-reference", { 
-        method: "POST", 
-        body: fd 
+      const res = await fetch("/api/locations/upload-reference", {
+        method: "POST",
+        body: fd,
       });
-      
       if (res.ok) {
         onUpdate?.();
         router.refresh();
@@ -99,14 +101,12 @@ export default function LocationCard({
   async function useAiImage() {
     if (locked) return;
     setUploading(true);
-    
     try {
       const res = await fetch("/api/locations/use-ai-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ locationId: location.id }),
       });
-      
       if (res.ok) {
         onUpdate?.();
         router.refresh();
@@ -125,7 +125,6 @@ export default function LocationCard({
         description: editData.description.trim(),
       }),
     });
-    
     if (res.ok) {
       setShowEdit(false);
       onUpdate?.();
@@ -135,16 +134,13 @@ export default function LocationCard({
 
   async function handleDelete() {
     if (!confirm(`Delete ${location.name}? This cannot be undone.`)) return;
-    
     setDeleting(true);
     onDelete?.(location.id);
-    
-    await fetch(`/api/locations/${location.id}`, {
-      method: "DELETE",
-    });
-    
+    await fetch(`/api/locations/${location.id}`, { method: "DELETE" });
     router.refresh();
   }
+
+  /* ── Render ── */
 
   return (
     <>
@@ -156,198 +152,353 @@ export default function LocationCard({
         onChange={(e) => e.target.files && uploadReference(e.target.files[0])}
       />
 
-      <div className="group relative bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden">
-        
-        {/* Lock Badge */}
+      <div
+        className="group relative overflow-hidden transition-all duration-300"
+        style={{
+          background: "white",
+          borderRadius: 22,
+          border: locked
+            ? "2px solid rgba(67,184,156,0.25)"
+            : "1px solid rgba(180,150,210,0.1)",
+          boxShadow:
+            "0 2px 8px rgba(100,60,140,0.04), 0 12px 40px rgba(100,60,140,0.06)",
+          fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
+        }}
+      >
+        {/* Locked badge */}
         {locked && (
-          <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-green-400 to-emerald-400 text-white text-xs font-bold shadow-lg">
-            <Star className="w-3 h-3 fill-current" />
+          <div
+            className="absolute top-3.5 right-3.5 z-10 flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold"
+            style={{
+              background: "rgba(255,255,255,0.92)",
+              backdropFilter: "blur(8px)",
+              color: "#2FA482",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+            }}
+          >
+            <div
+              className="w-[7px] h-[7px] rounded-full"
+              style={{ background: "#43B89C" }}
+            />
             Locked
           </div>
         )}
 
-        {/* Image Section */}
-        <div className="relative aspect-[3/4] overflow-hidden">
+        {/* Image */}
+        <div className="relative aspect-[4/3] overflow-hidden">
           {imageUrl ? (
-            <img 
-              src={imageUrl} 
-              alt={location.name} 
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            <img
+              src={imageUrl}
+              alt={location.name}
+              className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
             />
           ) : (
-            <div className={`w-full h-full bg-gradient-to-br ${gradient} flex items-center justify-center`}>
-              <span className="text-9xl font-black text-white/20">
+            <div
+              className="w-full h-full flex items-center justify-center"
+              style={{
+                background: `linear-gradient(135deg, ${grad.from}, ${grad.to})`,
+              }}
+            >
+              <span className="text-8xl font-extrabold text-white/25 select-none">
                 {location.name.charAt(0)}
               </span>
             </div>
           )}
 
-          {/* Overlay Gradient */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+          {/* Gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
 
-          {/* Upload Buttons */}
+          {/* Upload buttons */}
           {!locked && !uploading && (
-            <div className="absolute top-4 left-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="absolute top-3.5 left-3.5 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 onClick={() => fileRef.current?.click()}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-sm text-gray-900 text-xs font-semibold hover:bg-white transition-colors shadow-lg"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors"
+                style={{
+                  background: "rgba(255,255,255,0.9)",
+                  backdropFilter: "blur(8px)",
+                  color: "#2D2235",
+                  border: "none",
+                }}
               >
-                <Upload className="w-3 h-3" />
-                Photo
+                <Upload className="w-3 h-3" /> Photo
               </button>
-              
               <button
                 onClick={useAiImage}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500 text-white text-xs font-semibold hover:bg-purple-600 transition-colors shadow-lg"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors"
+                style={{
+                  background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                  color: "white",
+                  border: "none",
+                  boxShadow: "0 2px 8px rgba(176,92,230,0.3)",
+                }}
               >
-                <Sparkles className="w-3 h-3" />
-                AI
+                <Sparkles className="w-3 h-3" /> AI
               </button>
             </div>
           )}
 
-          {/* Uploading Overlay */}
+          {/* Upload spinner */}
           {uploading && (
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center">
-              <Sparkles className="w-8 h-8 text-white animate-spin" />
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-20">
+              <Loader2 className="w-8 h-8 text-white animate-spin" />
             </div>
           )}
 
-          {/* Name Overlay */}
-          <div className="absolute bottom-0 left-0 right-0 p-6">
-            <div className="flex items-center gap-2 mb-2">
-              <MapPin className="w-5 h-5 text-white/90" />
-              <h3 className="text-2xl font-black text-white drop-shadow-lg">
+          {/* Name overlay */}
+          <div className="absolute bottom-0 left-0 right-0 p-5">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-white/80" />
+              <h3 className="text-xl font-extrabold text-white drop-shadow-lg">
                 {location.name}
               </h3>
             </div>
           </div>
         </div>
 
-        {/* Content Section */}
-        <div className="p-6 space-y-4">
-          
-          {/* Description Preview */}
-          {location.description && (
-            <p className="text-sm text-gray-600 line-clamp-3">
+        {/* Body */}
+        <div className="p-5 space-y-3.5">
+          {location.description ? (
+            <p
+              className="text-[13px] leading-relaxed line-clamp-3"
+              style={{ color: "#5A4D6B" }}
+            >
               {location.description}
             </p>
-          )}
-
-          {!location.description && (
-            <p className="text-sm text-gray-400 italic">
+          ) : (
+            <p
+              className="text-[13px] italic"
+              style={{ color: "#B8AAC8" }}
+            >
               No description yet
             </p>
           )}
+        </div>
 
-          {/* Action Buttons */}
-          <div className="flex gap-2 pt-2">
-            <button
-              onClick={() => setShowEdit(true)}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold text-sm transition-colors"
-            >
-              Edit Details
-            </button>
-            
-            <button
-              onClick={toggleLock}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                locked
-                  ? "bg-gradient-to-r from-green-400 to-emerald-400 text-white hover:shadow-lg"
-                  : "bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:shadow-lg"
-              }`}
-            >
-              {locked ? (
-                <>
-                  <Unlock className="w-4 h-4" />
-                  Unlock
-                </>
-              ) : (
-                <>
-                  <Lock className="w-4 h-4" />
-                  Lock In
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="w-10 h-10 rounded-xl bg-red-50 border-2 border-red-200 text-red-600 hover:bg-red-100 transition-colors flex items-center justify-center"
-            >
-              {deleting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Trash2 className="w-4 h-4" />
-              )}
-            </button>
-          </div>
+        {/* Actions */}
+        <div className="px-5 pb-5 flex gap-2">
+          <button
+            onClick={() => setShowEdit(true)}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[13px] font-semibold transition-all"
+            style={{
+              border: "1.5px solid rgba(180,150,210,0.18)",
+              background: "white",
+              color: "#6B5C80",
+              fontFamily: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            <PenLine className="w-3.5 h-3.5" /> Edit
+          </button>
+          <button
+            onClick={toggleLock}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[13px] font-bold transition-all"
+            style={{
+              border: "none",
+              background: locked
+                ? "#E8F5F0"
+                : "linear-gradient(135deg, #B05CE6, #D45DA0)",
+              color: locked ? "#2FA482" : "white",
+              fontFamily: "inherit",
+              cursor: "pointer",
+              boxShadow: locked
+                ? "none"
+                : "0 3px 12px rgba(176,92,230,0.2)",
+              ...(locked
+                ? { border: "1.5px solid rgba(67,184,156,0.2)" }
+                : {}),
+            }}
+          >
+            {locked ? (
+              <>
+                <Unlock className="w-3.5 h-3.5" /> Unlock
+              </>
+            ) : (
+              <>
+                <Lock className="w-3.5 h-3.5" /> Lock In
+              </>
+            )}
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="w-10 flex items-center justify-center rounded-xl transition-all"
+            style={{
+              background: "rgba(239,68,68,0.06)",
+              border: "1.5px solid rgba(239,68,68,0.12)",
+              color: "#DC2626",
+              cursor: "pointer",
+              opacity: deleting ? 0.4 : 1,
+            }}
+          >
+            {deleting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="w-3.5 h-3.5" />
+            )}
+          </button>
         </div>
       </div>
 
       {/* Edit Modal */}
-      {showEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            
-            {/* Modal Header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-8 py-6 rounded-t-3xl flex items-center justify-between">
-              <h2 className="text-2xl font-black text-gray-900">
-                Edit {location.name}
-              </h2>
-              <button
-                onClick={() => setShowEdit(false)}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+      <AnimatePresence>
+        {showEdit && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{
+              background: "rgba(45,34,53,0.5)",
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={(e) =>
+              e.target === e.currentTarget && setShowEdit(false)
+            }
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.97 }}
+              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full max-h-[90vh] overflow-y-auto"
+              style={{
+                maxWidth: 560,
+                background: "white",
+                borderRadius: 24,
+                boxShadow: "0 30px 80px rgba(45,34,53,0.25)",
+                fontFamily:
+                  "'Bricolage Grotesque', system-ui, sans-serif",
+              }}
+            >
+              {/* Header */}
+              <div
+                className="sticky top-0 z-10 px-8 py-6 flex items-center justify-between"
+                style={{
+                  background: "white",
+                  borderBottom: "1px solid rgba(180,150,210,0.1)",
+                  borderRadius: "24px 24px 0 0",
+                }}
               >
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
-            </div>
+                <h3
+                  className="text-xl font-extrabold"
+                  style={{ color: "#2D2235" }}
+                >
+                  Edit {location.name}
+                </h3>
+                <button
+                  onClick={() => setShowEdit(false)}
+                  className="w-8 h-8 rounded-[10px] flex items-center justify-center transition-colors"
+                  style={{
+                    background: "rgba(180,150,210,0.08)",
+                    border: "none",
+                    color: "#8B7BA0",
+                    cursor: "pointer",
+                  }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-            {/* Modal Content */}
-            <div className="p-8 space-y-6">
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  Description
+              {/* Form */}
+              <div className="px-8 py-6">
+                <label
+                  className="flex items-center gap-2 mb-3"
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "#2D2235",
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>📍</span> Description
                 </label>
                 <textarea
                   value={editData.description}
-                  onChange={(e) => setEditData({ description: e.target.value })}
-                  rows={8}
+                  onChange={(e) =>
+                    setEditData({ description: e.target.value })
+                  }
+                  rows={6}
                   maxLength={500}
-                  className="w-full rounded-xl border-2 border-gray-200 focus:border-purple-400 focus:outline-none px-4 py-3 text-gray-900 resize-none"
                   placeholder="Describe this location's atmosphere, key features, and significance to the story..."
+                  style={{
+                    width: "100%",
+                    borderRadius: 12,
+                    border: "2px solid rgba(180,150,210,0.15)",
+                    background: "#FDFBFF",
+                    color: "#2D2235",
+                    fontFamily:
+                      "'Bricolage Grotesque', system-ui, sans-serif",
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                    padding: "12px 16px",
+                    outline: "none",
+                    resize: "vertical" as const,
+                    transition: "border-color 0.2s, box-shadow 0.2s",
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = "#C77DFF";
+                    e.target.style.boxShadow =
+                      "0 0 0 4px rgba(199,125,255,0.1)";
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor =
+                      "rgba(180,150,210,0.15)";
+                    e.target.style.boxShadow = "none";
+                  }}
                 />
-                <div className="mt-2 text-right">
-                  <span className={`text-xs font-medium ${
-                    editData.description.length > 450 
-                      ? 'text-orange-600' 
-                      : 'text-gray-500'
-                  }`}>
-                    {editData.description.length} / 500 characters
-                  </span>
-                </div>
+                <p
+                  className="mt-2 text-xs text-right"
+                  style={{
+                    color:
+                      editData.description.length > 450
+                        ? "#E07ABA"
+                        : "#A897BD",
+                  }}
+                >
+                  {editData.description.length} / 500
+                </p>
               </div>
-            </div>
 
-            {/* Modal Footer */}
-            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-8 py-6 rounded-b-3xl flex gap-3">
-              <button
-                onClick={() => setShowEdit(false)}
-                className="flex-1 px-6 py-3 rounded-xl bg-white border-2 border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
+              {/* Footer */}
+              <div
+                className="sticky bottom-0 px-8 py-6 flex gap-3"
+                style={{
+                  background: "rgba(253,251,255,0.95)",
+                  backdropFilter: "blur(8px)",
+                  borderTop: "1px solid rgba(180,150,210,0.1)",
+                  borderRadius: "0 0 24px 24px",
+                }}
               >
-                Cancel
-              </button>
-              <button
-                onClick={saveEdit}
-                className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-bold hover:shadow-lg transition-all"
-              >
-                Save Changes
-              </button>
-            </div>
+                <button
+                  onClick={() => setShowEdit(false)}
+                  className="flex-1 py-3.5 rounded-[14px] text-sm font-semibold transition-all"
+                  style={{
+                    border: "2px solid rgba(180,150,210,0.15)",
+                    background: "white",
+                    color: "#6B5C80",
+                    fontFamily: "inherit",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveEdit}
+                  className="flex-1 py-3.5 rounded-[14px] text-sm font-bold text-white transition-all flex items-center justify-center gap-2"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                    boxShadow:
+                      "0 4px 16px rgba(176,92,230,0.2)",
+                    border: "none",
+                    fontFamily: "inherit",
+                    cursor: "pointer",
+                  }}
+                >
+                  <Check className="w-4 h-4" /> Save Changes
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </>
   );
 }
