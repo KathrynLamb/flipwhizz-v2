@@ -21,14 +21,17 @@ async function launchBrowser() {
   if (isProduction) {
     const [{ default: puppeteer }, { default: chromium }] = await Promise.all([
       import("puppeteer-core"),
-      import("@sparticuz/chromium"),
+      import("@sparticuz/chromium-min"),
     ]);
-
+  
     return puppeteer.launch({
       args: chromium.args,
-      executablePath: await chromium.executablePath(),
+      executablePath: await chromium.executablePath(
+        "https://github.com/nicholasgasior/chromium-brotli/releases/download/v143.0.0/chromium-v143.0.0-pack.tar"
+      ),
       headless: true,
     });
+  
   } else {
     const { default: puppeteer } = await import("puppeteer");
     return puppeteer.launch({
