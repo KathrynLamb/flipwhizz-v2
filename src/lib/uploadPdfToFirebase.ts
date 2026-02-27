@@ -4,11 +4,16 @@ import { getStorage } from "firebase-admin/storage";
 function getFirebaseApp(): App {
   if (getApps().length) return getApps()[0];
 
+  const privateKey = Buffer.from(
+    process.env.FIREBASE_ADMIN_PRIVATE_KEY_BASE64!,
+    "base64"
+  ).toString("utf-8");
+
   return initializeApp({
     credential: cert({
       projectId: process.env.FIREBASE_ADMIN_PROJECT_ID!,
       clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+      privateKey,
     }),
     storageBucket: process.env.FIREBASE_ADMIN_STORAGE_BUCKET!,
   });
