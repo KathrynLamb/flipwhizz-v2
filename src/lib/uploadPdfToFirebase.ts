@@ -20,6 +20,14 @@ export async function uploadPdfToFirebase(
 ): Promise<string> {
   console.log(`📤 Uploading PDF to Firebase: ${storyId} (${buffer.length} bytes)`);
 
+  console.log("🔑 Firebase env check:", {
+    hasProjectId: !!process.env.FIREBASE_ADMIN_PROJECT_ID,
+    hasClientEmail: !!process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+    hasPrivateKey: !!process.env.FIREBASE_ADMIN_PRIVATE_KEY,
+    keyStartsWith: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.substring(0, 30),
+    keyLength: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.length,
+  });
+
   getFirebaseApp();
   const bucket = getStorage().bucket();
   const filePath = `pdfs/${storyId}/story-${storyId}.pdf`;
