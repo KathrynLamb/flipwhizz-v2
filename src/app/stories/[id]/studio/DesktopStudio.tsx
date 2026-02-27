@@ -323,42 +323,36 @@ export default function DesktopStudio({
                 </button>
               )}
 
-              {/* Export Button */}
-              {/* <button
-                onClick={handleExportPDF}
-                disabled={isExporting || !allGenerated}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
-              >
-                {isExporting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Exporting...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4" />
-                    Export PDF
-                  </>
-                )}
-              </button> */}
 
-                <button
-           onClick={() => router.push(`/stories/${story.id}/cover`)}
-                disabled={isExporting || !allGenerated}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
-              >
-                {isExporting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Exporting...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4" />
-                      Design Covers
-                  </>
-                )}
-              </button>
+
+{story.coverSpreadUrl ? (
+  <button
+    onClick={handleExportPDF}
+    disabled={isExporting || !allGenerated}
+    className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
+  >
+    {isExporting ? (
+      <>
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Exporting...
+      </>
+    ) : (
+      <>
+        <Download className="w-4 h-4" />
+        Export PDF
+      </>
+    )}
+  </button>
+) : (
+  <button
+    onClick={() => router.push(`/stories/${story.id}/cover`)}
+    disabled={!allGenerated}
+    className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
+  >
+    <Wand2 className="w-4 h-4" />
+    Design Cover
+  </button>
+)}
             </div>
           </div>
 
