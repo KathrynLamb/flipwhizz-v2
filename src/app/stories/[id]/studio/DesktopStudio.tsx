@@ -323,36 +323,34 @@ export default function DesktopStudio({
                 </button>
               )}
 
-
-
-{story.coverSpreadUrl ? (
-  <button
-    onClick={handleExportPDF}
-    disabled={isExporting || !allGenerated}
-    className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
-  >
-    {isExporting ? (
-      <>
-        <Loader2 className="w-4 h-4 animate-spin" />
-        Exporting...
-      </>
+    {story.coverSpreadUrl ? (
+      <button
+        onClick={handleExportPDF}
+        disabled={isExporting || !allGenerated}
+        className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
+      >
+        {isExporting ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Exporting...
+          </>
+        ) : (
+          <>
+            <Download className="w-4 h-4" />
+            Export PDF
+          </>
+        )}
+      </button>
     ) : (
-      <>
-        <Download className="w-4 h-4" />
-        Export PDF
-      </>
+      <button
+        onClick={() => router.push(`/stories/${story.id}/cover`)}
+        disabled={!allGenerated}
+        className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
+      >
+        <Wand2 className="w-4 h-4" />
+        Design Cover
+      </button>
     )}
-  </button>
-) : (
-  <button
-    onClick={() => router.push(`/stories/${story.id}/cover`)}
-    disabled={!allGenerated}
-    className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
-  >
-    <Wand2 className="w-4 h-4" />
-    Design Cover
-  </button>
-)}
             </div>
           </div>
 

@@ -103,11 +103,18 @@ export async function POST(
       totalPages: interiorPages.length,
     });
 
+    console.log("🔑 Env check:", {
+      hasGelatoKey: !!process.env.GELATO_API_KEY,
+      hasGelatoProduct: !!process.env.GELATO_PRODUCT_UID,
+      keyPrefix: process.env.GELATO_API_KEY?.substring(0, 8), // just first 8 chars
+    });
+
     /* --------------------------------------------------
        4. Generate complete Gelato-ready PDF
     -------------------------------------------------- */
 
     const pdfBuffer = await exportCompletePDF(
+
       {
         coverSpreadUrl: story.coverSpreadUrl,
         interiorPages,
