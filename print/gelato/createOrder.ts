@@ -9,14 +9,14 @@ interface ShippingAddress {
   city: string;
   state?: string;
   postCode: string;
-  countryIsoCode: string; // "GB", "US"
+  countryIsoCode: string;
   email: string;
   phone?: string;
 }
 
 interface CreateOrderParams {
-  orderReferenceId: string;   // your internal order id
-  customerReferenceId: string; // user id
+  orderReferenceId: string;
+  customerReferenceId: string;
   pdfUrl: string;
   shippingAddress: ShippingAddress;
 }
@@ -32,26 +32,23 @@ export async function createGelatoOrder(params: CreateOrderParams) {
   }
 
   const payload = {
-    orderType: "order", // ✅ MUST be "order" in production
+    orderType: "draft",  // ⚠️ Use "draft" for testing, change to "order" for production
     orderReferenceId,
     customerReferenceId,
     currency: "GBP",
-
     items: [
       {
         itemReferenceId: uuidv4(),
         productUid,
         quantity: 1,
-
-        // ✅ Correct for books
-        assets: {
-          interior: {
+        files: [
+          {
+            type: "default",
             url: pdfUrl,
           },
-        },
+        ],
       },
     ],
-
     shippingAddress: {
       firstName: shippingAddress.firstName,
       lastName: shippingAddress.lastName,
@@ -66,21 +63,26 @@ export async function createGelatoOrder(params: CreateOrderParams) {
     },
   };
 
+  console.log("📦 Submitting Gelato order:", JSON.stringify(payload, null, 2));
+
   const response = await fetch("https://order.gelatoapis.com/v4/orders", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`, // ✅ FIXED
+      "X-API-KEY": apiKey,
     },
     body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
     const error = await response.json();
+    console.error("❌ Gelato order error:", JSON.stringify(error, null, 2));
     throw new Error(
       `Gelato API Error ${response.status}: ${JSON.stringify(error)}`
     );
   }
 
-  return await response.json();
+  const result = await response.json();
+  console.log("✅ Gelato order created:", result.id);
+  return result;
 }

@@ -172,6 +172,8 @@ export default function DesktopStudio({
   const [isExporting, setIsExporting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false); // ✅ Add this
 
+  const [isOrdering, setIsOrdering] = useState(false);
+
   const spreads = useMemo(() => groupIntoSpreads(pages), [pages]);
 
   /* ------------------------------ Polling ---------------------------------- */
@@ -236,6 +238,25 @@ export default function DesktopStudio({
       alert("Failed to export PDF");
     } finally {
       setIsExporting(false);
+    }
+  }
+
+  async function handleOrderBook() {
+    if (isOrdering) return;
+    setIsOrdering(true);
+  
+    try {
+      const res = await fetch(`/api/stories/${story.id}/order-test`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      console.log("ORDER RESULT", data);
+      if (!res.ok) throw new Error(data.error || "Failed to place order");
+      alert(`Order placed! Gelato order ID: ${data.gelatoOrderId}`);
+    } catch (err: any) {
+      alert(err.message || "Failed to place order");
+    } finally {
+      setIsOrdering(false);
     }
   }
 
@@ -351,6 +372,26 @@ export default function DesktopStudio({
         Design Cover
       </button>
     )}
+
+{story.pdfUrl && (
+  <button
+    onClick={handleOrderBook}
+    disabled={isOrdering}
+    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
+  >
+    {isOrdering ? (
+      <>
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Ordering...
+      </>
+    ) : (
+      <>
+        <Sparkles className="w-4 h-4" />
+        Order Book
+      </>
+    )}
+  </button>
+)}
             </div>
           </div>
 
