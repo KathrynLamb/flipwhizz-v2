@@ -10,9 +10,16 @@ export type ExportData = {
 };
 
 /* -------------------------------------------------------------------------- */
+/*  Optimize Cloudinary URLs for print (300 DPI, high quality)                */
+/* -------------------------------------------------------------------------- */
+
+function optimizeForPrint(url: string): string {
+  if (!url.includes("res.cloudinary.com")) return url;
+  return url.replace("/upload/", "/upload/q_90,w_2400/");
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Lazy browser launch                                                        */
-/*  - Production (Vercel/Linux): uses @sparticuz/chromium                     */
-/*  - Local (Mac/Windows): uses regular puppeteer with bundled Chromium        */
 /* -------------------------------------------------------------------------- */
 
 async function launchBrowser() {
@@ -23,7 +30,7 @@ async function launchBrowser() {
       import("puppeteer-core"),
       import("@sparticuz/chromium-min"),
     ]);
-  
+
     return puppeteer.launch({
       args: chromium.args,
       executablePath: await chromium.executablePath(
@@ -31,7 +38,6 @@ async function launchBrowser() {
       ),
       headless: true,
     });
-  
   } else {
     const { default: puppeteer } = await import("puppeteer");
     return puppeteer.launch({
@@ -50,13 +56,11 @@ export async function exportCompletePDF(
   gelatoProductUid: string,
   gelatoApiKey: string
 ): Promise<Buffer> {
-  // 1️⃣ Fetch exact Gelato dimensions
   const dims = await fetchGelatoCoverDimensions(gelatoProductUid, gelatoApiKey);
 
   const wrapWidth = dims.wraparoundEdgeSize.width;
   const wrapHeight = dims.wraparoundEdgeSize.height;
 
-  // 2️⃣ Launch browser lazily — never at import/build time
   const browser = await launchBrowser();
 
   try {
@@ -71,9 +75,6 @@ export async function exportCompletePDF(
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: white; }
 
-  /* =======================
-     COVER PAGE
-     ======================= */
   @page cover {
     size: ${wrapWidth}mm ${wrapHeight}mm;
     margin: 0;
@@ -93,9 +94,6 @@ export async function exportCompletePDF(
     display: block;
   }
 
-  /* =======================
-     INTERIOR PAGES
-     ======================= */
   @page {
     size: 206mm 206mm;
     margin: 0;
@@ -129,15 +127,13 @@ export async function exportCompletePDF(
 </head>
 <body>
 
-${
-  data.coverSpreadUrl
-    ? `<div class="cover"><img src="${data.coverSpreadUrl}" /></div>`
-    : ""
-}
+${data.coverSpreadUrl
+  ? `<div class="cover"><img src="${optimizeForPrint(data.coverSpreadUrl)}" /></div>`
+  : ""}
 
 ${data.interiorPages
   .map(
-    (p) => `<div class="page ${p.side}"><img src="${p.spreadImageUrl}" /></div>`
+    (p) => `<div class="page ${p.side}"><img src="${optimizeForPrint(p.spreadImageUrl)}" /></div>`
   )
   .join("\n")}
 

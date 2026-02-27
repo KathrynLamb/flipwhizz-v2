@@ -1,53 +1,33 @@
-import { initializeApp, cert, getApps, type App } from "firebase-admin/app";
-import { getStorage } from "firebase-admin/storage";
+import { v2 as cloudinary } from "cloudinary";
 
-function getFirebaseApp(): App {
-  if (getApps().length) return getApps()[0];
-
-  const privateKey = Buffer.from(
-    process.env.FIREBASE_ADMIN_PRIVATE_KEY_BASE64!,
-    "base64"
-  ).toString("utf-8");
-
-  return initializeApp({
-    credential: cert({
-      projectId: process.env.FIREBASE_ADMIN_PROJECT_ID!,
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-      privateKey,
-    }),
-    storageBucket: process.env.FIREBASE_ADMIN_STORAGE_BUCKET!,
-  });
-}
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 export async function uploadPdfToFirebase(
   buffer: Buffer,
   storyId: string
 ): Promise<string> {
-  console.log(`📤 Uploading PDF to Firebase: ${storyId} (${buffer.length} bytes)`);
+  console.log(`📤 Uploading PDF to Cloudinary: ${storyId} (${buffer.length} bytes)`);
 
-  console.log("🔑 Firebase env check:", {
-    hasProjectId: !!process.env.FIREBASE_ADMIN_PROJECT_ID,
-    hasClientEmail: !!process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-    hasPrivateKey: !!process.env.FIREBASE_ADMIN_PRIVATE_KEY,
-    keyStartsWith: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.substring(0, 30),
-    keyLength: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.length,
+  const result = await new Promise<any>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: "raw",
+        folder: `flipwhizz/stories/${storyId}/pdf`,
+        public_id: `story-${storyId}`,
+        overwrite: true,
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }
+    );
+    stream.end(buffer);
   });
 
-  getFirebaseApp();
-  const bucket = getStorage().bucket();
-  const filePath = `pdfs/${storyId}/story-${storyId}.pdf`;
-  const file = bucket.file(filePath);
-
-  await file.save(buffer, {
-    contentType: "application/pdf",
-    metadata: {
-      cacheControl: "public, max-age=31536000",
-    },
-  });
-
-  await file.makePublic();
-
-  const url = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
-  console.log("✅ PDF uploaded to Firebase:", url);
-  return url;
+  console.log("✅ PDF uploaded to Cloudinary:", result.secure_url);
+  return result.secure_url;
 }
