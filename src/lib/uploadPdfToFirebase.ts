@@ -1,49 +1,33 @@
-export const runtime = "nodejs";
+import { v2 as cloudinary } from "cloudinary";
 
-/**
- * Upload PDF to R2 via Cloudflare Worker
- * Completely bypasses SSL issues
- */
-
-const WORKER_URL = process.env.PDF_UPLOAD_WORKER_URL!;
-const API_SECRET = process.env.PDF_UPLOAD_API_SECRET!;
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 export async function uploadPdfToFirebase(
   buffer: Buffer,
   storyId: string
 ): Promise<string> {
-  if (!API_SECRET || !WORKER_URL) {
-    throw new Error("PDF upload worker not configured");
-  }
+  console.log(`📤 Uploading PDF to Cloudinary: ${storyId} (${buffer.length} bytes)`);
 
-  try {
-    console.log(
-      `📤 Uploading PDF via Worker: ${storyId} (${buffer.length} bytes)`
-    );
-
-    const response = await fetch(`${WORKER_URL}?storyId=${storyId}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/pdf",
-        "X-API-Secret": API_SECRET,
+  const result = await new Promise<any>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: "raw",
+        folder: `flipwhizz/stories/${storyId}/pdf`,
+        public_id: `story-${storyId}`,
+        overwrite: true,
       },
-      // ✅ Fetch-safe binary body
-      body: new Uint8Array(buffer),
-    });
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }
+    );
+    stream.end(buffer);
+  });
 
-    if (!response.ok) {
-      const error = await response
-        .json()
-        .catch(() => ({ error: "Unknown error" }));
-      throw new Error(error.message || `Worker returned ${response.status}`);
-    }
-
-    const result = await response.json();
-    console.log("✅ PDF uploaded successfully via Worker:", result);
-
-    return result.url;
-  } catch (error: any) {
-    console.error("❌ Worker upload failed:", error);
-    throw new Error(`Failed to upload PDF: ${error.message}`);
-  }
+  console.log("✅ PDF uploaded to Cloudinary:", result.secure_url);
+  return result.secure_url;
 }
