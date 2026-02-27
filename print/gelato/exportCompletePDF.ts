@@ -15,7 +15,7 @@ export type ExportData = {
 
 function optimizeForPrint(url: string): string {
   if (!url.includes("res.cloudinary.com")) return url;
-  return url.replace("/upload/", "/upload/q_90,w_2400/");
+  return url.replace("/upload/", "/upload/q_85,w_2400,f_jpg/");
 }
 
 /* -------------------------------------------------------------------------- */
