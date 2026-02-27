@@ -7,6 +7,7 @@ import { exportCompletePDF } from "print/gelato/exportCompletePDF";
 import { uploadPdfToFirebase } from "@/lib/uploadPdfToFirebase";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(
   _req: Request,
@@ -41,12 +42,12 @@ export async function POST(
        2. Validate cover
     -------------------------------------------------- */
 
-    // if (!story.coverSpreadUrl) {
-    //   return NextResponse.json(
-    //     { error: "Cover not generated yet" },
-    //     { status: 400 }
-    //   );
-    // }
+    if (!story.coverSpreadUrl) {
+      return NextResponse.json(
+        { error: "Cover not generated yet" },
+        { status: 400 }
+      );
+    }
 
     /* --------------------------------------------------
        3. Load interior pages
@@ -57,8 +58,7 @@ export async function POST(
       orderBy: asc(storyPages.pageNumber),
     });
 
-    // Check all pages have images
-    const allGenerated = pages.every(p => p.imageUrl);
+    const allGenerated = pages.every((p) => p.imageUrl);
     if (!allGenerated) {
       return NextResponse.json(
         { error: "Not all pages have been illustrated yet" },
@@ -66,33 +66,29 @@ export async function POST(
       );
     }
 
-    // ✅ Build the correct structure: each spread image becomes TWO pages
     const interiorPages: Array<{
       pageNumber: number;
       spreadImageUrl: string;
-      side: 'left' | 'right';
+      side: "left" | "right";
     }> = [];
 
-    // Group pages into spreads
     for (let i = 0; i < pages.length; i += 2) {
       const leftPage = pages[i];
       const rightPage = pages[i + 1];
 
       if (!leftPage.imageUrl) continue;
 
-      // Left side of spread
       interiorPages.push({
         pageNumber: leftPage.pageNumber,
         spreadImageUrl: leftPage.imageUrl,
-        side: 'left',
+        side: "left",
       });
 
-      // Right side of spread (if it exists)
       if (rightPage) {
         interiorPages.push({
           pageNumber: rightPage.pageNumber,
-          spreadImageUrl: leftPage.imageUrl, // Same spread image!
-          side: 'right',
+          spreadImageUrl: leftPage.imageUrl,
+          side: "right",
         });
       }
     }
@@ -106,7 +102,7 @@ export async function POST(
     console.log("🔑 Env check:", {
       hasGelatoKey: !!process.env.GELATO_API_KEY,
       hasGelatoProduct: !!process.env.GELATO_PRODUCT_UID,
-      keyPrefix: process.env.GELATO_API_KEY?.substring(0, 8), // just first 8 chars
+      keyPrefix: process.env.GELATO_API_KEY?.substring(0, 8),
     });
 
     /* --------------------------------------------------
@@ -114,7 +110,6 @@ export async function POST(
     -------------------------------------------------- */
 
     const pdfBuffer = await exportCompletePDF(
-
       {
         coverSpreadUrl: story.coverSpreadUrl,
         interiorPages,
@@ -152,8 +147,7 @@ export async function POST(
     return NextResponse.json(
       {
         error: "Failed to export PDF",
-        details:
-          err instanceof Error ? err.message : "Unknown error",
+        details: err instanceof Error ? err.message : "Unknown error",
       },
       { status: 500 }
     );

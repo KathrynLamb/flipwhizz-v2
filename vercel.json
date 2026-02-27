@@ -1,0 +1,7 @@
+{
+    "functions": {
+      "src/app/api/stories/[id]/export-complete/route.ts": {
+        "maxDuration": 60
+      }
+    }
+  }

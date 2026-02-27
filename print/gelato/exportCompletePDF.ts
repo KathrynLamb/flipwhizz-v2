@@ -1,14 +1,46 @@
-import puppeteer from "puppeteer";
 import { fetchGelatoCoverDimensions } from "@/lib/fetchGelatoCoverDimensions";
 
 export type ExportData = {
-  coverSpreadUrl: string;
-  interiorPages: { 
-    pageNumber: number; 
+  coverSpreadUrl: string | null;
+  interiorPages: {
+    pageNumber: number;
     spreadImageUrl: string;
-    side: 'left' | 'right';
+    side: "left" | "right";
   }[];
 };
+
+/* -------------------------------------------------------------------------- */
+/*  Lazy browser launch                                                        */
+/*  - Production (Vercel/Linux): uses @sparticuz/chromium                     */
+/*  - Local (Mac/Windows): uses regular puppeteer with bundled Chromium        */
+/* -------------------------------------------------------------------------- */
+
+async function launchBrowser() {
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (isProduction) {
+    const [{ default: puppeteer }, { default: chromium }] = await Promise.all([
+      import("puppeteer-core"),
+      import("@sparticuz/chromium"),
+    ]);
+
+    return puppeteer.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
+      headless: true,
+    });
+  } else {
+    const { default: puppeteer } = await import("puppeteer");
+    return puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Main export                                                                */
+/* -------------------------------------------------------------------------- */
 
 export async function exportCompletePDF(
   data: ExportData,
@@ -16,18 +48,13 @@ export async function exportCompletePDF(
   gelatoApiKey: string
 ): Promise<Buffer> {
   // 1️⃣ Fetch exact Gelato dimensions
-  const dims = await fetchGelatoCoverDimensions(
-    gelatoProductUid,
-    gelatoApiKey
-  );
+  const dims = await fetchGelatoCoverDimensions(gelatoProductUid, gelatoApiKey);
 
   const wrapWidth = dims.wraparoundEdgeSize.width;
   const wrapHeight = dims.wraparoundEdgeSize.height;
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+  // 2️⃣ Launch browser lazily — never at import/build time
+  const browser = await launchBrowser();
 
   try {
     const page = await browser.newPage();
@@ -81,18 +108,16 @@ export async function exportCompletePDF(
 
   .page img {
     position: absolute;
-    width: 412mm; /* Double width for spread (206mm * 2) */
+    width: 412mm;
     height: 206mm;
     object-fit: cover;
   }
 
-  /* Left page: show left half of spread */
   .page.left img {
     left: 0;
     object-position: left center;
   }
 
-  /* Right page: show right half of spread */
   .page.right img {
     right: 0;
     object-position: right center;
@@ -101,25 +126,17 @@ export async function exportCompletePDF(
 </head>
 <body>
 
-<!-- =======================
-     PAGE 1: COVER WRAP
-     ======================= -->
-<div class="cover">
-  <img src="${data.coverSpreadUrl}" />
-</div>
+${
+  data.coverSpreadUrl
+    ? `<div class="cover"><img src="${data.coverSpreadUrl}" /></div>`
+    : ""
+}
 
-<!-- =======================
-     INTERIOR PAGES
-     ======================= -->
 ${data.interiorPages
   .map(
-    (p) => `
-<div class="page ${p.side}">
-  <img src="${p.spreadImageUrl}" />
-</div>
-`
+    (p) => `<div class="page ${p.side}"><img src="${p.spreadImageUrl}" /></div>`
   )
-  .join("")}
+  .join("\n")}
 
 </body>
 </html>
