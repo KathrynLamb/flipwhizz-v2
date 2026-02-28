@@ -16,6 +16,8 @@ import {
   Sparkles,
   Loader2,
   ChevronDown,
+  Eye, 
+  CreditCard
 } from "lucide-react";
 import type { StepKey } from "@/lib/storySteps";
 
@@ -25,9 +27,11 @@ import type { StepKey } from "@/lib/storySteps";
 
 const STEP_ORDER: StepKey[] = [
   "write",
+  "design",
   "characters",
   "locations",
-  "design",
+  "preview",
+  "pay",
   "studio",
   "print",
 ];
@@ -67,8 +71,6 @@ const STEPS: Step[] = [
     label: "Design",
     shortLabel: "Style",
     icon: Palette,
-    // href: (id) => `/stories/${id}/design`,
-    // match: (p, id) => p.startsWith(`/stories/${id}/design`),
     href: (id) => `/stories/${id}/illustration-style`,
     match: (p, id) => p.startsWith(`/stories/${id}/illustration-style`),
   },
@@ -88,7 +90,22 @@ const STEPS: Step[] = [
     href: (id) => `/stories/${id}/locations`,
     match: (p, id) => p.startsWith(`/stories/${id}/locations`),
   },
-
+  {
+    key: "preview",
+    label: "Preview",
+    shortLabel: "Preview",
+    icon: Eye,
+    href: (id) => `/stories/${id}/preview`,
+    match: (p, id) => p.startsWith(`/stories/${id}/preview`),
+  },
+  {
+    key: "pay",
+    label: "Pay",
+    shortLabel: "Pay",
+    icon: CreditCard,
+    href: (id) => `/stories/${id}/checkout`,
+    match: (p, id) => p.startsWith(`/stories/${id}/checkout`),
+  },
   {
     key: "studio",
     label: "Studio",
@@ -102,10 +119,8 @@ const STEPS: Step[] = [
     label: "Print",
     shortLabel: "Print",
     icon: Printer,
-    href: (id) => `/stories/${id}/checkout`,
-    match: (p, id) =>
-      p.startsWith(`/stories/${id}/checkout`) ||
-      p.startsWith(`/stories/${id}/print`),
+    href: (id) => `/stories/${id}/print`,
+    match: (p, id) => p.startsWith(`/stories/${id}/print`),
   },
 ];
 

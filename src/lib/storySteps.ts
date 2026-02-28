@@ -2,9 +2,11 @@
 
 export const STEP_ORDER = [
   "write",
+  "design",
   "characters",
   "locations",
-  "design",
+  "preview",
+  "pay",
   "studio",
   "print",
 ] as const;
