@@ -5,6 +5,7 @@ import { stories, storyPages, projects } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 
 import StoryReaderClient from "./StoryReaderClient";
+import { StepKey } from "@/lib/storySteps";
 
 export default async function StoryPagesPage({
   params,
@@ -42,6 +43,9 @@ export default async function StoryPagesPage({
     orderBy: asc(storyPages.pageNumber),
   });
 
+  const completedSteps = story.completedSteps as StepKey[];
+  const currentStep: StepKey = "write";
+
   return (
     <StoryReaderClient
       title={story.title}
@@ -51,6 +55,8 @@ export default async function StoryPagesPage({
         pageNumber: p.pageNumber,
         text: p.text,
       }))}
+      currentStep={currentStep}
+      completedSteps={completedSteps}
     />
   );
 }

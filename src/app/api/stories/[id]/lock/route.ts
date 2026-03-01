@@ -19,7 +19,7 @@ type Context = {
 
 export async function POST(
   _req: Request,
-  { params }: Context // Update argument type here
+  { params }: Context
 ) {
   const session = await getServerSession(authOptions);
 
@@ -27,28 +27,56 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Await the params before using them
   const { id } = await params;
   const storyId = id;
 
   try {
+    // Check if story is already confirmed with world data
+    const [existing] = await db
+      .select({
+        storyConfirmed: stories.storyConfirmed,
+      })
+      .from(stories)
+      .where(eq(stories.id, storyId));
+
+    if (!existing) {
+      return NextResponse.json({ error: "Story not found" }, { status: 404 });
+    }
+
+    // If already confirmed, just return success — don't wipe anything
+    if (existing.storyConfirmed) {
+      return NextResponse.json({ ok: true, alreadyConfirmed: true });
+    }
+
+    // First time confirming — run the full wipe + rebuild flow
     await db.transaction(async (tx) => {
-      // 1️⃣ Lock the story text
-      const updated = await tx
-        .update(stories)
-        .set({
-          storyConfirmed: true,
-          status: "confirmed",
-          updatedAt: new Date(),
-        })
-        .where(eq(stories.id, storyId))
-        .returning({ id: stories.id });
+// Get current completedSteps first
+const [current] = await tx
+.select({ completedSteps: stories.completedSteps })
+.from(stories)
+.where(eq(stories.id, storyId));
+
+const existingSteps: string[] = (current?.completedSteps as string[]) || [];
+const updatedSteps = existingSteps.includes("write")
+? existingSteps
+: [...existingSteps, "write"];
+
+const updated = await tx
+.update(stories)
+.set({
+  storyConfirmed: true,
+  status: "confirmed",
+  completedSteps: updatedSteps,
+  updatedAt: new Date(),
+})
+.where(eq(stories.id, storyId))
+.returning({ id: stories.id });
 
       if (!updated.length) {
         throw new Error("Story not found");
       }
 
-      // 2️⃣ Clear derived world data (safe to regenerate)
+      // Clear derived world data (safe to regenerate)
       await Promise.all([
         tx.delete(storyCharacters).where(eq(storyCharacters.storyId, storyId)),
         tx.delete(storyLocations).where(eq(storyLocations.storyId, storyId)),

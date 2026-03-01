@@ -227,7 +227,6 @@ export default function IllustrationStyleClient({
   /* LOCK                                                              */
   /* ---------------------------------------------------------------- */
   async function toggleLock(next: boolean) {
-    if (storyConfirmed) return;
     setLocked(next);
     await saveGuide({ approved: next });
   }
@@ -463,35 +462,70 @@ export default function IllustrationStyleClient({
                     <span className="font-semibold text-gray-800 text-sm">Colour Palette</span>
                   </div>
 
-                  {/* Swatches */}
+                  {/* Editable swatches */}
                   <div className="flex gap-2 mb-2">
                     {(colorPalette.hex ?? []).slice(0, 3).map((hex, i) => (
-                      <div
-                        key={i}
-                        className="flex-1 h-10 rounded-lg shadow-sm border border-black/5"
-                        style={{ backgroundColor: hex }}
-                        title={
-                          i === 0
-                            ? colorPalette.primary
-                            : i === 1
-                            ? colorPalette.secondary
-                            : colorPalette.accent
-                        }
-                      />
+                      <div key={i} className="flex-1 relative">
+                        <div
+                          className="h-10 rounded-lg shadow-sm border border-black/5 cursor-pointer hover:ring-2 hover:ring-violet-300 transition-all"
+                          style={{ backgroundColor: hex }}
+                          title={`Click to change: ${hex}`}
+                        />
+                        <input
+                          type="color"
+                          value={hex}
+                          disabled={locked}
+                          onChange={(e) => {
+                            const newHex = [...(colorPalette.hex ?? [])];
+                            newHex[i] = e.target.value;
+                            setColorPalette({ ...colorPalette, hex: newHex });
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                        />
+                      </div>
                     ))}
                   </div>
 
-                  {/* Labels */}
-                  <div className="flex gap-2 text-xs text-gray-400 mb-3">
-                    <span className="flex-1 truncate">{colorPalette.primary}</span>
-                    <span className="flex-1 truncate">{colorPalette.secondary}</span>
-                    <span className="flex-1 truncate">{colorPalette.accent}</span>
+                  {/* Editable labels */}
+                  <div className="flex gap-2 text-xs mb-3">
+                    <input
+                      type="text"
+                      value={colorPalette.primary}
+                      disabled={locked}
+                      onChange={(e) => setColorPalette({ ...colorPalette, primary: e.target.value })}
+                      className="flex-1 bg-transparent text-gray-500 placeholder-gray-300 focus:outline-none focus:text-gray-700 truncate disabled:cursor-not-allowed"
+                      placeholder="Primary"
+                    />
+                    <input
+                      type="text"
+                      value={colorPalette.secondary}
+                      disabled={locked}
+                      onChange={(e) => setColorPalette({ ...colorPalette, secondary: e.target.value })}
+                      className="flex-1 bg-transparent text-gray-500 placeholder-gray-300 focus:outline-none focus:text-gray-700 truncate disabled:cursor-not-allowed"
+                      placeholder="Secondary"
+                    />
+                    <input
+                      type="text"
+                      value={colorPalette.accent}
+                      disabled={locked}
+                      onChange={(e) => setColorPalette({ ...colorPalette, accent: e.target.value })}
+                      className="flex-1 bg-transparent text-gray-500 placeholder-gray-300 focus:outline-none focus:text-gray-700 truncate disabled:cursor-not-allowed"
+                      placeholder="Accent"
+                    />
                   </div>
 
-                  {/* Mood pill */}
+                  {/* Editable mood */}
                   <div className="inline-flex items-center gap-1.5 bg-violet-50 text-violet-600 text-xs font-medium px-3 py-1.5 rounded-full">
                     <Sparkles className="w-3 h-3" />
-                    Feels {colorPalette.mood}
+                    Feels{" "}
+                    <input
+                      type="text"
+                      value={colorPalette.mood}
+                      disabled={locked}
+                      onChange={(e) => setColorPalette({ ...colorPalette, mood: e.target.value })}
+                      className="bg-transparent text-violet-600 focus:outline-none w-24 disabled:cursor-not-allowed"
+                      placeholder="mood"
+                    />
                   </div>
                 </motion.div>
               )}
@@ -551,7 +585,7 @@ export default function IllustrationStyleClient({
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
               <button
                 onClick={() => toggleLock(!locked)}
-                disabled={storyConfirmed}
+                disabled={false}
                 className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                   locked
                     ? "bg-amber-50 text-amber-700 border-2 border-amber-200 hover:bg-amber-100"

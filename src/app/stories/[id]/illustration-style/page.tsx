@@ -8,6 +8,7 @@ import { stories, storyStyleGuide } from "@/db/schema";
 import IllustrationStyleClient, {
   type StyleGuide,
 } from "@/app/stories/[id]/illustration-style/IllustrationStyleClient";
+import { StepKey } from "@/lib/storySteps";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -54,7 +55,7 @@ export default async function IllustrationStylePage({ params }: Props) {
       storyConfirmed={story.storyConfirmed ?? false}
       styleGuide={styleGuide}
       currentStep="studio"
-      completedSteps={[]}
+      completedSteps={(story.completedSteps as StepKey[]) ?? []} 
     />
   );
 }
