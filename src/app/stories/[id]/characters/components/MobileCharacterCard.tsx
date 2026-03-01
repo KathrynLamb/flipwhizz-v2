@@ -443,6 +443,7 @@ export function MobileCharacterCard({
             character={character}
             storyId={storyId}
             outfits={outfits}
+            accent={accent}
             onClose={() => setShowEdit(false)}
             onSave={() => {
               setShowEdit(false);
@@ -464,12 +465,14 @@ function MobileEditSheet({
   character,
   storyId,
   outfits,
+  accent,
   onClose,
   onSave,
 }: {
   character: Character;
   storyId: string;
   outfits: CharacterOutfit[];
+  accent: { from: string; to: string };
   onClose: () => void;
   onSave: () => void;
 }) {
