@@ -291,6 +291,11 @@ export default function LocationsClient({
                         onClick={async () => {
                           setConfirming(true);
                           await fetch(`/api/stories/${storyId}/confirm-locations`, { method: 'POST' });
+                          await fetch(`/api/stories/${storyId}/complete-step`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ step: 'characters' }),
+                          });
                           router.refresh();
                         }}
                         className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-emerald-400 to-green-500 hover:from-emerald-500 hover:to-green-600 transition-all disabled:opacity-40 shadow-xl shadow-emerald-500/25 active:scale-[0.98]"

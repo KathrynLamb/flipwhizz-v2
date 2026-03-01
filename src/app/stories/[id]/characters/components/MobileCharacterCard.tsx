@@ -885,28 +885,20 @@ function MobileEditSheet({
                 </button>
 
                 {/* Section content */}
-                <AnimatePresence>
-                  {isOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-                      className="overflow-hidden"
+                {isOpen && (
+                  <div>
+                    {/* Hint text */}
+                    <p
+                      className="px-4 pb-2.5 text-[12px] leading-relaxed"
+                      style={{ color: "#A897BD" }}
                     >
-                      {/* Hint text */}
-                      <p
-                        className="px-4 pb-2.5 text-[12px] leading-relaxed"
-                        style={{ color: "#A897BD" }}
-                      >
-                        {section.hint}
-                      </p>
+                      {section.hint}
+                    </p>
 
-                      {/* Field content */}
-                      <div className="px-4 pb-4">{section.content}</div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                    {/* Field content */}
+                    <div className="px-4 pb-4">{section.content}</div>
+                  </div>
+                )}
               </div>
             );
           })}

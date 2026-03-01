@@ -229,6 +229,21 @@ export default function IllustrationStyleClient({
   async function toggleLock(next: boolean) {
     setLocked(next);
     await saveGuide({ approved: next });
+
+    if (next) {
+      // Mark "design" as completed in the DB
+      try {
+        await fetch(`/api/stories/${storyId}/complete-step`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ step: "design" }),
+        });
+      } catch (e) {
+        console.error("Failed to mark step complete", e);
+      }
+      // Navigate to next step
+      router.push(`/stories/${storyId}/characters`);
+    }
   }
 
   /* ---------------------------------------------------------------- */

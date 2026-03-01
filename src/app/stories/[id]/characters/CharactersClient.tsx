@@ -65,7 +65,7 @@ export default function CharactersClient({
   storyTitle = 'Characters',
   storyConfirmed,
   characters,
-  currentStep = 'studio',
+  currentStep = 'characters',
   completedSteps = [],
 }: {
   storyId: string;
@@ -354,7 +354,12 @@ export default function CharactersClient({
                           await fetch(`/api/stories/${storyId}/confirm-characters`, {
                             method: 'POST',
                           });
-                          router.refresh();
+                          await fetch(`/api/stories/${storyId}/complete-step`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ step: 'characters' }),
+                          });
+                          router.push(`/stories/${storyId}/locations`);
                         }}
                         className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white transition-all disabled:opacity-40 active:scale-[0.98]"
                         style={{
