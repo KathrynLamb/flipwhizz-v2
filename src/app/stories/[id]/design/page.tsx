@@ -26,9 +26,9 @@ export default async function DesignPage({
     where: eq(storyWorkflowProgress.storyId, storyId),
   });
 
-  if (!progress || !progress.worldExtracted || !progress.spreadsBuilt || !progress.scenesDecided) {
-    redirect(`/stories/${storyId}/extract`);
-  }
+  // if (!progress || !progress.worldExtracted || !progress.spreadsBuilt || !progress.scenesDecided) {
+  //   redirect(`/stories/${storyId}/extract`);
+  // }
 
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),

@@ -24,6 +24,7 @@ import {
 ====================================================== */
 
 type Phase =
+  | "checking"
   | "extracting_characters"
   | "extracting_locations"
   | "extracting_style"
@@ -68,9 +69,9 @@ export default function ExtractWorldPage() {
   }, [params]);
 
   // State
-  const [phase, setPhase] = useState<Phase>("extracting_characters");
+  const [phase, setPhase] = useState<Phase>("checking");
   const [progress, setProgress] = useState<ProgressData>({
-    phase: "extracting_characters",
+    phase: "checking",
     charactersExtracted: false,
     locationsExtracted: false,
     styleExtracted: false,
@@ -87,7 +88,12 @@ export default function ExtractWorldPage() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const errorCount = useRef(0);
-  const lastPhaseRef = useRef<Phase>("extracting_characters");
+  const lastPhaseRef = useRef<Phase>("checking");
+
+  // Gate: we do a quick “check” first, and only trigger/poll if work is needed
+  const hasBootstrapped = useRef(false);
+  const workflowTriggered = useRef(false);
+  const pollingStarted = useRef(false);
 
   /* ======================================================
      ADD ACTIVITY ITEM
@@ -120,82 +126,120 @@ export default function ExtractWorldPage() {
     return "ready";
   }
 
+  function needsWork(p: ProgressData) {
+    // If worldComplete isn’t set but any step is missing, we need work.
+    if (p.worldComplete) return false;
+    return !(
+      p.charactersExtracted &&
+      p.locationsExtracted &&
+      p.styleExtracted &&
+      p.spreadsBuilt &&
+      p.charactersAssigned &&
+      p.locationsAssigned &&
+      p.outfitsExtracted &&
+      p.outfitsAssigned
+    );
+  }
+
   /* ======================================================
-     POLL WORKFLOW STATUS
+     FETCH WORKFLOW STATUS
+  ====================================================== */
+
+  async function fetchProgress(): Promise<ProgressData | null> {
+    if (!storyId) return null;
+
+    const res = await fetch(`/api/stories/${storyId}/workflow-progress`, {
+      cache: "no-store",
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
+
+    if (!data?.progress) return null;
+
+    const incoming = data.progress;
+
+    // Build a safe ProgressData object
+    const built: ProgressData = {
+      phase: "checking",
+      charactersExtracted: !!incoming.charactersExtracted,
+      locationsExtracted: !!incoming.locationsExtracted,
+      styleExtracted: !!incoming.styleExtracted,
+      spreadsBuilt: !!incoming.spreadsBuilt,
+      charactersAssigned: !!incoming.charactersAssigned,
+      locationsAssigned: !!incoming.locationsAssigned,
+      outfitsExtracted: !!incoming.outfitsExtracted,
+      outfitsAssigned: !!incoming.outfitsAssigned,
+      worldComplete: !!incoming.worldComplete,
+    };
+
+    built.phase = getCurrentPhase(built);
+
+    return built;
+  }
+
+  /* ======================================================
+     UPDATE UI + ACTIVITY ON PHASE CHANGES
+  ====================================================== */
+
+  function applyProgress(newProgress: ProgressData) {
+    const currentPhase = getCurrentPhase(newProgress);
+
+    // Detect phase changes and add activity (only once we're actually running)
+    if (currentPhase !== lastPhaseRef.current) {
+      if (currentPhase === "extracting_locations") {
+        addActivity("✅ Characters discovered", "success");
+        addActivity("🗺️ Mapping locations...", "loading");
+      } else if (currentPhase === "extracting_style") {
+        addActivity("✅ Locations mapped", "success");
+        addActivity("🎨 Creating style guide...", "loading");
+      } else if (currentPhase === "building_spreads") {
+        addActivity("✅ Style guide ready", "success");
+        addActivity("📖 Building page spreads...", "loading");
+      } else if (currentPhase === "assigning_characters") {
+        addActivity("✅ Spreads built", "success");
+        addActivity("👤 Placing characters in scenes...", "loading");
+      } else if (currentPhase === "assigning_locations") {
+        addActivity("✅ Characters placed", "success");
+        addActivity("📍 Setting scene locations...", "loading");
+      } else if (currentPhase === "extracting_outfits") {
+        addActivity("✅ Locations set", "success");
+        addActivity("👗 Designing character outfits...", "loading");
+      } else if (currentPhase === "assigning_outfits") {
+        addActivity("✅ Outfits designed", "success");
+        addActivity("👔 Assigning outfits to scenes...", "loading");
+      } else if (currentPhase === "ready") {
+        // If we were running, celebrate. If we were just checking and found it done,
+        // we’ll show a lighter message in the “checking” UI below.
+        if (lastPhaseRef.current !== "checking") {
+          addActivity("🎉 World building complete!", "success");
+        }
+      }
+
+      lastPhaseRef.current = currentPhase;
+    }
+
+    setPhase(currentPhase);
+    setProgress(newProgress);
+
+    // Stop polling if complete
+    if (newProgress.worldComplete) {
+      if (pollRef.current) clearInterval(pollRef.current);
+    }
+  }
+
+  /* ======================================================
+     POLL LOOP
   ====================================================== */
 
   async function checkProgress() {
-    if (!storyId) return;
-
     try {
-      const res = await fetch(`/api/stories/${storyId}/workflow-progress`);
+      const p = await fetchProgress();
+      if (!p) return;
 
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-
-      const data = await res.json();
-
-      if (!data.progress) {
-        // No progress yet, workflow might not be started
-        return;
-      }
-
-      const newProgress: ProgressData = {
-        phase: getCurrentPhase(data.progress),
-        charactersExtracted: data.progress.charactersExtracted || false,
-        locationsExtracted: data.progress.locationsExtracted || false,
-        styleExtracted: data.progress.styleExtracted || false,
-        spreadsBuilt: data.progress.spreadsBuilt || false,
-        charactersAssigned: data.progress.charactersAssigned || false,
-        locationsAssigned: data.progress.locationsAssigned || false,
-        outfitsExtracted: data.progress.outfitsExtracted || false,
-        outfitsAssigned: data.progress.outfitsAssigned || false,
-        worldComplete: data.progress.worldComplete || false,
-      };
-
-      const currentPhase = getCurrentPhase(newProgress);
-
-      // Detect phase changes and add activity
-      if (currentPhase !== lastPhaseRef.current) {
-        if (currentPhase === "extracting_locations") {
-          addActivity("✅ Characters discovered", "success");
-          addActivity("🗺️ Mapping locations...", "loading");
-        } else if (currentPhase === "extracting_style") {
-          addActivity("✅ Locations mapped", "success");
-          addActivity("🎨 Creating style guide...", "loading");
-        } else if (currentPhase === "building_spreads") {
-          addActivity("✅ Style guide ready", "success");
-          addActivity("📖 Building page spreads...", "loading");
-        } else if (currentPhase === "assigning_characters") {
-          addActivity("✅ Spreads built", "success");
-          addActivity("👤 Placing characters in scenes...", "loading");
-        } else if (currentPhase === "assigning_locations") {
-          addActivity("✅ Characters placed", "success");
-          addActivity("📍 Setting scene locations...", "loading");
-        } else if (currentPhase === "extracting_outfits") {
-          addActivity("✅ Locations set", "success");
-          addActivity("👗 Designing character outfits...", "loading");
-        } else if (currentPhase === "assigning_outfits") {
-          addActivity("✅ Outfits designed", "success");
-          addActivity("👔 Assigning outfits to scenes...", "loading");
-        } else if (currentPhase === "ready") {
-          addActivity("✅ Outfits assigned", "success");
-          addActivity("🎉 World building complete!", "success");
-        }
-
-        lastPhaseRef.current = currentPhase;
-      }
-
-      setPhase(currentPhase);
-      setProgress(newProgress);
-
-      // Stop polling if complete
-      if (newProgress.worldComplete) {
-        if (pollRef.current) clearInterval(pollRef.current);
-      }
-
-      errorCount.current = 0; // Reset on success
+      applyProgress(p);
+      errorCount.current = 0;
     } catch (err) {
       console.error("Error checking progress:", err);
       errorCount.current++;
@@ -208,48 +252,90 @@ export default function ExtractWorldPage() {
   }
 
   /* ======================================================
-     TRIGGER WORKFLOW (once on mount)
+     BOOTSTRAP FLOW
+     1) QUICK CHECK
+     2) IF NEEDED, TRIGGER WORKFLOW
+     3) START POLLING
   ====================================================== */
 
-  const workflowTriggered = useRef(false);
-
   useEffect(() => {
-    if (!storyId || workflowTriggered.current) return;
+    if (!storyId || hasBootstrapped.current) return;
+    hasBootstrapped.current = true;
 
-    workflowTriggered.current = true;
+    let cancelled = false;
 
-    // Trigger the workflow
-    fetch(`/api/stories/${storyId}/ensure-world`, {
-      method: "POST",
-    })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`Failed to start workflow: ${res.status}`);
+    const run = async () => {
+      try {
+        setPhase("checking");
+        lastPhaseRef.current = "checking";
+
+        // Lightweight check UI
+        // (Don’t add the big extraction activity log yet)
+        const p = await fetchProgress();
+
+        if (cancelled) return;
+
+        if (!p) {
+          // No progress row yet — assume we need to run workflow.
+          // Start workflow + polling.
+          addActivity("✨ Preparing your world...", "loading");
+          await triggerWorkflow();
+          startPolling();
+          return;
         }
-        console.log("✅ Workflow triggered successfully");
-      })
-      .catch((err) => {
-        console.error("❌ Failed to trigger workflow:", err);
-        setError("Failed to start world building. Please try again.");
+
+        // If already complete, do NOT show checklist; just redirect after a beat.
+        if (!needsWork(p)) {
+          // Keep UI simple: show “All set” and bounce.
+          setProgress(p);
+          setPhase("ready");
+          return;
+        }
+
+        // Not complete -> show full UI + activity
+        setProgress(p);
+        setPhase(getCurrentPhase(p));
+
+        // Add initial activity now that we know there is work to do
+        setActivity([]);
+        addActivity("🚀 Starting world building...", "loading");
+
+        await triggerWorkflow();
+        startPolling();
+      } catch (err) {
+        console.error("Bootstrap error:", err);
+        setError("Failed to check world status. Please refresh and try again.");
+      }
+    };
+
+    const triggerWorkflow = async () => {
+      if (!storyId || workflowTriggered.current) return;
+      workflowTriggered.current = true;
+
+      const res = await fetch(`/api/stories/${storyId}/ensure-world`, {
+        method: "POST",
       });
-  }, [storyId]);
 
-  /* ======================================================
-     BOOTSTRAP POLLING
-  ====================================================== */
+      if (!res.ok) {
+        throw new Error(`Failed to start workflow: ${res.status}`);
+      }
+    };
 
-  useEffect(() => {
-    if (!storyId) return;
+    const startPolling = () => {
+      if (pollingStarted.current) return;
+      pollingStarted.current = true;
 
-    addActivity("🚀 Starting world building...", "loading");
+      // Initial call
+      checkProgress();
 
-    // Initial call
-    checkProgress();
+      // Poll every 2 seconds
+      pollRef.current = setInterval(checkProgress, 2000);
+    };
 
-    // Poll every 2 seconds
-    pollRef.current = setInterval(checkProgress, 2000);
+    run();
 
     return () => {
+      cancelled = true;
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [storyId]);
@@ -260,9 +346,10 @@ export default function ExtractWorldPage() {
 
   useEffect(() => {
     if (phase === "ready" && storyId) {
-      setTimeout(() => {
+      const t = setTimeout(() => {
         router.push(`/stories/${storyId}/illustration-style`);
-      }, 2500);
+      }, 1500);
+      return () => clearTimeout(t);
     }
   }, [phase, storyId, router]);
 
@@ -280,6 +367,13 @@ export default function ExtractWorldPage() {
       estimate: string;
     }
   > = {
+    checking: {
+      title: "Checking Your World",
+      subtitle: "Seeing if anything still needs building",
+      icon: Sparkles,
+      color: "from-slate-500 to-gray-600",
+      estimate: "Just a moment…",
+    },
     extracting_characters: {
       title: "Discovering Characters",
       subtitle: "Finding every person in your story",
@@ -416,6 +510,10 @@ export default function ExtractWorldPage() {
      RENDER
   ====================================================== */
 
+  const showChecklist = phase !== "ready" && phase !== "checking";
+  const showActivity = activity.length > 0 && phase !== "checking";
+  const showInfoCards = phase !== "ready" && phase !== "checking";
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
       {/* Mobile-First Header */}
@@ -462,7 +560,14 @@ export default function ExtractWorldPage() {
                   className={`w-20 h-20 rounded-full bg-gradient-to-br ${currentPhase.color} p-1 shadow-2xl`}
                 >
                   <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
-                    <Icon className="w-10 h-10 text-gray-800" strokeWidth={2} />
+                    {phase === "checking" ? (
+                      <Loader2
+                        className="w-10 h-10 text-gray-800 animate-spin"
+                        strokeWidth={2}
+                      />
+                    ) : (
+                      <Icon className="w-10 h-10 text-gray-800" strokeWidth={2} />
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -479,69 +584,104 @@ export default function ExtractWorldPage() {
               {currentPhase.estimate && (
                 <p className="text-sm text-gray-500">{currentPhase.estimate}</p>
               )}
+
+              {/* If we checked and it’s already done, give a nicer one-liner */}
+              {phase === "ready" &&
+                progress.charactersExtracted &&
+                progress.locationsExtracted &&
+                progress.styleExtracted &&
+                progress.spreadsBuilt && (
+                  <p className="text-sm text-gray-500">
+                    All done already — jumping you to the next step ✨
+                  </p>
+                )}
             </div>
 
-            {/* Progress Steps */}
-            <div className="flex flex-col gap-2">
-              <ProgressStep
-                label="Extract Characters"
-                complete={progress.charactersExtracted}
-                active={phase === "extracting_characters"}
-              />
-              <ProgressStep
-                label="Extract Locations"
-                complete={progress.locationsExtracted}
-                active={phase === "extracting_locations"}
-              />
-              <ProgressStep
-                label="Extract Style"
-                complete={progress.styleExtracted}
-                active={phase === "extracting_style"}
-              />
-              <ProgressStep
-                label="Build Spreads"
-                complete={progress.spreadsBuilt}
-                active={phase === "building_spreads"}
-              />
-              <ProgressStep
-                label="Assign Characters"
-                complete={progress.charactersAssigned}
-                active={phase === "assigning_characters"}
-              />
-              <ProgressStep
-                label="Assign Locations"
-                complete={progress.locationsAssigned}
-                active={phase === "assigning_locations"}
-              />
-              <ProgressStep
-                label="Design Outfits"
-                complete={progress.outfitsExtracted}
-                active={phase === "extracting_outfits"}
-              />
-              <ProgressStep
-                label="Assign Outfits"
-                complete={progress.outfitsAssigned}
-                active={phase === "assigning_outfits"}
-              />
-            </div>
+            {/* During CHECKING: show a minimal loader card, not the whole checklist */}
+            {phase === "checking" && (
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+                <div className="px-4 py-4 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center">
+                    <Sparkles className="w-5 h-5 text-gray-600" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-gray-900">
+                      Checking existing progress…
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      If everything’s already built, we’ll skip straight ahead.
+                    </p>
+                  </div>
+                  <Loader2 className="w-5 h-5 text-gray-500 animate-spin" />
+                </div>
+              </div>
+            )}
 
-            {/* Progress Bar */}
-            <div className="space-y-2">
-              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                <motion.div
-                  className={`h-full bg-gradient-to-r ${currentPhase.color}`}
-                  initial={{ width: "0%" }}
-                  animate={{ width: `${overallProgress}%` }}
-                  transition={{ duration: 0.5, ease: "easeInOut" }}
+            {/* Progress Steps (only show if there is actual work to do) */}
+            {showChecklist && (
+              <div className="flex flex-col gap-2">
+                <ProgressStep
+                  label="Extract Characters"
+                  complete={progress.charactersExtracted}
+                  active={phase === "extracting_characters"}
+                />
+                <ProgressStep
+                  label="Extract Locations"
+                  complete={progress.locationsExtracted}
+                  active={phase === "extracting_locations"}
+                />
+                <ProgressStep
+                  label="Extract Style"
+                  complete={progress.styleExtracted}
+                  active={phase === "extracting_style"}
+                />
+                <ProgressStep
+                  label="Build Spreads"
+                  complete={progress.spreadsBuilt}
+                  active={phase === "building_spreads"}
+                />
+                <ProgressStep
+                  label="Assign Characters"
+                  complete={progress.charactersAssigned}
+                  active={phase === "assigning_characters"}
+                />
+                <ProgressStep
+                  label="Assign Locations"
+                  complete={progress.locationsAssigned}
+                  active={phase === "assigning_locations"}
+                />
+                <ProgressStep
+                  label="Design Outfits"
+                  complete={progress.outfitsExtracted}
+                  active={phase === "extracting_outfits"}
+                />
+                <ProgressStep
+                  label="Assign Outfits"
+                  complete={progress.outfitsAssigned}
+                  active={phase === "assigning_outfits"}
                 />
               </div>
-              <p className="text-center text-sm font-semibold text-gray-600">
-                {Math.round(overallProgress)}% Complete
-              </p>
-            </div>
+            )}
+
+            {/* Progress Bar (hide during checking; optional during ready) */}
+            {phase !== "checking" && (
+              <div className="space-y-2">
+                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <motion.div
+                    className={`h-full bg-gradient-to-r ${currentPhase.color}`}
+                    initial={{ width: "0%" }}
+                    animate={{ width: `${overallProgress}%` }}
+                    transition={{ duration: 0.5, ease: "easeInOut" }}
+                  />
+                </div>
+                <p className="text-center text-sm font-semibold text-gray-600">
+                  {Math.round(overallProgress)}% Complete
+                </p>
+              </div>
+            )}
 
             {/* Activity Feed */}
-            {activity.length > 0 && (
+            {showActivity && (
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
                 <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
                   <h3 className="text-sm font-bold text-gray-900">
@@ -577,8 +717,8 @@ export default function ExtractWorldPage() {
               </div>
             )}
 
-            {/* Info Cards (only show during processing) */}
-            {phase !== "ready" && (
+            {/* Info Cards (only show during processing, not during checking) */}
+            {showInfoCards && (
               <div className="grid grid-cols-4 gap-2">
                 <InfoCard
                   icon={Users}
@@ -604,7 +744,7 @@ export default function ExtractWorldPage() {
             )}
 
             {/* Warning for slow progress */}
-            {elapsedTime > 240 && phase !== "ready" && (
+            {elapsedTime > 240 && phase !== "ready" && phase !== "checking" && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -616,7 +756,7 @@ export default function ExtractWorldPage() {
                     Taking longer than usual
                   </p>
                   <p className="text-yellow-700 mt-1">
-                    Complex stories with many characters can take 5-6 minutes.
+                    Complex stories with many characters can take 5–6 minutes.
                     Hang tight!
                   </p>
                 </div>
