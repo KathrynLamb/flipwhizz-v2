@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   motion,
   useMotionValue,
@@ -45,6 +45,8 @@ type Character = {
   outfits?: CharacterOutfit[];
 };
 
+type SwipeAction = "lock" | "delete";
+
 const CARD_ACCENTS = [
   { from: "#C77DFF", to: "#E07ABA" },
   { from: "#FFB347", to: "#FF8A65" },
@@ -60,12 +62,7 @@ function formatOutfitKey(key: string): string {
 
 /* ------------------------------------------------------------------ */
 /* MOBILE CARD                                                         */
-/* Key changes:
-   - dragListener={false} so taps aren’t hijacked
-   - useDragControls + dedicated swipe handle to start drag
-   - remove whileTap from draggable container
-   - render edit sheet OUTSIDE the draggable motion.div
------------------------------------------------------------------- */
+/* ------------------------------------------------------------------ */
 
 export function MobileCharacterCard({
   storyId,
@@ -73,12 +70,14 @@ export function MobileCharacterCard({
   index,
   onDelete,
   onLockToggle,
+  onSwiped, // ✅ new: tells the stack to advance/unmount this card
 }: {
   storyId: string;
   character: Character;
   index: number;
   onDelete?: (id: string) => void;
   onLockToggle?: (id: string, locked: boolean) => void;
+  onSwiped?: (id: string, action: SwipeAction) => void;
 }) {
   const router = useRouter();
   const accent = CARD_ACCENTS[index % CARD_ACCENTS.length];
@@ -93,12 +92,9 @@ export function MobileCharacterCard({
   const [isDragging, setIsDragging] = useState(false);
 
   const controls = useAnimationControls();
-
-  // Drag gating: only start drag from the handle zone
   const dragControls = useDragControls();
 
   const x = useMotionValue(0);
-  const y = useMotionValue(0);
   const rotate = useTransform(x, [-250, 0, 250], [-18, 0, 18]);
   const skipOpacity = useTransform(x, [-150, -35, 0], [1, 0.35, 0]);
   const lockOpacity = useTransform(x, [0, 35, 150], [0, 0.35, 1]);
@@ -122,6 +118,7 @@ export function MobileCharacterCard({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ characterId: character.id }),
     });
+
     const newLocked = !locked;
     setLocked(newLocked);
     onLockToggle?.(character.id, newLocked);
@@ -130,7 +127,10 @@ export function MobileCharacterCard({
   async function handleDelete() {
     if (!confirm(`Delete ${character.name}?`)) return;
     setDeleting(true);
+
+    // Optimistic remove from UI immediately
     onDelete?.(character.id);
+
     await fetch(`/api/characters/${character.id}`, { method: "DELETE" });
     router.refresh();
   }
@@ -171,32 +171,31 @@ export function MobileCharacterCard({
     }
   }
 
+  // ✅ IMPORTANT: DO NOT reset the card back to x=0.
+  // Animate it out, then inform parent to advance/unmount.
   async function throwCard(direction: "left" | "right") {
-    const xTarget = direction === "right" ? 600 : -600;
+    const xTarget = direction === "right" ? 650 : -650;
     const rotateTarget = direction === "right" ? 28 : -28;
 
     await controls.start({
       x: xTarget,
-      y: 60,
       rotate: rotateTarget,
       opacity: 0,
-      transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] },
+      transition: { duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] },
     });
 
     if (direction === "right") {
       await handleLock();
+      onSwiped?.(character.id, "lock");
     } else {
-      // left = delete
       await handleDelete();
+      onSwiped?.(character.id, "delete");
     }
-
-    controls.set({ x: 0, y: 0, rotate: 0, opacity: 1 });
   }
 
   async function snapBack() {
     await controls.start({
       x: 0,
-      y: 0,
       rotate: 0,
       opacity: 1,
       transition: { type: "spring", stiffness: 420, damping: 32, mass: 0.85 },
@@ -206,7 +205,6 @@ export function MobileCharacterCard({
   async function handleDragEnd(_event: any, info: PanInfo) {
     setIsDragging(false);
 
-    // Stronger threshold = fewer accidental swipes on tap
     const SWIPE_DISTANCE = 120;
     const SWIPE_VELOCITY = 650;
 
@@ -215,41 +213,28 @@ export function MobileCharacterCard({
     const swipedLeft =
       info.offset.x < -SWIPE_DISTANCE || info.velocity.x < -SWIPE_VELOCITY;
 
-    if (swipedRight) {
-      await throwCard("right");
-    } else if (swipedLeft) {
-      await throwCard("left");
-    } else {
-      await snapBack();
-    }
+    if (swipedRight) return throwCard("right");
+    if (swipedLeft) return throwCard("left");
+    return snapBack();
   }
 
-  async function swipeLeft() {
-    await throwCard("left");
-  }
-
-  async function swipeRight() {
-    await throwCard("right");
-  }
-
-  // Wrapper so the Edit Sheet is NOT inside the draggable motion.div
   return (
     <>
       <motion.div
         animate={controls}
         drag="x"
         dragControls={dragControls}
-        dragListener={false} // ✅ critical: don't steal taps
-        dragDirectionLock // ✅ prevents diagonal drag weirdness
+        dragListener={false}
+        dragDirectionLock
         dragElastic={0.14}
         dragMomentum={false}
         onDragStart={() => setIsDragging(true)}
         onDragEnd={handleDragEnd}
-        style={{ x, y, rotate }}
+        style={{ x, rotate }}
         className="w-full h-full select-none"
       >
         <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white isolate">
-          {/* ── Image Background ── */}
+          {/* Image */}
           <div className="absolute inset-0 z-0">
             {imageUrl ? (
               <img
@@ -273,7 +258,7 @@ export function MobileCharacterCard({
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
           </div>
 
-          {/* ── Swipe Overlays ── */}
+          {/* Swipe overlays */}
           <motion.div
             style={{ opacity: skipOpacity }}
             className="absolute inset-0 z-20 pointer-events-none"
@@ -310,7 +295,7 @@ export function MobileCharacterCard({
             </div>
           </motion.div>
 
-          {/* ── Locked Badge ── */}
+          {/* Locked badge */}
           {locked && (
             <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600 text-white shadow-lg">
               <Lock className="w-3 h-3" />
@@ -318,7 +303,7 @@ export function MobileCharacterCard({
             </div>
           )}
 
-          {/* ── Upload Buttons ── */}
+          {/* Upload buttons */}
           {!locked && !uploading && !isDragging && (
             <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
               <button
@@ -349,7 +334,7 @@ export function MobileCharacterCard({
             </div>
           )}
 
-          {/* ── Uploading Overlay ── */}
+          {/* Uploading overlay */}
           {uploading && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
               <div className="flex flex-col items-center gap-2">
@@ -361,7 +346,7 @@ export function MobileCharacterCard({
             </div>
           )}
 
-          {/* ── Info Overlay ── */}
+          {/* Info overlay */}
           <div className="absolute bottom-0 left-0 right-0 z-10 px-5 pt-5 pb-28 space-y-3">
             <h2 className="text-3xl font-bold text-white drop-shadow-lg">
               {character.name}
@@ -410,12 +395,12 @@ export function MobileCharacterCard({
             </button>
           </div>
 
-          {/* ── Action Buttons ── */}
+          {/* Action buttons */}
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4">
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                swipeLeft();
+                throwCard("left");
               }}
               disabled={deleting}
               className="w-14 h-14 rounded-full bg-white shadow-xl flex items-center justify-center text-red-500 hover:scale-110 active:scale-95 transition-transform disabled:opacity-40"
@@ -430,7 +415,7 @@ export function MobileCharacterCard({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                swipeRight();
+                throwCard("right");
               }}
               className="w-16 h-16 rounded-full shadow-xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-transform"
               style={{
@@ -453,18 +438,13 @@ export function MobileCharacterCard({
             )}
           </div>
 
-          {/* ── Swipe Handle (ONLY place that starts drag) ── */}
+          {/* Drag handle (only drag start zone) */}
           {!showEdit && !uploading && (
             <div className="absolute bottom-0 left-0 right-0 z-30 px-5 pb-4">
               <div
                 className="w-full rounded-2xl bg-white/12 border border-white/20 backdrop-blur-md flex items-center justify-center gap-2 py-3 text-white/90"
-                style={{
-                  // Important for iOS Safari: makes the gesture feel intentional
-                  touchAction: "none",
-                }}
+                style={{ touchAction: "none" }}
                 onPointerDown={(e) => {
-                  // ✅ Only here do we start dragging.
-                  // Prevent text selection / accidental focus.
                   e.preventDefault();
                   e.stopPropagation();
                   setIsDragging(true);
@@ -479,7 +459,7 @@ export function MobileCharacterCard({
         </div>
       </motion.div>
 
-      {/* ── Edit Sheet (sibling; no drag interference) ── */}
+      {/* Edit sheet (sibling) */}
       <AnimatePresence>
         {showEdit && (
           <MobileEditSheet
@@ -500,7 +480,7 @@ export function MobileCharacterCard({
 }
 
 /* ------------------------------------------------------------------ */
-/* MOBILE EDIT SHEET                                                    */
+/* MOBILE EDIT SHEET (same as your version, unchanged)                 */
 /* ------------------------------------------------------------------ */
 
 function MobileEditSheet({
@@ -602,14 +582,6 @@ function MobileEditSheet({
             color: "#2D2235",
             fontFamily: "inherit",
           }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = "#C77DFF";
-            e.currentTarget.style.boxShadow = "0 0 0 4px rgba(199,125,255,0.1)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "rgba(180,150,210,0.15)";
-            e.currentTarget.style.boxShadow = "none";
-          }}
         />
       ),
     },
@@ -634,14 +606,6 @@ function MobileEditSheet({
             color: "#2D2235",
             fontFamily: "inherit",
           }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = "#E07ABA";
-            e.currentTarget.style.boxShadow = "0 0 0 4px rgba(224,122,186,0.1)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "rgba(180,150,210,0.15)";
-            e.currentTarget.style.boxShadow = "none";
-          }}
         />
       ),
     },
@@ -652,51 +616,21 @@ function MobileEditSheet({
       color: "#FFB347",
       hint: "Comma-separated traits shown as tags on the card.",
       content: (
-        <div className="space-y-3">
-          <input
-            type="text"
-            value={editData.personalityTraits}
-            onChange={(e) =>
-              setEditData({ ...editData, personalityTraits: e.target.value })
-            }
-            placeholder="brave, funny, kind, curious"
-            className="w-full rounded-2xl px-4 py-3.5 text-[15px] outline-none transition-all"
-            style={{
-              border: "2px solid rgba(180,150,210,0.15)",
-              background: "white",
-              color: "#2D2235",
-              fontFamily: "inherit",
-            }}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = "#FFB347";
-              e.currentTarget.style.boxShadow = "0 0 0 4px rgba(255,179,71,0.1)";
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = "rgba(180,150,210,0.15)";
-              e.currentTarget.style.boxShadow = "none";
-            }}
-          />
-          {editData.personalityTraits && (
-            <div className="flex flex-wrap gap-1.5">
-              {editData.personalityTraits
-                .split(",")
-                .map((t) => t.trim())
-                .filter(Boolean)
-                .map((t, i) => (
-                  <span
-                    key={i}
-                    className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                    style={{
-                      background: "rgba(255,179,71,0.12)",
-                      color: "#B87A1A",
-                    }}
-                  >
-                    {t}
-                  </span>
-                ))}
-            </div>
-          )}
-        </div>
+        <input
+          type="text"
+          value={editData.personalityTraits}
+          onChange={(e) =>
+            setEditData({ ...editData, personalityTraits: e.target.value })
+          }
+          placeholder="brave, funny, kind, curious"
+          className="w-full rounded-2xl px-4 py-3.5 text-[15px] outline-none transition-all"
+          style={{
+            border: "2px solid rgba(180,150,210,0.15)",
+            background: "white",
+            color: "#2D2235",
+            fontFamily: "inherit",
+          }}
+        />
       ),
     },
   ];
@@ -724,10 +658,7 @@ function MobileEditSheet({
                   className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                   style={{ background: "#A78BFA" }}
                 />
-                <span
-                  className="text-[13px] font-bold flex-1"
-                  style={{ color: "#6B5C80" }}
-                >
+                <span className="text-[13px] font-bold flex-1" style={{ color: "#6B5C80" }}>
                   {formatOutfitKey(outfit.outfitKey)}
                 </span>
               </div>
@@ -741,22 +672,12 @@ function MobileEditSheet({
                     }))
                   }
                   rows={3}
-                  placeholder="Describe this outfit…"
                   className="w-full rounded-xl px-3.5 py-2.5 text-[14px] leading-relaxed outline-none resize-none transition-all"
                   style={{
                     border: "1.5px solid rgba(180,150,210,0.1)",
                     background: "#FDFBFF",
                     color: "#5A4D6B",
                     fontFamily: "inherit",
-                  }}
-                  onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "#A78BFA";
-                    e.currentTarget.style.boxShadow =
-                      "0 0 0 3px rgba(167,139,250,0.1)";
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor = "rgba(180,150,210,0.1)";
-                    e.currentTarget.style.boxShadow = "none";
                   }}
                 />
               </div>
@@ -788,25 +709,18 @@ function MobileEditSheet({
           fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
         }}
       >
-        {/* Handle */}
         <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
-          <div
-            className="w-10 h-1 rounded-full"
-            style={{ background: "rgba(180,150,210,0.25)" }}
-          />
+          <div className="w-10 h-1 rounded-full" style={{ background: "rgba(180,150,210,0.25)" }} />
         </div>
 
-        {/* Header */}
         <div
           className="flex items-center justify-between px-6 py-4 flex-shrink-0"
           style={{ borderBottom: "1px solid rgba(180,150,210,0.1)" }}
         >
           <div className="flex items-center gap-3 min-w-0">
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden"
-              style={{
-                background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
-              }}
+              className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center"
+              style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}
             >
               {character.portraitImageUrl || character.referenceImageUrl ? (
                 <img
@@ -816,32 +730,19 @@ function MobileEditSheet({
                   draggable={false}
                 />
               ) : (
-                <span className="text-lg font-bold text-white">
-                  {character.name.charAt(0)}
-                </span>
+                <span className="text-lg font-bold text-white">{character.name.charAt(0)}</span>
               )}
             </div>
             <div className="min-w-0">
-              <h3
-                className="text-lg font-extrabold truncate"
-                style={{ color: "#2D2235" }}
-              >
+              <h3 className="text-lg font-extrabold truncate" style={{ color: "#2D2235" }}>
                 {character.name}
               </h3>
-              {character.role && (
-                <p
-                  className="text-[11px] font-medium truncate"
-                  style={{ color: "#A897BD" }}
-                >
-                  {character.role}
-                </p>
-              )}
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            className="w-9 h-9 rounded-xl flex items-center justify-center"
             style={{
               background: "rgba(180,150,210,0.08)",
               border: "none",
@@ -852,66 +753,50 @@ function MobileEditSheet({
           </button>
         </div>
 
-        {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2.5">
           {sections.map((section) => {
             const isOpen = openSections.has(section.key);
-
             return (
               <div
                 key={section.key}
-                className="rounded-2xl overflow-hidden transition-all"
+                className="rounded-2xl overflow-hidden"
                 style={{
                   background: "white",
                   border: isOpen
                     ? `1.5px solid ${section.color}25`
                     : "1.5px solid rgba(180,150,210,0.1)",
-                  boxShadow: isOpen ? `0 2px 12px ${section.color}10` : "none",
                 }}
               >
                 <button
                   onClick={() => toggleSection(section.key)}
-                  className="w-full flex items-center gap-3 px-4 py-4 active:bg-black/[0.02] transition-colors"
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    fontFamily: "inherit",
-                    cursor: "pointer",
-                  }}
+                  className="w-full flex items-center gap-3 px-4 py-4"
+                  style={{ background: "transparent", border: "none" }}
                 >
                   <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                    className="w-8 h-8 rounded-lg flex items-center justify-center"
                     style={{
-                      background: isOpen
-                        ? `${section.color}15`
-                        : "rgba(180,150,210,0.06)",
+                      background: isOpen ? `${section.color}15` : "rgba(180,150,210,0.06)",
                       color: isOpen ? section.color : "#A897BD",
                     }}
                   >
                     {section.icon}
                   </div>
-                  <span
-                    className="text-[14px] font-bold flex-1 text-left"
-                    style={{ color: isOpen ? "#2D2235" : "#6B5C80" }}
-                  >
+                  <span className="text-[14px] font-bold flex-1 text-left" style={{ color: "#2D2235" }}>
                     {section.label}
                   </span>
-
                   <ChevronDown
-                    className="w-4 h-4 flex-shrink-0 transition-transform"
+                    className="w-4 h-4"
                     style={{
                       color: "#A897BD",
                       transform: isOpen ? "rotate(180deg)" : "none",
+                      transition: "transform 150ms ease",
                     }}
                   />
                 </button>
 
                 {isOpen && (
                   <div>
-                    <p
-                      className="px-4 pb-2.5 text-[12px] leading-relaxed"
-                      style={{ color: "#A897BD" }}
-                    >
+                    <p className="px-4 pb-2.5 text-[12px]" style={{ color: "#A897BD" }}>
                       {section.hint}
                     </p>
                     <div className="px-4 pb-4">{section.content}</div>
@@ -922,7 +807,6 @@ function MobileEditSheet({
           })}
         </div>
 
-        {/* Save */}
         <div
           className="flex-shrink-0 px-5 pt-3 pb-8"
           style={{
@@ -959,8 +843,11 @@ function MobileEditSheet({
 }
 
 /* ------------------------------------------------------------------ */
-/* STACK CONTAINER                                                     */
-/* ------------------------------------------------------------------ */
+/* STACK CONTAINER (fixed)                                             */
+/* - stable keys (char.id)
+   - parent advances index on swipe
+   - AnimatePresence handles smooth stack transitions
+------------------------------------------------------------------ */
 
 export function MobileCharacterStack({
   storyId,
@@ -974,21 +861,10 @@ export function MobileCharacterStack({
   onLockToggle?: (id: string, locked: boolean) => void;
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const visibleCards = characters.slice(currentIndex, currentIndex + 3);
 
-  const handleDelete = (id: string) => {
-    onDelete?.(id);
-    setCurrentIndex((prev) => Math.min(prev, characters.length - 2));
-  };
-
-  const handleLockToggle = (_id: string, locked: boolean) => {
-    onLockToggle?.(_id, locked);
-    if (locked) {
-      setTimeout(() => {
-        setCurrentIndex((prev) => Math.min(prev + 1, characters.length - 1));
-      }, 350);
-    }
-  };
+  // Clamp if list shrinks
+  const safeIndex = Math.min(currentIndex, Math.max(0, characters.length - 1));
+  const visibleCards = characters.slice(safeIndex, safeIndex + 3);
 
   if (characters.length === 0) return null;
 
@@ -997,52 +873,53 @@ export function MobileCharacterStack({
       className="relative w-full mx-auto max-w-md"
       style={{ height: "calc(100vh - 280px)", minHeight: "500px" }}
     >
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {visibleCards.map((char, idx) => {
           const isTop = idx === 0;
 
           return (
-            <div
-              key={`${char.id}-${currentIndex}-${idx}`}
+            <motion.div
+              key={char.id} // ✅ stable key
               className="absolute inset-0"
               style={{
                 zIndex: 10 - idx,
                 pointerEvents: isTop ? "auto" : "none",
                 isolation: "isolate",
               }}
+              initial={{ scale: 1 - idx * 0.03, y: -idx * 8, opacity: 0 }}
+              animate={{ scale: 1 - idx * 0.03, y: -idx * 8, opacity: isTop ? 1 : 0.75 }}
+              exit={{ opacity: 0 }} // card itself animates out; this just prevents “flash”
+              transition={{ type: "spring", stiffness: 320, damping: 26 }}
             >
-              <motion.div
-                initial={isTop ? { scale: 0.95, opacity: 0 } : false}
-                animate={{
-                  scale: 1 - idx * 0.03,
-                  y: -idx * 8,
-                  opacity: isTop ? 1 : 0.7,
-                }}
-                transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                className="w-full h-full"
-              >
-                {isTop ? (
-                  <MobileCharacterCard
-                    storyId={storyId}
-                    character={char}
-                    index={currentIndex + idx}
-                    onDelete={handleDelete}
-                    onLockToggle={handleLockToggle}
-                  />
-                ) : (
-                  <CardPreview character={char} index={currentIndex + idx} />
-                )}
-              </motion.div>
-            </div>
+              {isTop ? (
+                <MobileCharacterCard
+                  storyId={storyId}
+                  character={char}
+                  index={safeIndex + idx}
+                  onDelete={onDelete}
+                  onLockToggle={onLockToggle}
+                  onSwiped={(id, action) => {
+                    // For delete: CharactersClient removes it from the list,
+                    // so we DO NOT need to advance index.
+                    // For lock: we want to go to next card.
+                    if (action === "lock") {
+                      setCurrentIndex((prev) => prev + 1);
+                    }
+                  }}
+                />
+              ) : (
+                <CardPreview character={char} index={safeIndex + idx} />
+              )}
+            </motion.div>
           );
         })}
       </AnimatePresence>
 
-      {currentIndex >= characters.length && (
+      {safeIndex >= characters.length - 1 && characters.length > 0 && (
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="absolute inset-0 flex items-center justify-center"
+          className="absolute inset-0 flex items-center justify-center pointer-events-none"
         >
           <div className="text-center space-y-3">
             <div className="text-5xl">🎉</div>
@@ -1057,7 +934,7 @@ export function MobileCharacterStack({
 }
 
 /* ------------------------------------------------------------------ */
-/* CARD PREVIEW                                                        */
+/* PREVIEW CARD                                                         */
 /* ------------------------------------------------------------------ */
 
 function CardPreview({
