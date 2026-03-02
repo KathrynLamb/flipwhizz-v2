@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useMemo, useState } from "react";
 import {
   motion,
   useMotionValue,
@@ -8,6 +8,7 @@ import {
   useAnimationControls,
   PanInfo,
   AnimatePresence,
+  useDragControls,
 } from "framer-motion";
 import {
   Lock,
@@ -18,7 +19,6 @@ import {
   Sparkles,
   Upload,
   PenLine,
-  ChevronRight,
   ChevronDown,
   Shirt,
   Eye,
@@ -60,7 +60,12 @@ function formatOutfitKey(key: string): string {
 
 /* ------------------------------------------------------------------ */
 /* MOBILE CARD                                                         */
-/* ------------------------------------------------------------------ */
+/* Key changes:
+   - dragListener={false} so taps aren’t hijacked
+   - useDragControls + dedicated swipe handle to start drag
+   - remove whileTap from draggable container
+   - render edit sheet OUTSIDE the draggable motion.div
+------------------------------------------------------------------ */
 
 export function MobileCharacterCard({
   storyId,
@@ -88,18 +93,25 @@ export function MobileCharacterCard({
   const [isDragging, setIsDragging] = useState(false);
 
   const controls = useAnimationControls();
+
+  // Drag gating: only start drag from the handle zone
+  const dragControls = useDragControls();
+
   const x = useMotionValue(0);
   const y = useMotionValue(0);
-  const rotate = useTransform(x, [-250, 0, 250], [-22, 0, 22]);
-  const skipOpacity = useTransform(x, [-150, -30, 0], [1, 0.3, 0]);
-  const lockOpacity = useTransform(x, [0, 30, 150], [0, 0.3, 1]);
+  const rotate = useTransform(x, [-250, 0, 250], [-18, 0, 18]);
+  const skipOpacity = useTransform(x, [-150, -35, 0], [1, 0.35, 0]);
+  const lockOpacity = useTransform(x, [0, 35, 150], [0, 0.35, 1]);
 
-  const traits = character.personalityTraits
-    ? character.personalityTraits
-        .split(",")
-        .map((t) => t.trim())
-        .slice(0, 3)
-    : [];
+  const traits = useMemo(() => {
+    return character.personalityTraits
+      ? character.personalityTraits
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .slice(0, 3)
+      : [];
+  }, [character.personalityTraits]);
 
   const outfits = character.outfits || [];
 
@@ -161,7 +173,8 @@ export function MobileCharacterCard({
 
   async function throwCard(direction: "left" | "right") {
     const xTarget = direction === "right" ? 600 : -600;
-    const rotateTarget = direction === "right" ? 30 : -30;
+    const rotateTarget = direction === "right" ? 28 : -28;
+
     await controls.start({
       x: xTarget,
       y: 60,
@@ -169,9 +182,14 @@ export function MobileCharacterCard({
       opacity: 0,
       transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] },
     });
+
     if (direction === "right") {
       await handleLock();
+    } else {
+      // left = delete
+      await handleDelete();
     }
+
     controls.set({ x: 0, y: 0, rotate: 0, opacity: 1 });
   }
 
@@ -181,14 +199,16 @@ export function MobileCharacterCard({
       y: 0,
       rotate: 0,
       opacity: 1,
-      transition: { type: "spring", stiffness: 400, damping: 30, mass: 0.8 },
+      transition: { type: "spring", stiffness: 420, damping: 32, mass: 0.85 },
     });
   }
 
   async function handleDragEnd(_event: any, info: PanInfo) {
     setIsDragging(false);
-    const SWIPE_DISTANCE = 100;
-    const SWIPE_VELOCITY = 500;
+
+    // Stronger threshold = fewer accidental swipes on tap
+    const SWIPE_DISTANCE = 120;
+    const SWIPE_VELOCITY = 650;
 
     const swipedRight =
       info.offset.x > SWIPE_DISTANCE || info.velocity.x > SWIPE_VELOCITY;
@@ -205,238 +225,261 @@ export function MobileCharacterCard({
   }
 
   async function swipeLeft() {
-    await controls.start({
-      x: -600,
-      y: 60,
-      rotate: -30,
-      opacity: 0,
-      transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] },
-    });
-    handleDelete();
+    await throwCard("left");
   }
 
   async function swipeRight() {
     await throwCard("right");
   }
 
+  // Wrapper so the Edit Sheet is NOT inside the draggable motion.div
   return (
-    <motion.div
-      animate={controls}
-      drag="x"
-      dragElastic={0.15}
-      dragMomentum={false}
-      onDragStart={() => setIsDragging(true)}
-      onDragEnd={handleDragEnd}
-      style={{ x, y, rotate }}
-      className="w-full h-full cursor-grab active:cursor-grabbing select-none"
-      whileTap={{ scale: 0.98 }}
-    >
-      <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white isolate">
-        {/* ── Image Background ── */}
-        <div className="absolute inset-0 z-0">
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={character.name}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div
-              className="w-full h-full flex items-center justify-center relative"
-              style={{
-                background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
-              }}
-            >
-              <span className="text-9xl font-black text-white/20 select-none">
-                {character.name.charAt(0)}
-              </span>
-            </div>
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-        </div>
-
-        {/* ── Swipe Overlays ── */}
-        <motion.div
-          style={{ opacity: skipOpacity }}
-          className="absolute inset-0 z-20 pointer-events-none"
-        >
-          <div
-            className="absolute top-10 left-6 px-5 py-2.5 rounded-2xl rotate-[-20deg]"
-            style={{
-              background: "rgba(239,68,68,0.92)",
-              border: "3px solid white",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
-            }}
-          >
-            <span className="text-white font-extrabold text-2xl tracking-wide">
-              SKIP
-            </span>
-          </div>
-        </motion.div>
-
-        <motion.div
-          style={{ opacity: lockOpacity }}
-          className="absolute inset-0 z-20 pointer-events-none"
-        >
-          <div
-            className="absolute top-10 right-6 px-5 py-2.5 rounded-2xl rotate-[20deg]"
-            style={{
-              background: "rgba(16,185,129,0.92)",
-              border: "3px solid white",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
-            }}
-          >
-            <span className="text-white font-extrabold text-2xl tracking-wide">
-              LOCK ✓
-            </span>
-          </div>
-        </motion.div>
-
-        {/* ── Locked Badge ── */}
-        {locked && (
-          <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600 text-white shadow-lg">
-            <Lock className="w-3 h-3" />
-            Locked
-          </div>
-        )}
-
-        {/* ── Upload Buttons ── */}
-        {!locked && !uploading && !isDragging && (
-          <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = "image/*";
-                input.onchange = (ev) => {
-                  const file = (ev.target as HTMLInputElement).files?.[0];
-                  if (file) uploadReference(file);
-                };
-                input.click();
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/90 text-stone-900 shadow-lg backdrop-blur-sm active:scale-95 transition-transform"
-            >
-              <Upload className="w-3 h-3" /> Photo
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                useAiImage();
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600 text-white shadow-lg active:scale-95 transition-transform"
-            >
-              <Sparkles className="w-3 h-3" /> AI
-            </button>
-          </div>
-        )}
-
-        {/* ── Uploading Overlay ── */}
-        {uploading && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
-            <div className="flex flex-col items-center gap-2">
-              <Loader2 className="w-8 h-8 text-white animate-spin" />
-              <span className="text-sm font-semibold text-white">
-                Processing…
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* ── Info Overlay ── */}
-        <div className="absolute bottom-0 left-0 right-0 z-10 px-5 pt-5 pb-28 space-y-3">
-          <h2 className="text-3xl font-bold text-white drop-shadow-lg">
-            {character.name}
-          </h2>
-
-          {character.role && (
-            <p className="text-sm font-medium text-white/85 italic">
-              {character.role}
-            </p>
-          )}
-
-          {traits.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {traits.map((t, i) => (
-                <span
-                  key={i}
-                  className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/90 backdrop-blur-sm text-stone-900"
-                >
-                  {t}
+    <>
+      <motion.div
+        animate={controls}
+        drag="x"
+        dragControls={dragControls}
+        dragListener={false} // ✅ critical: don't steal taps
+        dragDirectionLock // ✅ prevents diagonal drag weirdness
+        dragElastic={0.14}
+        dragMomentum={false}
+        onDragStart={() => setIsDragging(true)}
+        onDragEnd={handleDragEnd}
+        style={{ x, y, rotate }}
+        className="w-full h-full select-none"
+      >
+        <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white isolate">
+          {/* ── Image Background ── */}
+          <div className="absolute inset-0 z-0">
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={character.name}
+                className="w-full h-full object-cover"
+                draggable={false}
+              />
+            ) : (
+              <div
+                className="w-full h-full flex items-center justify-center relative"
+                style={{
+                  background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
+                }}
+              >
+                <span className="text-9xl font-black text-white/20 select-none">
+                  {character.name.charAt(0)}
                 </span>
-              ))}
-            </div>
-          )}
-
-          {outfits.length > 0 && (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/15 backdrop-blur-sm text-white/90">
-              <Shirt className="w-3 h-3" />
-              {outfits.length} outfit{outfits.length !== 1 ? "s" : ""}
-            </div>
-          )}
-
-          {character.description && (
-            <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">
-              {character.description}
-            </p>
-          )}
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowEdit(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold active:scale-95 transition-transform bg-white/12 backdrop-blur-md text-white border border-white/20"
-          >
-            <PenLine className="w-3.5 h-3.5" /> Edit Details
-          </button>
-        </div>
-
-        {/* ── Action Buttons ── */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              swipeLeft();
-            }}
-            disabled={deleting}
-            className="w-14 h-14 rounded-full bg-white shadow-xl flex items-center justify-center text-red-500 hover:scale-110 active:scale-95 transition-transform disabled:opacity-40"
-          >
-            {deleting ? (
-              <Loader2 className="w-6 h-6 animate-spin" />
-            ) : (
-              <X className="w-7 h-7" strokeWidth={2.5} />
+              </div>
             )}
-          </button>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+          </div>
 
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              swipeRight();
-            }}
-            className="w-16 h-16 rounded-full shadow-xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-transform"
-            style={{
-              background: locked
-                ? "linear-gradient(135deg, #43B89C, #2FA482)"
-                : `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
-            }}
+          {/* ── Swipe Overlays ── */}
+          <motion.div
+            style={{ opacity: skipOpacity }}
+            className="absolute inset-0 z-20 pointer-events-none"
           >
-            {locked ? (
-              <Unlock className="w-7 h-7" strokeWidth={2.5} />
-            ) : (
-              <Lock className="w-7 h-7" strokeWidth={2.5} />
-            )}
-          </button>
+            <div
+              className="absolute top-10 left-6 px-5 py-2.5 rounded-2xl rotate-[-20deg]"
+              style={{
+                background: "rgba(239,68,68,0.92)",
+                border: "3px solid white",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+              }}
+            >
+              <span className="text-white font-extrabold text-2xl tracking-wide">
+                SKIP
+              </span>
+            </div>
+          </motion.div>
 
+          <motion.div
+            style={{ opacity: lockOpacity }}
+            className="absolute inset-0 z-20 pointer-events-none"
+          >
+            <div
+              className="absolute top-10 right-6 px-5 py-2.5 rounded-2xl rotate-[20deg]"
+              style={{
+                background: "rgba(16,185,129,0.92)",
+                border: "3px solid white",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+              }}
+            >
+              <span className="text-white font-extrabold text-2xl tracking-wide">
+                LOCK ✓
+              </span>
+            </div>
+          </motion.div>
+
+          {/* ── Locked Badge ── */}
           {locked && (
-            <button className="w-14 h-14 rounded-full bg-emerald-500 shadow-xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-transform">
-              <Check className="w-7 h-7" strokeWidth={2.5} />
+            <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600 text-white shadow-lg">
+              <Lock className="w-3 h-3" />
+              Locked
+            </div>
+          )}
+
+          {/* ── Upload Buttons ── */}
+          {!locked && !uploading && !isDragging && (
+            <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = "image/*";
+                  input.onchange = (ev) => {
+                    const file = (ev.target as HTMLInputElement).files?.[0];
+                    if (file) uploadReference(file);
+                  };
+                  input.click();
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/90 text-stone-900 shadow-lg backdrop-blur-sm active:scale-95 transition-transform"
+              >
+                <Upload className="w-3 h-3" /> Photo
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  useAiImage();
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600 text-white shadow-lg active:scale-95 transition-transform"
+              >
+                <Sparkles className="w-3 h-3" /> AI
+              </button>
+            </div>
+          )}
+
+          {/* ── Uploading Overlay ── */}
+          {uploading && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="w-8 h-8 text-white animate-spin" />
+                <span className="text-sm font-semibold text-white">
+                  Processing…
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ── Info Overlay ── */}
+          <div className="absolute bottom-0 left-0 right-0 z-10 px-5 pt-5 pb-28 space-y-3">
+            <h2 className="text-3xl font-bold text-white drop-shadow-lg">
+              {character.name}
+            </h2>
+
+            {character.role && (
+              <p className="text-sm font-medium text-white/85 italic">
+                {character.role}
+              </p>
+            )}
+
+            {traits.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {traits.map((t, i) => (
+                  <span
+                    key={i}
+                    className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/90 backdrop-blur-sm text-stone-900"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {outfits.length > 0 && (
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/15 backdrop-blur-sm text-white/90">
+                <Shirt className="w-3 h-3" />
+                {outfits.length} outfit{outfits.length !== 1 ? "s" : ""}
+              </div>
+            )}
+
+            {character.description && (
+              <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">
+                {character.description}
+              </p>
+            )}
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowEdit(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold active:scale-95 transition-transform bg-white/12 backdrop-blur-md text-white border border-white/20"
+            >
+              <PenLine className="w-3.5 h-3.5" /> Edit Details
             </button>
+          </div>
+
+          {/* ── Action Buttons ── */}
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                swipeLeft();
+              }}
+              disabled={deleting}
+              className="w-14 h-14 rounded-full bg-white shadow-xl flex items-center justify-center text-red-500 hover:scale-110 active:scale-95 transition-transform disabled:opacity-40"
+            >
+              {deleting ? (
+                <Loader2 className="w-6 h-6 animate-spin" />
+              ) : (
+                <X className="w-7 h-7" strokeWidth={2.5} />
+              )}
+            </button>
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                swipeRight();
+              }}
+              className="w-16 h-16 rounded-full shadow-xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-transform"
+              style={{
+                background: locked
+                  ? "linear-gradient(135deg, #43B89C, #2FA482)"
+                  : `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
+              }}
+            >
+              {locked ? (
+                <Unlock className="w-7 h-7" strokeWidth={2.5} />
+              ) : (
+                <Lock className="w-7 h-7" strokeWidth={2.5} />
+              )}
+            </button>
+
+            {locked && (
+              <button className="w-14 h-14 rounded-full bg-emerald-500 shadow-xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-transform">
+                <Check className="w-7 h-7" strokeWidth={2.5} />
+              </button>
+            )}
+          </div>
+
+          {/* ── Swipe Handle (ONLY place that starts drag) ── */}
+          {!showEdit && !uploading && (
+            <div className="absolute bottom-0 left-0 right-0 z-30 px-5 pb-4">
+              <div
+                className="w-full rounded-2xl bg-white/12 border border-white/20 backdrop-blur-md flex items-center justify-center gap-2 py-3 text-white/90"
+                style={{
+                  // Important for iOS Safari: makes the gesture feel intentional
+                  touchAction: "none",
+                }}
+                onPointerDown={(e) => {
+                  // ✅ Only here do we start dragging.
+                  // Prevent text selection / accidental focus.
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(true);
+                  dragControls.start(e);
+                }}
+              >
+                <div className="w-10 h-1.5 rounded-full bg-white/40" />
+                <span className="text-xs font-semibold">Swipe to skip / lock</span>
+              </div>
+            </div>
           )}
         </div>
-      </div>
+      </motion.div>
 
-      {/* ── Edit Sheet ── */}
+      {/* ── Edit Sheet (sibling; no drag interference) ── */}
       <AnimatePresence>
         {showEdit && (
           <MobileEditSheet
@@ -452,13 +495,12 @@ export function MobileCharacterCard({
           />
         )}
       </AnimatePresence>
-    </motion.div>
+    </>
   );
 }
 
 /* ------------------------------------------------------------------ */
 /* MOBILE EDIT SHEET                                                    */
-/* Collapsible sections for each field — large touch targets           */
 /* ------------------------------------------------------------------ */
 
 function MobileEditSheet({
@@ -486,7 +528,6 @@ function MobileEditSheet({
     Object.fromEntries(outfits.map((o) => [o.id, o.outfitDescription]))
   );
 
-  // Track which sections are open — description open by default
   const [openSections, setOpenSections] = useState<Set<string>>(
     new Set(["description"])
   );
@@ -532,7 +573,14 @@ function MobileEditSheet({
     }
   }
 
-  const sections = [
+  const sections: Array<{
+    key: string;
+    label: string;
+    icon: React.ReactNode;
+    color: string;
+    hint: string;
+    content: React.ReactNode;
+  }> = [
     {
       key: "description",
       label: "Description",
@@ -555,12 +603,12 @@ function MobileEditSheet({
             fontFamily: "inherit",
           }}
           onFocus={(e) => {
-            e.target.style.borderColor = "#C77DFF";
-            e.target.style.boxShadow = "0 0 0 4px rgba(199,125,255,0.1)";
+            e.currentTarget.style.borderColor = "#C77DFF";
+            e.currentTarget.style.boxShadow = "0 0 0 4px rgba(199,125,255,0.1)";
           }}
           onBlur={(e) => {
-            e.target.style.borderColor = "rgba(180,150,210,0.15)";
-            e.target.style.boxShadow = "none";
+            e.currentTarget.style.borderColor = "rgba(180,150,210,0.15)";
+            e.currentTarget.style.boxShadow = "none";
           }}
         />
       ),
@@ -587,12 +635,12 @@ function MobileEditSheet({
             fontFamily: "inherit",
           }}
           onFocus={(e) => {
-            e.target.style.borderColor = "#E07ABA";
-            e.target.style.boxShadow = "0 0 0 4px rgba(224,122,186,0.1)";
+            e.currentTarget.style.borderColor = "#E07ABA";
+            e.currentTarget.style.boxShadow = "0 0 0 4px rgba(224,122,186,0.1)";
           }}
           onBlur={(e) => {
-            e.target.style.borderColor = "rgba(180,150,210,0.15)";
-            e.target.style.boxShadow = "none";
+            e.currentTarget.style.borderColor = "rgba(180,150,210,0.15)";
+            e.currentTarget.style.boxShadow = "none";
           }}
         />
       ),
@@ -620,15 +668,14 @@ function MobileEditSheet({
               fontFamily: "inherit",
             }}
             onFocus={(e) => {
-              e.target.style.borderColor = "#FFB347";
-              e.target.style.boxShadow = "0 0 0 4px rgba(255,179,71,0.1)";
+              e.currentTarget.style.borderColor = "#FFB347";
+              e.currentTarget.style.boxShadow = "0 0 0 4px rgba(255,179,71,0.1)";
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "rgba(180,150,210,0.15)";
-              e.target.style.boxShadow = "none";
+              e.currentTarget.style.borderColor = "rgba(180,150,210,0.15)";
+              e.currentTarget.style.boxShadow = "none";
             }}
           />
-          {/* Preview tags */}
           {editData.personalityTraits && (
             <div className="flex flex-wrap gap-1.5">
               {editData.personalityTraits
@@ -654,7 +701,6 @@ function MobileEditSheet({
     },
   ];
 
-  // Add outfits section if any exist
   if (outfits.length > 0) {
     sections.push({
       key: "outfits",
@@ -704,13 +750,13 @@ function MobileEditSheet({
                     fontFamily: "inherit",
                   }}
                   onFocus={(e) => {
-                    e.target.style.borderColor = "#A78BFA";
-                    e.target.style.boxShadow =
+                    e.currentTarget.style.borderColor = "#A78BFA";
+                    e.currentTarget.style.boxShadow =
                       "0 0 0 3px rgba(167,139,250,0.1)";
                   }}
                   onBlur={(e) => {
-                    e.target.style.borderColor = "rgba(180,150,210,0.1)";
-                    e.target.style.boxShadow = "none";
+                    e.currentTarget.style.borderColor = "rgba(180,150,210,0.1)";
+                    e.currentTarget.style.boxShadow = "none";
                   }}
                 />
               </div>
@@ -742,7 +788,7 @@ function MobileEditSheet({
           fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
         }}
       >
-        {/* ── Handle ── */}
+        {/* Handle */}
         <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
           <div
             className="w-10 h-1 rounded-full"
@@ -750,13 +796,12 @@ function MobileEditSheet({
           />
         </div>
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div
           className="flex items-center justify-between px-6 py-4 flex-shrink-0"
           style={{ borderBottom: "1px solid rgba(180,150,210,0.1)" }}
         >
           <div className="flex items-center gap-3 min-w-0">
-            {/* Character mini avatar */}
             <div
               className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden"
               style={{
@@ -765,11 +810,10 @@ function MobileEditSheet({
             >
               {character.portraitImageUrl || character.referenceImageUrl ? (
                 <img
-                  src={
-                    character.portraitImageUrl || character.referenceImageUrl!
-                  }
+                  src={character.portraitImageUrl || character.referenceImageUrl!}
                   alt=""
                   className="w-full h-full object-cover"
+                  draggable={false}
                 />
               ) : (
                 <span className="text-lg font-bold text-white">
@@ -794,6 +838,7 @@ function MobileEditSheet({
               )}
             </div>
           </div>
+
           <button
             onClick={onClose}
             className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -807,7 +852,7 @@ function MobileEditSheet({
           </button>
         </div>
 
-        {/* ── Scrollable Content ── */}
+        {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2.5">
           {sections.map((section) => {
             const isOpen = openSections.has(section.key);
@@ -821,12 +866,9 @@ function MobileEditSheet({
                   border: isOpen
                     ? `1.5px solid ${section.color}25`
                     : "1.5px solid rgba(180,150,210,0.1)",
-                  boxShadow: isOpen
-                    ? `0 2px 12px ${section.color}10`
-                    : "none",
+                  boxShadow: isOpen ? `0 2px 12px ${section.color}10` : "none",
                 }}
               >
-                {/* Section header — big touch target */}
                 <button
                   onClick={() => toggleSection(section.key)}
                   className="w-full flex items-center gap-3 px-4 py-4 active:bg-black/[0.02] transition-colors"
@@ -850,30 +892,10 @@ function MobileEditSheet({
                   </div>
                   <span
                     className="text-[14px] font-bold flex-1 text-left"
-                    style={{
-                      color: isOpen ? "#2D2235" : "#6B5C80",
-                    }}
+                    style={{ color: isOpen ? "#2D2235" : "#6B5C80" }}
                   >
                     {section.label}
                   </span>
-
-                  {/* Preview snippet when collapsed */}
-                  {!isOpen && section.key === "description" && editData.description && (
-                    <span
-                      className="text-[12px] truncate max-w-[120px]"
-                      style={{ color: "#A897BD" }}
-                    >
-                      {editData.description.slice(0, 30)}…
-                    </span>
-                  )}
-                  {!isOpen && section.key === "appearance" && editData.appearance && (
-                    <span
-                      className="text-[12px] truncate max-w-[120px]"
-                      style={{ color: "#A897BD" }}
-                    >
-                      {editData.appearance.slice(0, 30)}…
-                    </span>
-                  )}
 
                   <ChevronDown
                     className="w-4 h-4 flex-shrink-0 transition-transform"
@@ -884,18 +906,14 @@ function MobileEditSheet({
                   />
                 </button>
 
-                {/* Section content */}
                 {isOpen && (
                   <div>
-                    {/* Hint text */}
                     <p
                       className="px-4 pb-2.5 text-[12px] leading-relaxed"
                       style={{ color: "#A897BD" }}
                     >
                       {section.hint}
                     </p>
-
-                    {/* Field content */}
                     <div className="px-4 pb-4">{section.content}</div>
                   </div>
                 )}
@@ -904,7 +922,7 @@ function MobileEditSheet({
           })}
         </div>
 
-        {/* ── Save Button ── */}
+        {/* Save */}
         <div
           className="flex-shrink-0 px-5 pt-3 pb-8"
           style={{
@@ -963,8 +981,8 @@ export function MobileCharacterStack({
     setCurrentIndex((prev) => Math.min(prev, characters.length - 2));
   };
 
-  const handleLockToggle = (id: string, locked: boolean) => {
-    onLockToggle?.(id, locked);
+  const handleLockToggle = (_id: string, locked: boolean) => {
+    onLockToggle?.(_id, locked);
     if (locked) {
       setTimeout(() => {
         setCurrentIndex((prev) => Math.min(prev + 1, characters.length - 1));
@@ -1012,10 +1030,7 @@ export function MobileCharacterStack({
                     onLockToggle={handleLockToggle}
                   />
                 ) : (
-                  <CardPreview
-                    character={char}
-                    index={currentIndex + idx}
-                  />
+                  <CardPreview character={char} index={currentIndex + idx} />
                 )}
               </motion.div>
             </div>
@@ -1042,7 +1057,7 @@ export function MobileCharacterStack({
 }
 
 /* ------------------------------------------------------------------ */
-/* CARD PREVIEW (behind top card in stack)                             */
+/* CARD PREVIEW                                                        */
 /* ------------------------------------------------------------------ */
 
 function CardPreview({
@@ -1067,6 +1082,7 @@ function CardPreview({
           src={imageUrl}
           alt={character.name}
           className="w-full h-full object-cover"
+          draggable={false}
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center relative">
