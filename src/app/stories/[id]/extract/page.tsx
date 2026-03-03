@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -56,16 +56,69 @@ type ActivityItem = {
 };
 
 /* ======================================================
-   MOBILE-FIRST EXTRACT PAGE
+   HELPERS (pure — no closures over state)
+====================================================== */
+
+function getCurrentPhase(prog: ProgressData): Phase {
+  if (prog.worldComplete) return "ready";
+  if (!prog.charactersExtracted) return "extracting_characters";
+  if (!prog.locationsExtracted) return "extracting_locations";
+  if (!prog.styleExtracted) return "extracting_style";
+  if (!prog.spreadsBuilt) return "building_spreads";
+  if (!prog.charactersAssigned) return "assigning_characters";
+  if (!prog.locationsAssigned) return "assigning_locations";
+  if (!prog.outfitsExtracted) return "extracting_outfits";
+  if (!prog.outfitsAssigned) return "assigning_outfits";
+  return "ready";
+}
+
+function needsWork(p: ProgressData) {
+  if (p.worldComplete) return false;
+  return !(
+    p.charactersExtracted &&
+    p.locationsExtracted &&
+    p.styleExtracted &&
+    p.spreadsBuilt &&
+    p.charactersAssigned &&
+    p.locationsAssigned &&
+    p.outfitsExtracted &&
+    p.outfitsAssigned
+  );
+}
+
+function parseProgress(incoming: any): ProgressData {
+  const built: ProgressData = {
+    phase: "checking",
+    charactersExtracted: !!incoming.charactersExtracted,
+    locationsExtracted: !!incoming.locationsExtracted,
+    styleExtracted: !!incoming.styleExtracted,
+    spreadsBuilt: !!incoming.spreadsBuilt,
+    charactersAssigned: !!incoming.charactersAssigned,
+    locationsAssigned: !!incoming.locationsAssigned,
+    outfitsExtracted: !!incoming.outfitsExtracted,
+    outfitsAssigned: !!incoming.outfitsAssigned,
+    worldComplete: !!incoming.worldComplete,
+  };
+  built.phase = getCurrentPhase(built);
+  return built;
+}
+
+/* ======================================================
+   EXTRACT WORLD PAGE
 ====================================================== */
 
 export default function ExtractWorldPage() {
   const params = useParams();
   const router = useRouter();
 
+  const storyIdRef = useRef<string | null>(null);
+
   const storyId = useMemo(() => {
     const raw = (params as any)?.id;
-    return typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : null;
+    const id =
+      typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : null;
+    storyIdRef.current = id;
+    return id;
   }, [params]);
 
   // State
@@ -90,7 +143,7 @@ export default function ExtractWorldPage() {
   const errorCount = useRef(0);
   const lastPhaseRef = useRef<Phase>("checking");
 
-  // Gate: we do a quick “check” first, and only trigger/poll if work is needed
+  // Guard refs — these MUST be reset in cleanup for React Strict Mode
   const hasBootstrapped = useRef(false);
   const workflowTriggered = useRef(false);
   const pollingStarted = useRef(false);
@@ -99,122 +152,69 @@ export default function ExtractWorldPage() {
      ADD ACTIVITY ITEM
   ====================================================== */
 
-  const addActivity = (text: string, type: ActivityItem["type"] = "info") => {
-    const item: ActivityItem = {
-      id: `${Date.now()}-${Math.random()}`,
-      text,
-      type,
-      timestamp: Date.now(),
-    };
-    setActivity((prev) => [item, ...prev].slice(0, 10)); // Keep last 10
-  };
+  const addActivity = useCallback(
+    (text: string, type: ActivityItem["type"] = "info") => {
+      const item: ActivityItem = {
+        id: `${Date.now()}-${Math.random()}`,
+        text,
+        type,
+        timestamp: Date.now(),
+      };
+      setActivity((prev) => [item, ...prev].slice(0, 10));
+    },
+    []
+  );
 
   /* ======================================================
-     DETERMINE CURRENT PHASE FROM PROGRESS
+     APPLY PROGRESS — ref-stable
   ====================================================== */
 
-  function getCurrentPhase(prog: ProgressData): Phase {
-    if (prog.worldComplete) return "ready";
-    if (!prog.charactersExtracted) return "extracting_characters";
-    if (!prog.locationsExtracted) return "extracting_locations";
-    if (!prog.styleExtracted) return "extracting_style";
-    if (!prog.spreadsBuilt) return "building_spreads";
-    if (!prog.charactersAssigned) return "assigning_characters";
-    if (!prog.locationsAssigned) return "assigning_locations";
-    if (!prog.outfitsExtracted) return "extracting_outfits";
-    if (!prog.outfitsAssigned) return "assigning_outfits";
-    return "ready";
-  }
+  const applyProgressRef = useRef<(p: ProgressData) => void>();
 
-  function needsWork(p: ProgressData) {
-    // If worldComplete isn’t set but any step is missing, we need work.
-    if (p.worldComplete) return false;
-    return !(
-      p.charactersExtracted &&
-      p.locationsExtracted &&
-      p.styleExtracted &&
-      p.spreadsBuilt &&
-      p.charactersAssigned &&
-      p.locationsAssigned &&
-      p.outfitsExtracted &&
-      p.outfitsAssigned
-    );
-  }
-
-  /* ======================================================
-     FETCH WORKFLOW STATUS
-  ====================================================== */
-
-  async function fetchProgress(): Promise<ProgressData | null> {
-    if (!storyId) return null;
-
-    const res = await fetch(`/api/stories/${storyId}/workflow-progress`, {
-      cache: "no-store",
-    });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    const data = await res.json();
-
-    if (!data?.progress) return null;
-
-    const incoming = data.progress;
-
-    // Build a safe ProgressData object
-    const built: ProgressData = {
-      phase: "checking",
-      charactersExtracted: !!incoming.charactersExtracted,
-      locationsExtracted: !!incoming.locationsExtracted,
-      styleExtracted: !!incoming.styleExtracted,
-      spreadsBuilt: !!incoming.spreadsBuilt,
-      charactersAssigned: !!incoming.charactersAssigned,
-      locationsAssigned: !!incoming.locationsAssigned,
-      outfitsExtracted: !!incoming.outfitsExtracted,
-      outfitsAssigned: !!incoming.outfitsAssigned,
-      worldComplete: !!incoming.worldComplete,
-    };
-
-    built.phase = getCurrentPhase(built);
-
-    return built;
-  }
-
-  /* ======================================================
-     UPDATE UI + ACTIVITY ON PHASE CHANGES
-  ====================================================== */
-
-  function applyProgress(newProgress: ProgressData) {
+  applyProgressRef.current = (newProgress: ProgressData) => {
     const currentPhase = getCurrentPhase(newProgress);
 
-    // Detect phase changes and add activity (only once we're actually running)
     if (currentPhase !== lastPhaseRef.current) {
-      if (currentPhase === "extracting_locations") {
-        addActivity("✅ Characters discovered", "success");
-        addActivity("🗺️ Mapping locations...", "loading");
-      } else if (currentPhase === "extracting_style") {
-        addActivity("✅ Locations mapped", "success");
-        addActivity("🎨 Creating style guide...", "loading");
-      } else if (currentPhase === "building_spreads") {
-        addActivity("✅ Style guide ready", "success");
-        addActivity("📖 Building page spreads...", "loading");
-      } else if (currentPhase === "assigning_characters") {
-        addActivity("✅ Spreads built", "success");
-        addActivity("👤 Placing characters in scenes...", "loading");
-      } else if (currentPhase === "assigning_locations") {
-        addActivity("✅ Characters placed", "success");
-        addActivity("📍 Setting scene locations...", "loading");
-      } else if (currentPhase === "extracting_outfits") {
-        addActivity("✅ Locations set", "success");
-        addActivity("👗 Designing character outfits...", "loading");
-      } else if (currentPhase === "assigning_outfits") {
-        addActivity("✅ Outfits designed", "success");
-        addActivity("👔 Assigning outfits to scenes...", "loading");
-      } else if (currentPhase === "ready") {
-        // If we were running, celebrate. If we were just checking and found it done,
-        // we’ll show a lighter message in the “checking” UI below.
-        if (lastPhaseRef.current !== "checking") {
-          addActivity("🎉 World building complete!", "success");
-        }
+      const transitions: Record<string, [string, string]> = {
+        extracting_locations: [
+          "\u2705 Characters discovered",
+          "\uD83D\uDDFA\uFE0F Mapping locations...",
+        ],
+        extracting_style: [
+          "\u2705 Locations mapped",
+          "\uD83C\uDFA8 Creating style guide...",
+        ],
+        building_spreads: [
+          "\u2705 Style guide ready",
+          "\uD83D\uDCD6 Building page spreads...",
+        ],
+        assigning_characters: [
+          "\u2705 Spreads built",
+          "\uD83D\uDC64 Placing characters in scenes...",
+        ],
+        assigning_locations: [
+          "\u2705 Characters placed",
+          "\uD83D\uDCCD Setting scene locations...",
+        ],
+        extracting_outfits: [
+          "\u2705 Locations set",
+          "\uD83D\uDC57 Designing character outfits...",
+        ],
+        assigning_outfits: [
+          "\u2705 Outfits designed",
+          "\uD83D\uDC54 Assigning outfits to scenes...",
+        ],
+      };
+
+      const t = transitions[currentPhase];
+      if (t) {
+        addActivity(t[0], "success");
+        addActivity(t[1], "loading");
+      } else if (
+        currentPhase === "ready" &&
+        lastPhaseRef.current !== "checking"
+      ) {
+        addActivity("\uD83C\uDF89 World building complete!", "success");
       }
 
       lastPhaseRef.current = currentPhase;
@@ -223,122 +223,208 @@ export default function ExtractWorldPage() {
     setPhase(currentPhase);
     setProgress(newProgress);
 
-    // Stop polling if complete
     if (newProgress.worldComplete) {
-      if (pollRef.current) clearInterval(pollRef.current);
-    }
-  }
-
-  /* ======================================================
-     POLL LOOP
-  ====================================================== */
-
-  async function checkProgress() {
-    try {
-      const p = await fetchProgress();
-      if (!p) return;
-
-      applyProgress(p);
-      errorCount.current = 0;
-    } catch (err) {
-      console.error("Error checking progress:", err);
-      errorCount.current++;
-
-      if (errorCount.current > 5) {
-        setError("Unable to check progress. Please refresh the page.");
-        if (pollRef.current) clearInterval(pollRef.current);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
       }
     }
-  }
+  };
 
   /* ======================================================
-     BOOTSTRAP FLOW
-     1) QUICK CHECK
-     2) IF NEEDED, TRIGGER WORKFLOW
-     3) START POLLING
+     CHECK PROGRESS — ref-stable
+  ====================================================== */
+
+  const checkProgressRef = useRef<() => Promise<void>>();
+
+  checkProgressRef.current = async () => {
+    const id = storyIdRef.current;
+    if (!id) return;
+
+    try {
+      const res = await fetch(`/api/stories/${id}/workflow-progress`, {
+        cache: "no-store",
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+
+      if (!data?.progress) {
+        console.log("[poll] No progress data yet, will retry...");
+        return;
+      }
+
+      const built = parseProgress(data.progress);
+      applyProgressRef.current?.(built);
+      errorCount.current = 0;
+    } catch (err) {
+      console.error("[poll] Error:", err);
+      errorCount.current++;
+
+      if (errorCount.current > 10) {
+        setError("Unable to check progress. Please refresh the page.");
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }
+    }
+  };
+
+  /* ======================================================
+     START POLLING helper
+  ====================================================== */
+
+  const doStartPolling = useCallback(() => {
+    if (pollingStarted.current) return;
+    pollingStarted.current = true;
+
+    console.log("[extract] Polling started");
+
+    const tick = () => checkProgressRef.current?.();
+    tick();
+    pollRef.current = setInterval(tick, 2000);
+  }, []);
+
+  /* ======================================================
+     BOOTSTRAP — the main useEffect
+     
+     KEY FIX: All guard refs (hasBootstrapped, workflowTriggered,
+     pollingStarted) are RESET in the cleanup function so that
+     React 18 Strict Mode's unmount+remount cycle works correctly.
   ====================================================== */
 
   useEffect(() => {
+    // Guard: only run once per mount
     if (!storyId || hasBootstrapped.current) return;
     hasBootstrapped.current = true;
 
     let cancelled = false;
 
-    const run = async () => {
-      try {
-        setPhase("checking");
-        lastPhaseRef.current = "checking";
+    console.log("[extract] Bootstrap starting for story:", storyId);
 
-        // Lightweight check UI
-        // (Don’t add the big extraction activity log yet)
-        const p = await fetchProgress();
-
-        if (cancelled) return;
-
-        if (!p) {
-          // No progress row yet — assume we need to run workflow.
-          // Start workflow + polling.
-          addActivity("✨ Preparing your world...", "loading");
-          await triggerWorkflow();
-          startPolling();
-          return;
-        }
-
-        // If already complete, do NOT show checklist; just redirect after a beat.
-        if (!needsWork(p)) {
-          // Keep UI simple: show “All set” and bounce.
-          setProgress(p);
-          setPhase("ready");
-          return;
-        }
-
-        // Not complete -> show full UI + activity
-        setProgress(p);
-        setPhase(getCurrentPhase(p));
-
-        // Add initial activity now that we know there is work to do
-        setActivity([]);
-        addActivity("🚀 Starting world building...", "loading");
-
-        await triggerWorkflow();
-        startPolling();
-      } catch (err) {
-        console.error("Bootstrap error:", err);
-        setError("Failed to check world status. Please refresh and try again.");
-      }
+    const fetchInitialProgress = async (): Promise<ProgressData | null> => {
+      const res = await fetch(
+        `/api/stories/${storyId}/workflow-progress`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data?.progress) return null;
+      return parseProgress(data.progress);
     };
 
     const triggerWorkflow = async () => {
-      if (!storyId || workflowTriggered.current) return;
+      if (workflowTriggered.current) return;
       workflowTriggered.current = true;
 
+      console.log("[extract] Triggering ensure-world...");
       const res = await fetch(`/api/stories/${storyId}/ensure-world`, {
         method: "POST",
       });
 
       if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        console.error(`[extract] ensure-world failed: ${res.status}`, text);
         throw new Error(`Failed to start workflow: ${res.status}`);
       }
+
+      console.log("[extract] ensure-world triggered OK");
     };
 
-    const startPolling = () => {
-      if (pollingStarted.current) return;
-      pollingStarted.current = true;
+    const run = async () => {
+      try {
+        setPhase("checking");
+        lastPhaseRef.current = "checking";
+        errorCount.current = 0;
 
-      // Initial call
-      checkProgress();
+        // Step 1: Check existing progress
+        let p: ProgressData | null = null;
 
-      // Poll every 2 seconds
-      pollRef.current = setInterval(checkProgress, 2000);
+        try {
+          p = await fetchInitialProgress();
+          console.log("[extract] Initial progress:", p?.phase);
+        } catch (e) {
+          console.warn("[extract] Initial check failed, proceeding:", e);
+        }
+
+        if (cancelled) return;
+
+        // Already complete — redirect
+        if (p && !needsWork(p)) {
+          console.log("[extract] Already complete, setting ready");
+          setProgress(p);
+          setPhase("ready");
+          return;
+        }
+
+        // Show current state if partial
+        if (p) {
+          setProgress(p);
+          const cp = getCurrentPhase(p);
+          setPhase(cp);
+          lastPhaseRef.current = cp;
+          setActivity([]);
+          addActivity("\uD83D\uDE80 Continuing world building...", "loading");
+        } else {
+          addActivity("\u2728 Preparing your world...", "loading");
+        }
+
+        // Step 2: Trigger workflow (separate try/catch — failure
+        // must NOT prevent polling from starting)
+        try {
+          await triggerWorkflow();
+        } catch (e) {
+          console.warn("[extract] Trigger failed (may already be running):", e);
+        }
+
+        if (cancelled) return;
+
+        // Step 3: ALWAYS start polling
+        console.log("[extract] Starting polling after bootstrap");
+        doStartPolling();
+      } catch (err) {
+        console.error("[extract] Fatal bootstrap error:", err);
+        if (!cancelled) {
+          setError("Failed to start world building. Please refresh.");
+        }
+      }
     };
 
     run();
 
+    // Safety net: force polling after 8s if it hasn't started
+    const safetyTimer = setTimeout(() => {
+      if (!pollingStarted.current && !cancelled) {
+        console.warn("[extract] SAFETY: forcing polling start after 8s");
+        doStartPolling();
+      }
+    }, 8000);
+
+    // CLEANUP — critical for React Strict Mode.
+    // Strict Mode in dev: mount → cleanup → mount.
+    // If we don't reset these refs, the second mount skips everything.
     return () => {
+      console.log("[extract] Cleanup running");
       cancelled = true;
-      if (pollRef.current) clearInterval(pollRef.current);
+
+      // Reset ALL guard refs so the next mount can bootstrap again
+      hasBootstrapped.current = false;
+      workflowTriggered.current = false;
+      pollingStarted.current = false;
+
+      // Reset phase tracking
+      lastPhaseRef.current = "checking";
+      errorCount.current = 0;
+
+      clearTimeout(safetyTimer);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
     };
-  }, [storyId]);
+  }, [storyId, addActivity, doStartPolling]);
 
   /* ======================================================
      AUTO-REDIRECT ON COMPLETE
@@ -372,7 +458,7 @@ export default function ExtractWorldPage() {
       subtitle: "Seeing if anything still needs building",
       icon: Sparkles,
       color: "from-slate-500 to-gray-600",
-      estimate: "Just a moment…",
+      estimate: "Just a moment\u2026",
     },
     extracting_characters: {
       title: "Discovering Characters",
@@ -443,7 +529,7 @@ export default function ExtractWorldPage() {
   const Icon = currentPhase.icon;
 
   /* ======================================================
-     CALCULATE OVERALL PROGRESS
+     OVERALL PROGRESS
   ====================================================== */
 
   const overallProgress = useMemo(() => {
@@ -470,7 +556,6 @@ export default function ExtractWorldPage() {
     const timer = setInterval(() => {
       setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
     }, 1000);
-
     return () => clearInterval(timer);
   }, [startTime]);
 
@@ -516,7 +601,6 @@ export default function ExtractWorldPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
-      {/* Mobile-First Header */}
       <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-gray-200/50">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
           <button
@@ -532,7 +616,6 @@ export default function ExtractWorldPage() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <AnimatePresence mode="wait">
           <motion.div
@@ -556,7 +639,11 @@ export default function ExtractWorldPage() {
               ) : (
                 <motion.div
                   animate={{ rotate: 360 }}
-                  transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                  transition={{
+                    duration: 3,
+                    repeat: Infinity,
+                    ease: "linear",
+                  }}
                   className={`w-20 h-20 rounded-full bg-gradient-to-br ${currentPhase.color} p-1 shadow-2xl`}
                 >
                   <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
@@ -566,7 +653,10 @@ export default function ExtractWorldPage() {
                         strokeWidth={2}
                       />
                     ) : (
-                      <Icon className="w-10 h-10 text-gray-800" strokeWidth={2} />
+                      <Icon
+                        className="w-10 h-10 text-gray-800"
+                        strokeWidth={2}
+                      />
                     )}
                   </div>
                 </motion.div>
@@ -582,22 +672,18 @@ export default function ExtractWorldPage() {
                 {currentPhase.subtitle}
               </p>
               {currentPhase.estimate && (
-                <p className="text-sm text-gray-500">{currentPhase.estimate}</p>
+                <p className="text-sm text-gray-500">
+                  {currentPhase.estimate}
+                </p>
               )}
-
-              {/* If we checked and it’s already done, give a nicer one-liner */}
-              {phase === "ready" &&
-                progress.charactersExtracted &&
-                progress.locationsExtracted &&
-                progress.styleExtracted &&
-                progress.spreadsBuilt && (
-                  <p className="text-sm text-gray-500">
-                    All done already — jumping you to the next step ✨
-                  </p>
-                )}
+              {phase === "ready" && progress.worldComplete && (
+                <p className="text-sm text-gray-500">
+                  All done — jumping you to the next step ✨
+                </p>
+              )}
             </div>
 
-            {/* During CHECKING: show a minimal loader card, not the whole checklist */}
+            {/* Checking state */}
             {phase === "checking" && (
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
                 <div className="px-4 py-4 flex items-center gap-3">
@@ -609,7 +695,7 @@ export default function ExtractWorldPage() {
                       Checking existing progress…
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      If everything’s already built, we’ll skip straight ahead.
+                      If everything's already built, we'll skip straight ahead.
                     </p>
                   </div>
                   <Loader2 className="w-5 h-5 text-gray-500 animate-spin" />
@@ -617,53 +703,21 @@ export default function ExtractWorldPage() {
               </div>
             )}
 
-            {/* Progress Steps (only show if there is actual work to do) */}
+            {/* Progress Steps */}
             {showChecklist && (
               <div className="flex flex-col gap-2">
-                <ProgressStep
-                  label="Extract Characters"
-                  complete={progress.charactersExtracted}
-                  active={phase === "extracting_characters"}
-                />
-                <ProgressStep
-                  label="Extract Locations"
-                  complete={progress.locationsExtracted}
-                  active={phase === "extracting_locations"}
-                />
-                <ProgressStep
-                  label="Extract Style"
-                  complete={progress.styleExtracted}
-                  active={phase === "extracting_style"}
-                />
-                <ProgressStep
-                  label="Build Spreads"
-                  complete={progress.spreadsBuilt}
-                  active={phase === "building_spreads"}
-                />
-                <ProgressStep
-                  label="Assign Characters"
-                  complete={progress.charactersAssigned}
-                  active={phase === "assigning_characters"}
-                />
-                <ProgressStep
-                  label="Assign Locations"
-                  complete={progress.locationsAssigned}
-                  active={phase === "assigning_locations"}
-                />
-                <ProgressStep
-                  label="Design Outfits"
-                  complete={progress.outfitsExtracted}
-                  active={phase === "extracting_outfits"}
-                />
-                <ProgressStep
-                  label="Assign Outfits"
-                  complete={progress.outfitsAssigned}
-                  active={phase === "assigning_outfits"}
-                />
+                <ProgressStep label="Extract Characters" complete={progress.charactersExtracted} active={phase === "extracting_characters"} />
+                <ProgressStep label="Extract Locations" complete={progress.locationsExtracted} active={phase === "extracting_locations"} />
+                <ProgressStep label="Extract Style" complete={progress.styleExtracted} active={phase === "extracting_style"} />
+                <ProgressStep label="Build Spreads" complete={progress.spreadsBuilt} active={phase === "building_spreads"} />
+                <ProgressStep label="Assign Characters" complete={progress.charactersAssigned} active={phase === "assigning_characters"} />
+                <ProgressStep label="Assign Locations" complete={progress.locationsAssigned} active={phase === "assigning_locations"} />
+                <ProgressStep label="Design Outfits" complete={progress.outfitsExtracted} active={phase === "extracting_outfits"} />
+                <ProgressStep label="Assign Outfits" complete={progress.outfitsAssigned} active={phase === "assigning_outfits"} />
               </div>
             )}
 
-            {/* Progress Bar (hide during checking; optional during ready) */}
+            {/* Progress Bar */}
             {phase !== "checking" && (
               <div className="space-y-2">
                 <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -684,9 +738,7 @@ export default function ExtractWorldPage() {
             {showActivity && (
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
                 <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                  <h3 className="text-sm font-bold text-gray-900">
-                    Activity Log
-                  </h3>
+                  <h3 className="text-sm font-bold text-gray-900">Activity Log</h3>
                 </div>
                 <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
                   <AnimatePresence>
@@ -698,18 +750,10 @@ export default function ExtractWorldPage() {
                         exit={{ opacity: 0, x: 20 }}
                         className="px-4 py-3 flex items-start gap-3"
                       >
-                        {item.type === "success" && (
-                          <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                        )}
-                        {item.type === "loading" && (
-                          <Loader2 className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5 animate-spin" />
-                        )}
-                        {item.type === "info" && (
-                          <AlertCircle className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                        )}
-                        <span className="text-sm text-gray-700 flex-1">
-                          {item.text}
-                        </span>
+                        {item.type === "success" && <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />}
+                        {item.type === "loading" && <Loader2 className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5 animate-spin" />}
+                        {item.type === "info" && <AlertCircle className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />}
+                        <span className="text-sm text-gray-700 flex-1">{item.text}</span>
                       </motion.div>
                     ))}
                   </AnimatePresence>
@@ -717,33 +761,17 @@ export default function ExtractWorldPage() {
               </div>
             )}
 
-            {/* Info Cards (only show during processing, not during checking) */}
+            {/* Info Cards */}
             {showInfoCards && (
               <div className="grid grid-cols-4 gap-2">
-                <InfoCard
-                  icon={Users}
-                  label="Characters"
-                  status={progress.charactersExtracted ? "done" : "pending"}
-                />
-                <InfoCard
-                  icon={MapPin}
-                  label="Locations"
-                  status={progress.locationsExtracted ? "done" : "pending"}
-                />
-                <InfoCard
-                  icon={Palette}
-                  label="Style"
-                  status={progress.styleExtracted ? "done" : "pending"}
-                />
-                <InfoCard
-                  icon={Shirt}
-                  label="Outfits"
-                  status={progress.outfitsExtracted ? "done" : "pending"}
-                />
+                <InfoCard icon={Users} label="Characters" status={progress.charactersExtracted ? "done" : "pending"} />
+                <InfoCard icon={MapPin} label="Locations" status={progress.locationsExtracted ? "done" : "pending"} />
+                <InfoCard icon={Palette} label="Style" status={progress.styleExtracted ? "done" : "pending"} />
+                <InfoCard icon={Shirt} label="Outfits" status={progress.outfitsExtracted ? "done" : "pending"} />
               </div>
             )}
 
-            {/* Warning for slow progress */}
+            {/* Slow warning */}
             {elapsedTime > 240 && phase !== "ready" && phase !== "checking" && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -752,13 +780,8 @@ export default function ExtractWorldPage() {
               >
                 <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                 <div className="text-sm">
-                  <p className="font-bold text-yellow-900">
-                    Taking longer than usual
-                  </p>
-                  <p className="text-yellow-700 mt-1">
-                    Complex stories with many characters can take 5–6 minutes.
-                    Hang tight!
-                  </p>
+                  <p className="font-bold text-yellow-900">Taking longer than usual</p>
+                  <p className="text-yellow-700 mt-1">Complex stories with many characters can take 5–6 minutes. Hang tight!</p>
                 </div>
               </motion.div>
             )}
@@ -773,26 +796,12 @@ export default function ExtractWorldPage() {
    COMPONENTS
 ====================================================== */
 
-function ProgressStep({
-  label,
-  complete,
-  active,
-}: {
-  label: string;
-  complete: boolean;
-  active: boolean;
-}) {
+function ProgressStep({ label, complete, active }: { label: string; complete: boolean; active: boolean }) {
   return (
     <div className="flex items-center gap-3">
       <motion.div
-        animate={{
-          scale: active ? [1, 1.15, 1] : 1,
-        }}
-        transition={{
-          duration: 2,
-          repeat: active ? Infinity : 0,
-          ease: "easeInOut",
-        }}
+        animate={{ scale: active ? [1, 1.15, 1] : 1 }}
+        transition={{ duration: 2, repeat: active ? Infinity : 0, ease: "easeInOut" }}
         className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
           complete
             ? "bg-gradient-to-r from-green-500 to-emerald-500"
@@ -804,47 +813,20 @@ function ProgressStep({
         {complete && <CheckCircle className="w-4 h-4 text-white" />}
         {active && <Loader2 className="w-4 h-4 text-white animate-spin" />}
       </motion.div>
-      <span
-        className={`text-sm font-medium ${
-          complete || active ? "text-gray-900" : "text-gray-400"
-        }`}
-      >
+      <span className={`text-sm font-medium ${complete || active ? "text-gray-900" : "text-gray-400"}`}>
         {label}
       </span>
     </div>
   );
 }
 
-function InfoCard({
-  icon: Icon,
-  label,
-  status,
-}: {
-  icon: any;
-  label: string;
-  status: "done" | "pending";
-}) {
+function InfoCard({ icon: Icon, label, status }: { icon: any; label: string; status: "done" | "pending" }) {
   return (
-    <div
-      className={`rounded-xl p-2 sm:p-3 text-center transition-all ${
-        status === "done"
-          ? "bg-green-50 border-2 border-green-200"
-          : "bg-gray-50 border-2 border-gray-200"
-      }`}
-    >
-      <Icon
-        className={`w-5 h-5 sm:w-6 sm:h-6 mx-auto mb-1 ${
-          status === "done" ? "text-green-600" : "text-gray-400"
-        }`}
-        strokeWidth={2}
-      />
+    <div className={`rounded-xl p-2 sm:p-3 text-center transition-all ${status === "done" ? "bg-green-50 border-2 border-green-200" : "bg-gray-50 border-2 border-gray-200"}`}>
+      <Icon className={`w-5 h-5 sm:w-6 sm:h-6 mx-auto mb-1 ${status === "done" ? "text-green-600" : "text-gray-400"}`} strokeWidth={2} />
       <div className="text-xs font-semibold text-gray-900 truncate">{label}</div>
-      <div
-        className={`text-xs font-medium mt-0.5 ${
-          status === "done" ? "text-green-600" : "text-gray-500"
-        }`}
-      >
-        {status === "done" ? "✓" : "..."}
+      <div className={`text-xs font-medium mt-0.5 ${status === "done" ? "text-green-600" : "text-gray-500"}`}>
+        {status === "done" ? "\u2713" : "..."}
       </div>
     </div>
   );

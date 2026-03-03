@@ -15,7 +15,6 @@ import { MobileLocationStack } from '@/app/stories/[id]/locations/components/Mob
 import type { StepKey } from '@/lib/storySteps';
 import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
 import LocationCard from '@/app/stories/[id]/locations/components/LocationCard';
-// import { LocationCard } from '@/app/stories/[id]/locations/components/LocationCard';
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
@@ -54,6 +53,7 @@ export default function LocationsClient({
   const [locationsLocal, setLocationsLocal] = useState(locations);
   const [isPurchased, setIsPurchased] = useState<boolean | null>(null);
   const [generatingAvatars, setGeneratingAvatars] = useState(false);
+  const [lockingAll, setLockingAll] = useState(false);
 
   useEffect(() => {
     if (!storyId) return;
@@ -76,6 +76,30 @@ export default function LocationsClient({
 
   function handleDelete(id: string) {
     setLocationsLocal(prev => prev.filter(l => l.id !== id));
+  }
+
+  async function lockAllLocations() {
+    const unlocked = locationsLocal.filter(l => !l.locked);
+    if (unlocked.length === 0) return;
+
+    setLockingAll(true);
+    try {
+      await Promise.all(
+        unlocked.map(l =>
+          fetch('/api/locations/lock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locationId: l.id }),
+          })
+        )
+      );
+      setLocationsLocal(prev => prev.map(l => ({ ...l, locked: true })));
+    } catch (err) {
+      console.error(err);
+      alert('Failed to lock some locations');
+    } finally {
+      setLockingAll(false);
+    }
   }
 
   async function generateAIAvatars() {
@@ -102,7 +126,7 @@ export default function LocationsClient({
   /* -------------------------------------------------------- */
   return (
     <div className="min-h-screen bg-gradient-to-br from-stone-50 via-white to-stone-50">
-      
+
       {/* Add scrollbar hide styles */}
       <style jsx global>{`
         .scrollbar-hide {
@@ -113,7 +137,7 @@ export default function LocationsClient({
           display: none;
         }
       `}</style>
-      
+
       {/* ── UNIFIED HEADER ── */}
       <UnifiedStoryHeader
         storyId={storyId}
@@ -162,13 +186,13 @@ export default function LocationsClient({
               }}
             />
           ) : (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }} 
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
               className="flex flex-col items-center justify-center py-20"
             >
-              <motion.div 
+              <motion.div
                 initial={{ scale: 0.8 }}
                 animate={{ scale: 1 }}
                 transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
@@ -195,9 +219,9 @@ export default function LocationsClient({
                   initial={{ opacity: 0, scale: 0.9, y: 20 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: -10 }}
-                  transition={{ 
-                    duration: 0.4, 
-                    delay: idx * 0.05, 
+                  transition={{
+                    duration: 0.4,
+                    delay: idx * 0.05,
                     ease: [0.4, 0, 0.2, 1],
                     layout: { duration: 0.3 }
                   }}
@@ -216,13 +240,13 @@ export default function LocationsClient({
 
         {/* ── DESKTOP EMPTY STATE ── */}
         {locationsLocal.length === 0 && (
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }} 
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
             className="hidden md:flex flex-col items-center justify-center py-20 sm:py-32"
           >
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.8 }}
               animate={{ scale: 1 }}
               transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
@@ -256,8 +280,8 @@ export default function LocationsClient({
             >
               <div
                 className={`rounded-3xl p-6 sm:p-8 text-center relative overflow-hidden ${
-                  allLocked 
-                    ? 'bg-gradient-to-br from-emerald-50 via-green-50 to-transparent border-2 border-emerald-200' 
+                  allLocked
+                    ? 'bg-gradient-to-br from-emerald-50 via-green-50 to-transparent border-2 border-emerald-200'
                     : 'bg-stone-50 border border-stone-200'
                 }`}
               >
@@ -294,7 +318,7 @@ export default function LocationsClient({
                           await fetch(`/api/stories/${storyId}/complete-step`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ step: 'characters' }),
+                            body: JSON.stringify({ step: 'locations' }),
                           });
                           router.refresh();
                         }}
@@ -315,10 +339,28 @@ export default function LocationsClient({
                       <h2 className="text-lg sm:text-xl font-bold text-stone-900 mb-3">
                         Lock All Locations to Continue
                       </h2>
-                      <p className="text-sm text-stone-600 max-w-md mx-auto">
+                      <p className="text-sm text-stone-600 max-w-md mx-auto mb-6">
                         Review each location's image and details, then tap{' '}
-                        <span className="font-semibold text-stone-800">Lock</span> on each card.
+                        <span className="font-semibold text-stone-800">Lock</span> on each card,
+                        or lock them all at once.
                       </p>
+                      <button
+                        onClick={lockAllLocations}
+                        disabled={lockingAll}
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40"
+                        style={{
+                          background: 'linear-gradient(135deg, #B05CE6, #D45DA0)',
+                          boxShadow: '0 4px 16px rgba(176,92,230,0.25)',
+                          border: 'none',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        {lockingAll ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Locking…</>
+                        ) : (
+                          <><Lock className="w-4 h-4" /> Lock All Locations</>
+                        )}
+                      </button>
                     </>
                   )}
                 </div>
@@ -337,7 +379,7 @@ export default function LocationsClient({
             >
               <div className="rounded-3xl p-6 sm:p-8 text-center relative overflow-hidden bg-gradient-to-br from-violet-50 via-fuchsia-50 to-transparent border-2 border-violet-200">
                 <div className="absolute inset-0 bg-gradient-to-br from-violet-100/30 via-transparent to-transparent opacity-50" />
-                
+
                 <div className="relative">
                   <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-violet-500/25">
                     <CheckCircle className="w-8 h-8 text-white" />
@@ -351,7 +393,14 @@ export default function LocationsClient({
                   </p>
 
                   <button
-                    onClick={() => router.push(`/stories/${storyId}/design`)}
+                    onClick={async () => {
+                      await fetch(`/api/stories/${storyId}/complete-step`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ step: 'locations' }),
+                      });
+                      router.push(`/stories/${storyId}/design`);
+                    }}
                     className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 transition-all shadow-xl shadow-violet-500/25 active:scale-[0.98]"
                   >
                     Continue to Design

@@ -680,7 +680,14 @@ export default function PreviewPageClient({
               </p>
             </div>
             <button
-              onClick={() => router.push(`/stories/${storyId}/pay`)}
+                onClick={async () => {
+                  await fetch(`/api/stories/${storyId}/complete-step`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ step: 'preview' }),
+                  });
+                  router.push(`/stories/${storyId}/checkout`);
+                }}
               className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm text-white flex-shrink-0 hover:opacity-90 transition-opacity"
               style={{
                 background:

@@ -12,30 +12,22 @@ import { eq } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
-// Define the context type for better readability
 type Context = {
   params: Promise<{ id: string }>;
 };
 
-export async function POST(
-  _req: Request,
-  { params }: Context
-) {
+export async function POST(_req: Request, { params }: Context) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { id } = await params;
-  const storyId = id;
+  const { id: storyId } = await params;
 
   try {
-    // Check if story is already confirmed with world data
     const [existing] = await db
-      .select({
-        storyConfirmed: stories.storyConfirmed,
-      })
+      .select({ storyConfirmed: stories.storyConfirmed })
       .from(stories)
       .where(eq(stories.id, storyId));
 
@@ -43,34 +35,38 @@ export async function POST(
       return NextResponse.json({ error: "Story not found" }, { status: 404 });
     }
 
-    // If already confirmed, just return success — don't wipe anything
+    // Already confirmed — don't wipe anything
     if (existing.storyConfirmed) {
       return NextResponse.json({ ok: true, alreadyConfirmed: true });
     }
 
-    // First time confirming — run the full wipe + rebuild flow
+    // First time confirming — wipe + rebuild
     await db.transaction(async (tx) => {
-// Get current completedSteps first
-const [current] = await tx
-.select({ completedSteps: stories.completedSteps })
-.from(stories)
-.where(eq(stories.id, storyId));
+      const [current] = await tx
+        .select({ completedSteps: stories.completedSteps })
+        .from(stories)
+        .where(eq(stories.id, storyId));
 
-const existingSteps: string[] = (current?.completedSteps as string[]) || [];
-const updatedSteps = existingSteps.includes("write")
-? existingSteps
-: [...existingSteps, "write"];
+      const existingSteps: string[] =
+        (current?.completedSteps as string[]) || [];
 
-const updated = await tx
-.update(stories)
-.set({
-  storyConfirmed: true,
-  status: "confirmed",
-  completedSteps: updatedSteps,
-  updatedAt: new Date(),
-})
-.where(eq(stories.id, storyId))
-.returning({ id: stories.id });
+      // Mark all steps up to this point as complete
+      const stepsToComplete = ["write", "design"];
+      const updatedSteps = [
+        ...existingSteps,
+        ...stepsToComplete.filter((s) => !existingSteps.includes(s)),
+      ];
+
+      const updated = await tx
+        .update(stories)
+        .set({
+          storyConfirmed: true,
+          status: "confirmed",
+          completedSteps: updatedSteps,
+          updatedAt: new Date(),
+        })
+        .where(eq(stories.id, storyId))
+        .returning({ id: stories.id });
 
       if (!updated.length) {
         throw new Error("Story not found");
@@ -82,7 +78,9 @@ const updated = await tx
         tx.delete(storyLocations).where(eq(storyLocations.storyId, storyId)),
         tx.delete(storyStyleGuide).where(eq(storyStyleGuide.storyId, storyId)),
         tx.delete(storySpreads).where(eq(storySpreads.storyId, storyId)),
-        tx.delete(storyWorkflowProgress).where(eq(storyWorkflowProgress.storyId, storyId)),
+        tx
+          .delete(storyWorkflowProgress)
+          .where(eq(storyWorkflowProgress.storyId, storyId)),
       ]);
     });
 

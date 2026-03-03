@@ -438,14 +438,14 @@ export default function CharactersClient({
                     visual consistency.
                   </p>
                   <button
-                    onClick={() => router.push(`/stories/${storyId}/locations`)}
-                    className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white transition-all active:scale-[0.98]"
-                    style={{
-                      background: 'linear-gradient(135deg, #B05CE6, #D45DA0)',
-                      boxShadow: '0 6px 24px rgba(176,92,230,0.2)',
-                      border: 'none',
-                      fontFamily: 'inherit',
-                    }}
+                onClick={async () => {
+                  await fetch(`/api/stories/${storyId}/complete-step`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ step: 'characters' }),
+                  });
+                  router.push(`/stories/${storyId}/locations`);
+                }}
                   >
                     Continue to Locations
                     <ChevronRight className="w-5 h-5" />
