@@ -402,11 +402,12 @@ export const generateSingleSpread = inngest.createFunction(
         ? []
         : await db
             .select({
-              id:          characters.id,
-              name:        characters.name,
-              imageUrl:    sql<string>`COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})`,
-              description: characters.description,
-              appearance:  characters.appearance,
+              id:              characters.id,
+              name:            characters.name,
+              portraitUrl:     characters.portraitImageUrl,
+              referenceUrl:   characters.referenceImageUrl,
+              description:     characters.description,
+              appearance:      characters.appearance,
             })
             .from(characters)
             .where(inArray(characters.id, charIds));
@@ -465,10 +466,11 @@ export const generateSingleSpread = inngest.createFunction(
       console.log(
         "🎭 Characters in spread:",
         charRefs.map((c) => ({
-          name:     c.name,
-          hasImage: !!c.imageUrl,
-          hasOutfit: outfitByCharacterId.has(c.id),
-          outfit:   outfitByCharacterId.get(c.id)?.outfitKey ?? "none",
+          name:        c.name,
+          hasPortrait: !!c.portraitUrl,
+          hasReference: !!c.referenceUrl,
+          hasOutfit:   outfitByCharacterId.has(c.id),
+          outfit:      outfitByCharacterId.get(c.id)?.outfitKey ?? "none",
         }))
       );
 
@@ -561,52 +563,39 @@ Use it as the backdrop across the full spread.
         });
       }
 
-      // ── 4️⃣ CHARACTERS WITH OUTFIT INSTRUCTIONS ──────────────────────────
+      // ── 4️⃣ CHARACTERS — IMAGE-FIRST, MINIMAL TEXT ─────────────────────
+      // When we have an image, let it drive likeness — text descriptions
+      // compete with visual references in Gemini's attention.
       for (const c of charRefs) {
-        if (!c.imageUrl) {
-          console.warn(`⚠️ Missing character image for ${c.name}.`);
-          continue;
-        }
+        const imageUrl = c.portraitUrl || c.referenceUrl;
+        const hasImage = imageUrl && !isDataUrl(imageUrl);
 
-        if (isDataUrl(c.imageUrl)) {
-          console.warn(
-            `⚠️ Skipping base64 character image for ${c.name}. Reference images must be URLs.`
-          );
+        if (!hasImage) {
+          // No images at all — use text description as fallback
+          const desc = c.appearance || c.description;
+          if (desc) {
+            parts.push({
+              text: `CHARACTER: ${c.name.toUpperCase()}\nAppearance: ${desc}`,
+            });
+          }
+          console.warn(`⚠️ ${c.name}: no image, using text description only`);
           continue;
         }
 
         const outfit = outfitByCharacterId.get(c.id);
 
-        parts.push(await getImagePart(c.imageUrl));
+        parts.push(await getImagePart(imageUrl!));
+        parts.push({
+          text: `↑ THIS IS ${c.name.toUpperCase()} — match this character's face and body EXACTLY ↑`,
+        });
 
+        // Outfit instruction only — no appearance description
         if (outfit) {
           parts.push({
-            text: `
-↑ THIS IS ${c.name.toUpperCase()} ↑
-
-FACE & BODY: Match this character's face, hair colour, eye colour, skin tone, and body type EXACTLY.
-
-🎽 OUTFIT FOR THIS SCENE (${outfit.outfitKey.toUpperCase()}):
-${outfit.outfitDescription}
-
-CRITICAL: Draw ${c.name} wearing EXACTLY the outfit described above.
-DO NOT copy the clothing shown in the reference image — use it for face and body only.
-The reference image is for IDENTITY only, not for clothing.
-`.trim(),
+            text: `🎽 ${c.name.toUpperCase()} OUTFIT (${outfit.outfitKey}): ${outfit.outfitDescription}\nDo NOT copy clothing from the reference image — use the outfit above.`,
           });
-
-          console.log(
-            `✅ ${c.name}: outfit "${outfit.outfitKey}" — ${outfit.outfitDescription.substring(0, 50)}...`
-          );
+          console.log(`✅ ${c.name}: outfit "${outfit.outfitKey}"`);
         } else {
-          parts.push({
-            text: `
-↑ THIS IS ${c.name.toUpperCase()} ↑
-Match this character EXACTLY — face, body, and general appearance.
-Use appropriate clothing for the scene context.
-`.trim(),
-          });
-
           console.log(`⚠️ ${c.name}: no outfit assigned, using reference fallback`);
         }
       }
