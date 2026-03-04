@@ -15,8 +15,9 @@ import {
   Loader2,
   Shirt,
 } from 'lucide-react';
-import type { CharacterOutfit } from './CharactersClient';
+// import type { CharacterOutfit } from './CharactersClient';
 import PhotoSuggestions from './PhotoSuggestions';
+import { CharacterOutfit } from '@/app/stories/[id]/characters/CharactersClient';
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
