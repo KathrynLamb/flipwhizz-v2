@@ -2,60 +2,36 @@ import { db } from "@/db";
 import { 
   storySpreads, 
   storyPages, 
-  storySpreadPresence,
-  storySpreadScene,
+  storyPageCharacters,
+  storyPageLocations,
   characters, 
   locations,
   stories,
-  storyCharacters, // Added
-  storyLocations   // Added
+  storyCharacters,
+  storyLocations,
 } from "@/db/schema";
-import { eq, inArray, asc, sql } from "drizzle-orm";
-import { User, MapPin, Image as ImageIcon, FileText, Info } from "lucide-react";
+import { eq, inArray, asc } from "drizzle-orm";
+import { User, MapPin, Image as ImageIcon, Info } from "lucide-react";
 import Image from "next/image";
-
-// --- TYPES ---
-type SpreadChar = {
-  characterId: string;
-  role: string;
-  reason: string;
-};
-
-type EnrichedPage = {
-  id: string;
-  pageNumber: number;
-  text: string;
-  imageUrl: string | null;
-};
 
 // --- DATA FETCHING ---
 async function getSpreadData(storyId: string) {
-  // 1. Fetch Spreads with Scene & Presence Data
+  // 1. Fetch Spreads
   const spreads = await db
     .select({
       id: storySpreads.id,
       index: storySpreads.spreadIndex,
       leftPageId: storySpreads.leftPageId,
       rightPageId: storySpreads.rightPageId,
-      
-      // Scene Info
-      sceneSummary: storySpreadScene.sceneSummary,
-      illustrationPrompt: storySpreadScene.illustrationPrompt,
-      mood: storySpreadScene.mood,
-      
-      // Presence Info
-      primaryLocationId: storySpreadPresence.primaryLocationId,
-      charactersJson: storySpreadPresence.characters, // JSONB
+      sceneSummary: storySpreads.sceneSummary,
     })
     .from(storySpreads)
-    .leftJoin(storySpreadScene, eq(storySpreads.id, storySpreadScene.spreadId))
-    .leftJoin(storySpreadPresence, eq(storySpreads.id, storySpreadPresence.spreadId))
     .where(eq(storySpreads.storyId, storyId))
     .orderBy(asc(storySpreads.spreadIndex));
 
   if (!spreads.length) return [];
 
-  // 2. Fetch Pages (Text & Images)
+  // 2. Fetch Pages
   const pageIds = [
     ...spreads.map(s => s.leftPageId).filter((id): id is string => !!id),
     ...spreads.map(s => s.rightPageId).filter((id): id is string => !!id)
@@ -65,7 +41,29 @@ async function getSpreadData(storyId: string) {
     ? await db.select().from(storyPages).where(inArray(storyPages.id, pageIds))
     : [];
 
-  // 3. Fetch Character & Location Metadata (FIXED: Using Join Tables)
+  // 3. Fetch per-page character assignments
+  const pageCharAssignments = pageIds.length > 0
+    ? await db
+        .select({
+          pageId: storyPageCharacters.pageId,
+          characterId: storyPageCharacters.characterId,
+        })
+        .from(storyPageCharacters)
+        .where(inArray(storyPageCharacters.pageId, pageIds))
+    : [];
+
+  // 4. Fetch per-page location assignments
+  const pageLocAssignments = pageIds.length > 0
+    ? await db
+        .select({
+          pageId: storyPageLocations.pageId,
+          locationId: storyPageLocations.locationId,
+        })
+        .from(storyPageLocations)
+        .where(inArray(storyPageLocations.pageId, pageIds))
+    : [];
+
+  // 5. Fetch character & location metadata
   const allChars = await db
     .select({
       id: characters.id,
@@ -88,22 +86,33 @@ async function getSpreadData(storyId: string) {
     .innerJoin(storyLocations, eq(locations.id, storyLocations.locationId))
     .where(eq(storyLocations.storyId, storyId));
 
-  // 4. Assemble
+  // 6. Assemble
   return spreads.map((s) => {
-    // Resolve Location
-    const loc = allLocs.find(l => l.id === s.primaryLocationId);
-    
-    // Resolve Characters from JSON
-    const assignedChars = (s.charactersJson as SpreadChar[] || []).map(entry => {
-        const char = allChars.find(c => c.id === entry.characterId);
-        return char ? {
-            name: char.name,
-            role: entry.role,
-            imageUrl: char.portraitImageUrl || char.referenceImageUrl
-        } : null;
-    }).filter(Boolean);
+    // Get page IDs for this spread
+    const spreadPageIds = [s.leftPageId, s.rightPageId].filter(Boolean) as string[];
 
-    // Resolve Pages
+    // Resolve characters: find all character assignments for pages in this spread
+    const charIdsInSpread = [
+      ...new Set(
+        pageCharAssignments
+          .filter(a => spreadPageIds.includes(a.pageId))
+          .map(a => a.characterId)
+      )
+    ];
+    const assignedCharacters = charIdsInSpread
+      .map(cid => {
+        const char = allChars.find(c => c.id === cid);
+        return char
+          ? { name: char.name, imageUrl: char.portraitImageUrl || char.referenceImageUrl }
+          : null;
+      })
+      .filter(Boolean) as { name: string; imageUrl: string | null }[];
+
+    // Resolve location: find location for first page in this spread (should be same for both)
+    const locAssignment = pageLocAssignments.find(a => spreadPageIds.includes(a.pageId));
+    const loc = locAssignment ? allLocs.find(l => l.id === locAssignment.locationId) : null;
+
+    // Resolve pages
     const left = pages.find(p => p.id === s.leftPageId);
     const right = pages.find(p => p.id === s.rightPageId);
 
@@ -111,10 +120,10 @@ async function getSpreadData(storyId: string) {
       id: s.id,
       index: s.index,
       sceneSummary: s.sceneSummary,
-      illustrationPrompt: s.illustrationPrompt,
-      mood: s.mood,
-      primaryLocation: loc ? { name: loc.name, imageUrl: loc.portraitImageUrl || loc.referenceImageUrl } : null,
-      assignedCharacters: assignedChars as any[],
+      primaryLocation: loc
+        ? { name: loc.name, imageUrl: loc.portraitImageUrl || loc.referenceImageUrl }
+        : null,
+      assignedCharacters,
       leftPage: left ? { text: left.text, imageUrl: left.imageUrl } : null,
       rightPage: right ? { text: right.text, imageUrl: right.imageUrl } : null,
     };
@@ -155,14 +164,11 @@ export default async function DebugSpreadsPage({ params }: { params: Promise<{ i
               {/* Header */}
               <div className="bg-slate-100 p-4 border-b border-slate-200 flex justify-between items-center">
                 <span className="bg-blue-600 text-white text-xs font-bold px-2.5 py-1 rounded">SPREAD {spread.index}</span>
-                <div className="flex gap-2">
-                    {spread.mood && <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Mood: {spread.mood}</span>}
-                </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
                 
-                {/* 1. SCENE DATA (AI BRAIN) */}
+                {/* 1. SCENE DATA */}
                 <div className="p-6 bg-slate-50/50 space-y-6">
                     <div className="space-y-2">
                         <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
@@ -189,17 +195,18 @@ export default async function DebugSpreadsPage({ params }: { params: Promise<{ i
                         <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
                             <User className="w-3 h-3" /> Characters ({spread.assignedCharacters.length})
                         </h3>
-                        {spread.assignedCharacters.map((char, i) => (
-                             <div key={i} className="flex items-center gap-3 p-2 bg-white border border-slate-200 rounded-lg">
+                        {spread.assignedCharacters.length > 0 ? (
+                          spread.assignedCharacters.map((char, i) => (
+                            <div key={i} className="flex items-center gap-3 p-2 bg-white border border-slate-200 rounded-lg">
                                 <div className="w-8 h-8 rounded-full bg-slate-100 relative overflow-hidden">
                                     {char.imageUrl && <Image src={char.imageUrl} alt="" fill className="object-cover" />}
                                 </div>
-                                <div className="flex flex-col">
-                                    <span className="text-sm font-medium text-slate-800">{char.name}</span>
-                                    <span className="text-[10px] text-slate-400 uppercase">{char.role}</span>
-                                </div>
+                                <span className="text-sm font-medium text-slate-800">{char.name}</span>
                             </div>
-                        ))}
+                          ))
+                        ) : (
+                          <span className="text-xs text-red-400">No characters assigned</span>
+                        )}
                     </div>
                 </div>
 
@@ -218,7 +225,7 @@ export default async function DebugSpreadsPage({ params }: { params: Promise<{ i
   );
 }
 
-function PageView({ text, image, label }: { text?: string, image?: string | null, label: string }) {
+function PageView({ text, image, label }: { text?: string; image?: string | null; label: string }) {
   return (
     <div className="flex flex-col h-full border-l border-slate-100">
        <div className="relative aspect-[16/9] bg-slate-200 group">
