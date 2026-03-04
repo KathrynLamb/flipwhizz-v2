@@ -158,40 +158,36 @@ export async function POST(req: Request) {
     // ── 4. Resolve style ──────────────────────────────────────────────────
     const { styleBlock, avoidBlock } = buildStyleBlock(linkedStory ?? {});
 
-    // ── 5. Build visual description ───────────────────────────────────────
-    const visualDesc = [
-      character.appearance,
-      character.description,
-      character.visualDetails
-        ? Object.entries(character.visualDetails as Record<string, string>)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(", ")
-        : null,
-    ]
-      .filter(Boolean)
-      .join(". ");
-
-    const traits = character.personalityTraits ? `Personality: ${character.personalityTraits}` : "";
-
-    // ── 6. Outfit instructions ────────────────────────────────────────────
+    // ── 5. Determine what we have ─────────────────────────────────────────
     const hasReference   = !!character.referenceImageUrl;
     const useStoryOutfit = !hasReference || outfitMode === "story" || outfitMode === undefined;
 
+    // ── 6. Outfit instructions (clothing only — no physical traits) ───────
     let outfitInstructions = "";
     if (defaultOutfit && useStoryOutfit) {
-      outfitInstructions = `OUTFIT / CLOTHING:\nDraw the character wearing their default outfit: "${defaultOutfit.outfitKey.replace(/_/g, " ")}".\nDetailed clothing description: ${defaultOutfit.outfitDescription}\nThis OVERRIDES any clothing visible in the reference photo.`;
+      outfitInstructions = `OUTFIT / CLOTHING:\nDraw the character wearing: ${defaultOutfit.outfitDescription}\nThis OVERRIDES any clothing visible in the reference photo.`;
     } else if (hasReference && outfitMode === "reference") {
-      outfitInstructions = `OUTFIT / CLOTHING:\nKeep the clothing from the reference photo exactly as shown. Match it faithfully.`;
+      outfitInstructions = `OUTFIT / CLOTHING:\nKeep the clothing from the reference photo exactly as shown.`;
     }
 
     // ── 7. Text prompt ────────────────────────────────────────────────────
+    // KEY PRINCIPLE: When we have a reference image, do NOT send text
+    // descriptions of appearance — they compete with the image and
+    // Gemini prioritises the text over the visual reference.
+    // Only use text descriptions as fallback when there's no image.
+
+    const visualDesc = hasReference
+      ? ""  // Image speaks for itself — no text to override it
+      : [character.appearance, character.description].filter(Boolean).join(". ");
+
+    const traits = character.personalityTraits
+      ? `Personality: ${character.personalityTraits}`
+      : "";
+
     const textPrompt = `Generate a CHARACTER PORTRAIT for a children's book illustration.
 
 CHARACTER NAME: ${character.name}
-
-VISUAL DESCRIPTION:
-${visualDesc}
-
+${visualDesc ? `\nVISUAL DESCRIPTION:\n${visualDesc}\n` : ""}
 ${traits ? traits + "\n" : ""}
 ${outfitInstructions ? outfitInstructions + "\n" : ""}
 STYLE:
@@ -203,37 +199,44 @@ ${avoidBlock}
 REQUIREMENTS:
 - Close-up or medium-shot portrait — face and upper body clearly visible
 - Plain white or very simple, uncluttered background
-- Render in the EXACT art style shown in the STYLE REFERENCE IMAGE above
+- Render in the EXACT art style shown in the STYLE REFERENCE IMAGE
   Match: pencil/brush technique, line weight, colour temperature, paper texture
-${hasReference ? `- The CHARACTER REFERENCE IMAGE is the PRIMARY source for face, hair, eyes, skin tone
-${useStoryOutfit && defaultOutfit ? "- REPLACE any clothing from the reference photo with the outfit described above" : "- Preserve the clothing from the reference photo"}` : ""}
+${hasReference ? `- The REFERENCE IMAGE is the PRIMARY source of truth for this character's face, hair, eyes, skin tone, and body
+- Match the person in the reference image as closely as possible
+- Do NOT invent or change any physical features — trust the image
+${useStoryOutfit && defaultOutfit ? "- REPLACE clothing from the reference photo with the outfit described above" : "- Preserve the clothing from the reference photo"}` : ""}
 - NO text or labels anywhere in the image
-- High quality, clean character portrait consistent with the book's illustration style`.trim();
+- High quality, clean character portrait`.trim();
 
-    // ── 8. Assemble parts ─────────────────────────────────────────────────
+    // ── 8. Assemble parts (image-first for Gemini attention) ──────────────
     const parts: any[] = [];
 
+    // Style reference first
     if (linkedStory?.sampleIllustrationUrl && !linkedStory.sampleIllustrationUrl.startsWith("data:image")) {
       const stylePart = await getImagePart(linkedStory.sampleIllustrationUrl);
       if (stylePart) {
         parts.push(stylePart);
-        parts.push({ text: `↑ STYLE REFERENCE IMAGE ↑\nThis defines the EXACT illustration style for this book.\nMatch: pencil/brush technique, line weight, colour palette, paper texture,\nand character rendering approach.` });
+        parts.push({ text: `↑ STYLE REFERENCE IMAGE ↑\nThis defines the EXACT illustration style. Match it precisely.` });
         console.log("🎨 Style reference image included");
       }
     } else {
       console.log("🎨 No style reference image — using keywords only");
     }
 
-    parts.push({ text: textPrompt });
-
+    // Character reference image — this is the identity anchor
     if (character.referenceImageUrl) {
       console.log("📎 Attaching character reference image...");
       const charPart = await getImagePart(character.referenceImageUrl);
       if (charPart) {
         parts.push(charPart);
-        parts.push({ text: `↑ CHARACTER REFERENCE IMAGE — ${character.name.toUpperCase()} ↑\nUse this as the visual identity anchor.\nMatch: face shape, hair, eye colour, skin tone, body proportions.\n${useStoryOutfit && defaultOutfit ? "DO NOT copy the clothing — use the outfit described in the prompt instead." : ""}`.trim() });
+        parts.push({
+          text: `↑ THIS IS ${character.name.toUpperCase()} — match this person's face and body EXACTLY ↑`,
+        });
       }
     }
+
+    // Text prompt last
+    parts.push({ text: textPrompt });
 
     console.log("📦 Parts sent to Gemini:", parts.map((p, i) => ({
       index: i,
