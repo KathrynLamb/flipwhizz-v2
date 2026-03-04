@@ -9,9 +9,9 @@ import {
   characters,
   locations,
   storySpreads,
-  storySpreadScene,
-  storySpreadPresence,
   storyCharacters,
+  storyPageCharacters,
+  storyPageLocations,
   spreadCharacterOutfits,
 } from "@/db/schema";
 import { db } from "@/db";
@@ -186,8 +186,7 @@ function resolveStyleGuide(
       geminiStyleBlock: "Whimsical, warm children's book illustration, storybook quality",
       geminiAvoidBlock:
         "Photorealism, CGI, harsh shadows, logos, watermarks, guide lines, template markers",
-        typographyBlock: "Large, child-friendly hand-lettered text with excellent contrast",
-
+      typographyBlock: "Large, child-friendly hand-lettered text with excellent contrast",
     };
   }
 
@@ -203,7 +202,6 @@ function resolveStyleGuide(
   if (promptBase) {
     styleLines.push(promptBase);
   } else {
-    // Fallback: use artStyle as best available signal if analyze hasn't run yet
     styleLines.push(
       artStyle
         ? `${artStyle}, children's book illustration, storybook quality`
@@ -226,7 +224,6 @@ function resolveStyleGuide(
 
     styleLines.push(`Colour palette: ${paletteNames}`);
 
-    // Hex values give Gemini precise colour targets — much better than names alone
     if (colorPalette.hex?.length) {
       styleLines.push(`Exact palette hex values: ${colorPalette.hex.join(", ")}`);
     }
@@ -243,14 +240,12 @@ function resolveStyleGuide(
     avoidParts.push(negativePrompt);
   }
 
-  // Always append — protects layout integrity regardless of style guide content
   avoidParts.push(
     "Logos, watermarks, guide lines, template markers, text boxes, UI elements, borders"
   );
 
   const typographyBlock = style.typography?.trim()
-  ?? "Large, child-friendly hand-lettered text with excellent contrast";
-
+    ?? "Large, child-friendly hand-lettered text with excellent contrast";
 
   return {
     geminiStyleBlock: styleLines.join("\n"),
@@ -352,9 +347,6 @@ export const generateSingleSpread = inngest.createFunction(
 
       // ========================================
       // LOAD STYLE GUIDE
-      // 🔒 userNotes      = Gemini promptBase (internal — never log content)
-      // 🔒 negativePrompt = Gemini exclusions (internal — never log content)
-      // ✅ summary / visualThemes = UI copy only, never used in prompts
       // ========================================
       const style = await db.query.storyStyleGuide.findFirst({
         where: eq(storyStyleGuide.storyId, storyId),
@@ -368,28 +360,21 @@ export const generateSingleSpread = inngest.createFunction(
         hasArtStyle:        !!style?.artStyle,
         hasColorPalette:    !!style?.colorPalette,
         hasSampleImage:     !!style?.sampleIllustrationUrl,
-        // 🔒 never log actual prompt content
       });
 
       // ========================================
-      // LOAD SPREAD DATA
+      // LOAD SPREAD (for sceneSummary + spreadId)
       // ========================================
       const spread = await db
         .select({
-          spreadId:           storySpreads.id,
-          illustrationPrompt: storySpreadScene.illustrationPrompt,
-          sceneSummary:       storySpreadScene.sceneSummary,
-          mood:               storySpreadScene.mood,
-          charactersJson:     storySpreadPresence.characters,
-          primaryLocationId:  storySpreadPresence.primaryLocationId,
+          spreadId:     storySpreads.id,
+          sceneSummary: storySpreads.sceneSummary,
         })
         .from(storySpreads)
-        .leftJoin(storySpreadScene,   eq(storySpreads.id, storySpreadScene.spreadId))
-        .leftJoin(storySpreadPresence, eq(storySpreads.id, storySpreadPresence.spreadId))
         .where(
           rightPageId
             ? or(
-                eq(storySpreads.leftPageId,  leftPageId),
+                eq(storySpreads.leftPageId, leftPageId),
                 eq(storySpreads.rightPageId, rightPageId)
               )
             : eq(storySpreads.leftPageId, leftPageId)
@@ -399,6 +384,70 @@ export const generateSingleSpread = inngest.createFunction(
         .then((r) => r[0]);
 
       if (!spread) throw new Error(`No spread plan for ${pageLabel}`);
+
+      // ========================================
+      // LOAD CHARACTERS FROM PER-PAGE ASSIGNMENTS
+      // (reads storyPageCharacters instead of storySpreadPresence)
+      // ========================================
+      const spreadPageIds = [leftPageId, ...(rightPageId ? [rightPageId] : [])];
+
+      const pageCharAssignments = await db
+        .select({ characterId: storyPageCharacters.characterId })
+        .from(storyPageCharacters)
+        .where(inArray(storyPageCharacters.pageId, spreadPageIds));
+
+      const charIds = [...new Set(pageCharAssignments.map((a) => a.characterId))];
+
+      const charRefs = charIds.length === 0
+        ? []
+        : await db
+            .select({
+              id:          characters.id,
+              name:        characters.name,
+              imageUrl:    sql<string>`COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})`,
+              description: characters.description,
+              appearance:  characters.appearance,
+            })
+            .from(characters)
+            .where(inArray(characters.id, charIds));
+
+      // ========================================
+      // LOAD LOCATION FROM PER-PAGE ASSIGNMENTS
+      // (reads storyPageLocations instead of storySpreadPresence)
+      // ========================================
+      const pageLocAssignments = await db
+        .select({ locationId: storyPageLocations.locationId })
+        .from(storyPageLocations)
+        .where(inArray(storyPageLocations.pageId, spreadPageIds));
+
+      const locIds = [...new Set(pageLocAssignments.map((a) => a.locationId))];
+
+      let locationRef: null | {
+        name: string;
+        imageUrl: string;
+        description: string | null;
+      } = null;
+
+      if (locIds.length > 0) {
+        const loc = await db
+          .select({
+            name:        locations.name,
+            imageUrl:    sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
+            description: locations.description,
+          })
+          .from(locations)
+          .where(eq(locations.id, locIds[0]))
+          .limit(1)
+          .then((r) => r[0]);
+
+        if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) {
+          locationRef = loc as any;
+        } else if (loc?.imageUrl && isDataUrl(loc.imageUrl)) {
+          console.warn(
+            `⚠️ Skipping base64 location image for ${loc.name}. Location refs must be URLs.`
+          );
+        }
+      }
 
       // ========================================
       // LOAD CHARACTER OUTFITS FOR THIS SPREAD
@@ -413,28 +462,6 @@ export const generateSingleSpread = inngest.createFunction(
         outfitAssignments.map((o) => [o.characterId, o])
       );
 
-      console.log(`👗 Loaded ${outfitAssignments.length} outfit assignments for spread`);
-
-      // ========================================
-      // LOAD CHARACTERS
-      // ========================================
-      const charIds = (
-        Array.isArray(spread.charactersJson) ? spread.charactersJson : []
-      )
-        .map((c: any) => c?.characterId)
-        .filter(Boolean);
-
-      const charRefs = charIds.length === 0 ? [] : await db
-        .select({
-          id:          characters.id,
-          name:        characters.name,
-          imageUrl:    sql<string>`COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})`,
-          description: characters.description,
-          appearance:  characters.appearance,
-        })
-        .from(characters)
-        .where(inArray(characters.id, charIds));
-
       console.log(
         "🎭 Characters in spread:",
         charRefs.map((c) => ({
@@ -445,35 +472,7 @@ export const generateSingleSpread = inngest.createFunction(
         }))
       );
 
-      // ========================================
-      // LOAD LOCATION (optional)
-      // ========================================
-      let locationRef: null | {
-        name: string;
-        imageUrl: string;
-        description: string | null;
-      } = null;
-
-      if (spread.primaryLocationId) {
-        const loc = await db
-          .select({
-            name:        locations.name,
-            imageUrl:    sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
-            description: locations.description,
-          })
-          .from(locations)
-          .where(eq(locations.id, spread.primaryLocationId))
-          .limit(1)
-          .then((r) => r[0]);
-
-        if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) {
-          locationRef = loc as any;
-        } else if (loc?.imageUrl && isDataUrl(loc.imageUrl)) {
-          console.warn(
-            `⚠️ Skipping base64 location image for ${loc.name}. Location refs must be URLs.`
-          );
-        }
-      }
+      console.log(`👗 Loaded ${outfitAssignments.length} outfit assignments for spread`);
 
       console.log(
         "🗺️ Location ref:",
@@ -487,7 +486,7 @@ export const generateSingleSpread = inngest.createFunction(
       //
       // ORDER MATTERS for Gemini's attention:
       //   1. Layout template    — establishes spatial constraints
-      //   2. Style reference    — anchors the visual language (NEW ✨)
+      //   2. Style reference    — anchors the visual language
       //   3. Location reference — sets the environment
       //   4. Characters         — establishes who is present
       //   5. Scene instructions — drives the actual generation
@@ -519,9 +518,6 @@ TEXT PLACEMENT RULES:
       });
 
       // ── 2️⃣ STYLE REFERENCE IMAGE (if available) ─────────────────────────
-      // This is the single biggest quality lever — showing Gemini the actual
-      // style rather than just describing it in keywords.
-      // Guards: must be a URL (not base64), must exist.
       if (
         style?.sampleIllustrationUrl &&
         !isDataUrl(style.sampleIllustrationUrl)
@@ -547,7 +543,6 @@ Do NOT import a different style — stay true to this reference above all else.
           });
           console.log("🖼️ Style reference image included in prompt");
         } catch (err) {
-          // Non-fatal — generation continues without it
           console.warn("⚠️ Could not load style reference image:", err);
         }
       } else {
@@ -585,7 +580,6 @@ Use it as the backdrop across the full spread.
         parts.push(await getImagePart(c.imageUrl));
 
         if (outfit) {
-          // ✅ Outfit assigned — use it, override reference clothing
           parts.push({
             text: `
 ↑ THIS IS ${c.name.toUpperCase()} ↑
@@ -605,7 +599,6 @@ The reference image is for IDENTITY only, not for clothing.
             `✅ ${c.name}: outfit "${outfit.outfitKey}" — ${outfit.outfitDescription.substring(0, 50)}...`
           );
         } else {
-          // ⚠️ No outfit assigned — fall back to reference appearance
           parts.push({
             text: `
 ↑ THIS IS ${c.name.toUpperCase()} ↑
@@ -653,9 +646,7 @@ AVOID:
 ${geminiAvoidBlock}
 
 SCENE:
-${spread.illustrationPrompt ?? spread.sceneSummary ?? ""}
-
-MOOD: ${spread.mood ?? "Warm"}
+${spread.sceneSummary ?? ""}
 
 LEFT PAGE TEXT (integrate naturally in upper-left area):
 ${left?.text ?? ""}
