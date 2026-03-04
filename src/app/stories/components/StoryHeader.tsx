@@ -159,7 +159,7 @@ export default function UnifiedStoryHeader({
   const [mounted, setMounted] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  console.log("Completed steps", completedSteps)
+
 
   useEffect(() => setMounted(true), []);
 
