@@ -11,16 +11,24 @@ type Page = {
   imageUrl: string | null;
 };
 
+type DbSpread = {
+  id: string;
+  leftPageId: string | null;
+  rightPageId: string | null;
+};
+
 export default function StudioShell({
   story,
   pages,
   styleGuide,
   mode,
+  dbSpreads,
 }: {
   story: any;
   pages: Page[];
   styleGuide: any;
   mode: "live" | "edit";
+  dbSpreads?: DbSpread[];
 }) {
   const [isMobile, setIsMobile] = useState(false);
 
@@ -36,10 +44,10 @@ export default function StudioShell({
   if (isMobile) {
     return (
       <MobileReader
-      story={story}
-      pages={pages}
-      mode="edit"
-    />
+        story={story}
+        pages={pages}
+        mode="edit"
+      />
     );
   }
 
@@ -49,6 +57,7 @@ export default function StudioShell({
       pages={pages}
       styleGuide={styleGuide}
       mode={mode}
+      dbSpreads={dbSpreads}
     />
   );
 }

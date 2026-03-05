@@ -79,6 +79,8 @@ const STATUS_CONFIG: Record<string, {
 };
 
 export default function StoriesCard({ story }: { story: any }) {
+
+  console.log("STORY", story)
   const config = STATUS_CONFIG[story.status] ?? STATUS_CONFIG.draft;
   const StatusIcon = config.icon;
 

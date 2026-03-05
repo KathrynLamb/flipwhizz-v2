@@ -13,6 +13,7 @@ import {
   storyPageCharacters,
   storyPageLocations,
   spreadCharacterOutfits,
+  characterStoryOutfits,
 } from "@/db/schema";
 import { db } from "@/db";
 import { v2 as cloudinary } from "cloudinary";
@@ -62,6 +63,14 @@ const GenerateSingleSpreadEventSchema = z.object({
   rightPageId: z.string().nullable().optional(),
   pageLabel: z.string().min(1),
   feedback: z.string().optional(),
+  existingSpreadImageUrl: z.string().nullable().optional(),
+  referenceOverrides: z
+    .object({
+      includedCharacterIds: z.array(z.string()),
+      outfitOverrides: z.record(z.string(), z.string()),
+      locationId: z.string().nullable(),
+    })
+    .optional(),
 });
 
 /* -------------------------------------------------------------------------- */
@@ -156,12 +165,6 @@ function extractInlineImage(result: any) {
 
 /* -------------------------------------------------------------------------- */
 /*                          STYLE GUIDE EXTRACTION                            */
-/*                                                                            */
-/*  🔒 IP BOUNDARY:                                                           */
-/*  - userNotes      = promptBase (Gemini-optimised keywords) — internal only */
-/*  - negativePrompt = Gemini exclusions                      — internal only */
-/*  - artStyle / colorPalette = supplementary hints    — also shown in UI     */
-/*  - summary / visualThemes  = user-facing copy       — NEVER in prompts     */
 /* -------------------------------------------------------------------------- */
 
 type ColorPalette = {
@@ -173,8 +176,8 @@ type ColorPalette = {
 };
 
 type ResolvedStyleGuide = {
-  geminiStyleBlock: string;  // Full STYLE: section for Gemini prompt
-  geminiAvoidBlock: string;  // Full AVOID: section for Gemini prompt
+  geminiStyleBlock: string;
+  geminiAvoidBlock: string;
   typographyBlock: string;
 };
 
@@ -190,13 +193,11 @@ function resolveStyleGuide(
     };
   }
 
-  // 🔒 promptBase lives in `userNotes` — column name deliberately obscures purpose
   const promptBase = style.userNotes?.trim();
   const negativePrompt = style.negativePrompt?.trim();
   const artStyle = style.artStyle?.trim();
   const colorPalette = style.colorPalette as ColorPalette | null;
 
-  /* ── Build STYLE block ──────────────────────────────────────────────── */
   const styleLines: string[] = [];
 
   if (promptBase) {
@@ -233,7 +234,6 @@ function resolveStyleGuide(
     }
   }
 
-  /* ── Build AVOID block ──────────────────────────────────────────────── */
   const avoidParts: string[] = [];
 
   if (negativePrompt) {
@@ -323,11 +323,20 @@ export const generateSingleSpread = inngest.createFunction(
     const parsed = GenerateSingleSpreadEventSchema.safeParse(event.data);
     if (!parsed.success) throw new Error("Invalid spread payload");
 
-    const { storyId, leftPageId, rightPageId, pageLabel, feedback } =
-      parsed.data;
+    const {
+      storyId,
+      leftPageId,
+      rightPageId,
+      pageLabel,
+      feedback,
+      existingSpreadImageUrl,
+      referenceOverrides,
+    } = parsed.data;
 
     assertNonEmpty(storyId, "storyId");
     assertNonEmpty(leftPageId, "leftPageId");
+
+    const hasOverrides = !!referenceOverrides;
 
     const imageUrl = await step.run("generate-and-upload", async () => {
       // ========================================
@@ -386,17 +395,28 @@ export const generateSingleSpread = inngest.createFunction(
       if (!spread) throw new Error(`No spread plan for ${pageLabel}`);
 
       // ========================================
-      // LOAD CHARACTERS FROM PER-PAGE ASSIGNMENTS
-      // (reads storyPageCharacters instead of storySpreadPresence)
+      // RESOLVE CHARACTERS
+      // If referenceOverrides provided, use those character IDs
+      // Otherwise fall back to per-page assignments
       // ========================================
       const spreadPageIds = [leftPageId, ...(rightPageId ? [rightPageId] : [])];
 
-      const pageCharAssignments = await db
-        .select({ characterId: storyPageCharacters.characterId })
-        .from(storyPageCharacters)
-        .where(inArray(storyPageCharacters.pageId, spreadPageIds));
+      let charIds: string[];
 
-      const charIds = [...new Set(pageCharAssignments.map((a) => a.characterId))];
+      if (hasOverrides && referenceOverrides!.includedCharacterIds.length > 0) {
+        // User explicitly chose which characters to include
+        charIds = referenceOverrides!.includedCharacterIds;
+        console.log("🔄 Using user-overridden character list:", charIds.length, "characters");
+      } else {
+        // Default: read from per-page assignments
+        const pageCharAssignments = await db
+          .select({ characterId: storyPageCharacters.characterId })
+          .from(storyPageCharacters)
+          .where(inArray(storyPageCharacters.pageId, spreadPageIds));
+
+        charIds = [...new Set(pageCharAssignments.map((a) => a.characterId))];
+        console.log("📋 Using default page character assignments:", charIds.length, "characters");
+      }
 
       const charRefs = charIds.length === 0
         ? []
@@ -413,23 +433,18 @@ export const generateSingleSpread = inngest.createFunction(
             .where(inArray(characters.id, charIds));
 
       // ========================================
-      // LOAD LOCATION FROM PER-PAGE ASSIGNMENTS
-      // (reads storyPageLocations instead of storySpreadPresence)
+      // RESOLVE LOCATION
+      // If referenceOverrides provided with locationId, use that
+      // Otherwise fall back to per-page assignments
       // ========================================
-      const pageLocAssignments = await db
-        .select({ locationId: storyPageLocations.locationId })
-        .from(storyPageLocations)
-        .where(inArray(storyPageLocations.pageId, spreadPageIds));
-
-      const locIds = [...new Set(pageLocAssignments.map((a) => a.locationId))];
-
       let locationRef: null | {
         name: string;
         imageUrl: string;
         description: string | null;
       } = null;
 
-      if (locIds.length > 0) {
+      if (hasOverrides && referenceOverrides!.locationId) {
+        // User explicitly chose a location
         const loc = await db
           .select({
             name:        locations.name,
@@ -437,31 +452,105 @@ export const generateSingleSpread = inngest.createFunction(
             description: locations.description,
           })
           .from(locations)
-          .where(eq(locations.id, locIds[0]))
+          .where(eq(locations.id, referenceOverrides!.locationId))
           .limit(1)
           .then((r) => r[0]);
 
         if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) {
           locationRef = loc as any;
-        } else if (loc?.imageUrl && isDataUrl(loc.imageUrl)) {
-          console.warn(
-            `⚠️ Skipping base64 location image for ${loc.name}. Location refs must be URLs.`
-          );
+          console.log("🔄 Using user-overridden location:", loc.name);
+        }
+      } else {
+        // Default: read from per-page assignments
+        const pageLocAssignments = await db
+          .select({ locationId: storyPageLocations.locationId })
+          .from(storyPageLocations)
+          .where(inArray(storyPageLocations.pageId, spreadPageIds));
+
+        const locIds = [...new Set(pageLocAssignments.map((a) => a.locationId))];
+
+        if (locIds.length > 0) {
+          const loc = await db
+            .select({
+              name:        locations.name,
+              imageUrl:    sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
+              description: locations.description,
+            })
+            .from(locations)
+            .where(eq(locations.id, locIds[0]))
+            .limit(1)
+            .then((r) => r[0]);
+
+          if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) {
+            locationRef = loc as any;
+          } else if (loc?.imageUrl && isDataUrl(loc.imageUrl)) {
+            console.warn(
+              `⚠️ Skipping base64 location image for ${loc.name}. Location refs must be URLs.`
+            );
+          }
         }
       }
 
       // ========================================
-      // LOAD CHARACTER OUTFITS FOR THIS SPREAD
+      // RESOLVE OUTFITS
+      // If referenceOverrides provided with outfitOverrides, use those
+      // Otherwise fall back to spread outfit assignments
       // ========================================
-      const outfitAssignments = spread.spreadId
-        ? await db.query.spreadCharacterOutfits.findMany({
-            where: eq(spreadCharacterOutfits.spreadId, spread.spreadId),
-          })
-        : [];
+      let outfitByCharacterId: Map<string, { characterId: string; outfitKey: string; outfitDescription: string }>;
 
-      const outfitByCharacterId = new Map(
-        outfitAssignments.map((o) => [o.characterId, o])
-      );
+      if (hasOverrides && Object.keys(referenceOverrides!.outfitOverrides).length > 0) {
+        // User explicitly chose outfits — look up descriptions from characterStoryOutfits
+        const overrideEntries = Object.entries(referenceOverrides!.outfitOverrides);
+        const outfitLookups = await db
+          .select({
+            characterId:      characterStoryOutfits.characterId,
+            outfitKey:        characterStoryOutfits.outfitKey,
+            outfitDescription: characterStoryOutfits.outfitDescription,
+          })
+          .from(characterStoryOutfits)
+          .where(
+            and(
+              eq(characterStoryOutfits.storyId, storyId),
+              inArray(
+                characterStoryOutfits.characterId,
+                overrideEntries.map(([cid]) => cid)
+              )
+            )
+          );
+
+        outfitByCharacterId = new Map();
+        for (const [characterId, outfitKey] of overrideEntries) {
+          const match = outfitLookups.find(
+            (o) => o.characterId === characterId && o.outfitKey === outfitKey
+          );
+          if (match) {
+            outfitByCharacterId.set(characterId, {
+              characterId,
+              outfitKey: match.outfitKey,
+              outfitDescription: match.outfitDescription,
+            });
+          }
+        }
+        console.log("🔄 Using user-overridden outfits:", outfitByCharacterId.size, "outfits");
+      } else {
+        // Default: read from spread outfit assignments
+        const outfitAssignments = spread.spreadId
+          ? await db.query.spreadCharacterOutfits.findMany({
+              where: eq(spreadCharacterOutfits.spreadId, spread.spreadId),
+            })
+          : [];
+
+        outfitByCharacterId = new Map(
+          outfitAssignments.map((o) => [
+            o.characterId,
+            {
+              characterId: o.characterId,
+              outfitKey: o.outfitKey,
+              outfitDescription: o.outfitDescription,
+            },
+          ])
+        );
+      }
 
       console.log(
         "🎭 Characters in spread:",
@@ -474,8 +563,6 @@ export const generateSingleSpread = inngest.createFunction(
         }))
       );
 
-      console.log(`👗 Loaded ${outfitAssignments.length} outfit assignments for spread`);
-
       console.log(
         "🗺️ Location ref:",
         locationRef
@@ -485,13 +572,6 @@ export const generateSingleSpread = inngest.createFunction(
 
       // ========================================
       // BUILD GEMINI PROMPT PARTS
-      //
-      // ORDER MATTERS for Gemini's attention:
-      //   1. Layout template    — establishes spatial constraints
-      //   2. Style reference    — anchors the visual language
-      //   3. Location reference — sets the environment
-      //   4. Characters         — establishes who is present
-      //   5. Scene instructions — drives the actual generation
       // ========================================
       const parts: any[] = [];
 
@@ -551,6 +631,26 @@ Do NOT import a different style — stay true to this reference above all else.
         console.log("🖼️ No style reference image — using keywords only");
       }
 
+      // ── 2.5️⃣ EXISTING SPREAD IMAGE (for redraw context) ────────────────
+      if (existingSpreadImageUrl && !isDataUrl(existingSpreadImageUrl)) {
+        try {
+          parts.push(await getImagePart(existingSpreadImageUrl));
+          parts.push({
+            text: `
+↑ CURRENT ILLUSTRATION (BEING REVISED) ↑
+
+This is the EXISTING spread that the user wants to improve.
+Study it so you understand what the user's feedback refers to.
+Use it as context for the revision — keep what works, fix what's requested.
+Do NOT simply copy this image — create a fresh illustration that addresses the feedback.
+`.trim(),
+          });
+          console.log("🔄 Existing spread image included for revision context");
+        } catch (err) {
+          console.warn("⚠️ Could not load existing spread image:", err);
+        }
+      }
+
       // ── 3️⃣ LOCATION REFERENCE (if available) ───────────────────────────
       if (locationRef) {
         parts.push(await getImagePart(locationRef.imageUrl));
@@ -564,14 +664,11 @@ Use it as the backdrop across the full spread.
       }
 
       // ── 4️⃣ CHARACTERS — IMAGE-FIRST, MINIMAL TEXT ─────────────────────
-      // When we have an image, let it drive likeness — text descriptions
-      // compete with visual references in Gemini's attention.
       for (const c of charRefs) {
         const imageUrl = c.portraitUrl || c.referenceUrl;
         const hasImage = imageUrl && !isDataUrl(imageUrl);
 
         if (!hasImage) {
-          // No images at all — use text description as fallback
           const desc = c.appearance || c.description;
           if (desc) {
             parts.push({
@@ -589,7 +686,6 @@ Use it as the backdrop across the full spread.
           text: `↑ THIS IS ${c.name.toUpperCase()} — match this character's face and body EXACTLY ↑`,
         });
 
-        // Outfit instruction only — no appearance description
         if (outfit) {
           parts.push({
             text: `🎽 ${c.name.toUpperCase()} OUTFIT (${outfit.outfitKey}): ${outfit.outfitDescription}\nDo NOT copy clothing from the reference image — use the outfit above.`,
@@ -601,6 +697,8 @@ Use it as the backdrop across the full spread.
       }
 
       // ── 5️⃣ SCENE INSTRUCTIONS ────────────────────────────────────────────
+      const outfitEntries = [...outfitByCharacterId.values()];
+
       parts.push({
         text: `
 ILLUSTRATION TASK:
@@ -647,8 +745,8 @@ ${feedback ? `REVISION REQUEST:\n${feedback}\n` : ""}
 
 OUTFIT REMINDER:
 ${
-  outfitAssignments.length > 0
-    ? outfitAssignments
+  outfitEntries.length > 0
+    ? outfitEntries
         .map((o) => {
           const char = charRefs.find((c) => c.id === o.characterId);
           return `- ${char?.name ?? "Character"}: ${o.outfitDescription}`;

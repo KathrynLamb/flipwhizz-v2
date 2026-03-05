@@ -1,7 +1,7 @@
 // app/stories/[id]/studio/page.tsx
 
 import { db } from "@/db";
-import { stories, storyPages, storyStyleGuide } from "@/db/schema";
+import { stories, storyPages, storyStyleGuide, storySpreads } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import StudioShell from "./StudioShell";
@@ -35,6 +35,17 @@ export default async function StudioPage({
     where: eq(storyStyleGuide.storyId, id),
   });
 
+  // Fetch DB spreads so we can map page pairs to spread IDs
+  const dbSpreadRows = await db
+    .select({
+      id: storySpreads.id,
+      leftPageId: storySpreads.leftPageId,
+      rightPageId: storySpreads.rightPageId,
+    })
+    .from(storySpreads)
+    .where(eq(storySpreads.storyId, id))
+    .orderBy(asc(storySpreads.spreadIndex));
+
   return (
     <main className="min-h-screen bg-[#FAF9F6] text-stone-800">
       <StudioShell
@@ -42,6 +53,7 @@ export default async function StudioPage({
         pages={pages}
         styleGuide={styleGuide}
         mode={mode === "live" ? "live" : "edit"}
+        dbSpreads={dbSpreadRows}
       />
     </main>
   );

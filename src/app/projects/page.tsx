@@ -22,7 +22,6 @@ export default async function ProjectsIndexPage() {
       projectId: stories.projectId,
       title: stories.title,
       description: stories.description,
-      coverSpread: stories.coverSpreadUrl,
       status: sql<string>`coalesce(${stories.status}, 'planning')`,
       paymentStatus: sql<string>`coalesce(${stories.paymentStatus}, 'pending')`,
       createdAt: stories.createdAt,
@@ -30,18 +29,23 @@ export default async function ProjectsIndexPage() {
       storyConfirmed: sql<boolean>`true`,
       coverImageUrl: sql<string | null>`
         coalesce(
+          ${stories.coverSpreadUrl},
           (
-            select pi.url
+            select sp.image_url
             from story_pages sp
-            join page_images pi on pi.page_id = sp.id
             where sp.story_id = ${stories.id}
+              and sp.image_url is not null
             order by sp.page_number asc
             limit 1
           ),
           (
-            select ssg.sample_illustration_url
-            from story_style_guide ssg
-            where ssg.story_id = ${stories.id}
+            select c.portrait_image_url
+            from story_characters sc
+            join characters c on c.id = sc.character_id
+            where sc.story_id = ${stories.id}
+              and c.portrait_image_url is not null
+            order by
+              case when sc.role = 'protagonist' then 0 else 1 end asc
             limit 1
           )
         )
