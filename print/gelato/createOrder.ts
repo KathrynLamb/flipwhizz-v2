@@ -32,7 +32,7 @@ export async function createGelatoOrder(params: CreateOrderParams) {
   }
 
   const payload = {
-    orderType: "draft",  // ⚠️ Use "draft" for testing, change to "order" for production
+    orderType: "order",  // ⚠️ Use "draft" for testing, change to "order" for production
     orderReferenceId,
     customerReferenceId,
     currency: "GBP",
@@ -40,6 +40,7 @@ export async function createGelatoOrder(params: CreateOrderParams) {
       {
         itemReferenceId: uuidv4(),
         productUid,
+        pageCount: 30,  
         quantity: 1,
         files: [
           {

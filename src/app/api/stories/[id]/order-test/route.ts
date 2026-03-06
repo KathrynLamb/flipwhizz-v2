@@ -42,11 +42,11 @@ export async function POST(
       shippingAddress: {
         firstName: "Katy",
         lastName: "Lamb",
-        addressLine1: "123 Test Street",
-        city: "London",
-        postCode: "SW1A 1AA",
+        addressLine1: "Manor House",
+        city: "Stockton-on-tees",
+        postCode: "TS16 0QT",
         countryIsoCode: "GB",
-        email: "test@flipwhizz.com",
+        email: "katylamb2000@gmail.com",
       },
     });
 

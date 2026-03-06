@@ -4,7 +4,9 @@ import { stories, storyPages } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 
 import { exportCompletePDF } from "print/gelato/exportCompletePDF";
-import { uploadPdfToFirebase } from "@/lib/uploadPdfToFirebase";
+import { uploadPdfToR2 } from "@/lib/uploadPdfToR2";
+import { postProcessPdf } from "@/lib/postProcessPdf";
+// import { postProcessPdf } from "@/lib/postProcessPdf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -99,37 +101,41 @@ export async function POST(
       totalPages: interiorPages.length,
     });
 
-    console.log("🔑 Env check:", {
-      hasGelatoKey: !!process.env.GELATO_API_KEY,
-      hasGelatoProduct: !!process.env.GELATO_PRODUCT_UID,
-      keyPrefix: process.env.GELATO_API_KEY?.substring(0, 8),
-    });
-
     /* --------------------------------------------------
        4. Generate complete Gelato-ready PDF
     -------------------------------------------------- */
 
-    const pdfBuffer = await exportCompletePDF(
+    const rawPdfBuffer = await exportCompletePDF(
       {
         coverSpreadUrl: story.coverSpreadUrl,
         interiorPages,
+        storyTitle: story.title ?? undefined,
+        childName: story.childName ?? 'child',
       },
       process.env.GELATO_PRODUCT_UID!,
       process.env.GELATO_API_KEY!
     );
 
-    console.log("✅ PDF generated, size:", pdfBuffer.length, "bytes");
+    console.log("✅ PDF generated, size:", rawPdfBuffer.length, "bytes");
 
     /* --------------------------------------------------
-       5. Upload to Firebase
+       5. Post-process PDF through Ghostscript
     -------------------------------------------------- */
 
-    const pdfUrl = await uploadPdfToFirebase(pdfBuffer, storyId);
+    const pdfBuffer = await postProcessPdf(rawPdfBuffer);
+
+    console.log("✅ PDF post-processed, size:", pdfBuffer.length, "bytes");
+
+    /* --------------------------------------------------
+       6. Upload to R2
+    -------------------------------------------------- */
+
+    const pdfUrl = await uploadPdfToR2(pdfBuffer, storyId);
 
     console.log("✅ PDF uploaded to:", pdfUrl);
 
     /* --------------------------------------------------
-       6. Persist PDF URL
+       7. Persist PDF URL
     -------------------------------------------------- */
 
     await db
