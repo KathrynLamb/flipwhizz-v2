@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { motion, useMotionValue, animate, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
+import OrderBookButton from "@/components/OrderBookButton";
 
 /* -------------------------------------------------------------------------- */
 /*                                    Types                                   */
@@ -669,26 +670,29 @@ export default function MobileStudio({
         </button>
 
         {/* Export PDF (only when done) */}
-        {allGenerated && (
-          <button
-            onClick={handleExportPDF}
-            disabled={isExporting}
-            className="w-full py-4 rounded-2xl text-base font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
-            style={{
-              background: "rgba(176,92,230,0.08)",
-              border: "1.5px solid rgba(176,92,230,0.2)",
-              color: "#9B59D0",
-              fontFamily: "inherit",
-            }}
-          >
-            {isExporting ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Download className="w-5 h-5" />
-            )}
-            Export PDF
-          </button>
-        )}
+
+
+// In the bottom actions div, replace with:
+{allGenerated && story.coverSpreadUrl && (
+  <OrderBookButton storyId={story.id} />
+)}
+
+{/* Keep Design Cover button for when cover isn't done */}
+{!story.coverSpreadUrl && (
+  <button
+    onClick={() => router.push(`/stories/${story.id}/cover`)}
+    className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+    style={{
+      background: "linear-gradient(135deg, #B05CE6, #E91E8C)",
+      boxShadow: "0 4px 20px rgba(176,92,230,0.28)",
+      border: "none",
+    }}
+  >
+    <Wand2 className="w-5 h-5" />
+    Design Cover
+  </button>
+)}
+
       </div>
 
       {/* ── Feedback Sheet ── */}
