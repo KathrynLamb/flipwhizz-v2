@@ -399,7 +399,7 @@ export default function LocationsClient({
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ step: 'locations' }),
                       });
-                      router.push(`/stories/${storyId}/design`);
+                      router.push(`/stories/${storyId}/preview`);
                     }}
                     className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 transition-all shadow-xl shadow-violet-500/25 active:scale-[0.98]"
                   >

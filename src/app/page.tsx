@@ -11,6 +11,7 @@ import { projects } from "@/db/schema";
 
 import { stories, bookCovers } from "@/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import GallerySection from "@/components/GallerySection";
 
 const playfair = Playfair_Display({
   subsets: ["latin"],
@@ -86,11 +87,11 @@ export default async function Home() {
       <section className="relative w-full min-h-[85vh] md:min-h-[90vh] flex flex-col">
         <div className="absolute inset-0 z-0">
           <Image
-            src="/LandingPage/hero-new.jpeg"
+            src="/LandingPage/hero-new2.jpg"
             alt="A child's imagination coming to life from their sketchbook"
             fill
             priority
-            className="object-cover object-[center_40%] md:object-center"
+            className="object-cover object-[center_40%] md:object-center mt-8"
           />
         </div>
 
@@ -102,7 +103,7 @@ export default async function Home() {
       {/* ========================================
           CTA STRIP — clean break between hero and content
           ======================================== */}
-<section className="relative z-20 -mt-12 pb-16 pt-0">
+<section className="relative z-20 -mt-2 pb-16 pt-0">
         <div className="flex flex-col items-center gap-5">
           <div className="animate-fade-in-up">
             <HeroButton session={session} hasProjects={hasProjects} />
@@ -203,70 +204,12 @@ export default async function Home() {
       {/* ========================================
           GALLERY (PUBLIC STORIES)
           ======================================== */}
-      <section id="gallery" className="py-24 px-6 md:px-12 bg-white">
-        <div className="mx-auto max-w-6xl">
-          <h2 className="text-center font-serif text-4xl text-[#261C15] font-bold mb-16">
-            Gallery of Wonder
-          </h2>
-
-          {publicStories.length === 0 ? (
-            <div className="mx-auto max-w-xl text-center bg-[#FDF8F0]/60 border border-[#E8DDCF] rounded-2xl p-10">
-              <p className="font-serif text-2xl text-[#261C15] font-bold">
-                New stories are landing soon ✨
-              </p>
-              <p className="mt-3 text-sm text-[#6B5D52]">
-                Make a story and mark it public to have it appear here.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
-              {publicStories.map((story) => {
-                const img =
-                  coverByStoryId.get(story.id) || story.coverSpreadUrl || null;
-
-                return (
-                  <div key={story.id} className="flex flex-col gap-4">
-                    <Link
-                      href={`/public/stories/${story.id}`}
-                      className="aspect-square rounded-lg shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer overflow-hidden relative group bg-slate-800 block"
-                    >
-                      {img ? (
-                        <Image
-                          src={img}
-                          alt={story.title}
-                          fill
-                          className="object-cover transition-transform duration-500 group-hover:scale-110"
-                        />
-                      ) : (
-                        <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-600" />
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-90" />
-                      <div className="absolute bottom-0 p-4 w-full">
-                        <p className="text-white font-serif font-bold text-lg leading-tight line-clamp-2">
-                          {story.title}
-                        </p>
-                        {story.description ? (
-                          <p className="text-white/80 text-xs mt-1 line-clamp-2">
-                            {story.description}
-                          </p>
-                        ) : null}
-                      </div>
-                    </Link>
-
-                    <div className="flex items-start gap-3 px-1">
-                      <div className="w-8 h-8 rounded-full bg-slate-300 flex-shrink-0" />
-                      <p className="text-xs text-[#6B5D52] italic">
-                        &quot;A proper keepsake — the kind they&apos;ll want
-                        again tomorrow.&quot;
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </section>
+          <GallerySection
+            stories={publicStories}
+            coverByStoryId={coverByStoryId}
+            session={session}
+            hasProjects={hasProjects}
+          />
 
       {/* ========================================
           PRICING

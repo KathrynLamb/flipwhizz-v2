@@ -9,6 +9,7 @@ import {
   chatSessions,
   chatMessages,
   storyProducts,
+  projects
 } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
@@ -30,21 +31,21 @@ const DEFAULT_PAGE_COUNT = 28;
 export async function POST(req: Request) {
   console.log("🟢 API: Received story creation request");
   try {
-    const { projectId, pageCount = DEFAULT_PAGE_COUNT, intent } = await req.json();
+    const { projectId, pageCount = DEFAULT_PAGE_COUNT } = await req.json();
 
-    const ALLOWED_INTENTS = ["digital", "print", "gift"] as const;
-
-    if (intent && !ALLOWED_INTENTS.includes(intent)) {
-      return NextResponse.json(
-        { error: "Invalid intent" },
-        { status: 400 }
-      );
-    }
 
     if (!projectId) {
       console.error("🔴 API: Missing projectId");
       return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
     }
+
+    const [project] = await db
+  .select({ purchaseIntent: projects.purchaseIntent })
+  .from(projects)
+  .where(eq(projects.id, projectId))
+  .limit(1);
+
+const intent = project?.purchaseIntent;
 
     // 1. Load chat history
     const session = await db

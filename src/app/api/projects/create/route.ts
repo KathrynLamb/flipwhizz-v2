@@ -26,6 +26,7 @@ export async function POST(req: Request) {
     storyBrief: null,
     storyBasePrompt: null,
     fullAiStory: null,
+    purchaseIntent: intent || null,
   });
 
 

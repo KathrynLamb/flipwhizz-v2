@@ -17,6 +17,7 @@ export async function POST(
   try {
     const { id: storyId } = await params;
 
+    
     const story = await db.query.stories.findFirst({
       where: eq(stories.id, storyId),
     });

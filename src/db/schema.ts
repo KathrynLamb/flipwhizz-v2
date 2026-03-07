@@ -30,6 +30,7 @@ export const projects = pgTable("projects", {
   storyBrief: text("story_brief"),
   storyBasePrompt: text("story_base_prompt"),
   fullAiStory: text("full_ai_story"),
+  purchaseIntent: varchar("purchase_intent", { length: 20 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
