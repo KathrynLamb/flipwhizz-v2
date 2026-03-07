@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import RedrawModal from "@/app/stories/[id]/studio/components/redrawModal";
+import StudioPaywall from "@/components/StudioPaywall";
 
 
 /* ---------------------------------- Types --------------------------------- */
@@ -374,6 +375,41 @@ export default function DesktopStudio({
       ? `Pages ${redrawTarget.left.pageNumber}–${redrawTarget.right.pageNumber}`
       : `Page ${redrawTarget.left.pageNumber}`
     : "";
+
+
+
+
+
+const isPaid = story.paymentStatus === "paid";
+
+if (!isPaid) {
+  // Find the preview spread image if one exists
+  const previewSpread = pages.find((p) => p.imageUrl);
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Keep the header */}
+      <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200">
+        <div className="max-w-[1400px] mx-auto px-8 py-4">
+          <div className="flex items-center gap-4">
+            <Link href="/" className="flex items-center gap-2 group">
+              <Image src="/Flipwhizz_logo.png" alt="" width={48} height={48} priority className="transition-transform group-hover:scale-105" />
+              <span className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">FlipWhizz</span>
+            </Link>
+            <div className="h-6 w-px bg-gray-300" />
+            <span className="text-sm font-bold text-gray-900">{story.title}</span>
+          </div>
+        </div>
+      </div>
+
+      <StudioPaywall
+        storyId={story.id}
+        storyTitle={story.title}
+        previewSpreadUrl={previewSpread?.imageUrl}
+      />
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen bg-gray-50 pb-40">

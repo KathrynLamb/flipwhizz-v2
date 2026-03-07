@@ -16,6 +16,9 @@ import {
 import { motion, useMotionValue, animate, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import OrderBookButton from "@/components/OrderBookButton";
+import Link from "next/link";
+import Image from "next/image";
+import StudioPaywall from "@/components/StudioPaywall";
 
 /* -------------------------------------------------------------------------- */
 /*                                    Types                                   */
@@ -434,6 +437,7 @@ export default function MobileStudio({
   /* ── Actions ── */
   async function handleGenerateAll() {
     if (isGenerating) return;
+    if (story.paymentStatus !== "paid") return; // Safety check
     setIsGenerating(true);
     setIsPolling(true);
     try {
@@ -485,6 +489,49 @@ export default function MobileStudio({
       </div>
     );
   }
+
+
+
+// ... inside the component, before the viewport null check:
+
+const isPaid = story.paymentStatus === "paid";
+
+if (!isPaid) {
+  const previewSpread = pages.find((p) => p.imageUrl);
+
+  return (
+    <div
+      className="w-full min-h-screen"
+      style={{
+        background: "#FDFBFF",
+        fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
+      }}
+    >
+      {/* Simple mobile header */}
+      <div
+        className="sticky top-0 z-50 px-4 py-3 flex items-center gap-3"
+        style={{
+          background: "rgba(253,251,255,0.85)",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid rgba(180,150,210,0.1)",
+        }}
+      >
+        <Link href="/" className="flex items-center gap-2">
+          <Image src="/Flipwhizz_logo.png" alt="" width={36} height={36} priority />
+          <span className="text-base font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+            FlipWhizz
+          </span>
+        </Link>
+      </div>
+
+      <StudioPaywall
+        storyId={story.id}
+        storyTitle={story.title}
+        previewSpreadUrl={previewSpread?.imageUrl}
+      />
+    </div>
+  );
+}
 
   return (
     <div

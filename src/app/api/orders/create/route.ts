@@ -5,6 +5,8 @@ import { stories, orders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { createGelatoOrder } from "print/gelato/createOrder";
+import { storyProducts } from "@/db/schema";
+
 
 interface CreateOrderRequest {
   storyId: string;
@@ -50,6 +52,40 @@ export async function POST(req: Request) {
       );
     }
 
+
+
+// After loading the story...
+const storyProduct = await db.query.storyProducts.findFirst({
+  where: eq(storyProducts.storyId, storyId),
+});
+
+const productType = storyProduct?.productType || "print";
+
+// Digital = no physical order
+if (productType === "digital") {
+  return NextResponse.json(
+    { error: "Digital orders do not require printing" },
+    { status: 400 }
+  );
+}
+
+// Resolve Gelato product UID
+const gelatoProductUid =
+  productType === "gift"
+    ? process.env.GELATO_PRODUCT_UID_HARDCOVER
+    : process.env.GELATO_PRODUCT_UID_SOFTCOVER;
+
+if (!gelatoProductUid) {
+  throw new Error("Missing Gelato product UID for " + productType);
+}
+
+// Resolve price
+const PRICES: Record<string, string> = {
+  print: "29.00",
+  gift: "39.00",
+};
+const orderAmount = PRICES[productType] || "29.00";
+
     /* --------------------------------------------------
        2. Validate readiness (NEW MODEL)
     -------------------------------------------------- */
@@ -91,7 +127,7 @@ export async function POST(req: Request) {
       userId,
       paymentId: story.paymentId ?? null,
       paymentStatus: "paid",
-      amount: "29.99", // TODO: replace with dynamic pricing
+      amount: orderAmount,
       currency: "USD",
       pdfUrl: story.pdfUrl!,
       shippingAddress: shippingAddress as any,
@@ -110,6 +146,7 @@ export async function POST(req: Request) {
         customerReferenceId: userId,
         pdfUrl: story.pdfUrl!,
         shippingAddress,
+        productUid: gelatoProductUid,
       });
 
       /* --------------------------------------------------

@@ -19,13 +19,15 @@ interface CreateOrderParams {
   customerReferenceId: string;
   pdfUrl: string;
   shippingAddress: ShippingAddress;
+  productUid: string;  // NEW
 }
 
+
 export async function createGelatoOrder(params: CreateOrderParams) {
-  const { orderReferenceId, customerReferenceId, pdfUrl, shippingAddress } = params;
+  const { orderReferenceId, customerReferenceId, pdfUrl, shippingAddress, productUid } = params;
 
   const apiKey = process.env.GELATO_API_KEY;
-  const productUid = process.env.GELATO_PRODUCT_UID;
+
 
   if (!apiKey || !productUid) {
     throw new Error("Missing Gelato configuration in environment variables");

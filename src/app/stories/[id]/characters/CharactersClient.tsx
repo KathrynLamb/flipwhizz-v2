@@ -446,6 +446,8 @@ export default function CharactersClient({
                   });
                   router.push(`/stories/${storyId}/locations`);
                 }}
+                className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 transition-all shadow-xl shadow-violet-500/25 active:scale-[0.98]"
+
                   >
                     Continue to Locations
                     <ChevronRight className="w-5 h-5" />
