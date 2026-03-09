@@ -3,19 +3,21 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Loader2,
-  ChevronLeft,
   Download,
   ImagePlus,
   Sparkles,
   Wand2,
   RotateCcw,
+  Check,
+  BookImage,
+  ChevronRight,
+  PartyPopper,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import RedrawModal from "@/app/stories/[id]/studio/components/redrawModal";
 import StudioPaywall from "@/components/StudioPaywall";
+import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
 
 
 /* ---------------------------------- Types --------------------------------- */
@@ -29,7 +31,7 @@ type Page = {
 
 type Spread = {
   id: string;
-  spreadId: string | null; // DB spread ID for reference lookup
+  spreadId: string | null;
   left: Page;
   right: Page | null;
 };
@@ -44,7 +46,6 @@ function groupIntoSpreads(
   const sorted = [...pages].sort((a, b) => a.pageNumber - b.pageNumber);
 
   for (let i = 0; i < sorted.length; i += 2) {
-    // Try to find the DB spread that matches these pages
     const dbSpread = dbSpreads?.find(
       (s) =>
         s.leftPageId === sorted[i].id ||
@@ -66,13 +67,19 @@ function groupIntoSpreads(
 /*                               Cover Preview                                */
 /* -------------------------------------------------------------------------- */
 
-function CoverSpreadPreview({ url }: { url: string }) {
+function CoverSpreadPreview({
+  url,
+  onRedraw,
+}: {
+  url: string;
+  onRedraw: () => void;
+}) {
   return (
     <motion.div
       layout
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="relative bg-white rounded-2xl shadow-sm border border-gray-200/50 overflow-hidden"
+      className="group relative bg-white rounded-2xl shadow-sm border border-gray-200/50 overflow-hidden"
     >
       <div className="relative w-full aspect-[2/1] bg-gradient-to-br from-gray-100 via-white to-gray-100">
         <img
@@ -82,6 +89,17 @@ function CoverSpreadPreview({ url }: { url: string }) {
         />
         <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-bold text-white">
           Cover (Back · Spine · Front)
+        </div>
+
+        {/* Redraw button — hover reveal, same pattern as interior spreads */}
+        <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={onRedraw}
+            className="flex items-center gap-1.5 bg-white/90 backdrop-blur-md text-gray-700 hover:text-purple-600 hover:bg-white px-3 py-1.5 rounded-full text-xs font-bold shadow-md border border-gray-200/50 transition-all"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Redraw Cover
+          </button>
         </div>
       </div>
     </motion.div>
@@ -163,14 +181,237 @@ function SpreadCard({
         )}
       </div>
 
-      {/* Text preview */}
-      <div className="px-5 py-3 border-t border-gray-100">
-        <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
-          {spread.left.text}
-          {spread.right?.text ? ` ${spread.right.text}` : ""}
-        </p>
-      </div>
+      {/* Text preview (only when no image) */}
+      {!hasImage && (
+        <div className="px-5 py-3 border-t border-gray-100">
+          <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
+            {spread.left.text}
+            {spread.right?.text ? ` ${spread.right.text}` : ""}
+          </p>
+        </div>
+      )}
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                           Studio Action Card                               */
+/* -------------------------------------------------------------------------- */
+
+function StudioActionCard({
+  storyId,
+  coverSpreadUrl,
+  pdfUrl,
+  isExporting,
+  isOrdering,
+  onDesignCover,
+  onExportPDF,
+  onOrderBook,
+}: {
+  storyId: string;
+  coverSpreadUrl: string | null;
+  pdfUrl: string | null;
+  isExporting: boolean;
+  isOrdering: boolean;
+  onDesignCover: () => void;
+  onExportPDF: () => void;
+  onOrderBook: () => void;
+}) {
+  const hasCover = !!coverSpreadUrl;
+  const hasPdf = !!pdfUrl;
+
+  // ── State 1: No cover yet — celebrate + prompt cover design ──
+  if (!hasCover) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 200, damping: 24 }}
+        className="rounded-2xl overflow-hidden"
+        style={{
+          background: "white",
+          border: "1px solid rgba(180,150,210,0.12)",
+          boxShadow: "0 2px 12px rgba(100,60,140,0.06), 0 8px 32px rgba(100,60,140,0.04)",
+          fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
+        }}
+      >
+        <div className="flex flex-col sm:flex-row items-center gap-6 p-6 sm:p-8">
+          {/* Left: celebration icon */}
+          <div className="flex-shrink-0">
+            <motion.div
+              initial={{ scale: 0, rotate: -20 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: "spring", stiffness: 300, delay: 0.15 }}
+              className="w-14 h-14 rounded-2xl flex items-center justify-center"
+              style={{
+                background: "linear-gradient(135deg, #43B89C, #2FA482)",
+                boxShadow: "0 4px 16px rgba(67,184,156,0.25)",
+              }}
+            >
+              <PartyPopper className="w-6 h-6 text-white" />
+            </motion.div>
+          </div>
+
+          {/* Middle: copy */}
+          <div className="flex-1 text-center sm:text-left">
+            <h3
+              className="text-lg font-extrabold mb-1"
+              style={{ color: "#2D2235", letterSpacing: "-0.02em" }}
+            >
+              All illustrations complete!
+            </h3>
+            <p
+              className="text-sm leading-relaxed max-w-md"
+              style={{ color: "#7B6E90" }}
+            >
+              Your pages are looking great. Next up: design a cover to bring
+              it all together — you'll chat through your vision and we'll
+              generate it for you.
+            </p>
+          </div>
+
+          {/* Right: CTA */}
+          <div className="flex-shrink-0">
+            <button
+              onClick={onDesignCover}
+              className="flex items-center gap-2.5 px-6 py-3.5 rounded-xl text-sm font-bold text-white transition-all hover:shadow-lg active:scale-[0.97]"
+              style={{
+                background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                boxShadow: "0 4px 16px rgba(176,92,230,0.25)",
+                border: "none",
+                fontFamily: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              <BookImage className="w-4 h-4" />
+              Design Your Cover
+              <ChevronRight className="w-4 h-4 opacity-60" />
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // ── State 2: Cover exists — show export/order options ──
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 200, damping: 24 }}
+      className="rounded-2xl overflow-hidden"
+      style={{
+        background: "white",
+        border: "1px solid rgba(180,150,210,0.12)",
+        boxShadow: "0 2px 12px rgba(100,60,140,0.06), 0 8px 32px rgba(100,60,140,0.04)",
+        fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
+      }}
+    >
+      <div className="flex flex-col sm:flex-row items-center gap-6 p-6 sm:p-8">
+        {/* Left: check icon */}
+        <div className="flex-shrink-0">
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center"
+            style={{
+              background: "linear-gradient(135deg, #43B89C, #2FA482)",
+              boxShadow: "0 4px 16px rgba(67,184,156,0.25)",
+            }}
+          >
+            <Check className="w-6 h-6 text-white" />
+          </div>
+        </div>
+
+        {/* Middle: copy */}
+        <div className="flex-1 text-center sm:text-left">
+          <h3
+            className="text-lg font-extrabold mb-1"
+            style={{ color: "#2D2235", letterSpacing: "-0.02em" }}
+          >
+            Your book is ready!
+          </h3>
+          <p
+            className="text-sm leading-relaxed max-w-md"
+            style={{ color: "#7B6E90" }}
+          >
+            Illustrations and cover are complete. Export a print-ready PDF or
+            tweak the cover if you'd like changes.
+          </p>
+        </div>
+
+        {/* Right: actions */}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {/* Redesign cover — secondary */}
+          <button
+            onClick={onDesignCover}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all hover:shadow-md active:scale-[0.97]"
+            style={{
+              background: "rgba(180,150,210,0.08)",
+              color: "#6B5C80",
+              border: "1px solid rgba(180,150,210,0.15)",
+              fontFamily: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            <BookImage className="w-3.5 h-3.5" />
+            Tweak Cover
+          </button>
+
+          {/* Export PDF — primary */}
+          <button
+            onClick={onExportPDF}
+            disabled={isExporting}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:shadow-lg active:scale-[0.97] disabled:opacity-50"
+            style={{
+              background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
+              boxShadow: "0 3px 12px rgba(176,92,230,0.2)",
+              border: "none",
+              fontFamily: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            {isExporting ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Exporting…
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5" />
+                Export PDF
+              </>
+            )}
+          </button>
+
+          {/* Order — only when PDF exists */}
+          {hasPdf && (
+            <button
+              onClick={onOrderBook}
+              disabled={isOrdering}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:shadow-lg active:scale-[0.97] disabled:opacity-50"
+              style={{
+                background: "linear-gradient(135deg, #43B89C, #2FA482)",
+                boxShadow: "0 3px 12px rgba(67,184,156,0.2)",
+                border: "none",
+                fontFamily: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              {isOrdering ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Ordering…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Order Print
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
@@ -213,6 +454,11 @@ export default function DesktopStudio({
     [pages, dbSpreads]
   );
 
+  const completedCount = pages.filter((p) => p.imageUrl).length;
+  const totalCount = pages.length;
+  const allGenerated = completedCount === totalCount;
+  const isPaid = story.paymentStatus === "paid";
+
   /* ------------------------------ Polling ---------------------------------- */
 
   useEffect(() => {
@@ -227,7 +473,6 @@ export default function DesktopStudio({
       const updatedPages: Page[] = await res.json();
       setPages(updatedPages);
 
-      // Check if any regenerating spreads are now done
       if (regeneratingSpreads.size > 0) {
         const updatedSpreads = groupIntoSpreads(updatedPages, dbSpreads);
         const stillRegenerating = new Set<string>();
@@ -366,51 +611,38 @@ export default function DesktopStudio({
 
   /* -------------------------------- Render -------------------------------- */
 
-  const completedCount = pages.filter((p) => p.imageUrl).length;
-  const totalCount = pages.length;
-  const allGenerated = completedCount === totalCount;
-
   const redrawLabel = redrawTarget
     ? redrawTarget.right
       ? `Pages ${redrawTarget.left.pageNumber}–${redrawTarget.right.pageNumber}`
       : `Page ${redrawTarget.left.pageNumber}`
     : "";
 
+  // ── Unpaid: show header + paywall ──
+  if (!isPaid) {
+    const previewSpread = pages.find((p) => p.imageUrl);
 
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <UnifiedStoryHeader
+          storyId={story.id}
+          title={story.title}
+          currentStep="studio"
+          completedSteps={story.completedSteps ?? []}
+          paymentStatus={story.paymentStatus}
+          hasPages={pages.length > 0}
+          coverSpreadUrl={story.coverSpreadUrl}
+        />
 
-
-
-const isPaid = story.paymentStatus === "paid";
-
-if (!isPaid) {
-  // Find the preview spread image if one exists
-  const previewSpread = pages.find((p) => p.imageUrl);
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Keep the header */}
-      <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200">
-        <div className="max-w-[1400px] mx-auto px-8 py-4">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="flex items-center gap-2 group">
-              <Image src="/Flipwhizz_logo.png" alt="" width={48} height={48} priority className="transition-transform group-hover:scale-105" />
-              <span className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">FlipWhizz</span>
-            </Link>
-            <div className="h-6 w-px bg-gray-300" />
-            <span className="text-sm font-bold text-gray-900">{story.title}</span>
-          </div>
-        </div>
+        <StudioPaywall
+          storyId={story.id}
+          storyTitle={story.title}
+          previewSpreadUrl={previewSpread?.imageUrl}
+        />
       </div>
+    );
+  }
 
-      <StudioPaywall
-        storyId={story.id}
-        storyTitle={story.title}
-        previewSpreadUrl={previewSpread?.imageUrl}
-      />
-    </div>
-  );
-}
-
+  // ── Paid: full studio ──
   return (
     <div className="min-h-screen bg-gray-50 pb-40">
       {/* Redraw Modal */}
@@ -428,140 +660,54 @@ if (!isPaid) {
         )}
       </AnimatePresence>
 
-      {/* HEADER */}
-      <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200">
-        <div className="max-w-[1400px] mx-auto px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link
-                href="/"
-                className="flex items-center gap-0.5 md:gap-2 group"
-                aria-label="FlipWhizz home"
-              >
-                <Image
-                  src="/Flipwhizz_logo.png"
-                  alt=""
-                  width={48}
-                  height={48}
-                  priority
-                  className="transition-transform group-hover:scale-105"
-                />
-                <span className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
-                  FlipWhizz
-                </span>
-              </Link>
+      {/* UNIFIED HEADER */}
+      <UnifiedStoryHeader
+        storyId={story.id}
+        title={story.title}
+        currentStep="studio"
+        completedSteps={story.completedSteps ?? []}
+        paymentStatus={story.paymentStatus}
+        hasPages={pages.length > 0}
+        coverSpreadUrl={story.coverSpreadUrl}
+        showProgress={isGenerating && totalCount > 0}
+        progressCurrent={completedCount}
+        progressTotal={totalCount}
+        showGenerateAll={!allGenerated}
+        onGenerateAll={handleGenerateAll}
+        isGenerating={isGenerating}
+      />
 
-              <Link
-                href={`/stories/${story.id}/design`}
-                className="flex items-center gap-2 text-gray-700 hover:text-purple-600 transition-colors font-medium"
-              >
-                <ChevronLeft className="w-5 h-5" />
-                <span>Back to Design</span>
-              </Link>
-
-              <div className="h-6 w-px bg-gray-300" />
-
-              <div className="text-sm">
-                <span className="font-bold text-gray-900">{story.title}</span>
-                <span className="text-gray-500 ml-2">
-                  {completedCount} / {totalCount} illustrations
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {!allGenerated && (
-                <button
-                  onClick={handleGenerateAll}
-                  disabled={isGenerating}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Generating {completedCount}/{totalCount}...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      Generate All Illustrations
-                    </>
-                  )}
-                </button>
-              )}
-
-              {story.coverSpreadUrl ? (
-                <button
-                  onClick={handleExportPDF}
-                  disabled={isExporting || !allGenerated}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
-                >
-                  {isExporting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Exporting...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-4 h-4" />
-                      Export PDF
-                    </>
-                  )}
-                </button>
-              ) : (
-                <button
-                  onClick={() => router.push(`/stories/${story.id}/cover`)}
-                  disabled={!allGenerated}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
-                >
-                  <Wand2 className="w-4 h-4" />
-                  Design Cover
-                </button>
-              )}
-
-              {story.pdfUrl && (
-                <button
-                  onClick={handleOrderBook}
-                  disabled={isOrdering}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
-                >
-                  {isOrdering ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Ordering...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      Order Book
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {isGenerating && (
-            <div className="mt-3">
-              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full bg-gradient-to-r from-purple-600 to-pink-600"
-                  initial={{ width: 0 }}
-                  animate={{
-                    width: `${(completedCount / totalCount) * 100}%`,
-                  }}
-                  transition={{ duration: 0.5 }}
-                />
-              </div>
-            </div>
-          )}
+      {/* STUDIO ACTION CARD — contextual next step */}
+      {allGenerated && (
+        <div className="max-w-[1400px] mx-auto px-8 pt-6">
+          <StudioActionCard
+            storyId={story.id}
+            coverSpreadUrl={story.coverSpreadUrl}
+            pdfUrl={story.pdfUrl}
+            isExporting={isExporting}
+            isOrdering={isOrdering}
+            onDesignCover={async () => {
+              // Mark studio as complete, then navigate
+              await fetch(`/api/stories/${story.id}/complete-step`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ step: "studio" }),
+              }).catch(() => {});
+              router.push(`/stories/${story.id}/cover`);
+            }}
+            onExportPDF={handleExportPDF}
+            onOrderBook={handleOrderBook}
+          />
         </div>
-      </div>
+      )}
 
       {/* CONTENT */}
       <div className="max-w-[1400px] mx-auto p-8 space-y-8">
         {story.coverSpreadUrl && (
-          <CoverSpreadPreview url={story.coverSpreadUrl} />
+          <CoverSpreadPreview
+            url={story.coverSpreadUrl}
+            onRedraw={() => router.push(`/stories/${story.id}/cover`)}
+          />
         )}
 
         {spreads.map((spread) => (

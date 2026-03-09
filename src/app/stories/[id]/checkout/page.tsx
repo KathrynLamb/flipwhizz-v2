@@ -125,96 +125,95 @@ export default function CheckoutPage() {
   }
 
   /* ── LOADING ── */
-/* ── LOADING ── */
-if (loading) {
-  return (
-    <Shell>
-      <div className="max-w-md mx-auto pt-12">
-        <div className="flex flex-col items-center text-center">
-          {/* Animated book icon */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="relative mb-8"
-          >
+  if (loading) {
+    return (
+      <Shell>
+        <div className="max-w-md mx-auto pt-12">
+          <div className="flex flex-col items-center text-center">
+            {/* Animated book icon */}
             <motion.div
-              animate={{ 
-                rotateY: [0, 15, -15, 0],
-                scale: [1, 1.05, 1.05, 1],
-              }}
-              transition={{ 
-                duration: 3, 
-                repeat: Infinity, 
-                ease: "easeInOut" 
-              }}
-              className="w-20 h-20 rounded-2xl flex items-center justify-center"
-              style={{
-                background: 'linear-gradient(135deg, #E8D5FF, #FFD5E5)',
-                boxShadow: '0 8px 32px rgba(176,92,230,0.2)',
-              }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="relative mb-8"
             >
-              <BookOpen className="w-9 h-9" style={{ color: '#B05CE6' }} />
-            </motion.div>
-            {/* Floating sparkles */}
-            <motion.div
-              animate={{ y: [-4, 4, -4], opacity: [0.4, 1, 0.4] }}
-              transition={{ duration: 2, repeat: Infinity, delay: 0 }}
-              className="absolute -top-2 -right-2"
-            >
-              <Sparkles className="w-4 h-4" style={{ color: '#C77DFF' }} />
-            </motion.div>
-            <motion.div
-              animate={{ y: [4, -4, 4], opacity: [0.6, 1, 0.6] }}
-              transition={{ duration: 2.5, repeat: Infinity, delay: 0.5 }}
-              className="absolute -bottom-1 -left-3"
-            >
-              <Sparkles className="w-3 h-3" style={{ color: '#FFB5D0' }} />
-            </motion.div>
-          </motion.div>
-
-          <motion.h3
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="text-xl font-extrabold mb-2"
-            style={{ color: '#2D2235' }}
-          >
-            Preparing your checkout
-          </motion.h3>
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="text-sm max-w-xs"
-            style={{ color: '#7B6E90' }}
-          >
-            Loading your story details and pricing…
-          </motion.p>
-
-          {/* Progress dots */}
-          <div className="flex gap-1.5 mt-6">
-            {[0, 1, 2].map((i) => (
               <motion.div
-                key={i}
                 animate={{ 
-                  scale: [1, 1.4, 1],
-                  opacity: [0.3, 1, 0.3],
+                  rotateY: [0, 15, -15, 0],
+                  scale: [1, 1.05, 1.05, 1],
                 }}
                 transition={{ 
-                  duration: 1.2, 
+                  duration: 3, 
                   repeat: Infinity, 
-                  delay: i * 0.2,
+                  ease: "easeInOut" 
                 }}
-                className="w-2 h-2 rounded-full"
-                style={{ background: '#B05CE6' }}
-              />
-            ))}
+                className="w-20 h-20 rounded-2xl flex items-center justify-center"
+                style={{
+                  background: 'linear-gradient(135deg, #E8D5FF, #FFD5E5)',
+                  boxShadow: '0 8px 32px rgba(176,92,230,0.2)',
+                }}
+              >
+                <BookOpen className="w-9 h-9" style={{ color: '#B05CE6' }} />
+              </motion.div>
+              {/* Floating sparkles */}
+              <motion.div
+                animate={{ y: [-4, 4, -4], opacity: [0.4, 1, 0.4] }}
+                transition={{ duration: 2, repeat: Infinity, delay: 0 }}
+                className="absolute -top-2 -right-2"
+              >
+                <Sparkles className="w-4 h-4" style={{ color: '#C77DFF' }} />
+              </motion.div>
+              <motion.div
+                animate={{ y: [4, -4, 4], opacity: [0.6, 1, 0.6] }}
+                transition={{ duration: 2.5, repeat: Infinity, delay: 0.5 }}
+                className="absolute -bottom-1 -left-3"
+              >
+                <Sparkles className="w-3 h-3" style={{ color: '#FFB5D0' }} />
+              </motion.div>
+            </motion.div>
+
+            <motion.h3
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="text-xl font-extrabold mb-2"
+              style={{ color: '#2D2235' }}
+            >
+              Preparing your checkout
+            </motion.h3>
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className="text-sm max-w-xs"
+              style={{ color: '#7B6E90' }}
+            >
+              Loading your story details and pricing…
+            </motion.p>
+
+            {/* Progress dots */}
+            <div className="flex gap-1.5 mt-6">
+              {[0, 1, 2].map((i) => (
+                <motion.div
+                  key={i}
+                  animate={{ 
+                    scale: [1, 1.4, 1],
+                    opacity: [0.3, 1, 0.3],
+                  }}
+                  transition={{ 
+                    duration: 1.2, 
+                    repeat: Infinity, 
+                    delay: i * 0.2,
+                  }}
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: '#B05CE6' }}
+                />
+              ))}
+            </div>
           </div>
         </div>
-      </div>
-    </Shell>
-  );
-}
+      </Shell>
+    );
+  }
 
   /* ── ERROR ── */
   if (error || !story) {
@@ -256,6 +255,7 @@ if (loading) {
         storyTitle={story.title}
         currentStep="pay"
         completedSteps={completedSteps}
+        paymentStatus="paid"
       >
         <div className="max-w-lg mx-auto">
           <motion.div
@@ -328,6 +328,7 @@ if (loading) {
       storyTitle={story.title}
       currentStep="pay"
       completedSteps={completedSteps}
+      paymentStatus={story.paymentStatus}
     >
       <div className="max-w-[960px] mx-auto">
         {/* Title */}
@@ -536,6 +537,7 @@ if (loading) {
                                 body: JSON.stringify({ step: 'pay' }),
                               }
                             );
+                            setCompletedSteps((prev) => [...prev, 'pay']);
                             setPaymentComplete(true);
                           } else {
                             alert(
@@ -611,12 +613,14 @@ function Shell({
   storyTitle,
   currentStep,
   completedSteps = [],
+  paymentStatus,
 }: {
   children: React.ReactNode;
   storyId?: string;
   storyTitle?: string;
   currentStep?: StepKey;
   completedSteps?: StepKey[];
+  paymentStatus?: string | null;
 }) {
   return (
     <>
@@ -646,6 +650,8 @@ function Shell({
             title={storyTitle}
             currentStep={currentStep}
             completedSteps={completedSteps}
+            paymentStatus={paymentStatus}
+            hasPages={true}
           />
         )}
         <main className="px-4 sm:px-6 lg:px-8 py-6 sm:py-10">

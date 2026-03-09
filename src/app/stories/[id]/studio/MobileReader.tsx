@@ -719,7 +719,7 @@ if (!isPaid) {
         {/* Export PDF (only when done) */}
 
 
-// In the bottom actions div, replace with:
+
 {allGenerated && story.coverSpreadUrl && (
   <OrderBookButton storyId={story.id} />
 )}

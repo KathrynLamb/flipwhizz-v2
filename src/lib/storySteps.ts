@@ -8,6 +8,7 @@ export const STEP_ORDER = [
   "preview",
   "pay",
   "studio",
+  "cover",
   "print",
 ] as const;
 

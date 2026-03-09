@@ -42,6 +42,8 @@ type Props = {
   initialMessages: ChatMsg[];
   currentStep?: StepKey;
   completedSteps?: StepKey[];
+  paymentStatus?: string | null;
+  coverSpreadUrl?: string | null;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -67,8 +69,10 @@ export default function CoverDesignChat({
   story,
   projectId,
   initialMessages,
-  currentStep = "studio",
+  currentStep = "cover",
   completedSteps = [],
+  paymentStatus,
+  coverSpreadUrl: initialCoverUrl,
 }: Props) {
   const router = useRouter();
 
@@ -371,6 +375,9 @@ export default function CoverDesignChat({
           title={story.title || "Cover Design"}
           currentStep={currentStep}
           completedSteps={completedSteps}
+          paymentStatus={paymentStatus}
+          hasPages={true}
+          coverSpreadUrl={localStory.coverSpreadUrl}
         />
 
         {/* ── Body ────────────────────────────────────────────────────────── */}

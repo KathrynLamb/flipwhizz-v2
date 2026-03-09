@@ -45,7 +45,7 @@ type Character = {
   outfits?: CharacterOutfit[];
 };
 
-type SwipeAction = "lock" | "delete";
+type SwipeAction = "lock" | "edit";
 
 const CARD_ACCENTS = [
   { from: "#C77DFF", to: "#E07ABA" },
@@ -70,7 +70,7 @@ export function MobileCharacterCard({
   index,
   onDelete,
   onLockToggle,
-  onSwiped, // ✅ new: tells the stack to advance/unmount this card
+  onSwiped,
 }: {
   storyId: string;
   character: Character;
@@ -86,7 +86,6 @@ export function MobileCharacterCard({
     character.portraitImageUrl || character.referenceImageUrl
   );
   const [locked, setLocked] = useState(character.locked);
-  const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -96,7 +95,7 @@ export function MobileCharacterCard({
 
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-250, 0, 250], [-18, 0, 18]);
-  const skipOpacity = useTransform(x, [-150, -35, 0], [1, 0.35, 0]);
+  const editOpacity = useTransform(x, [-150, -35, 0], [1, 0.35, 0]);
   const lockOpacity = useTransform(x, [0, 35, 150], [0, 0.35, 1]);
 
   const traits = useMemo(() => {
@@ -122,17 +121,6 @@ export function MobileCharacterCard({
     const newLocked = !locked;
     setLocked(newLocked);
     onLockToggle?.(character.id, newLocked);
-  }
-
-  async function handleDelete() {
-    if (!confirm(`Delete ${character.name}?`)) return;
-    setDeleting(true);
-
-    // Optimistic remove from UI immediately
-    onDelete?.(character.id);
-
-    await fetch(`/api/characters/${character.id}`, { method: "DELETE" });
-    router.refresh();
   }
 
   async function uploadReference(file: File) {
@@ -171,26 +159,35 @@ export function MobileCharacterCard({
     }
   }
 
-  // ✅ IMPORTANT: DO NOT reset the card back to x=0.
-  // Animate it out, then inform parent to advance/unmount.
-  async function throwCard(direction: "left" | "right") {
-    const xTarget = direction === "right" ? 650 : -650;
-    const rotateTarget = direction === "right" ? 28 : -28;
-
+  async function throwCardRight() {
+    // Animate off screen right, then lock
     await controls.start({
-      x: xTarget,
-      rotate: rotateTarget,
+      x: 650,
+      rotate: 28,
       opacity: 0,
       transition: { duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] },
     });
 
-    if (direction === "right") {
-      await handleLock();
-      onSwiped?.(character.id, "lock");
-    } else {
-      await handleDelete();
-      onSwiped?.(character.id, "delete");
-    }
+    await handleLock();
+    onSwiped?.(character.id, "lock");
+  }
+
+  async function openEditViaSwipe() {
+    // Brief left animation, then snap back and open edit
+    await controls.start({
+      x: -80,
+      rotate: -6,
+      transition: { duration: 0.15, ease: "easeOut" },
+    });
+
+    await controls.start({
+      x: 0,
+      rotate: 0,
+      opacity: 1,
+      transition: { type: "spring", stiffness: 420, damping: 32, mass: 0.85 },
+    });
+
+    setShowEdit(true);
   }
 
   async function snapBack() {
@@ -213,8 +210,8 @@ export function MobileCharacterCard({
     const swipedLeft =
       info.offset.x < -SWIPE_DISTANCE || info.velocity.x < -SWIPE_VELOCITY;
 
-    if (swipedRight) return throwCard("right");
-    if (swipedLeft) return throwCard("left");
+    if (swipedRight) return throwCardRight();
+    if (swipedLeft) return openEditViaSwipe();
     return snapBack();
   }
 
@@ -260,19 +257,19 @@ export function MobileCharacterCard({
 
           {/* Swipe overlays */}
           <motion.div
-            style={{ opacity: skipOpacity }}
+            style={{ opacity: editOpacity }}
             className="absolute inset-0 z-20 pointer-events-none"
           >
             <div
               className="absolute top-10 left-6 px-5 py-2.5 rounded-2xl rotate-[-20deg]"
               style={{
-                background: "rgba(239,68,68,0.92)",
+                background: "rgba(176,92,230,0.92)",
                 border: "3px solid white",
                 boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
               }}
             >
               <span className="text-white font-extrabold text-2xl tracking-wide">
-                SKIP
+                EDIT
               </span>
             </div>
           </motion.div>
@@ -397,25 +394,23 @@ export function MobileCharacterCard({
 
           {/* Action buttons */}
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4">
+            {/* Left: Edit */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                throwCard("left");
+                setShowEdit(true);
               }}
-              disabled={deleting}
-              className="w-14 h-14 rounded-full bg-white shadow-xl flex items-center justify-center text-red-500 hover:scale-110 active:scale-95 transition-transform disabled:opacity-40"
+              className="w-14 h-14 rounded-full bg-white shadow-xl flex items-center justify-center hover:scale-110 active:scale-95 transition-transform"
+              style={{ color: "#B05CE6" }}
             >
-              {deleting ? (
-                <Loader2 className="w-6 h-6 animate-spin" />
-              ) : (
-                <X className="w-7 h-7" strokeWidth={2.5} />
-              )}
+              <PenLine className="w-6 h-6" strokeWidth={2.5} />
             </button>
 
+            {/* Center: Lock / Unlock */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                throwCard("right");
+                throwCardRight();
               }}
               className="w-16 h-16 rounded-full shadow-xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-transform"
               style={{
@@ -431,6 +426,7 @@ export function MobileCharacterCard({
               )}
             </button>
 
+            {/* Right: Checkmark when locked */}
             {locked && (
               <button className="w-14 h-14 rounded-full bg-emerald-500 shadow-xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-transform">
                 <Check className="w-7 h-7" strokeWidth={2.5} />
@@ -438,7 +434,7 @@ export function MobileCharacterCard({
             )}
           </div>
 
-          {/* Drag handle (only drag start zone) */}
+          {/* Drag handle */}
           {!showEdit && !uploading && (
             <div className="absolute bottom-0 left-0 right-0 z-30 px-5 pb-4">
               <div
@@ -452,14 +448,14 @@ export function MobileCharacterCard({
                 }}
               >
                 <div className="w-10 h-1.5 rounded-full bg-white/40" />
-                <span className="text-xs font-semibold">Swipe to skip / lock</span>
+                <span className="text-xs font-semibold">Swipe to edit / lock</span>
               </div>
             </div>
           )}
         </div>
       </motion.div>
 
-      {/* Edit sheet (sibling) */}
+      {/* Edit sheet */}
       <AnimatePresence>
         {showEdit && (
           <MobileEditSheet
@@ -480,7 +476,7 @@ export function MobileCharacterCard({
 }
 
 /* ------------------------------------------------------------------ */
-/* MOBILE EDIT SHEET (same as your version, unchanged)                 */
+/* MOBILE EDIT SHEET                                                    */
 /* ------------------------------------------------------------------ */
 
 function MobileEditSheet({
@@ -843,11 +839,8 @@ function MobileEditSheet({
 }
 
 /* ------------------------------------------------------------------ */
-/* STACK CONTAINER (fixed)                                             */
-/* - stable keys (char.id)
-   - parent advances index on swipe
-   - AnimatePresence handles smooth stack transitions
------------------------------------------------------------------- */
+/* STACK CONTAINER                                                      */
+/* ------------------------------------------------------------------ */
 
 export function MobileCharacterStack({
   storyId,
@@ -862,7 +855,6 @@ export function MobileCharacterStack({
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  // Clamp if list shrinks
   const safeIndex = Math.min(currentIndex, Math.max(0, characters.length - 1));
   const visibleCards = characters.slice(safeIndex, safeIndex + 3);
 
@@ -879,7 +871,7 @@ export function MobileCharacterStack({
 
           return (
             <motion.div
-              key={char.id} // ✅ stable key
+              key={char.id}
               className="absolute inset-0"
               style={{
                 zIndex: 10 - idx,
@@ -888,7 +880,7 @@ export function MobileCharacterStack({
               }}
               initial={{ scale: 1 - idx * 0.03, y: -idx * 8, opacity: 0 }}
               animate={{ scale: 1 - idx * 0.03, y: -idx * 8, opacity: isTop ? 1 : 0.75 }}
-              exit={{ opacity: 0 }} // card itself animates out; this just prevents “flash”
+              exit={{ opacity: 0 }}
               transition={{ type: "spring", stiffness: 320, damping: 26 }}
             >
               {isTop ? (
@@ -899,9 +891,8 @@ export function MobileCharacterStack({
                   onDelete={onDelete}
                   onLockToggle={onLockToggle}
                   onSwiped={(id, action) => {
-                    // For delete: CharactersClient removes it from the list,
-                    // so we DO NOT need to advance index.
-                    // For lock: we want to go to next card.
+                    // Lock: advance to next card
+                    // Edit: card stays (edit sheet opens), no index change
                     if (action === "lock") {
                       setCurrentIndex((prev) => prev + 1);
                     }

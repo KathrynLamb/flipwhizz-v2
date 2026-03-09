@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -16,8 +16,9 @@ import {
   Sparkles,
   Loader2,
   ChevronDown,
-  Eye, 
-  CreditCard
+  Eye,
+  CreditCard,
+  BookImage,
 } from "lucide-react";
 import type { StepKey } from "@/lib/storySteps";
 
@@ -33,6 +34,7 @@ const STEP_ORDER: StepKey[] = [
   "preview",
   "pay",
   "studio",
+  "cover",
   "print",
 ];
 
@@ -115,6 +117,14 @@ const STEPS: Step[] = [
     match: (p, id) => p.startsWith(`/stories/${id}/studio`),
   },
   {
+    key: "cover",
+    label: "Cover",
+    shortLabel: "Cover",
+    icon: BookImage,
+    href: (id) => `/stories/${id}/cover`,
+    match: (p, id) => p.startsWith(`/stories/${id}/cover`),
+  },
+  {
     key: "print",
     label: "Print",
     shortLabel: "Print",
@@ -140,6 +150,9 @@ export default function UnifiedStoryHeader({
   onGenerateAll,
   isGenerating,
   designUnlocked,
+  paymentStatus,
+  hasPages,
+  coverSpreadUrl,
 }: {
   storyId: string;
   title: string;
@@ -152,6 +165,12 @@ export default function UnifiedStoryHeader({
   onGenerateAll?: () => void;
   isGenerating?: boolean;
   designUnlocked?: boolean;
+  /** Pass payment status so the header can derive "pay" as completed */
+  paymentStatus?: string | null;
+  /** Pass true if story has pages, so the header can derive "write" as completed */
+  hasPages?: boolean;
+  /** Pass cover spread URL so the header can derive "cover" as completed */
+  coverSpreadUrl?: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -159,16 +178,23 @@ export default function UnifiedStoryHeader({
   const [mounted, setMounted] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-
-
   useEffect(() => setMounted(true), []);
 
   // Defensive types
   const safeCurrentStep =
     typeof currentStep === "string" ? currentStep : STEP_ORDER[0];
-  const safeCompletedSteps = Array.isArray(completedSteps)
+  const rawCompletedSteps = Array.isArray(completedSteps)
     ? completedSteps
     : [];
+
+  // Derive additional completed steps from actual state
+  const safeCompletedSteps = useMemo(() => {
+    const steps = new Set<StepKey>(rawCompletedSteps);
+    if (hasPages) steps.add("write");
+    if (paymentStatus === "paid") steps.add("pay");
+    if (coverSpreadUrl) steps.add("cover");
+    return Array.from(steps);
+  }, [rawCompletedSteps, hasPages, paymentStatus, coverSpreadUrl]);
 
   const highestReached = Math.max(
     stepIndex(safeCurrentStep),

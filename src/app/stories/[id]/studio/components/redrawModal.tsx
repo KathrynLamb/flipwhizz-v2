@@ -89,7 +89,6 @@ type SpreadReferences = {
 
 /* ─────────── Helpers ─────────── */
 
-/** Pick the best available image for a character */
 function bestCharacterImage(c: {
   portraitImageUrl?: string | null;
   fullBodyImageUrl?: string | null;
@@ -105,9 +104,92 @@ function bestLocationImage(l: {
   return l.portraitImageUrl || l.referenceImageUrl || null;
 }
 
+/* ─────────── New Outfit Form ─────────── */
+
+function NewOutfitForm({
+  characterName,
+  onSave,
+  onCancel,
+  isSaving,
+}: {
+  characterName: string;
+  onSave: (name: string, description: string) => void;
+  onCancel: () => void;
+  isSaving: boolean;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      className="overflow-hidden"
+    >
+      <div
+        className="mt-1 p-3 rounded-xl space-y-2.5"
+        style={{
+          background: "rgba(176,92,230,0.04)",
+          border: "1.5px solid rgba(176,92,230,0.15)",
+        }}
+      >
+        <p className="text-[11px] font-bold text-purple-700">
+          New outfit for {characterName}
+        </p>
+
+        <input
+          type="text"
+          placeholder="Outfit name (e.g. Swimwear, Party Dress)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          disabled={isSaving}
+          className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+        />
+
+        <textarea
+          placeholder="Describe the outfit in detail for the AI illustrator…&#10;e.g. Light purple one-piece swimsuit with small white polka dots, pink shoulder straps, golden hair clips"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          disabled={isSaving}
+          rows={3}
+          className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent resize-none leading-relaxed"
+        />
+
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            disabled={isSaving}
+            className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              if (name.trim() && description.trim()) {
+                onSave(name.trim(), description.trim());
+              }
+            }}
+            disabled={isSaving || !name.trim() || !description.trim()}
+            className="flex-1 text-xs py-1.5 rounded-lg bg-purple-600 text-white font-bold hover:bg-purple-700 transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5"
+          >
+            {isSaving ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Plus className="w-3 h-3" />
+            )}
+            {isSaving ? "Saving…" : "Save Outfit"}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 /* ─────────── Character Row ─────────── */
 
 function CharacterRow({
+  characterId,
   name,
   imageUrl,
   role,
@@ -117,7 +199,10 @@ function CharacterRow({
   outfitDescription,
   outfits,
   onOutfitChange,
+  onOutfitCreated,
+  storyId,
 }: {
+  characterId: string;
   name: string;
   imageUrl: string | null;
   role: string | null;
@@ -127,8 +212,52 @@ function CharacterRow({
   outfitDescription: string | null;
   outfits: OutfitOption[];
   onOutfitChange?: (key: string) => void;
+  onOutfitCreated?: (outfit: OutfitOption) => void;
+  storyId: string;
 }) {
   const [showOutfits, setShowOutfits] = useState(false);
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function handleSaveOutfit(outfitName: string, description: string, ) {
+    setIsSaving(true);
+    try {
+      const res = await fetch("/api/character-outfits/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storyId,
+          characterId,
+          outfitKey: outfitName,
+          outfitDescription: description,
+        }),
+      });
+      
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to create outfit");
+      }
+
+      const data = await res.json();
+      const newOutfit: OutfitOption = {
+        outfitKey: data.outfit.outfitKey,
+        outfitDescription: data.outfit.outfitDescription,
+        isDefault: false,
+      };
+
+      // Notify parent to update the outfits list
+      onOutfitCreated?.(newOutfit);
+      // Auto-select the new outfit
+      onOutfitChange?.(newOutfit.outfitKey);
+
+      setShowNewForm(false);
+    } catch (err: any) {
+      alert(err.message || "Failed to save outfit");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <div
@@ -172,10 +301,13 @@ function CharacterRow({
           )}
         </div>
 
-        {/* Outfit picker (only when included and outfits exist) */}
-        {isIncluded && outfits.length > 0 && onOutfitChange && (
+        {/* Outfit picker (only when included) */}
+        {isIncluded && onOutfitChange && (
           <button
-            onClick={() => setShowOutfits(!showOutfits)}
+            onClick={() => {
+              setShowOutfits(!showOutfits);
+              if (showOutfits) setShowNewForm(false);
+            }}
             className="flex items-center gap-1 text-[11px] text-purple-600 hover:text-purple-700 font-medium px-2 py-1 rounded-lg hover:bg-purple-50 transition-colors"
           >
             <Shirt className="w-3.5 h-3.5" />
@@ -209,7 +341,7 @@ function CharacterRow({
 
       {/* Outfit dropdown */}
       <AnimatePresence>
-        {showOutfits && isIncluded && outfits.length > 0 && onOutfitChange && (
+        {showOutfits && isIncluded && onOutfitChange && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
@@ -223,6 +355,7 @@ function CharacterRow({
                   onClick={() => {
                     onOutfitChange(o.outfitKey);
                     setShowOutfits(false);
+                    setShowNewForm(false);
                   }}
                   className={`w-full text-left text-xs px-3 py-2 rounded-lg transition-colors ${
                     outfitKey === o.outfitKey
@@ -243,6 +376,29 @@ function CharacterRow({
                   </p>
                 </button>
               ))}
+
+              {/* + New Outfit button */}
+              {!showNewForm && (
+                <button
+                  onClick={() => setShowNewForm(true)}
+                  className="w-full text-left text-xs px-3 py-2.5 rounded-lg border border-dashed border-purple-300 text-purple-600 hover:bg-purple-50 transition-colors font-medium flex items-center gap-2"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Create new outfit
+                </button>
+              )}
+
+              {/* New outfit form */}
+              <AnimatePresence>
+                {showNewForm && (
+                  <NewOutfitForm
+                    characterName={name}
+                    onSave={handleSaveOutfit}
+                    onCancel={() => setShowNewForm(false)}
+                    isSaving={isSaving}
+                  />
+                )}
+              </AnimatePresence>
             </div>
           </motion.div>
         )}
@@ -273,7 +429,11 @@ function LocationPicker({
       >
         <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
           {img ? (
-            <img src={img} alt={current!.name} className="w-full h-full object-cover" />
+            <img
+              src={img}
+              alt={current!.name}
+              className="w-full h-full object-cover"
+            />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-gray-400">
               <MapPin className="w-4 h-4" />
@@ -409,7 +569,6 @@ export default function RedrawModal({
   const [selectedLocation, setSelectedLocation] =
     useState<LocationData | null>(null);
 
-  // Show/hide the "available to add" section
   const [showAvailable, setShowAvailable] = useState(false);
 
   // Fetch references when modal opens
@@ -461,7 +620,29 @@ export default function RedrawModal({
     setOutfitOverrides((prev) => ({ ...prev, [characterId]: outfitKey }));
   }
 
-  // Split characters into included (assigned) and available-to-add
+  /** Add a newly created outfit to the correct character's availableOutfits */
+  function handleOutfitCreated(characterId: string, outfit: OutfitOption) {
+    if (!refs) return;
+
+    setRefs((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        assignedCharacters: prev.assignedCharacters.map((c) =>
+          c.characterId === characterId
+            ? { ...c, availableOutfits: [...c.availableOutfits, outfit] }
+            : c
+        ),
+        availableCharacters: prev.availableCharacters.map((c) =>
+          c.characterId === characterId
+            ? { ...c, availableOutfits: [...c.availableOutfits, outfit] }
+            : c
+        ),
+      };
+    });
+  }
+
+  // Split characters
   const includedChars = refs
     ? refs.assignedCharacters.map((c) => ({
         characterId: c.characterId,
@@ -484,7 +665,6 @@ export default function RedrawModal({
       }))
     : [];
 
-  // Merge for rendering: included first, then available
   const allChars = [...includedChars, ...availableChars];
   const includedCount = allChars.filter((c) =>
     includedCharacterIds.has(c.characterId)
@@ -568,6 +748,7 @@ export default function RedrawModal({
                   {includedChars.map((c) => (
                     <CharacterRow
                       key={c.characterId}
+                      characterId={c.characterId}
                       name={c.name}
                       imageUrl={c.imageUrl}
                       role={c.role}
@@ -577,6 +758,10 @@ export default function RedrawModal({
                       outfitDescription={c.outfitDescription}
                       outfits={c.outfits}
                       onOutfitChange={(key) => setOutfit(c.characterId, key)}
+                      onOutfitCreated={(outfit) =>
+                        handleOutfitCreated(c.characterId, outfit)
+                      }
+                      storyId={storyId}
                     />
                   ))}
                 </div>
@@ -610,6 +795,7 @@ export default function RedrawModal({
                             {availableChars.map((c) => (
                               <CharacterRow
                                 key={c.characterId}
+                                characterId={c.characterId}
                                 name={c.name}
                                 imageUrl={c.imageUrl}
                                 role={c.role}
@@ -625,6 +811,10 @@ export default function RedrawModal({
                                 onOutfitChange={(key) =>
                                   setOutfit(c.characterId, key)
                                 }
+                                onOutfitCreated={(outfit) =>
+                                  handleOutfitCreated(c.characterId, outfit)
+                                }
+                                storyId={storyId}
                               />
                             ))}
                           </div>
@@ -691,7 +881,6 @@ export default function RedrawModal({
 
         {/* ── Footer ── */}
         <div className="px-5 py-3 border-t border-gray-100 flex flex-col gap-2 flex-shrink-0">
-          {/* Fresh Start - clean regeneration */}
           <button
             onClick={() =>
               onSubmit({

@@ -1,6 +1,5 @@
-// src/app/stories/[id]/cover/page.tsx
 import { db } from "@/db";
-import { coverConversations, stories, storyWorkflowProgress } from "@/db/schema";
+import { coverConversations, stories } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import CoverDesignChat from "./CoverDesignChat";
@@ -30,17 +29,7 @@ export default async function CoverPage({
     content: msg.content,
   }));
 
-  // Build completed steps from workflow progress
-  const progress = await db.query.storyWorkflowProgress.findFirst({
-    where: eq(storyWorkflowProgress.storyId, storyId),
-  });
-
-  const completedSteps: StepKey[] = [];
-  if (story.status !== "draft") completedSteps.push("write");
-  if (progress?.styleExtracted) completedSteps.push("design");
-  if (progress?.charactersExtracted) completedSteps.push("characters");
-  if (progress?.locationsExtracted) completedSteps.push("locations");
-  if (progress?.worldComplete) completedSteps.push("studio");
+  const completedSteps = (story.completedSteps as StepKey[]) ?? [];
 
   return (
     <CoverDesignChat
@@ -48,8 +37,10 @@ export default async function CoverPage({
       projectId={story.projectId}
       story={story}
       initialMessages={messages}
-      currentStep="studio"
+      currentStep="cover"
       completedSteps={completedSteps}
+      paymentStatus={story.paymentStatus}
+      coverSpreadUrl={story.coverSpreadUrl}
     />
   );
 }
