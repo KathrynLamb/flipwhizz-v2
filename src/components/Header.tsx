@@ -17,6 +17,7 @@ export default function Header({ session }: { session: any }) {
   const navLinks = [
     { href: "#how-it-works", label: "How It Works" },
     { href: "#gallery", label: "Gallery" },
+    { href: "/blog", label: "Blog" },
     { href: "#pricing", label: "Pricing" },
   ];
 
@@ -81,11 +82,7 @@ export default function Header({ session }: { session: any }) {
             className="block w-6 h-[1.5px] bg-[#261C15] origin-center"
           />
           <motion.span
-            animate={
-              isOpen
-                ? { opacity: 0, scaleX: 0 }
-                : { opacity: 1, scaleX: 1 }
-            }
+            animate={isOpen ? { opacity: 0, scaleX: 0 } : { opacity: 1, scaleX: 1 }}
             transition={{ duration: 0.2 }}
             className="block w-6 h-[1.5px] bg-[#261C15]"
           />
@@ -113,26 +110,16 @@ export default function Header({ session }: { session: any }) {
 
             <motion.div
               key="panel"
-              initial={{
-                opacity: 0,
-                clipPath: "circle(0% at calc(100% - 48px) 48px)",
-              }}
-              animate={{
-                opacity: 1,
-                clipPath: "circle(160% at calc(100% - 48px) 48px)",
-              }}
-              exit={{
-                opacity: 0,
-                clipPath: "circle(0% at calc(100% - 48px) 48px)",
-              }}
+              initial={{ opacity: 0, clipPath: "circle(0% at calc(100% - 48px) 48px)" }}
+              animate={{ opacity: 1, clipPath: "circle(160% at calc(100% - 48px) 48px)" }}
+              exit={{ opacity: 0, clipPath: "circle(0% at calc(100% - 48px) 48px)" }}
               transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
               className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#FDF8F0]"
             >
               <div
                 className="absolute top-0 right-0 w-72 h-72 pointer-events-none"
                 style={{
-                  background:
-                    "radial-gradient(circle at top right, rgba(139,90,131,0.08) 0%, transparent 65%)",
+                  background: "radial-gradient(circle at top right, rgba(139,90,131,0.08) 0%, transparent 65%)",
                 }}
               />
 
@@ -143,12 +130,7 @@ export default function Header({ session }: { session: any }) {
                   className="w-10 h-10 flex items-center justify-center rounded-full border border-[#8B5A83]/20 text-[#6B5D52] hover:text-[#8B5A83] hover:border-[#8B5A83]/40 transition-all"
                 >
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                    <path
-                      d="M1 1L13 13M13 1L1 13"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
+                    <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                 </button>
               </div>
@@ -161,11 +143,7 @@ export default function Header({ session }: { session: any }) {
                     key={href}
                     initial={{ opacity: 0, x: -28 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{
-                      delay: 0.18 + i * 0.08,
-                      duration: 0.4,
-                      ease: [0.16, 1, 0.3, 1],
-                    }}
+                    transition={{ delay: 0.18 + i * 0.08, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                   >
                     <Link
                       href={href}
@@ -189,11 +167,7 @@ export default function Header({ session }: { session: any }) {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  delay: 0.42,
-                  duration: 0.4,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
+                transition={{ delay: 0.42, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                 className="relative z-10 px-8 pb-16 flex flex-col gap-3"
               >
                 {!session ? (
@@ -221,7 +195,6 @@ export default function Header({ session }: { session: any }) {
                     </button>
                   </>
                 )}
-
                 <p className="text-center text-xs mt-2 font-serif italic tracking-wide text-[#8B5A83]/40">
                   Stories made for magic. ✨
                 </p>
