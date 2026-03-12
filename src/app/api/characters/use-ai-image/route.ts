@@ -306,8 +306,110 @@ ${useStoryOutfit && defaultOutfit ? "- REPLACE clothing from the reference photo
       uploadStream.end(imageBuffer);
     });
 
+    // ── 11. Save to D ────────────────────────────────────────────────────
+
+
+
+
     const imageUrl = uploadResult.secure_url;
     console.log("✅ Portrait uploaded:", imageUrl);
+
+    // ── 10b. If keeping photo's outfit, describe it and update default ────
+    if (outfitMode === "reference" && hasReference && linkedStory?.storyId) {
+      try {
+        console.log("👗 Describing outfit from reference photo...");
+
+        const refPart = await getImagePart(character.referenceImageUrl!);
+        if (refPart) {
+          const outfitResponse = await gemini.models.generateContent({
+            model: "gemini-2.5-flash-preview-05-20",
+            contents: [{
+              role: "user",
+              parts: [
+                refPart,
+                {
+                  text: `Describe ONLY the clothing/outfit worn by the person in this image. Be specific about colours, patterns, materials, and style. Write a single paragraph of 30-50 words suitable for injecting into an illustration prompt. Do NOT describe the person's body, face, hair, or background — ONLY the clothes and accessories.`,
+                },
+              ],
+            }],
+          });
+
+          const outfitDesc = outfitResponse?.candidates?.[0]?.content?.parts
+            ?.filter((p: any) => p.text)
+            ?.map((p: any) => p.text)
+            ?.join(" ")
+            ?.trim();
+
+          if (outfitDesc && outfitDesc.length > 10) {
+            console.log("👗 Outfit description:", outfitDesc.substring(0, 100));
+
+            // Update the default outfit (or first outfit) for this character
+            const existingOutfit = await db
+              .select({ id: characterStoryOutfits.id })
+              .from(characterStoryOutfits)
+              .where(
+                and(
+                  eq(characterStoryOutfits.storyId, linkedStory.storyId),
+                  eq(characterStoryOutfits.characterId, characterId),
+                  eq(characterStoryOutfits.isDefault, true)
+                )
+              )
+              .limit(1)
+              .then((r) => r[0] ?? null);
+
+            if (existingOutfit) {
+              // Update existing default outfit
+              await db
+                .update(characterStoryOutfits)
+                .set({ outfitDescription: outfitDesc })
+                .where(eq(characterStoryOutfits.id, existingOutfit.id));
+              console.log("✅ Updated default outfit with photo description");
+            } else {
+              // No default outfit exists — try updating the first one
+              const firstOutfit = await db
+                .select({ id: characterStoryOutfits.id })
+                .from(characterStoryOutfits)
+                .where(
+                  and(
+                    eq(characterStoryOutfits.storyId, linkedStory.storyId),
+                    eq(characterStoryOutfits.characterId, characterId)
+                  )
+                )
+                .orderBy(characterStoryOutfits.createdAt)
+                .limit(1)
+                .then((r) => r[0] ?? null);
+
+              if (firstOutfit) {
+                await db
+                  .update(characterStoryOutfits)
+                  .set({ outfitDescription: outfitDesc })
+                  .where(eq(characterStoryOutfits.id, firstOutfit.id));
+                console.log("✅ Updated first outfit with photo description");
+              }
+            }
+
+            // Also update spread assignments that reference this outfit
+            // so the denormalized outfitDescription stays in sync
+            if (defaultOutfit) {
+              const { spreadCharacterOutfits: sco } = await import("@/db/schema");
+              await db
+                .update(sco)
+                .set({ outfitDescription: outfitDesc })
+                .where(
+                  and(
+                    eq(sco.characterId, characterId),
+                    eq(sco.outfitKey, defaultOutfit.outfitKey)
+                  )
+                );
+              console.log("✅ Updated denormalized spread outfit descriptions");
+            }
+          }
+        }
+      } catch (outfitErr) {
+        // Non-fatal — portrait was already generated successfully
+        console.error("⚠️ Failed to describe/update outfit from photo:", outfitErr);
+      }
+    }
 
     // ── 11. Save to DB ────────────────────────────────────────────────────
     await db

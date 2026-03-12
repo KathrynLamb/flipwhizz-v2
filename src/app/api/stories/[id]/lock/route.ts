@@ -17,6 +17,7 @@ type Context = {
 };
 
 export async function POST(_req: Request, { params }: Context) {
+
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
@@ -24,7 +25,7 @@ export async function POST(_req: Request, { params }: Context) {
   }
 
   const { id: storyId } = await params;
-
+  console.log("🔒 Lock route called for story:", storyId);
   try {
     const [existing] = await db
       .select({ storyConfirmed: stories.storyConfirmed })

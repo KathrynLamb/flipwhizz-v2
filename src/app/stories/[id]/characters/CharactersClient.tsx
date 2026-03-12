@@ -167,6 +167,8 @@ export default function CharactersClient({
           showGenerateAll={isPurchased === true && !allLocked && !storyConfirmed}
           onGenerateAll={generateAIAvatars}
           isGenerating={generatingAvatars}
+          hasPages
+          storyConfirmed
         />
 
         {/* Body */}

@@ -153,6 +153,8 @@ export default function UnifiedStoryHeader({
   paymentStatus,
   hasPages,
   coverSpreadUrl,
+  storyConfirmed,
+
 }: {
   storyId: string;
   title: string;
@@ -171,6 +173,7 @@ export default function UnifiedStoryHeader({
   hasPages?: boolean;
   /** Pass cover spread URL so the header can derive "cover" as completed */
   coverSpreadUrl?: string | null;
+  storyConfirmed?: boolean
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -179,6 +182,8 @@ export default function UnifiedStoryHeader({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => setMounted(true), []);
+
+console.log("completed steps", completedSteps)
 
   // Defensive types
   const safeCurrentStep =
@@ -190,15 +195,15 @@ export default function UnifiedStoryHeader({
   // Derive additional completed steps from actual state
   const safeCompletedSteps = useMemo(() => {
     const steps = new Set<StepKey>(rawCompletedSteps);
-    if (hasPages) steps.add("write");
+    if (hasPages || storyConfirmed) steps.add("write");
     if (paymentStatus === "paid") steps.add("pay");
     if (coverSpreadUrl) steps.add("cover");
     return Array.from(steps);
-  }, [rawCompletedSteps, hasPages, paymentStatus, coverSpreadUrl]);
+  }, [rawCompletedSteps, hasPages, storyConfirmed, paymentStatus, coverSpreadUrl]);
 
   const highestReached = Math.max(
     stepIndex(safeCurrentStep),
-    ...safeCompletedSteps.map(stepIndex)
+    ...safeCompletedSteps.map((s) => stepIndex(s) + 1)
   );
 
   function getStepState(
@@ -411,6 +416,7 @@ export default function UnifiedStoryHeader({
                               }}
                             />
                           )}
+
                         </div>
 
                         {/* Label */}

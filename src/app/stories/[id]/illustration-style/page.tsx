@@ -22,12 +22,16 @@ export default async function IllustrationStylePage({ params }: Props) {
     where: eq(stories.id, storyId),
   });
 
+  console.log("STORY from DB:", story);
+
   if (!story) notFound();
 
   /* ── Style guide ── */
   const sg = await db.query.storyStyleGuide.findFirst({
     where: eq(storyStyleGuide.storyId, storyId),
   });
+
+  console.log("completedSteps from DB:", story.completedSteps);
 
   const styleGuide: StyleGuide | null = sg
     ? {
@@ -54,7 +58,7 @@ export default async function IllustrationStylePage({ params }: Props) {
       storyTitle="Illustration Style"
       storyConfirmed={story.storyConfirmed ?? false}
       styleGuide={styleGuide}
-      currentStep="studio"
+      currentStep="design"
       completedSteps={(story.completedSteps as StepKey[]) ?? []} 
     />
   );

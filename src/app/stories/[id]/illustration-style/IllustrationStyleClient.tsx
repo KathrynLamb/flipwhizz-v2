@@ -319,6 +319,9 @@ export default function IllustrationStyleClient({
         showProgress={!storyConfirmed}
         progressCurrent={locked ? 1 : 0}
         progressTotal={1}
+        hasPages
+        storyConfirmed
+
       />
 
       <main className="max-w-[1160px] mx-auto px-4 sm:px-6 py-10">

@@ -49,7 +49,6 @@ export default function LocationsClient({
   completedSteps: StepKey[];
 }) {
   const router = useRouter();
-  const [confirming, setConfirming] = useState(false);
   const [locationsLocal, setLocationsLocal] = useState(locations);
   const [isPurchased, setIsPurchased] = useState<boolean | null>(null);
   const [generatingAvatars, setGeneratingAvatars] = useState(false);
@@ -78,26 +77,39 @@ export default function LocationsClient({
     setLocationsLocal(prev => prev.filter(l => l.id !== id));
   }
 
-  async function lockAllLocations() {
-    const unlocked = locationsLocal.filter(l => !l.locked);
-    if (unlocked.length === 0) return;
-
+  /* ── Lock all → confirm → complete step → navigate ── */
+  async function lockConfirmAndContinue() {
     setLockingAll(true);
     try {
-      await Promise.all(
-        unlocked.map(l =>
-          fetch('/api/locations/lock', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ locationId: l.id }),
-          })
-        )
-      );
-      setLocationsLocal(prev => prev.map(l => ({ ...l, locked: true })));
+      // 1. Lock any unlocked locations
+      const unlocked = locationsLocal.filter(l => !l.locked);
+      if (unlocked.length > 0) {
+        await Promise.all(
+          unlocked.map(l =>
+            fetch('/api/locations/lock', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ locationId: l.id }),
+            })
+          )
+        );
+      }
+
+      // 2. Confirm locations
+      await fetch(`/api/stories/${storyId}/confirm-locations`, { method: 'POST' });
+
+      // 3. Mark step complete
+      await fetch(`/api/stories/${storyId}/complete-step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step: 'locations' }),
+      });
+
+      // 4. Navigate to preview
+      router.push(`/stories/${storyId}/preview`);
     } catch (err) {
       console.error(err);
-      alert('Failed to lock some locations');
-    } finally {
+      alert('Failed to confirm locations');
       setLockingAll(false);
     }
   }
@@ -127,7 +139,6 @@ export default function LocationsClient({
   return (
     <div className="min-h-screen bg-gradient-to-br from-stone-50 via-white to-stone-50">
 
-      {/* Add scrollbar hide styles */}
       <style jsx global>{`
         .scrollbar-hide {
           -ms-overflow-style: none;
@@ -150,7 +161,8 @@ export default function LocationsClient({
         showGenerateAll={!!isPurchased && !allLocked && !storyConfirmed}
         onGenerateAll={generateAIAvatars}
         isGenerating={generatingAvatars}
-        designUnlocked={allLocked}
+        hasPages
+        storyConfirmed
       />
 
       {/* ── BODY ── */}
@@ -231,6 +243,11 @@ export default function LocationsClient({
                     index={idx}
                     onDelete={handleDelete}
                     storyId={storyId}
+                    onLockToggle={(id, locked) => {
+                      setLocationsLocal(prev =>
+                        prev.map(l => l.id === id ? { ...l, locked } : l)
+                      );
+                    }}
                   />
                 </motion.div>
               ))}
@@ -285,7 +302,6 @@ export default function LocationsClient({
                     : 'bg-stone-50 border border-stone-200'
                 }`}
               >
-                {/* Glow effect for locked state */}
                 {allLocked && (
                   <div className="absolute inset-0 bg-gradient-to-br from-emerald-100/30 via-transparent to-transparent opacity-50" />
                 )}
@@ -293,7 +309,6 @@ export default function LocationsClient({
                 <div className="relative">
                   {allLocked ? (
                     <>
-                      {/* Success icon */}
                       <motion.div
                         initial={{ scale: 0, rotate: -180 }}
                         animate={{ scale: 1, rotate: 0 }}
@@ -304,30 +319,24 @@ export default function LocationsClient({
                       </motion.div>
 
                       <h2 className="text-xl sm:text-2xl font-bold text-stone-900 mb-3">
-                        Ready to Confirm
+                        All Locations Locked
                       </h2>
                       <p className="text-sm sm:text-base text-stone-600 max-w-md mx-auto mb-8">
-                        All locations are locked. Confirm to ensure visual consistency throughout your story.
+                        Your locations are ready. Continue to preview your illustrated story.
                       </p>
 
                       <button
-                        disabled={confirming}
-                        onClick={async () => {
-                          setConfirming(true);
-                          await fetch(`/api/stories/${storyId}/confirm-locations`, { method: 'POST' });
-                          await fetch(`/api/stories/${storyId}/complete-step`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ step: 'locations' }),
-                          });
-                          router.refresh();
-                        }}
+                        disabled={lockingAll}
+                        onClick={lockConfirmAndContinue}
                         className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-emerald-400 to-green-500 hover:from-emerald-500 hover:to-green-600 transition-all disabled:opacity-40 shadow-xl shadow-emerald-500/25 active:scale-[0.98]"
                       >
-                        {confirming ? (
+                        {lockingAll ? (
                           <><Loader2 className="w-5 h-5 animate-spin" /> Confirming…</>
                         ) : (
-                          <><Lock className="w-5 h-5" /> Confirm Location Set</>
+                          <>
+                            Continue to Preview
+                            <ChevronRight className="w-5 h-5" />
+                          </>
                         )}
                       </button>
                     </>
@@ -337,15 +346,14 @@ export default function LocationsClient({
                         <Lock className="w-7 h-7 text-stone-400" />
                       </div>
                       <h2 className="text-lg sm:text-xl font-bold text-stone-900 mb-3">
-                        Lock All Locations to Continue
+                        Lock Locations to Continue
                       </h2>
                       <p className="text-sm text-stone-600 max-w-md mx-auto mb-6">
-                        Review each location's image and details, then tap{' '}
-                        <span className="font-semibold text-stone-800">Lock</span> on each card,
-                        or lock them all at once.
+                        Review each location's details, then lock them individually
+                        or all at once.
                       </p>
                       <button
-                        onClick={lockAllLocations}
+                        onClick={lockConfirmAndContinue}
                         disabled={lockingAll}
                         className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40"
                         style={{
@@ -356,9 +364,9 @@ export default function LocationsClient({
                         }}
                       >
                         {lockingAll ? (
-                          <><Loader2 className="w-4 h-4 animate-spin" /> Locking…</>
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Locking & Confirming…</>
                         ) : (
-                          <><Lock className="w-4 h-4" /> Lock All Locations</>
+                          <><Lock className="w-4 h-4" /> Lock All & Continue</>
                         )}
                       </button>
                     </>
@@ -368,7 +376,7 @@ export default function LocationsClient({
             </motion.div>
           )}
 
-          {/* Confirmed state */}
+          {/* Already confirmed — just show continue button */}
           {storyConfirmed && (
             <motion.div
               key="cta-confirmed"
@@ -393,17 +401,10 @@ export default function LocationsClient({
                   </p>
 
                   <button
-                    onClick={async () => {
-                      await fetch(`/api/stories/${storyId}/complete-step`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ step: 'locations' }),
-                      });
-                      router.push(`/stories/${storyId}/preview`);
-                    }}
+                    onClick={() => router.push(`/stories/${storyId}/preview`)}
                     className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 transition-all shadow-xl shadow-violet-500/25 active:scale-[0.98]"
                   >
-                    Continue to Design
+                    Continue to Preview
                     <ChevronRight className="w-5 h-5" />
                   </button>
                 </div>

@@ -1,7 +1,5 @@
 "use client";
 
-// app/stories/[storyId]/preview/PreviewPageClient.tsx
-
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -17,12 +15,15 @@ import {
   CheckCircle,
   ChevronRight,
   AlertCircle,
+  Lock,
 } from "lucide-react";
 import type { StepKey } from "@/lib/storySteps";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
+import RedrawModal from "@/app/stories/[id]/studio/components/redrawModal";
+// import RedrawModal from "@/app/stories/[id]/studio/components/RedrawModal";
 
 /* ------------------------------------------------------------------ */
-/* TYPES — match exactly what the API returns                          */
+/* TYPES                                                               */
 /* ------------------------------------------------------------------ */
 
 interface SpreadCharacter {
@@ -63,7 +64,7 @@ type Props = {
 };
 
 /* ------------------------------------------------------------------ */
-/* GRADIENTS — matches character card palette                          */
+/* GRADIENTS                                                           */
 /* ------------------------------------------------------------------ */
 
 const GRADIENTS = [
@@ -123,7 +124,7 @@ function Avatar({
 }
 
 /* ------------------------------------------------------------------ */
-/* SPREAD CARD (left sidebar)                                          */
+/* SPREAD CARD (sidebar)                                               */
 /* ------------------------------------------------------------------ */
 
 function SpreadCard({
@@ -149,7 +150,6 @@ function SpreadCard({
           : "border-gray-100 hover:border-violet-200"
       }`}
     >
-      {/* Thumbnail */}
       <div
         className="relative h-[80px] w-full overflow-hidden"
         style={{
@@ -181,7 +181,6 @@ function SpreadCard({
         </span>
       </div>
 
-      {/* Info */}
       <div className="px-3 py-2.5">
         {spread.scene ? (
           <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed mb-2">
@@ -197,7 +196,12 @@ function SpreadCard({
               key={c.id}
               className="inline-flex items-center gap-1 text-[10px] font-medium bg-violet-50 text-violet-600 px-1.5 py-0.5 rounded-full"
             >
-              <Avatar name={c.name} imageUrl={c.imageUrl} size={12} index={i} />
+              <Avatar
+                name={c.name}
+                imageUrl={c.imageUrl}
+                size={12}
+                index={i}
+              />
               {c.name}
             </span>
           ))}
@@ -219,17 +223,20 @@ function SpreadCard({
 }
 
 /* ------------------------------------------------------------------ */
-/* GENERATION PANEL (right side)                                       */
+/* GENERATION PANEL — uses RedrawModal                                 */
 /* ------------------------------------------------------------------ */
 
 function GenerationPanel({
   spread,
   storyId,
+  isLocked = false,
+  onGenerated,
 }: {
   spread: SpreadOption;
   storyId: string;
+  isLocked?: boolean;
+  onGenerated?: () => void;
 }) {
-  const [feedback, setFeedback] = useState("");
   const [status, setStatus] = useState<GenerationStatus>("idle");
   const [resultImageUrl, setResultImageUrl] = useState<string | null>(
     spread.existingImageUrl
@@ -237,20 +244,23 @@ function GenerationPanel({
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [styleWarning, setStyleWarning] = useState<string | null>(null);
+  const [showRedraw, setShowRedraw] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Reset on spread change
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
-    setFeedback("");
     setStatus("idle");
     setResultImageUrl(spread.existingImageUrl);
     setError(null);
     setJobId(null);
     setStyleWarning(null);
-  }, [spread.spreadId]); // eslint-disable-line react-hooks/exhaustive-deps
+    setShowRedraw(false);
+    setIsSubmitting(false);
+  }, [spread.spreadId]);
 
-  // Poll
+  // Poll for job status
   useEffect(() => {
     if (!jobId || (status !== "queued" && status !== "generating")) return;
 
@@ -263,7 +273,8 @@ function GenerationPanel({
         if (data.imageUrl) setResultImageUrl(data.imageUrl);
         if (data.status === "done" || data.status === "error") {
           if (pollRef.current) clearInterval(pollRef.current);
-          if (data.status === "error") setError("Generation failed — try again.");
+          if (data.status === "error")
+            setError("Generation failed — try again.");
         }
       } catch {
         /* swallow transient errors */
@@ -275,7 +286,8 @@ function GenerationPanel({
     };
   }, [jobId, status]);
 
-  async function handleGenerate() {
+  // Simple generate (first time, no modal)
+  async function handleQuickGenerate() {
     setError(null);
     setStatus("queued");
 
@@ -287,7 +299,6 @@ function GenerationPanel({
           leftPageId: spread.leftPageId,
           rightPageId: spread.rightPageId,
           pageLabel: spread.pageLabel,
-          feedback: feedback.trim() || undefined,
         }),
       });
 
@@ -295,14 +306,60 @@ function GenerationPanel({
         const text = await res.text();
         throw new Error(text || "Request failed");
       }
-
       const { jobId: id, styleWarning: sw } = await res.json();
       setJobId(id);
       setStyleWarning(sw ?? null);
       setStatus("generating");
+      onGenerated?.();
     } catch (e: any) {
       setError(e.message ?? "Something went wrong");
       setStatus("error");
+    }
+  }
+
+  // Generate via RedrawModal (with character/outfit/location overrides)
+  async function handleRedrawSubmit(payload: {
+    feedback: string;
+    includedCharacterIds: string[];
+    outfitOverrides: Record<string, string>;
+    locationId: string | null;
+    freshStart?: boolean;
+  }) {
+    setIsSubmitting(true);
+    setError(null);
+    setShowRedraw(false);
+    setStatus("queued");
+
+    try {
+      const res = await fetch(`/api/stories/${storyId}/generate-spread`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leftPageId: spread.leftPageId,
+          rightPageId: spread.rightPageId,
+          pageLabel: spread.pageLabel,
+          feedback: payload.feedback || undefined,
+          includedCharacterIds: payload.includedCharacterIds,
+          outfitOverrides: payload.outfitOverrides,
+          locationId: payload.locationId,
+          freshStart: payload.freshStart,
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Request failed");
+      }
+      const { jobId: id, styleWarning: sw } = await res.json();
+      setJobId(id);
+      setStyleWarning(sw ?? null);
+      setStatus("generating");
+      onGenerated?.();
+    } catch (e: any) {
+      setError(e.message ?? "Something went wrong");
+      setStatus("error");
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -310,7 +367,6 @@ function GenerationPanel({
 
   return (
     <div className="space-y-4">
-
       {/* ── Page text ── */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
@@ -318,7 +374,9 @@ function GenerationPanel({
             Left Page
           </p>
           <p className="text-sm text-gray-700 leading-relaxed font-serif">
-            {spread.leftText || <span className="text-gray-300 italic">No text</span>}
+            {spread.leftText || (
+              <span className="text-gray-300 italic">No text</span>
+            )}
           </p>
         </div>
 
@@ -345,8 +403,15 @@ function GenerationPanel({
           <div className="flex flex-wrap gap-5">
             {spread.characters.map((c, i) => (
               <div key={c.id} className="flex flex-col items-center gap-1.5">
-                <Avatar name={c.name} imageUrl={c.imageUrl} size={52} index={i} />
-                <span className="text-[11px] font-semibold text-gray-600">{c.name}</span>
+                <Avatar
+                  name={c.name}
+                  imageUrl={c.imageUrl}
+                  size={52}
+                  index={i}
+                />
+                <span className="text-[11px] font-semibold text-gray-600">
+                  {c.name}
+                </span>
               </div>
             ))}
             {spread.location && (
@@ -367,14 +432,16 @@ function GenerationPanel({
         </div>
       )}
 
-      {/* ── Scene info (if available) ── */}
+      {/* ── Scene info ── */}
       {(spread.scene || spread.mood) && (
         <div className="bg-violet-50 border border-violet-100 rounded-xl px-4 py-3">
           <div className="flex items-start gap-2">
             <Sparkles className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />
             <div>
               {spread.scene && (
-                <p className="text-sm text-violet-700 leading-relaxed">{spread.scene}</p>
+                <p className="text-sm text-violet-700 leading-relaxed">
+                  {spread.scene}
+                </p>
               )}
               {spread.mood && (
                 <p className="text-xs text-violet-400 mt-1 font-medium uppercase tracking-wide">
@@ -461,50 +528,72 @@ function GenerationPanel({
         </div>
 
         {/* Controls */}
-        <div className="p-4 space-y-3">
-          <textarea
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            disabled={busy}
-            placeholder="Optional: request changes — e.g. 'make it more nighttime', 'add a rainbow', 'warmer colours'…"
-            rows={2}
-            className="w-full text-sm text-gray-700 placeholder-gray-300 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          />
+     {/* Controls */}
+     <div className="p-4 space-y-3">
+          {/* Locked — this spread can't be generated (free preview used on another) */}
+          {isLocked && !busy && (
+            <div className="text-center py-4 space-y-3">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-100 text-gray-500 text-sm font-medium">
+                <Lock className="w-4 h-4" />
+                Preview used on another spread
+              </div>
+              <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
+                Your free preview illustration has been generated on a different spread.
+                Order your book to generate all spreads.
+              </p>
+            </div>
+          )}
 
-          <button
-            onClick={handleGenerate}
-            disabled={busy}
-            className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            style={{
-              background: busy
-                ? "#9ca3af"
-                : "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
-            }}
-          >
-            {busy ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                {status === "queued" ? "Queued…" : "Generating…"}
-              </>
-            ) : resultImageUrl ? (
-              <>
-                <RefreshCw className="w-4 h-4" />
-                Re-generate Illustration
-              </>
-            ) : (
-              <>
-                <Wand2 className="w-4 h-4" />
-                Generate Sample Illustration
-              </>
-            )}
-          </button>
+          {/* No image yet, not locked → simple generate button */}
+          {!resultImageUrl && !busy && !isLocked && (
+            <button
+              onClick={handleQuickGenerate}
+              className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2"
+              style={{
+                background:
+                  "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
+              }}
+            >
+              <Wand2 className="w-4 h-4" />
+              Generate Free Preview
+            </button>
+          )}
+
+          {/* Has image, this IS the preview spread → can redraw */}
+          {resultImageUrl && !busy && !isLocked && (
+            <button
+              onClick={() => setShowRedraw(true)}
+              className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2"
+              style={{
+                background:
+                  "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
+              }}
+            >
+              <RefreshCw className="w-4 h-4" />
+              Redraw — Edit Characters, Outfits & More
+            </button>
+          )}
+
+          {/* Generating → disabled state */}
+          {busy && (
+            <button
+              disabled
+              className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2 opacity-50 cursor-not-allowed bg-gray-400"
+            >
+              <Loader2 className="w-4 h-4 animate-spin" />
+              {status === "queued" ? "Queued…" : "Generating…"}
+            </button>
+          )}
 
           {styleWarning && (
             <div className="flex items-center gap-2 text-amber-600 text-xs bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
-              {styleWarning === "no_style_guide" && "No style guide found — generating with default style."}
-              {styleWarning === "style_not_locked" && "Your style guide isn't locked yet. Lock it in Design for best results."}
-              {styleWarning === "no_reference_image" && "No style reference image uploaded. Add one in Design for better consistency."}
+              {styleWarning === "no_style_guide" &&
+                "No style guide found — generating with default style."}
+              {styleWarning === "style_not_locked" &&
+                "Your style guide isn't locked yet. Lock it in Design for best results."}
+              {styleWarning === "no_reference_image" &&
+                "No style reference image uploaded. Add one in Design for better consistency."}
             </div>
           )}
           {error && (
@@ -515,6 +604,17 @@ function GenerationPanel({
           )}
         </div>
       </div>
+
+      {/* ── RedrawModal ── */}
+      <RedrawModal
+        isOpen={showRedraw}
+        onClose={() => setShowRedraw(false)}
+        onSubmit={handleRedrawSubmit}
+        isSubmitting={isSubmitting}
+        storyId={storyId}
+        spreadId={spread.spreadId}
+        spreadLabel={spread.pageLabel}
+      />
     </div>
   );
 }
@@ -559,6 +659,16 @@ export default function PreviewPageClient({
 
   const selected = spreads.find((s) => s.spreadId === selectedId) ?? null;
 
+  // Track which spread (if any) has been generated as the free preview
+  const [previewGeneratedId, setPreviewGeneratedId] = useState<string | null>(null);
+
+  // On load, check if any spread already has an image
+  useEffect(() => {
+    const existing = spreads.find((s) => s.existingImageUrl);
+    if (existing) setPreviewGeneratedId(existing.spreadId);
+  }, [spreads]);
+
+  const hasUsedFreePreview = !!previewGeneratedId;
   return (
     <>
       <UnifiedStoryHeader
@@ -569,10 +679,11 @@ export default function PreviewPageClient({
         showProgress={!storyConfirmed}
         progressCurrent={0}
         progressTotal={1}
+        storyConfirmed
+        hasPages
       />
 
       <main className="max-w-[1160px] mx-auto px-4 sm:px-6 py-10">
-
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-1">
@@ -582,8 +693,9 @@ export default function PreviewPageClient({
             </h1>
           </div>
           <p className="text-gray-500 text-base max-w-lg leading-relaxed">
-            Choose any spread and generate a full sample illustration — using
-            your characters, locations, and style guide.
+            Choose any spread and generate a sample illustration — using your
+            characters, locations, and style guide. Redraw with full control over
+            who appears and what they wear.
           </p>
         </div>
 
@@ -591,9 +703,9 @@ export default function PreviewPageClient({
         <div className="flex items-start gap-3 bg-violet-50 border border-violet-100 rounded-xl px-4 py-3 mb-6">
           <Sparkles className="w-4 h-4 text-violet-500 flex-shrink-0 mt-0.5" />
           <p className="text-violet-700 text-sm leading-relaxed">
-            <strong>Pro tip:</strong> Pick a spread that features your main
-            character in an important moment — it&apos;s the best way to check
-            your style looks exactly right before generating the full book.
+            <strong>Pro tip:</strong> Generate a first sample, then hit{" "}
+            <strong>Redraw</strong> to swap characters, change outfits, switch
+            locations, or give feedback — just like the Studio.
           </p>
         </div>
 
@@ -606,24 +718,20 @@ export default function PreviewPageClient({
         )}
 
         <div className="grid lg:grid-cols-[280px_1fr] gap-6 items-start">
-
           {/* ── Spread picker sidebar ── */}
           <aside className="space-y-2 lg:sticky lg:top-6 max-h-[calc(100vh-120px)] overflow-y-auto pb-2 pr-1">
             <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase px-1 mb-3">
               Choose a spread
             </p>
 
-            {loading && (
-              <>
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div
-                    key={i}
-                    className="h-[130px] rounded-2xl bg-gray-100 animate-pulse"
-                    style={{ animationDelay: `${i * 80}ms` }}
-                  />
-                ))}
-              </>
-            )}
+            {loading &&
+              [1, 2, 3, 4, 5].map((i) => (
+                <div
+                  key={i}
+                  className="h-[130px] rounded-2xl bg-gray-100 animate-pulse"
+                  style={{ animationDelay: `${i * 80}ms` }}
+                />
+              ))}
 
             {!loading && !fetchError && spreads.length === 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
@@ -654,7 +762,12 @@ export default function PreviewPageClient({
           {/* ── Generation panel ── */}
           <div>
             {selected ? (
-              <GenerationPanel spread={selected} storyId={storyId} />
+            <GenerationPanel
+                spread={selected}
+                storyId={storyId}
+                isLocked={hasUsedFreePreview && previewGeneratedId !== selected.spreadId}
+                onGenerated={() => setPreviewGeneratedId(selected.spreadId)}
+              />
             ) : !loading && !fetchError ? (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 flex flex-col items-center justify-center text-center">
                 <div className="w-16 h-16 rounded-2xl bg-violet-50 flex items-center justify-center mb-4">
@@ -680,14 +793,14 @@ export default function PreviewPageClient({
               </p>
             </div>
             <button
-                onClick={async () => {
-                  await fetch(`/api/stories/${storyId}/complete-step`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ step: 'preview' }),
-                  });
-                  router.push(`/stories/${storyId}/checkout`);
-                }}
+              onClick={async () => {
+                await fetch(`/api/stories/${storyId}/complete-step`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ step: "preview" }),
+                });
+                router.push(`/stories/${storyId}/checkout`);
+              }}
               className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm text-white flex-shrink-0 hover:opacity-90 transition-opacity"
               style={{
                 background:

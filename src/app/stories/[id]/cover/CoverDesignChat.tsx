@@ -376,7 +376,7 @@ export default function CoverDesignChat({
           currentStep={currentStep}
           completedSteps={completedSteps}
           paymentStatus={paymentStatus}
-          hasPages={true}
+
           coverSpreadUrl={localStory.coverSpreadUrl}
         />
 

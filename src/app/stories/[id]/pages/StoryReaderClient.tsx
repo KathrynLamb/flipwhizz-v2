@@ -223,7 +223,7 @@ export default function StoryReaderClient({
       
       if (data.alreadyConfirmed) {
         // Already extracted — go straight to characters (or wherever they left off)
-        router.push(`/stories/${id}/characters`);
+        router.push(`/stories/${id}/illustration-style`);
         return;
       }
       
