@@ -11,8 +11,17 @@ export type ExportData = {
   childName?: string;
 };
 
+export type PrintSpec = {
+  productType: "print" | "gift";
+  coverType: "softcover" | "hardcover";
+  gelatoProductUid: string;
+  trimSize: "8x8";
+  interiorPageTarget: number;
+  totalProductPageCount: number;
+};
+
 /* -------------------------------------------------------------------------- */
-/*  Optimize Cloudinary URLs for print (300 DPI, high quality)                */
+/*  Optimize Cloudinary URLs for print                                        */
 /* -------------------------------------------------------------------------- */
 
 function optimizeForPrint(url: string): string {
@@ -21,7 +30,31 @@ function optimizeForPrint(url: string): string {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Lazy browser launch                                                        */
+/*  Normalize Gelato cover dimensions                                         */
+/* -------------------------------------------------------------------------- */
+
+function getCoverCanvasSize(dims: any): { width: number; height: number } {
+  if (dims?.bleedSize?.width && dims?.bleedSize?.height) {
+    return {
+      width: dims.bleedSize.width,
+      height: dims.bleedSize.height,
+    };
+  }
+
+  if (dims?.wraparoundInsideSize?.width && dims?.wraparoundInsideSize?.height) {
+    return {
+      width: dims.wraparoundInsideSize.width,
+      height: dims.wraparoundInsideSize.height,
+    };
+  }
+
+  throw new Error(
+    `Gelato response missing usable cover dimensions: ${JSON.stringify(dims)}`
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Lazy browser launch                                                       */
 /* -------------------------------------------------------------------------- */
 
 async function launchBrowser() {
@@ -50,42 +83,79 @@ async function launchBrowser() {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Main export                                                                */
+/*  Main export                                                               */
 /* -------------------------------------------------------------------------- */
 
 export async function exportCompletePDF(
   data: ExportData,
   gelatoProductUid: string,
-  gelatoApiKey: string
+  gelatoApiKey: string,
+  printSpec: PrintSpec
 ): Promise<Buffer> {
-  /* ---- Fetch Gelato dimensions ---- */
-  const dims = await fetchGelatoCoverDimensions(gelatoProductUid, gelatoApiKey);
+  if (data.interiorPages.length > printSpec.interiorPageTarget) {
+    throw new Error(
+      `Too many interior pages: got ${data.interiorPages.length}, max supported is ${printSpec.interiorPageTarget}`
+    );
+  }
 
-  // Cover: use wraparoundInsideSize (includes 17mm bleed on all sides)
-  const coverWidth = dims.wraparoundInsideSize.width; // 458mm
-  const coverHeight = dims.wraparoundInsideSize.height; // 246mm
+  const paddingPages = printSpec.interiorPageTarget - data.interiorPages.length;
 
-  // Interior: content is 206x206mm, add 4mm bleed on each side = 214x214mm
+  console.log("📐 Fetching Gelato cover dimensions", {
+    gelatoProductUid,
+    coverType: printSpec.coverType,
+    totalProductPageCount: printSpec.totalProductPageCount,
+    interiorPageTarget: printSpec.interiorPageTarget,
+    actualInteriorPages: data.interiorPages.length,
+    paddingPages,
+  });
+
+  const dims = await fetchGelatoCoverDimensions(
+    gelatoProductUid,
+    gelatoApiKey,
+    printSpec.totalProductPageCount
+  );
+
+  console.log("📐 Gelato cover dimensions response:", dims);
+
+  const coverCanvas = getCoverCanvasSize(dims);
+  const coverWidth = coverCanvas.width;
+  const coverHeight = coverCanvas.height;
+
+  /* ------------------------------------------------------------------------ */
+  /*  Interior page geometry                                                  */
+  /* ------------------------------------------------------------------------ */
+  /* 8x8 book:
+     - trim/content area = 206 x 206 mm
+     - bleed = 4 mm each side
+     - full PDF page = 214 x 214 mm
+  */
+
   const BLEED_MM = 4;
   const CONTENT_MM = 206;
-  const interiorPageSize = CONTENT_MM + BLEED_MM * 2; // 214mm
+  const SAFE_MARGIN_MM = 10;
 
-  // The spread image covers two pages including bleed
+  const interiorPageSize = CONTENT_MM + BLEED_MM * 2; // 214mm
   const spreadWidth = interiorPageSize * 2; // 428mm
   const spreadHeight = interiorPageSize; // 214mm
 
-  // Gelato 30-page product requires exactly 33 PDF pages:
-  // 1 cover + 1 blank endpaper + 30 content pages + 1 blank endpaper
-  // We have 28 content pages, so we need 2 padding pages
-  const REQUIRED_CONTENT_PAGES = 30;
-  const paddingPages = REQUIRED_CONTENT_PAGES - data.interiorPages.length;
+  // We render the spread slightly smaller inside the page so text stays away
+  // from trim. This creates a safety inset all around each page.
+  const insetPageWidth = interiorPageSize - SAFE_MARGIN_MM * 2;
+  const insetPageHeight = interiorPageSize - SAFE_MARGIN_MM * 2;
+  const insetSpreadWidth = insetPageWidth * 2;
+  const insetSpreadHeight = insetPageHeight;
+
+  if (insetPageWidth <= 0 || insetPageHeight <= 0) {
+    throw new Error(
+      `Invalid inset geometry. interiorPageSize=${interiorPageSize}, SAFE_MARGIN_MM=${SAFE_MARGIN_MM}`
+    );
+  }
 
   const browser = await launchBrowser();
 
   try {
     const page = await browser.newPage();
 
-    /* ---- Build padding page HTML ---- */
     const titlePageHtml = `
 <div class="page dedication">
   <div class="dedication-content">
@@ -101,7 +171,6 @@ export async function exportCompletePDF(
   </div>
 </div>`;
 
-    // If we need more than 2 padding pages, add blanks
     const extraBlankPages = Math.max(0, paddingPages - 2);
     const extraBlanksHtml = Array(extraBlankPages)
       .fill('<div class="page blank"></div>')
@@ -114,11 +183,15 @@ export async function exportCompletePDF(
 <meta charset="UTF-8" />
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: white; }
+  html, body { background: white; }
 
-  /* ---- Cover spread (with 17mm bleed) ---- */
   @page cover {
     size: ${coverWidth}mm ${coverHeight}mm;
+    margin: 0;
+  }
+
+  @page interior {
+    size: ${interiorPageSize}mm ${interiorPageSize}mm;
     margin: 0;
   }
 
@@ -128,6 +201,8 @@ export async function exportCompletePDF(
     height: ${coverHeight}mm;
     page-break-after: always;
     overflow: hidden;
+    position: relative;
+    background: white;
   }
 
   .cover img {
@@ -137,12 +212,6 @@ export async function exportCompletePDF(
     display: block;
   }
 
-  /* ---- Interior pages (206mm + 4mm bleed each side = 214mm) ---- */
-  @page interior {
-    size: ${interiorPageSize}mm ${interiorPageSize}mm;
-    margin: 0;
-  }
-
   .page {
     page: interior;
     width: ${interiorPageSize}mm;
@@ -150,104 +219,112 @@ export async function exportCompletePDF(
     page-break-after: always;
     position: relative;
     overflow: hidden;
+    background: white;
   }
 
   .page.blank {
     background: white;
   }
 
-  .page.dedication {
-    background: white;
+  .page.dedication,
+  .page.the-end {
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  .dedication-content {
+  .dedication-content,
+  .end-content {
     text-align: center;
     padding: 20mm;
   }
 
   .dedication-title {
-    font-family: Georgia, 'Times New Roman', serif;
+    font-family: Georgia, "Times New Roman", serif;
     font-size: 24pt;
     color: #333;
     margin-bottom: 8mm;
+    line-height: 1.2;
   }
 
   .dedication-sub {
-    font-family: Georgia, 'Times New Roman', serif;
+    font-family: Georgia, "Times New Roman", serif;
     font-size: 14pt;
     font-style: italic;
     color: #666;
-  }
-
-  .page.the-end {
-    background: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .end-content {
-    text-align: center;
+    line-height: 1.4;
   }
 
   .end-text {
-    font-family: Georgia, 'Times New Roman', serif;
+    font-family: Georgia, "Times New Roman", serif;
     font-size: 28pt;
     font-style: italic;
     color: #333;
+    line-height: 1.2;
   }
 
-  /* Spread images: full spread is 428mm x 214mm */
+  /* ---------------------------------------------------------------------- */
+  /* Interior spread slicing with safety inset                              */
+  /* ---------------------------------------------------------------------- */
+
   .page img {
     position: absolute;
-    width: ${spreadWidth}mm;
-    height: ${spreadHeight}mm;
+    top: ${SAFE_MARGIN_MM}mm;
+    width: ${insetSpreadWidth}mm;
+    height: ${insetSpreadHeight}mm;
     object-fit: cover;
-    top: 0;
+    display: block;
   }
 
+  /* Left page shows left half of the spread, inset from all edges */
   .page.left img {
-    left: 0;
+    left: ${SAFE_MARGIN_MM}mm;
   }
 
+  /* Right page shows right half of the spread, also inset */
   .page.right img {
-    left: -${interiorPageSize}mm;
+    left: -${insetPageWidth - SAFE_MARGIN_MM}mm;
   }
+
+  /* Optional debug guides: uncomment if needed
+  .page::after {
+    content: "";
+    position: absolute;
+    left: ${SAFE_MARGIN_MM}mm;
+    top: ${SAFE_MARGIN_MM}mm;
+    width: ${interiorPageSize - SAFE_MARGIN_MM * 2}mm;
+    height: ${interiorPageSize - SAFE_MARGIN_MM * 2}mm;
+    border: 0.3mm dashed rgba(255,0,0,0.5);
+    pointer-events: none;
+  }
+  */
 </style>
 </head>
 <body>
 
 ${
   data.coverSpreadUrl
-    ? `<!-- Page 1: Cover spread with bleed -->
-<div class="cover"><img src="${optimizeForPrint(data.coverSpreadUrl)}" /></div>`
+    ? `<div class="cover"><img src="${optimizeForPrint(data.coverSpreadUrl)}" /></div>`
     : ""
 }
 
-<!-- Page 2: Blank endpaper (inside front cover) -->
 <div class="page blank"></div>
 
-<!-- Page 3: Dedication / title page -->
 ${paddingPages >= 1 ? titlePageHtml : ""}
 
-<!-- Pages 4-31: Interior content pages (28 pages) -->
 ${data.interiorPages
   .map(
     (p) =>
-      `<div class="page ${p.side}"><img src="${optimizeForPrint(p.spreadImageUrl)}" /></div>`
+      `<div class="page ${p.side}"><img src="${optimizeForPrint(
+        p.spreadImageUrl
+      )}" /></div>`
   )
   .join("\n")}
 
-<!-- Page 32: The End page -->
 ${paddingPages >= 2 ? endPageHtml : ""}
 
-<!-- Extra blank pages if needed -->
 ${extraBlanksHtml}
 
-<!-- Page 33: Blank endpaper (inside back cover) -->
 <div class="page blank"></div>
 
 </body>

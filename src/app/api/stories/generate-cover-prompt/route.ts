@@ -11,15 +11,85 @@ const client = new Anthropic({
 });
 
 /* -------------------------------------------------------------------------- */
+/*                             CHARACTER/LOCATION BLOCK                       */
+/* -------------------------------------------------------------------------- */
+
+type WorldCharacter = {
+  id: string;
+  name: string;
+  description?: string | null;
+  appearance?: string | null;
+  role?: string | null;
+  outfits?: {
+    outfitKey: string;
+    outfitDescription: string;
+    isDefault: boolean;
+  }[];
+};
+
+type WorldLocation = {
+  id: string;
+  name: string;
+  description?: string | null;
+  significance?: string | null;
+};
+
+function buildWorldContext(
+  chars: WorldCharacter[],
+  locs: WorldLocation[]
+): string {
+  const lines: string[] = [];
+
+  if (chars.length > 0) {
+    lines.push("AVAILABLE CHARACTERS:");
+    for (const c of chars) {
+      lines.push(`- ${c.name} (${c.role ?? "character"})`);
+      if (c.appearance) lines.push(`  Appearance: ${c.appearance}`);
+      if (c.description) lines.push(`  Description: ${c.description}`);
+      if (c.outfits?.length) {
+        const defaultOutfit = c.outfits.find((o) => o.isDefault);
+        if (defaultOutfit) {
+          lines.push(
+            `  Default outfit: ${defaultOutfit.outfitKey} — ${defaultOutfit.outfitDescription}`
+          );
+        }
+        const otherOutfits = c.outfits.filter((o) => !o.isDefault);
+        if (otherOutfits.length) {
+          lines.push(
+            `  Other outfits: ${otherOutfits.map((o) => o.outfitKey).join(", ")}`
+          );
+        }
+      }
+    }
+    lines.push("");
+  }
+
+  if (locs.length > 0) {
+    lines.push("AVAILABLE LOCATIONS:");
+    for (const l of locs) {
+      lines.push(
+        `- ${l.name}${l.significance ? ` (${l.significance})` : ""}`
+      );
+      if (l.description) lines.push(`  ${l.description}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                SYSTEM PROMPTS                              */
 /* -------------------------------------------------------------------------- */
 
-function buildCoverPlanSystemPrompt(story: any) {
+function buildCoverPlanSystemPrompt(
+  story: any,
+  worldContext: string
+) {
   return `
 You are a book cover planning assistant.
 
-You DO NOT generate image prompts.
-You DO NOT design typography.
+You DO NOT generate image prompts. You DO NOT design typography.
 You ONLY extract a STRUCTURED COVER PLAN.
 
 This plan will be consumed by a separate image model that:
@@ -29,15 +99,18 @@ This plan will be consumed by a separate image model that:
 
 STORY CONTEXT:
 Title: ${story.title}
-Story excerpt:
-${story.fullDraft?.slice(0, 500) || "No story text provided"}
+Story excerpt: ${story.fullDraft?.slice(0, 500) || "No story text provided"}
+
+${worldContext}
 
 YOUR TASK:
 From the conversation history, extract a SINGLE, FINAL cover plan.
 
-OUTPUT JSON ONLY.
-NO MARKDOWN.
-NO COMMENTS.
+When the user refers to characters or locations by name, use the AVAILABLE CHARACTERS
+and AVAILABLE LOCATIONS above to understand who/what they mean. The visualIntent
+fields should describe these characters/locations accurately based on the data above.
+
+OUTPUT JSON ONLY. NO MARKDOWN. NO COMMENTS.
 
 STRICT FORMAT:
 
@@ -47,7 +120,7 @@ STRICT FORMAT:
   "front": {
     "titleText": "exact title text to render",
     "authorText": "exact author credit text (optional)",
-    "visualIntent": "short, concrete description of what should appear visually on the FRONT cover"
+    "visualIntent": "short, concrete description of what should appear visually on the FRONT cover — reference specific characters by name and describe their appearance"
   },
 
   "spine": {
@@ -74,17 +147,25 @@ RULES:
 - If author text is not specified, OMIT authorText
 - If no back text was requested, OMIT blurbText and dedicationText
 - visualIntent describes imagery ONLY — not layout, typography, or positioning
+- When describing characters in visualIntent, include their appearance details from the character data above
 
 This JSON will be saved and LOCKED before image generation.
 `.trim();
 }
 
-function buildChatGuidanceSystemPrompt(story: any) {
+function buildChatGuidanceSystemPrompt(
+  story: any,
+  worldContext: string
+) {
   return `
 You are helping a parent quickly decide a children's book cover.
 
-GOAL:
-Reach a final decision in 2–3 turns MAX.
+GOAL: Reach a final decision in 2–3 turns MAX.
+
+${worldContext}
+
+Use the character and location names above when suggesting cover ideas.
+For example, suggest showing specific characters in specific locations.
 
 ONLY ask about:
 - What should be SEEN on the front cover (scene / character / symbolic)
@@ -99,7 +180,8 @@ DO NOT ask about:
 - Typography styles
 - Layout mechanics
 
-If the user is vague, offer 2–3 concrete options.
+If the user is vague, offer 2–3 concrete options using the actual character
+and location names from this story.
 
 When enough information is gathered:
 - Respond naturally
@@ -124,7 +206,14 @@ OUTPUT JSON ONLY:
 
 export async function POST(req: Request) {
   try {
-    const { storyId, conversationHistory, mode } = await req.json();
+    const {
+      storyId,
+      conversationHistory,
+      mode,
+      feedback,
+      characters: chars,
+      locations: locs,
+    } = await req.json();
 
     if (!storyId || !Array.isArray(conversationHistory)) {
       return NextResponse.json(
@@ -146,12 +235,15 @@ export async function POST(req: Request) {
       );
     }
 
+    // Build world context from client-provided data (or empty if not sent)
+    const worldContext = buildWorldContext(chars ?? [], locs ?? []);
+
     /* ----------------------------- FINALISE PLAN ---------------------------- */
 
     if (mode === "generate") {
       const completion = await client.messages.create({
         model: "claude-sonnet-4-20250514",
-        system: buildCoverPlanSystemPrompt(story),
+        system: buildCoverPlanSystemPrompt(story, worldContext),
         max_tokens: 1200,
         messages: [
           {
@@ -193,6 +285,55 @@ export async function POST(req: Request) {
       });
     }
 
+    /* ------------------------------- REGENERATE ------------------------------ */
+
+    if (mode === "regenerate") {
+      const completion = await client.messages.create({
+        model: "claude-sonnet-4-20250514",
+        system: buildCoverPlanSystemPrompt(story, worldContext),
+        max_tokens: 1200,
+        messages: [
+          {
+            role: "user",
+            content: `Previous conversation:\n${JSON.stringify(
+              conversationHistory
+            )}\n\nUser feedback for regeneration: "${feedback ?? ""}"`,
+          },
+        ],
+      });
+
+      const raw =
+        completion.content.find((b) => b.type === "text")?.text ?? "";
+
+      let coverPlan: any;
+      try {
+        const match =
+          raw.match(/```json\s*([\s\S]*?)\s*```/) ||
+          raw.match(/\{[\s\S]*\}/);
+        coverPlan = JSON.parse(match ? match[1] || match[0] : raw);
+      } catch (err) {
+        console.error("❌ Failed to parse regenerated cover plan:", raw);
+        return NextResponse.json(
+          { error: "Failed to parse cover plan" },
+          { status: 500 }
+        );
+      }
+
+      await db
+        .update(stories)
+        .set({
+          coverPlan,
+          coverPlanLocked: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(stories.id, storyId));
+
+      return NextResponse.json({
+        success: true,
+        coverPlan,
+      });
+    }
+
     /* ------------------------------- CHAT MODE ------------------------------ */
 
     const lastMessage =
@@ -200,7 +341,7 @@ export async function POST(req: Request) {
 
     const completion = await client.messages.create({
       model: "claude-sonnet-4-20250514",
-      system: buildChatGuidanceSystemPrompt(story),
+      system: buildChatGuidanceSystemPrompt(story, worldContext),
       max_tokens: 600,
       messages: [
         {

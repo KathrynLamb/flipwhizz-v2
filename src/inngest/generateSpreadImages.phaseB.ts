@@ -396,19 +396,15 @@ export const generateSingleSpread = inngest.createFunction(
 
       // ========================================
       // RESOLVE CHARACTERS
-      // If referenceOverrides provided, use those character IDs
-      // Otherwise fall back to per-page assignments
       // ========================================
       const spreadPageIds = [leftPageId, ...(rightPageId ? [rightPageId] : [])];
 
       let charIds: string[];
 
       if (hasOverrides && referenceOverrides!.includedCharacterIds.length > 0) {
-        // User explicitly chose which characters to include
         charIds = referenceOverrides!.includedCharacterIds;
         console.log("🔄 Using user-overridden character list:", charIds.length, "characters");
       } else {
-        // Default: read from per-page assignments
         const pageCharAssignments = await db
           .select({ characterId: storyPageCharacters.characterId })
           .from(storyPageCharacters)
@@ -434,8 +430,6 @@ export const generateSingleSpread = inngest.createFunction(
 
       // ========================================
       // RESOLVE LOCATION
-      // If referenceOverrides provided with locationId, use that
-      // Otherwise fall back to per-page assignments
       // ========================================
       let locationRef: null | {
         name: string;
@@ -444,7 +438,6 @@ export const generateSingleSpread = inngest.createFunction(
       } = null;
 
       if (hasOverrides && referenceOverrides!.locationId) {
-        // User explicitly chose a location
         const loc = await db
           .select({
             name:        locations.name,
@@ -461,7 +454,6 @@ export const generateSingleSpread = inngest.createFunction(
           console.log("🔄 Using user-overridden location:", loc.name);
         }
       } else {
-        // Default: read from per-page assignments
         const pageLocAssignments = await db
           .select({ locationId: storyPageLocations.locationId })
           .from(storyPageLocations)
@@ -493,13 +485,10 @@ export const generateSingleSpread = inngest.createFunction(
 
       // ========================================
       // RESOLVE OUTFITS
-      // If referenceOverrides provided with outfitOverrides, use those
-      // Otherwise fall back to spread outfit assignments
       // ========================================
       let outfitByCharacterId: Map<string, { characterId: string; outfitKey: string; outfitDescription: string }>;
 
       if (hasOverrides && Object.keys(referenceOverrides!.outfitOverrides).length > 0) {
-        // User explicitly chose outfits — look up descriptions from characterStoryOutfits
         const overrideEntries = Object.entries(referenceOverrides!.outfitOverrides);
         const outfitLookups = await db
           .select({
@@ -533,7 +522,6 @@ export const generateSingleSpread = inngest.createFunction(
         }
         console.log("🔄 Using user-overridden outfits:", outfitByCharacterId.size, "outfits");
       } else {
-        // Default: read from spread outfit assignments
         const outfitAssignments = spread.spreadId
           ? await db.query.spreadCharacterOutfits.findMany({
               where: eq(spreadCharacterOutfits.spreadId, spread.spreadId),
@@ -582,20 +570,32 @@ export const generateSingleSpread = inngest.createFunction(
 ↑ LAYOUT GUIDE ONLY - DO NOT RENDER ↑
 
 The image above shows SAFE ZONES for text placement.
-This is a REFERENCE GUIDE ONLY.
+This is a REFERENCE GUIDE ONLY — do NOT draw any guides in the final illustration.
 
-CRITICAL INSTRUCTIONS:
-- DO NOT draw the guide boxes, labels, or template overlay in your illustration
-- DO NOT show "TEXT SAFE ZONE" labels
-- DO NOT show any guide lines, boxes, or markers
-- The template is INVISIBLE - it's only showing you WHERE to place text
-- Create a natural, seamless illustration with NO visible guides
+⚠️ CRITICAL PRINT SAFETY RULES — TEXT WILL BE PHYSICALLY CUT OFF IF THESE ARE VIOLATED:
 
-TEXT PLACEMENT RULES:
-- Place LEFT page text within the left safe zone area (top-left portion)
-- Place RIGHT page text within the right safe zone area (top-right portion)
-- Keep all text AWAY from the center gutter
-- Keep all critical visual elements AWAY from the outer crop zones
+This illustration will be PRINTED and TRIMMED. The printer cuts 8% from EVERY edge.
+Any text or important content in the outer 8% WILL BE DESTROYED.
+
+ABSOLUTE TEXT BOUNDARIES (percentage of total image):
+- LEFT EDGE:   Text must not start before 10% from the left
+- RIGHT EDGE:  Text must not extend past 90% from the left
+- TOP EDGE:    Text must not start before 12% from the top
+- BOTTOM EDGE: Text must not extend past 88% from the top
+- CENTER GUTTER: NO text between 44% and 56% from the left (this is the book spine)
+
+WHERE TO PLACE TEXT:
+- LEFT page text:  Between 10%-42% horizontally, 15%-50% vertically (upper-left area)
+- RIGHT page text: Between 58%-88% horizontally, 15%-50% vertically (upper-right area)
+
+TEXT MUST BE GENEROUSLY INSET from all edges. When in doubt, move text FURTHER from edges.
+The green zones in the guide are the ONLY safe areas. The red/pink areas WILL BE CUT.
+
+DO NOT:
+- Place text within 10% of any outer edge
+- Place text within 6% of the center spine
+- Show any guide lines, boxes, labels, or template markers
+- Use "TEXT SAFE ZONE" labels or any reference to this guide
 `.trim(),
       });
 
@@ -710,14 +710,17 @@ CREATE A SEAMLESS DOUBLE-PAGE SPREAD:
 - NO visible guides, boxes, or template markers
 - Natural, professional children's book illustration
 
-TEXT INTEGRATION:
-- Embed the story text DIRECTLY into the illustration
-- LEFT text goes in upper-left quadrant (as shown in the invisible guide)
-- RIGHT text goes in upper-right quadrant (as shown in the invisible guide)
-- Keep text CLEAR of the center spine/gutter
-- Use large, child-friendly typography with excellent contrast
+TEXT INTEGRATION — CRITICAL FOR PRINT:
+- Embed the story text DIRECTLY into the illustration as hand-lettered typography
+- LEFT page text: Place in the UPPER-LEFT area, starting at ~12% from left edge and ~15% from top
+- RIGHT page text: Place in the UPPER-RIGHT area, starting at ~60% from left edge and ~15% from top
+- Keep ALL text at least 10% away from any outer edge of the image
+- Keep ALL text at least 6% away from the center vertical line (the book spine)
+- Text should occupy roughly the top third of each page, leaving the bottom two-thirds for illustration
+- Use LARGE, high-contrast, child-friendly typography
 - Typography: ${typographyBlock}
-- Text should feel natural, not overlaid
+- Text must feel natural and integrated, NOT overlaid on top of the art
+- ⚠️ If text is placed too close to edges, IT WILL BE CUT OFF when the book is printed and trimmed
 
 IMPORTANT - DO NOT INCLUDE:
 - "TEXT SAFE ZONE" labels
@@ -735,10 +738,10 @@ ${geminiAvoidBlock}
 SCENE:
 ${spread.sceneSummary ?? ""}
 
-LEFT PAGE TEXT (integrate naturally in upper-left area):
+LEFT PAGE TEXT (place in upper-left safe zone, 12%-42% from left, 15%-45% from top):
 ${left?.text ?? ""}
 
-RIGHT PAGE TEXT (integrate naturally in upper-right area):
+RIGHT PAGE TEXT (place in upper-right safe zone, 58%-88% from left, 15%-45% from top):
 ${right?.text ?? ""}
 
 ${feedback ? `REVISION REQUEST:\n${feedback}\n` : ""}
@@ -754,6 +757,8 @@ ${
         .join("\n")
     : "Use contextually appropriate clothing for each character."
 }
+
+FINAL REMINDER: Keep ALL text well inside the safe zones. The outer 10% of this image on every side will be trimmed off during printing. Text near edges = text destroyed.
 
 Create a clean, professional illustration with seamlessly integrated text.
 `.trim(),

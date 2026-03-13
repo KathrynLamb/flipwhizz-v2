@@ -87,7 +87,7 @@ export default async function Home() {
       <section className="relative w-full min-h-[85vh] md:min-h-[90vh] flex flex-col">
         <div className="absolute inset-0 z-0">
           <Image
-            src="/LandingPage/hero-new.jpg"
+            src="/LandingPage/hero-new2.jpg"
             alt="A child's imagination coming to life from their sketchbook"
             fill
             priority

@@ -11,9 +11,14 @@ import {
   ImagePlus,
   Palette,
   MessageCircle,
+  User,
+  MapPin,
+  Shirt,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import type { StepKey } from "@/lib/storySteps";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
 
@@ -33,6 +38,35 @@ type Story = {
   coverSpreadUrl: string | null;
   status: string | null;
   pdfUrl: string | null;
+};
+
+type CharacterOutfit = {
+  characterId: string;
+  outfitKey: string;
+  outfitDescription: string;
+  isDefault: boolean;
+};
+
+type WorldCharacter = {
+  id: string;
+  name: string;
+  description: string | null;
+  appearance: string | null;
+  portraitImageUrl: string | null;
+  referenceImageUrl: string | null;
+  imageUrl: string | null;
+  role: string | null;
+  outfits: CharacterOutfit[];
+};
+
+type WorldLocation = {
+  id: string;
+  name: string;
+  description: string | null;
+  portraitImageUrl: string | null;
+  referenceImageUrl: string | null;
+  imageUrl: string | null;
+  significance: string | null;
 };
 
 type Props = {
@@ -84,6 +118,11 @@ export default function CoverDesignChat({
   const [isLoading, setIsLoading] = useState(false);
   const [isFinalising, setIsFinalising] = useState(false);
 
+  // World data
+  const [worldCharacters, setWorldCharacters] = useState<WorldCharacter[]>([]);
+  const [worldLocations, setWorldLocations] = useState<WorldLocation[]>([]);
+  const [worldLoading, setWorldLoading] = useState(true);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hasStartedChatRef = useRef(false);
 
@@ -91,6 +130,26 @@ export default function CoverDesignChat({
 
   const hasCovers = !!localStory.coverSpreadUrl;
   const isGeneratingCovers = localStory.status === "generating_covers";
+
+  /* ----------------------------- FETCH WORLD ------------------------------ */
+
+  useEffect(() => {
+    if (!storyId) return;
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/stories/${storyId}/world`);
+        if (!res.ok) throw new Error("Failed to fetch world");
+        const data = await res.json();
+        setWorldCharacters(data.characters ?? []);
+        setWorldLocations(data.locations ?? []);
+      } catch (err) {
+        console.warn("⚠️ Could not load world data:", err);
+      } finally {
+        setWorldLoading(false);
+      }
+    })();
+  }, [storyId]);
 
   /* ----------------------------- AUTO SCROLL ------------------------------ */
 
@@ -228,6 +287,8 @@ export default function CoverDesignChat({
           storyId,
           conversationHistory: messages,
           mode: "generate",
+          characters: worldCharacters,
+          locations: worldLocations,
         }),
       });
 
@@ -299,6 +360,8 @@ export default function CoverDesignChat({
           conversationHistory: [...messages, feedbackMsg],
           feedback,
           mode: "regenerate",
+          characters: worldCharacters,
+          locations: worldLocations,
         }),
       });
 
@@ -376,7 +439,6 @@ export default function CoverDesignChat({
           currentStep={currentStep}
           completedSteps={completedSteps}
           paymentStatus={paymentStatus}
-
           coverSpreadUrl={localStory.coverSpreadUrl}
         />
 
@@ -590,113 +652,419 @@ export default function CoverDesignChat({
 
             {/* ── PREVIEW (2/5) ──────────────────────────────────────────── */}
             <div className="lg:col-span-2">
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="sticky top-24 overflow-hidden rounded-[22px]"
-                style={{
-                  background: "white",
-                  border: "1px solid rgba(180,150,210,0.12)",
-                  boxShadow: "0 2px 12px rgba(100,60,140,0.06)",
-                }}
-              >
-                <div
-                  className="flex items-center gap-3 px-5 py-3.5"
+              <div className="sticky top-24 space-y-4">
+                {/* Cover preview card */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="overflow-hidden rounded-[22px]"
                   style={{
-                    borderBottom: "1px solid rgba(180,150,210,0.08)",
-                    background: "rgba(249,245,255,0.5)",
+                    background: "white",
+                    border: "1px solid rgba(180,150,210,0.12)",
+                    boxShadow: "0 2px 12px rgba(100,60,140,0.06)",
                   }}
                 >
                   <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center"
-                    style={{ background: "rgba(199,125,255,0.1)" }}
+                    className="flex items-center gap-3 px-5 py-3.5"
+                    style={{
+                      borderBottom: "1px solid rgba(180,150,210,0.08)",
+                      background: "rgba(249,245,255,0.5)",
+                    }}
                   >
-                    <Sparkles className="w-4 h-4" style={{ color: "#B05CE6" }} />
+                    <div
+                      className="w-8 h-8 rounded-xl flex items-center justify-center"
+                      style={{ background: "rgba(199,125,255,0.1)" }}
+                    >
+                      <Sparkles className="w-4 h-4" style={{ color: "#B05CE6" }} />
+                    </div>
+                    <p className="text-sm font-bold" style={{ color: "#2D2235" }}>
+                      Cover Preview
+                    </p>
                   </div>
-                  <p className="text-sm font-bold" style={{ color: "#2D2235" }}>
-                    Cover Preview
-                  </p>
-                </div>
 
-                <div className="p-5">
-                  {hasCovers && !isGeneratingCovers ? (
-                    <div className="space-y-4">
+                  <div className="p-5">
+                    {hasCovers && !isGeneratingCovers ? (
+                      <div className="space-y-4">
+                        <div
+                          className="relative overflow-hidden rounded-2xl"
+                          style={{
+                            boxShadow:
+                              "0 8px 30px rgba(100,60,140,0.12), 0 2px 8px rgba(100,60,140,0.06)",
+                            border: "1px solid rgba(180,150,210,0.1)",
+                          }}
+                        >
+                          <img
+                            src={localStory.coverSpreadUrl!}
+                            alt="Cover preview"
+                            className="w-full"
+                          />
+                        </div>
+
+                        <button
+                          onClick={handleApprove}
+                          className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
+                          style={{
+                            background: "linear-gradient(135deg, #43B89C, #2FA482)",
+                            boxShadow: "0 4px 16px rgba(67,184,156,0.25)",
+                            border: "none",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          <Check className="w-4 h-4" />
+                          Approve &amp; Continue
+                        </button>
+
+                        <p
+                          className="text-center text-xs"
+                          style={{ color: "#A897BD" }}
+                        >
+                          or request changes in the chat
+                        </p>
+                      </div>
+                    ) : isGeneratingCovers ? (
                       <div
-                        className="relative overflow-hidden rounded-2xl"
+                        className="flex flex-col items-center justify-center h-64 rounded-2xl"
                         style={{
-                          boxShadow: "0 8px 30px rgba(100,60,140,0.12), 0 2px 8px rgba(100,60,140,0.06)",
+                          background:
+                            "linear-gradient(135deg, rgba(249,245,255,0.8), rgba(255,240,248,0.6))",
                           border: "1px solid rgba(180,150,210,0.1)",
                         }}
                       >
-                        <img src={localStory.coverSpreadUrl!} alt="Cover preview" className="w-full" />
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{
+                            repeat: Infinity,
+                            duration: 3,
+                            ease: "linear",
+                          }}
+                          className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+                          style={{
+                            background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                            boxShadow: "0 4px 16px rgba(176,92,230,0.25)",
+                          }}
+                        >
+                          <Wand2 className="w-6 h-6 text-white" />
+                        </motion.div>
+                        <p
+                          className="text-sm font-bold"
+                          style={{ color: "#2D2235" }}
+                        >
+                          Creating your cover…
+                        </p>
+                        <p className="text-xs mt-1" style={{ color: "#A897BD" }}>
+                          This takes about 30–60 seconds
+                        </p>
                       </div>
-
-                      <button
-                        onClick={handleApprove}
-                        className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
+                    ) : (
+                      <div
+                        className="flex flex-col items-center justify-center h-64 rounded-2xl"
                         style={{
-                          background: "linear-gradient(135deg, #43B89C, #2FA482)",
-                          boxShadow: "0 4px 16px rgba(67,184,156,0.25)",
-                          border: "none",
-                          fontFamily: "inherit",
+                          border: "2px dashed rgba(180,150,210,0.2)",
+                          background: "rgba(249,245,255,0.3)",
                         }}
                       >
-                        <Check className="w-4 h-4" />
-                        Approve &amp; Continue
-                      </button>
+                        <ImagePlus
+                          className="w-10 h-10 mb-3"
+                          style={{ color: "#D4C6E6" }}
+                        />
+                        <p
+                          className="text-sm font-medium"
+                          style={{ color: "#A897BD" }}
+                        >
+                          Your cover will appear here
+                        </p>
+                        <p
+                          className="text-xs mt-1"
+                          style={{ color: "#C4B5D4" }}
+                        >
+                          once you finalise the design
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
 
-                      <p className="text-center text-xs" style={{ color: "#A897BD" }}>
-                        or request changes in the chat
-                      </p>
-                    </div>
-                  ) : isGeneratingCovers ? (
-                    <div
-                      className="flex flex-col items-center justify-center h-64 rounded-2xl"
-                      style={{
-                        background: "linear-gradient(135deg, rgba(249,245,255,0.8), rgba(255,240,248,0.6))",
-                        border: "1px solid rgba(180,150,210,0.1)",
-                      }}
-                    >
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
-                        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-                        style={{
-                          background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
-                          boxShadow: "0 4px 16px rgba(176,92,230,0.25)",
-                        }}
-                      >
-                        <Wand2 className="w-6 h-6 text-white" />
-                      </motion.div>
-                      <p className="text-sm font-bold" style={{ color: "#2D2235" }}>
-                        Creating your cover…
-                      </p>
-                      <p className="text-xs mt-1" style={{ color: "#A897BD" }}>
-                        This takes about 30–60 seconds
-                      </p>
-                    </div>
-                  ) : (
-                    <div
-                      className="flex flex-col items-center justify-center h-64 rounded-2xl"
-                      style={{ border: "2px dashed rgba(180,150,210,0.2)", background: "rgba(249,245,255,0.3)" }}
-                    >
-                      <ImagePlus className="w-10 h-10 mb-3" style={{ color: "#D4C6E6" }} />
-                      <p className="text-sm font-medium" style={{ color: "#A897BD" }}>
-                        Your cover will appear here
-                      </p>
-                      <p className="text-xs mt-1" style={{ color: "#C4B5D4" }}>
-                        once you finalise the design
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
+                {/* ── World Reference Panel ────────────────────────────────── */}
+                <WorldReferencePanel
+                  characters={worldCharacters}
+                  locations={worldLocations}
+                  loading={worldLoading}
+                />
+              </div>
             </div>
           </div>
         </main>
       </div>
     </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  WORLD REFERENCE PANEL                                                      */
+/* -------------------------------------------------------------------------- */
+
+function WorldReferencePanel({
+  characters,
+  locations,
+  loading,
+}: {
+  characters: WorldCharacter[];
+  locations: WorldLocation[];
+  loading: boolean;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  if (loading) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="rounded-[22px] p-5"
+        style={{
+          background: "white",
+          border: "1px solid rgba(180,150,210,0.12)",
+          boxShadow: "0 2px 12px rgba(100,60,140,0.06)",
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" style={{ color: "#B05CE6" }} />
+          <span className="text-xs" style={{ color: "#A897BD" }}>
+            Loading story world…
+          </span>
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (characters.length === 0 && locations.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.3 }}
+      className="overflow-hidden rounded-[22px]"
+      style={{
+        background: "white",
+        border: "1px solid rgba(180,150,210,0.12)",
+        boxShadow: "0 2px 12px rgba(100,60,140,0.06)",
+      }}
+    >
+      {/* Header — toggle */}
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        className="w-full flex items-center justify-between gap-3 px-5 py-3.5 text-left"
+        style={{
+          borderBottom: expanded ? "1px solid rgba(180,150,210,0.08)" : "none",
+          background: "rgba(249,245,255,0.5)",
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className="w-8 h-8 rounded-xl flex items-center justify-center"
+            style={{ background: "rgba(199,125,255,0.1)" }}
+          >
+            <User className="w-4 h-4" style={{ color: "#B05CE6" }} />
+          </div>
+          <div>
+            <p className="text-sm font-bold" style={{ color: "#2D2235" }}>
+              Story World
+            </p>
+            <p className="text-[11px]" style={{ color: "#A897BD" }}>
+              {characters.length} character{characters.length !== 1 && "s"}
+              {locations.length > 0 &&
+                ` · ${locations.length} location${locations.length !== 1 ? "s" : ""}`}
+            </p>
+          </div>
+        </div>
+        {expanded ? (
+          <ChevronUp className="w-4 h-4" style={{ color: "#A897BD" }} />
+        ) : (
+          <ChevronDown className="w-4 h-4" style={{ color: "#A897BD" }} />
+        )}
+      </button>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="p-4 space-y-3 max-h-[400px] overflow-y-auto scrollbar-hide">
+              {/* Characters */}
+              {characters.map((c) => (
+                <CharacterCard key={c.id} character={c} />
+              ))}
+
+              {/* Locations */}
+              {locations.map((l) => (
+                <LocationCard key={l.id} location={l} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  CHARACTER CARD                                                             */
+/* -------------------------------------------------------------------------- */
+
+function CharacterCard({ character }: { character: WorldCharacter }) {
+  const defaultOutfit = character.outfits.find((o) => o.isDefault);
+
+  return (
+    <div
+      className="flex gap-3 p-3 rounded-xl"
+      style={{
+        background: "rgba(249,245,255,0.5)",
+        border: "1px solid rgba(180,150,210,0.08)",
+      }}
+    >
+      {/* Thumbnail */}
+      {character.imageUrl ? (
+        <img
+          src={character.imageUrl}
+          alt={character.name}
+          className="w-12 h-12 rounded-xl object-cover flex-shrink-0"
+          style={{
+            border: "1px solid rgba(180,150,210,0.15)",
+          }}
+        />
+      ) : (
+        <div
+          className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ background: "rgba(199,125,255,0.1)" }}
+        >
+          <User className="w-5 h-5" style={{ color: "#C4A8E0" }} />
+        </div>
+      )}
+
+      {/* Info */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p
+            className="text-sm font-bold truncate"
+            style={{ color: "#2D2235" }}
+          >
+            {character.name}
+          </p>
+          {character.role && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0"
+              style={{
+                background: "rgba(199,125,255,0.1)",
+                color: "#9B59D0",
+              }}
+            >
+              {character.role}
+            </span>
+          )}
+        </div>
+
+        {character.appearance && (
+          <p
+            className="text-[11px] mt-0.5 line-clamp-2 leading-relaxed"
+            style={{ color: "#7B6E90" }}
+          >
+            {character.appearance}
+          </p>
+        )}
+
+        {defaultOutfit && (
+          <div className="flex items-center gap-1 mt-1.5">
+            <Shirt className="w-3 h-3 flex-shrink-0" style={{ color: "#C4A8E0" }} />
+            <p
+              className="text-[10px] truncate"
+              style={{ color: "#A897BD" }}
+            >
+              {defaultOutfit.outfitDescription}
+            </p>
+          </div>
+        )}
+
+        {character.outfits.length > 1 && (
+          <p className="text-[10px] mt-0.5" style={{ color: "#C4B5D4" }}>
+            +{character.outfits.length - 1} other outfit
+            {character.outfits.length - 1 !== 1 && "s"}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  LOCATION CARD                                                              */
+/* -------------------------------------------------------------------------- */
+
+function LocationCard({ location }: { location: WorldLocation }) {
+  return (
+    <div
+      className="flex gap-3 p-3 rounded-xl"
+      style={{
+        background: "rgba(249,245,255,0.5)",
+        border: "1px solid rgba(180,150,210,0.08)",
+      }}
+    >
+      {/* Thumbnail */}
+      {location.imageUrl ? (
+        <img
+          src={location.imageUrl}
+          alt={location.name}
+          className="w-12 h-12 rounded-xl object-cover flex-shrink-0"
+          style={{
+            border: "1px solid rgba(180,150,210,0.15)",
+          }}
+        />
+      ) : (
+        <div
+          className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ background: "rgba(67,184,156,0.08)" }}
+        >
+          <MapPin className="w-5 h-5" style={{ color: "#43B89C" }} />
+        </div>
+      )}
+
+      {/* Info */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p
+            className="text-sm font-bold truncate"
+            style={{ color: "#2D2235" }}
+          >
+            {location.name}
+          </p>
+          {location.significance && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0"
+              style={{
+                background: "rgba(67,184,156,0.1)",
+                color: "#2FA482",
+              }}
+            >
+              {location.significance}
+            </span>
+          )}
+        </div>
+
+        {location.description && (
+          <p
+            className="text-[11px] mt-0.5 line-clamp-2 leading-relaxed"
+            style={{ color: "#7B6E90" }}
+          >
+            {location.description}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -724,7 +1092,9 @@ function AvatarUser() {
       className="w-8 h-8 flex-shrink-0 rounded-xl flex items-center justify-center"
       style={{ background: "rgba(199,125,255,0.1)" }}
     >
-      <span className="text-[10px] font-bold" style={{ color: "#9B59D0" }}>You</span>
+      <span className="text-[10px] font-bold" style={{ color: "#9B59D0" }}>
+        You
+      </span>
     </div>
   );
 }

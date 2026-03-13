@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import MobileStoryLayout from '@/app/stories/components/MobileStoryLayout';
 import StoryFooter from '@/app/stories/[id]/pages/components/StoryFooter';
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
-import type { StepKey } from "@/lib/storySteps";
+import { getNextStepHref, type StepKey } from "@/lib/storySteps";
 
 /* ======================================================
    TYPES
@@ -66,7 +66,7 @@ export default function StoryReaderClient({
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [spreadIndex, setSpreadIndex] = useState(0);
-  const [pageDirection, setPageDirection] = useState(0); // -1 or 1 for animation
+  const [pageDirection, setPageDirection] = useState(0);
   const [authorLetter, setAuthorLetter] =
     useState<AuthorLetterApiResponse | null>(null);
 
@@ -218,20 +218,32 @@ export default function StoryReaderClient({
 
   const handleConfirmStory = async () => {
     try {
-      const res = await fetch(`/api/stories/${id}/lock`, { method: 'POST' });
+      const res = await fetch(`/api/stories/${id}/lock`, { method: "POST" });
       const data = await res.json();
-      
+
       if (data.alreadyConfirmed) {
-        // Already extracted — go straight to characters (or wherever they left off)
-        router.push(`/stories/${id}/illustration-style`);
+        // Already confirmed — figure out where they should go next
+        const storyRes = await fetch(`/api/stories/${id}`, {
+          cache: "no-store",
+        });
+        if (storyRes.ok) {
+          const data = await storyRes.json();
+          const story = data.story ?? data;
+          router.push(getNextStepHref(id, story));
+        } else {
+          // Fallback if fetch fails
+          router.push(`/stories/${id}/illustration-style`);
+        }
         return;
       }
-      
+
       // First time — trigger extraction
-      fetch(`/api/stories/${id}/ensure-world`, { method: 'POST' }).catch(() => {});
+      fetch(`/api/stories/${id}/ensure-world`, { method: "POST" }).catch(
+        () => {}
+      );
       router.push(`/stories/${id}/extract`);
     } catch {
-      alert('Failed to lock story. Please try again.');
+      alert("Failed to lock story. Please try again.");
     }
   };
 

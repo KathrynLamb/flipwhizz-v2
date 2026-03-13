@@ -18,6 +18,7 @@ import {
   Shirt,
   Sparkles,
 } from "lucide-react";
+import { getNextStepHref, type StepKey } from "@/lib/storySteps";
 
 /* ======================================================
    TYPES
@@ -289,14 +290,9 @@ export default function ExtractWorldPage() {
 
   /* ======================================================
      BOOTSTRAP — the main useEffect
-     
-     KEY FIX: All guard refs (hasBootstrapped, workflowTriggered,
-     pollingStarted) are RESET in the cleanup function so that
-     React 18 Strict Mode's unmount+remount cycle works correctly.
   ====================================================== */
 
   useEffect(() => {
-    // Guard: only run once per mount
     if (!storyId || hasBootstrapped.current) return;
     hasBootstrapped.current = true;
 
@@ -339,7 +335,6 @@ export default function ExtractWorldPage() {
         lastPhaseRef.current = "checking";
         errorCount.current = 0;
 
-        // Step 1: Check existing progress
         let p: ProgressData | null = null;
 
         try {
@@ -351,7 +346,6 @@ export default function ExtractWorldPage() {
 
         if (cancelled) return;
 
-        // Already complete — redirect
         if (p && !needsWork(p)) {
           console.log("[extract] Already complete, setting ready");
           setProgress(p);
@@ -359,7 +353,6 @@ export default function ExtractWorldPage() {
           return;
         }
 
-        // Show current state if partial
         if (p) {
           setProgress(p);
           const cp = getCurrentPhase(p);
@@ -371,8 +364,6 @@ export default function ExtractWorldPage() {
           addActivity("\u2728 Preparing your world...", "loading");
         }
 
-        // Step 2: Trigger workflow (separate try/catch — failure
-        // must NOT prevent polling from starting)
         try {
           await triggerWorkflow();
         } catch (e) {
@@ -381,7 +372,6 @@ export default function ExtractWorldPage() {
 
         if (cancelled) return;
 
-        // Step 3: ALWAYS start polling
         console.log("[extract] Starting polling after bootstrap");
         doStartPolling();
       } catch (err) {
@@ -394,7 +384,6 @@ export default function ExtractWorldPage() {
 
     run();
 
-    // Safety net: force polling after 8s if it hasn't started
     const safetyTimer = setTimeout(() => {
       if (!pollingStarted.current && !cancelled) {
         console.warn("[extract] SAFETY: forcing polling start after 8s");
@@ -402,19 +391,14 @@ export default function ExtractWorldPage() {
       }
     }, 8000);
 
-    // CLEANUP — critical for React Strict Mode.
-    // Strict Mode in dev: mount → cleanup → mount.
-    // If we don't reset these refs, the second mount skips everything.
     return () => {
       console.log("[extract] Cleanup running");
       cancelled = true;
 
-      // Reset ALL guard refs so the next mount can bootstrap again
       hasBootstrapped.current = false;
       workflowTriggered.current = false;
       pollingStarted.current = false;
 
-      // Reset phase tracking
       lastPhaseRef.current = "checking";
       errorCount.current = 0;
 
@@ -428,15 +412,52 @@ export default function ExtractWorldPage() {
 
   /* ======================================================
      AUTO-REDIRECT ON COMPLETE
+     
+     Uses shared getNextStepHref from @/lib/storySteps which
+     handles both camelCase (Drizzle) and snake_case field names.
   ====================================================== */
 
   useEffect(() => {
-    if (phase === "ready" && storyId) {
-      const t = setTimeout(() => {
-        router.push(`/stories/${storyId}/illustration-style`);
-      }, 1500);
-      return () => clearTimeout(t);
-    }
+    if (phase !== "ready" || !storyId) return;
+
+    let cancelled = false;
+
+    const redirect = async () => {
+      try {
+        const res = await fetch(`/api/stories/${storyId}`, {
+          cache: "no-store",
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        // API returns { story: { ... }, pages, characters, locations }
+        const story = data.story ?? data;
+
+        if (cancelled) return;
+
+        const href = getNextStepHref(storyId, story);
+
+        console.log("[extract] Redirecting to next incomplete step:", href);
+
+        setTimeout(() => {
+          if (!cancelled) router.push(href);
+        }, 1500);
+      } catch (err) {
+        console.error("[extract] Failed to fetch story for redirect:", err);
+        if (!cancelled) {
+          setTimeout(() => {
+            if (!cancelled)
+              router.push(`/stories/${storyId}/illustration-style`);
+          }, 1500);
+        }
+      }
+    };
+
+    redirect();
+
+    return () => {
+      cancelled = true;
+    };
   }, [phase, storyId, router]);
 
   /* ======================================================
@@ -518,7 +539,7 @@ export default function ExtractWorldPage() {
     },
     ready: {
       title: "World Complete!",
-      subtitle: "Redirecting to character design...",
+      subtitle: "Taking you to the next step...",
       icon: CheckCircle,
       color: "from-emerald-500 to-green-500",
       estimate: "",

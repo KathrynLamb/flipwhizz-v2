@@ -1,4 +1,5 @@
 // src/print/gelato/createOrder.ts
+
 import { v4 as uuidv4 } from "uuid";
 
 interface ShippingAddress {
@@ -14,27 +15,48 @@ interface ShippingAddress {
   phone?: string;
 }
 
-interface CreateOrderParams {
+export interface CreateOrderParams {
   orderReferenceId: string;
   customerReferenceId: string;
   pdfUrl: string;
   shippingAddress: ShippingAddress;
-  productUid: string;  // NEW
+  productUid: string;
+  /** Must match the Gelato product page count — no default, caller must provide */
+  pageCount: number;
 }
 
-
 export async function createGelatoOrder(params: CreateOrderParams) {
-  const { orderReferenceId, customerReferenceId, pdfUrl, shippingAddress, productUid } = params;
+  const {
+    orderReferenceId,
+    customerReferenceId,
+    pdfUrl,
+    shippingAddress,
+    productUid,
+    pageCount,
+  } = params;
 
   const apiKey = process.env.GELATO_API_KEY;
 
+  if (!apiKey) {
+    throw new Error("Missing GELATO_API_KEY in environment variables");
+  }
 
-  if (!apiKey || !productUid) {
-    throw new Error("Missing Gelato configuration in environment variables");
+  if (!productUid) {
+    throw new Error("Missing Gelato productUid for order creation");
+  }
+
+  if (!pdfUrl) {
+    throw new Error("Missing PDF URL for Gelato order creation");
+  }
+
+  if (!pageCount || pageCount < 1) {
+    throw new Error(
+      `Invalid pageCount for Gelato order: ${pageCount}. Must be a positive integer.`
+    );
   }
 
   const payload = {
-    orderType: "order",  // ⚠️ Use "draft" for testing, change to "order" for production
+    orderType: "order",
     orderReferenceId,
     customerReferenceId,
     currency: "GBP",
@@ -42,7 +64,7 @@ export async function createGelatoOrder(params: CreateOrderParams) {
       {
         itemReferenceId: uuidv4(),
         productUid,
-        pageCount: 30,  
+        pageCount,
         quantity: 1,
         files: [
           {
@@ -66,7 +88,14 @@ export async function createGelatoOrder(params: CreateOrderParams) {
     },
   };
 
-  console.log("📦 Submitting Gelato order:", JSON.stringify(payload, null, 2));
+  console.log("📦 Submitting Gelato order:", {
+    orderReferenceId,
+    customerReferenceId,
+    productUid,
+    pageCount,
+    pdfUrl,
+    country: shippingAddress.countryIsoCode,
+  });
 
   const response = await fetch("https://order.gelatoapis.com/v4/orders", {
     method: "POST",
@@ -77,15 +106,24 @@ export async function createGelatoOrder(params: CreateOrderParams) {
     body: JSON.stringify(payload),
   });
 
+  const text = await response.text();
+
+  let data: unknown;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
   if (!response.ok) {
-    const error = await response.json();
-    console.error("❌ Gelato order error:", JSON.stringify(error, null, 2));
+    console.error("❌ Gelato order error:", data);
     throw new Error(
-      `Gelato API Error ${response.status}: ${JSON.stringify(error)}`
+      `Gelato API Error ${response.status}: ${
+        typeof data === "string" ? data : JSON.stringify(data)
+      }`
     );
   }
 
-  const result = await response.json();
-  console.log("✅ Gelato order created:", result.id);
-  return result;
+  console.log("✅ Gelato order created:", data);
+  return data;
 }

@@ -146,7 +146,7 @@ async function uploadToCloudinary(base64: string, storyId: string) {
         folder: `flipwhizz/stories/${storyId}/covers`,
         filename_override: uuid(),
         resource_type: "image",
-        timeout: 60000, // ← add explicit 60s timeout
+        timeout: 60000,
       },
       (err, res) => {
         if (err) return reject(err);
@@ -161,12 +161,6 @@ async function uploadToCloudinary(base64: string, storyId: string) {
 
 /* -------------------------------------------------------------------------- */
 /*                          STYLE GUIDE RESOLUTION                            */
-/*                                                                            */
-/*  🔒 IP BOUNDARY — mirrors spread generator logic:                          */
-/*  - userNotes      = promptBase (Gemini-optimised keywords) — internal only */
-/*  - negativePrompt = Gemini exclusions                      — internal only */
-/*  - artStyle / colorPalette = supplementary hints    — also shown in UI     */
-/*  - summary / visualThemes  = user-facing copy       — NEVER in prompts     */
 /* -------------------------------------------------------------------------- */
 
 type ColorPalette = {
@@ -202,7 +196,6 @@ function resolveStyleGuide(
   const artStyle = style.artStyle?.trim();
   const colorPalette = style.colorPalette as ColorPalette | null;
 
-  /* ── Build STYLE block ──────────────────────────────────────────────── */
   const styleLines: string[] = [];
 
   if (promptBase) {
@@ -239,7 +232,6 @@ function resolveStyleGuide(
     }
   }
 
-  /* ── Build AVOID block ──────────────────────────────────────────────── */
   const avoidParts: string[] = [];
 
   if (negativePrompt) {
@@ -354,13 +346,6 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
 
     /* --------------------------------------------------
        4. BUILD GEMINI INPUT
-       
-       ORDER MATTERS (matches spread generator):
-         1. Layout template    — spatial constraints
-         2. Style reference    — anchors visual language
-         3. Location reference — sets the environment
-         4. Characters         — who appears on cover
-         5. Cover instructions — drives generation
     -------------------------------------------------- */
 
     const parts: any[] = [];
@@ -371,21 +356,39 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
       text: `
 ↑ LAYOUT GUIDE ONLY - DO NOT RENDER ↑
 
-The image above shows SAFE ZONES for text placement.
-This is a REFERENCE GUIDE ONLY.
+The image above shows SAFE ZONES for text placement on a wrap-around book cover.
+This is a REFERENCE GUIDE ONLY — do NOT draw any guides in the final cover.
 
-CRITICAL INSTRUCTIONS:
-- DO NOT draw the guide boxes, labels, or template overlay in your illustration
-- DO NOT show "TEXT SAFE ZONE" labels or any guide markers
-- DO NOT show any guide lines, boxes, or template elements
-- The template is INVISIBLE - it only shows you WHERE to place text
-- Create a natural, seamless cover with NO visible guides
+⚠️ CRITICAL PRINT SAFETY RULES — TEXT WILL BE PHYSICALLY CUT OFF IF THESE ARE VIOLATED:
 
-COVER LAYOUT:
-- LEFT THIRD = Back cover (left safe zone for back cover text)
-- CENTER = Spine (vertical text area)
-- RIGHT THIRD = Front cover (right safe zone for title/author)
-- Keep all important visual elements AWAY from the outer crop zones
+This cover will be PRINTED and TRIMMED. The printer cuts from EVERY edge.
+Any text in the outer margins WILL BE DESTROYED.
+
+COVER LAYOUT (left to right):
+- 0%-33%:   BACK COVER (left third)
+- 33%-40%:  LEFT TRIM ZONE — no text here
+- 40%-60%:  SPINE (center — very narrow, vertical text only)
+- 60%-67%:  RIGHT TRIM ZONE — no text here
+- 67%-100%: FRONT COVER (right third)
+
+FRONT COVER TEXT PLACEMENT:
+- Title: Place between 70%-90% horizontally, 15%-45% vertically
+- Author: Place between 70%-90% horizontally, below the title
+- Keep ALL front cover text at least 10% from the right edge and top edge
+
+BACK COVER TEXT PLACEMENT:
+- Blurb/dedication: Place between 8%-30% horizontally, centered vertically
+- Keep ALL back cover text at least 8% from the left edge
+
+SPINE TEXT:
+- Must be perfectly centered at 50% horizontally
+- Vertical orientation, reading top-to-bottom
+
+ALL text must be GENEROUSLY INSET from edges. When in doubt, move text FURTHER inward.
+
+DO NOT:
+- Place text within 10% of any outer edge
+- Show any guide lines, boxes, labels, or template markers
 `.trim(),
     });
 
@@ -467,22 +470,27 @@ CREATE A SEAMLESS WRAP-AROUND BOOK COVER:
 - NO visible guides, boxes, or template markers
 - Professional children's book cover quality
 
-TEXT INTEGRATION:
-- Embed ALL text DIRECTLY into the illustration
+TEXT INTEGRATION — CRITICAL FOR PRINT:
+- Embed ALL text DIRECTLY into the illustration as part of the design
 - Typography: ${typographyBlock}
-- Text should feel natural and designed, not overlaid
-- Title should be prominent and eye-catching on the front cover
+- The TITLE must be placed in the RIGHT THIRD of the image (front cover area), between 70%-90% horizontally
+- Keep the title at least 12% from the top edge and 10% from the right edge
+- The author name goes below the title, also in the right third
+- Back cover text goes in the LEFT THIRD, at least 8% from the left edge
+- Spine text must be vertical and perfectly centered
+- ALL text must be WELL INSIDE the safe zones — text near edges WILL BE CUT when printed
+- Text should feel natural and designed, like professional book typography
 
 TEXT TO RENDER (EXACT — do not invent or omit):
 
-FRONT COVER (right third):
+FRONT COVER (right third, 70%-90% from left):
 TITLE: "${coverPlan.front.titleText}"
 ${coverPlan.front.authorText ? `AUTHOR: "${coverPlan.front.authorText}"` : ""}
 
-SPINE (center, vertical):
+SPINE (center at 50%, vertical):
 "${coverPlan.spine.spineText}"
 
-BACK COVER (left third):
+BACK COVER (left third, 8%-30% from left):
 ${coverPlan.back.blurbText ? `"${coverPlan.back.blurbText}"` : ""}
 ${coverPlan.back.dedicationText ? `"${coverPlan.back.dedicationText}"` : ""}
 
@@ -508,6 +516,8 @@ AVOID:
 ${geminiAvoidBlock}
 
 ${coverPlan.constraints?.keepBarcodeAreaClear ? "Keep the bottom-left area of the back cover clear for a barcode." : ""}
+
+FINAL REMINDER: ALL text must be generously inset from every edge. The outer 10% on all sides will be trimmed during printing. Text near edges = text destroyed.
 
 Create a seamless, professional children's book wrap-around cover now.
 `.trim(),

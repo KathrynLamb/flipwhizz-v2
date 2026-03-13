@@ -110,30 +110,118 @@ function CoverSpreadPreview({
 /*                              Spread Card                                   */
 /* -------------------------------------------------------------------------- */
 
+// function SpreadCard({
+//   spread,
+//   isGeneratingAll,
+//   isRegenerating,
+//   onRedraw,
+// }: {
+//   spread: Spread;
+//   isGeneratingAll: boolean;
+//   isRegenerating: boolean;
+//   onRedraw: () => void;
+// }) {
+//   const pageLabel = spread.right
+//     ? `Pages ${spread.left.pageNumber}–${spread.right.pageNumber}`
+//     : `Page ${spread.left.pageNumber}`;
+
+//   const hasImage = !!spread.left.imageUrl;
+
+//   return (
+//     <div className="group bg-white rounded-2xl border overflow-hidden relative">
+//       {/* Spread number label */}
+//       <div className="absolute top-3 left-3 z-10 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-white">
+//         {pageLabel}
+//       </div>
+
+//       {/* Redraw button */}
+//       {hasImage && !isRegenerating && (
+//         <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+//           <button
+//             onClick={onRedraw}
+//             className="flex items-center gap-1.5 bg-white/90 backdrop-blur-md text-gray-700 hover:text-purple-600 hover:bg-white px-3 py-1.5 rounded-full text-xs font-bold shadow-md border border-gray-200/50 transition-all"
+//           >
+//             <RotateCcw className="w-3.5 h-3.5" />
+//             Redraw
+//           </button>
+//         </div>
+//       )}
+
+//       {/* Image area */}
+//       <div className="aspect-[2/1] bg-gray-100 relative">
+//         {isRegenerating ? (
+//           <div className="flex h-full items-center justify-center">
+//             <div className="flex flex-col items-center gap-3">
+//               <div className="relative">
+//                 <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+//                 <Sparkles className="w-4 h-4 text-pink-500 absolute -top-1 -right-1 animate-pulse" />
+//               </div>
+//               <p className="text-sm text-purple-600 font-medium">
+//                 Redrawing spread…
+//               </p>
+//             </div>
+//           </div>
+//         ) : hasImage ? (
+//           <img
+//             src={spread.left.imageUrl!}
+//             className="w-full h-full object-contain"
+//             alt={pageLabel}
+//           />
+//         ) : (
+//           <div className="flex h-full items-center justify-center text-gray-400">
+//             {isGeneratingAll ? (
+//               <div className="flex flex-col items-center gap-2">
+//                 <Loader2 className="w-8 h-8 animate-spin" />
+//                 <p className="text-sm">Generating...</p>
+//               </div>
+//             ) : (
+//               <ImagePlus className="w-12 h-12" />
+//             )}
+//           </div>
+//         )}
+//       </div>
+
+//       {/* Text preview (only when no image) */}
+//       {!hasImage && (
+//         <div className="px-5 py-3 border-t border-gray-100">
+//           <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
+//             {spread.left.text}
+//             {spread.right?.text ? ` ${spread.right.text}` : ""}
+//           </p>
+//         </div>
+//       )}
+//     </div>
+//   );
+// }
+
+
 function SpreadCard({
   spread,
   isGeneratingAll,
   isRegenerating,
   onRedraw,
+  onGenerate,
 }: {
   spread: Spread;
   isGeneratingAll: boolean;
   isRegenerating: boolean;
   onRedraw: () => void;
+  onGenerate: () => void;
 }) {
   const pageLabel = spread.right
     ? `Pages ${spread.left.pageNumber}–${spread.right.pageNumber}`
     : `Page ${spread.left.pageNumber}`;
-
+ 
   const hasImage = !!spread.left.imageUrl;
-
+  const isWorking = isRegenerating || isGeneratingAll;
+ 
   return (
     <div className="group bg-white rounded-2xl border overflow-hidden relative">
       {/* Spread number label */}
       <div className="absolute top-3 left-3 z-10 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-white">
         {pageLabel}
       </div>
-
+ 
       {/* Redraw button */}
       {hasImage && !isRegenerating && (
         <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -146,7 +234,7 @@ function SpreadCard({
           </button>
         </div>
       )}
-
+ 
       {/* Image area */}
       <div className="aspect-[2/1] bg-gray-100 relative">
         {isRegenerating ? (
@@ -175,12 +263,26 @@ function SpreadCard({
                 <p className="text-sm">Generating...</p>
               </div>
             ) : (
-              <ImagePlus className="w-12 h-12" />
+              <div className="flex flex-col items-center gap-4">
+                <ImagePlus className="w-12 h-12" />
+                <button
+                  onClick={onGenerate}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:shadow-lg active:scale-[0.97]"
+                  style={{
+                    background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                    boxShadow: "0 3px 12px rgba(176,92,230,0.2)",
+                    border: "none",
+                  }}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Generate This Spread
+                </button>
+              </div>
             )}
           </div>
         )}
       </div>
-
+ 
       {/* Text preview (only when no image) */}
       {!hasImage && (
         <div className="px-5 py-3 border-t border-gray-100">
@@ -193,7 +295,7 @@ function SpreadCard({
     </div>
   );
 }
-
+ 
 /* -------------------------------------------------------------------------- */
 /*                           Studio Action Card                               */
 /* -------------------------------------------------------------------------- */
@@ -573,6 +675,42 @@ export default function DesktopStudio({
     }
   }
 
+
+  async function handleGenerateSingle(spread: Spread) {
+        const pageIds = [spread.left.id];
+        if (spread.right) pageIds.push(spread.right.id);
+    
+        try {
+          const res = await fetch(
+            `/api/stories/${story.id}/spreads/regenerate`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                pageIds,
+                spreadId: spread.spreadId,
+                feedback: "",
+                includedCharacterIds: [],
+                outfitOverrides: {},
+                locationId: null,
+                freshStart: true,
+              }),
+            }
+          );
+    
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || "Failed to start generation");
+          }
+    
+          setRegeneratingSpreads((prev) => new Set(prev).add(spread.id));
+          setIsPolling(true);
+        } catch (err: any) {
+          alert(err.message || "Failed to generate spread");
+        }
+      }
+    
+
   async function handleExportPDF() {
     if (isExporting) return;
     setIsExporting(true);
@@ -711,13 +849,14 @@ export default function DesktopStudio({
         )}
 
         {spreads.map((spread) => (
-          <SpreadCard
-            key={spread.id}
-            spread={spread}
-            isGeneratingAll={isGenerating}
-            isRegenerating={regeneratingSpreads.has(spread.id)}
-            onRedraw={() => setRedrawTarget(spread)}
-          />
+    <SpreadCard
+          key={spread.id}
+          spread={spread}
+           isGeneratingAll={isGenerating}
+           isRegenerating={regeneratingSpreads.has(spread.id)}
+           onRedraw={() => setRedrawTarget(spread)}
+           onGenerate={() => handleGenerateSingle(spread)}
+         />
         ))}
       </div>
     </div>
