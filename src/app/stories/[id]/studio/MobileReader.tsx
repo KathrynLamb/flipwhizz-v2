@@ -19,6 +19,7 @@ import OrderBookButton from "@/components/OrderBookButton";
 import Link from "next/link";
 import Image from "next/image";
 import StudioPaywall from "@/components/StudioPaywall";
+import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
 
 /* -------------------------------------------------------------------------- */
 /*                                    Types                                   */
@@ -490,48 +491,44 @@ export default function MobileStudio({
     );
   }
 
+  const isPaid = story.paymentStatus === "paid";
 
+  if (!isPaid) {
+    const previewSpread = pages.find((p) => p.imageUrl);
 
-// ... inside the component, before the viewport null check:
-
-const isPaid = story.paymentStatus === "paid";
-
-if (!isPaid) {
-  const previewSpread = pages.find((p) => p.imageUrl);
-
-  return (
-    <div
-      className="w-full min-h-screen"
-      style={{
-        background: "#FDFBFF",
-        fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
-      }}
-    >
-      {/* Simple mobile header */}
+    return (
       <div
-        className="sticky top-0 z-50 px-4 py-3 flex items-center gap-3"
+        className="w-full min-h-screen"
         style={{
-          background: "rgba(253,251,255,0.85)",
-          backdropFilter: "blur(12px)",
-          borderBottom: "1px solid rgba(180,150,210,0.1)",
+          background: "#FDFBFF",
+          fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
         }}
       >
-        <Link href="/" className="flex items-center gap-2">
-          <Image src="/Flipwhizz_logo.png" alt="" width={36} height={36} priority />
-          <span className="text-base font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
-            FlipWhizz
-          </span>
-        </Link>
-      </div>
+        {/* Simple mobile header */}
+        <div
+          className="sticky top-0 z-50 px-4 py-3 flex items-center gap-3"
+          style={{
+            background: "rgba(253,251,255,0.85)",
+            backdropFilter: "blur(12px)",
+            borderBottom: "1px solid rgba(180,150,210,0.1)",
+          }}
+        >
+          <Link href="/" className="flex items-center gap-2">
+            <Image src="/Flipwhizz_logo.png" alt="" width={36} height={36} priority />
+            <span className="text-base font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+              FlipWhizz
+            </span>
+          </Link>
+        </div>
 
-      <StudioPaywall
-        storyId={story.id}
-        storyTitle={story.title}
-        previewSpreadUrl={previewSpread?.imageUrl}
-      />
-    </div>
-  );
-}
+        <StudioPaywall
+          storyId={story.id}
+          storyTitle={story.title}
+          previewSpreadUrl={previewSpread?.imageUrl}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -542,6 +539,18 @@ if (!isPaid) {
         minHeight: "100%",
       }}
     >
+      {/* ── Story Header with step navigation ── */}
+      <UnifiedStoryHeader
+        storyId={story.id}
+        title={story.title}
+        currentStep="studio"
+        completedSteps={story.completedSteps ?? []}
+        paymentStatus={story.paymentStatus}
+        hasPages={pages.length > 0}
+        coverSpreadUrl={story.coverSpreadUrl}
+        storyConfirmed={true}
+      />
+
       {/* ── Progress bar (completion) ── */}
       {!allGenerated && (
         <div className="px-4 pt-4 pb-2">
@@ -702,44 +711,26 @@ if (!isPaid) {
 
       {/* ── Bottom actions ── */}
       <div className="px-4 pb-8 flex flex-col gap-3">
-        {/* Design Cover */}
-        <button
-          onClick={() => router.push(`/stories/${story.id}/cover`)}
-          className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
-          style={{
-            background: "linear-gradient(135deg, #B05CE6, #E91E8C)",
-            boxShadow: "0 4px 20px rgba(176,92,230,0.28)",
-            border: "none",
-          }}
-        >
-          <Wand2 className="w-5 h-5" />
-          Design Cover
-        </button>
+        {/* Design Cover — only show when cover isn't done yet */}
+        {!story.coverSpreadUrl && (
+          <button
+            onClick={() => router.push(`/stories/${story.id}/cover`)}
+            className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+            style={{
+              background: "linear-gradient(135deg, #B05CE6, #E91E8C)",
+              boxShadow: "0 4px 20px rgba(176,92,230,0.28)",
+              border: "none",
+            }}
+          >
+            <Wand2 className="w-5 h-5" />
+            Design Cover
+          </button>
+        )}
 
-        {/* Export PDF (only when done) */}
-
-
-
-{allGenerated && story.coverSpreadUrl && (
-  <OrderBookButton storyId={story.id} />
-)}
-
-{/* Keep Design Cover button for when cover isn't done */}
-{!story.coverSpreadUrl && (
-  <button
-    onClick={() => router.push(`/stories/${story.id}/cover`)}
-    className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
-    style={{
-      background: "linear-gradient(135deg, #B05CE6, #E91E8C)",
-      boxShadow: "0 4px 20px rgba(176,92,230,0.28)",
-      border: "none",
-    }}
-  >
-    <Wand2 className="w-5 h-5" />
-    Design Cover
-  </button>
-)}
-
+        {/* Order Book — show when all illustrations + cover are done */}
+        {allGenerated && story.coverSpreadUrl && (
+          <OrderBookButton storyId={story.id} />
+        )}
       </div>
 
       {/* ── Feedback Sheet ── */}

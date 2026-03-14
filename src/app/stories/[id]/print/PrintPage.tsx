@@ -233,6 +233,9 @@ export default function PrintPage({ story, order, productType }: Props) {
         completedSteps={(story.completedSteps ?? []) as StepKey[]}
         paymentStatus={story.paymentStatus}
         coverSpreadUrl={story.coverSpreadUrl}
+        hasPages
+        storyConfirmed
+        
       />
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
