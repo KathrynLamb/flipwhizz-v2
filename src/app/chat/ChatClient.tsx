@@ -161,7 +161,7 @@ export default function ChatPage() {
             ) : (
               <>
 
-                <span className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+                <span className="md:hidden text-lg font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
                   Story Studio
                 </span>
               </>
