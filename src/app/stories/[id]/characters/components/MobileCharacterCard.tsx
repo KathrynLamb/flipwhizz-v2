@@ -160,7 +160,6 @@ export function MobileCharacterCard({
   }
 
   async function throwCardRight() {
-    // Animate off screen right, then lock
     await controls.start({
       x: 650,
       rotate: 28,
@@ -173,7 +172,6 @@ export function MobileCharacterCard({
   }
 
   async function openEditViaSwipe() {
-    // Brief left animation, then snap back and open edit
     await controls.start({
       x: -80,
       rotate: -6,
@@ -505,8 +503,20 @@ function MobileEditSheet({
   );
 
   const [openSections, setOpenSections] = useState<Set<string>>(
-    new Set(["description"])
+    // new Set(["description"])
   );
+
+  const imageUrl = character.portraitImageUrl || character.referenceImageUrl;
+
+  const traits = useMemo(() => {
+    return character.personalityTraits
+      ? character.personalityTraits
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .slice(0, 3)
+      : [];
+  }, [character.personalityTraits]);
 
   function toggleSection(key: string) {
     setOpenSections((prev) => {
@@ -705,50 +715,91 @@ function MobileEditSheet({
           fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
         }}
       >
+        {/* ── Drag handle ── */}
         <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
           <div className="w-10 h-1 rounded-full" style={{ background: "rgba(180,150,210,0.25)" }} />
         </div>
 
-        <div
-          className="flex items-center justify-between px-6 py-4 flex-shrink-0"
-          style={{ borderBottom: "1px solid rgba(180,150,210,0.1)" }}
+        {/* ── Close button (floating over hero) ── */}
+        <button
+          onClick={onClose}
+          className="absolute top-5 right-5 z-10 w-9 h-9 rounded-xl flex items-center justify-center"
+          style={{
+            background: imageUrl ? "rgba(0,0,0,0.35)" : "rgba(180,150,210,0.08)",
+            backdropFilter: "blur(8px)",
+            border: "none",
+            color: imageUrl ? "white" : "#8B7BA0",
+          }}
         >
-          <div className="flex items-center gap-3 min-w-0">
-            <div
-              className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center"
-              style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}
-            >
-              {character.portraitImageUrl || character.referenceImageUrl ? (
-                <img
-                  src={character.portraitImageUrl || character.referenceImageUrl!}
-                  alt=""
-                  className="w-full h-full object-cover"
-                  draggable={false}
-                />
-              ) : (
-                <span className="text-lg font-bold text-white">{character.name.charAt(0)}</span>
-              )}
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-lg font-extrabold truncate" style={{ color: "#2D2235" }}>
-                {character.name}
-              </h3>
-            </div>
-          </div>
+          <X className="w-5 h-5" />
+        </button>
 
-          <button
-            onClick={onClose}
-            className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{
-              background: "rgba(180,150,210,0.08)",
-              border: "none",
-              color: "#8B7BA0",
-            }}
-          >
-            <X className="w-5 h-5" />
-          </button>
+        {/* ── Hero: Character image + name ── */}
+        <div className="relative flex-shrink-0 overflow-hidden" style={{ borderRadius: "20px 20px 0 0" }}>
+          {imageUrl ? (
+            <div className="relative w-full" style={{ aspectRatio: "4 / 3", maxHeight: 260 }}>
+              <img
+                src={imageUrl}
+                alt={character.name}
+                className="w-full h-full object-cover"
+                draggable={false}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+
+              {/* Name + role overlay */}
+              <div className="absolute bottom-0 left-0 right-0 px-5 pb-4 space-y-1.5">
+                <h3 className="text-2xl font-extrabold text-white drop-shadow-lg">
+                  {character.name}
+                </h3>
+                {character.role && (
+                  <p className="text-sm font-medium text-white/80 italic">
+                    {character.role}
+                  </p>
+                )}
+                {traits.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {traits.map((t, i) => (
+                      <span
+                        key={i}
+                        className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 backdrop-blur-sm text-white"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* No image — gradient fallback with initial */
+            <div
+              className="relative w-full flex items-end"
+              style={{
+                background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
+                height: 140,
+              }}
+            >
+              <span
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-8xl font-black select-none"
+                style={{ color: "rgba(255,255,255,0.15)" }}
+              >
+                {character.name.charAt(0)}
+              </span>
+              <div className="relative px-5 pb-4 space-y-1">
+                <h3 className="text-2xl font-extrabold text-white drop-shadow-lg">
+                  {character.name}
+                </h3>
+                {character.role && (
+                  <p className="text-sm font-medium text-white/80 italic">
+                    {character.role}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
+        {/* ── Scrollable edit fields ── */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2.5">
           {sections.map((section) => {
             const isOpen = openSections.has(section.key);
@@ -803,6 +854,7 @@ function MobileEditSheet({
           })}
         </div>
 
+        {/* ── Save bar ── */}
         <div
           className="flex-shrink-0 px-5 pt-3 pb-8"
           style={{
@@ -891,8 +943,6 @@ export function MobileCharacterStack({
                   onDelete={onDelete}
                   onLockToggle={onLockToggle}
                   onSwiped={(id, action) => {
-                    // Lock: advance to next card
-                    // Edit: card stays (edit sheet opens), no index change
                     if (action === "lock") {
                       setCurrentIndex((prev) => prev + 1);
                     }
