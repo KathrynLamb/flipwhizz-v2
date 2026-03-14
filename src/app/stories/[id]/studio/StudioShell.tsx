@@ -47,6 +47,7 @@ export default function StudioShell({
         story={story}
         pages={pages}
         mode="edit"
+        dbSpreads={dbSpreads}  
       />
     );
   }
