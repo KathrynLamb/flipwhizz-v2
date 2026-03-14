@@ -91,10 +91,10 @@ export default async function Home() {
             alt="A child's imagination coming to life from their sketchbook"
             fill
             priority
-            className="object-cover object-[center_40%] md:object-center mt-8"
+            className="object-cover object-[center_40%] md:object-center mt-24"
           />
         </div>
-        <div className="relative z-30">
+        <div className="relative z-30 ">
           <Header session={session} />
         </div>
       </section>

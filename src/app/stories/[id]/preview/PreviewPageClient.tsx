@@ -20,7 +20,7 @@ import {
 import type { StepKey } from "@/lib/storySteps";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
 import RedrawModal from "@/app/stories/[id]/studio/components/redrawModal";
-// import RedrawModal from "@/app/stories/[id]/studio/components/RedrawModal";
+import MobilePreview from "./MobilePreview";
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
@@ -248,7 +248,6 @@ function GenerationPanel({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Reset on spread change
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     setStatus("idle");
@@ -260,7 +259,6 @@ function GenerationPanel({
     setIsSubmitting(false);
   }, [spread.spreadId]);
 
-  // Poll for job status
   useEffect(() => {
     if (!jobId || (status !== "queued" && status !== "generating")) return;
 
@@ -276,9 +274,7 @@ function GenerationPanel({
           if (data.status === "error")
             setError("Generation failed — try again.");
         }
-      } catch {
-        /* swallow transient errors */
-      }
+      } catch { /* swallow */ }
     }, 2500);
 
     return () => {
@@ -286,11 +282,9 @@ function GenerationPanel({
     };
   }, [jobId, status]);
 
-  // Simple generate (first time, no modal)
   async function handleQuickGenerate() {
     setError(null);
     setStatus("queued");
-
     try {
       const res = await fetch(`/api/stories/${storyId}/generate-spread`, {
         method: "POST",
@@ -301,11 +295,7 @@ function GenerationPanel({
           pageLabel: spread.pageLabel,
         }),
       });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Request failed");
-      }
+      if (!res.ok) throw new Error(await res.text() || "Request failed");
       const { jobId: id, styleWarning: sw } = await res.json();
       setJobId(id);
       setStyleWarning(sw ?? null);
@@ -317,7 +307,6 @@ function GenerationPanel({
     }
   }
 
-  // Generate via RedrawModal (with character/outfit/location overrides)
   async function handleRedrawSubmit(payload: {
     feedback: string;
     includedCharacterIds: string[];
@@ -329,7 +318,6 @@ function GenerationPanel({
     setError(null);
     setShowRedraw(false);
     setStatus("queued");
-
     try {
       const res = await fetch(`/api/stories/${storyId}/generate-spread`, {
         method: "POST",
@@ -345,11 +333,7 @@ function GenerationPanel({
           freshStart: payload.freshStart,
         }),
       });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Request failed");
-      }
+      if (!res.ok) throw new Error(await res.text() || "Request failed");
       const { jobId: id, styleWarning: sw } = await res.json();
       setJobId(id);
       setStyleWarning(sw ?? null);
@@ -367,34 +351,25 @@ function GenerationPanel({
 
   return (
     <div className="space-y-4">
-      {/* ── Page text ── */}
+      {/* Page text */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-          <p className="text-[10px] font-semibold tracking-widest text-violet-400 uppercase mb-2">
-            Left Page
-          </p>
+          <p className="text-[10px] font-semibold tracking-widest text-violet-400 uppercase mb-2">Left Page</p>
           <p className="text-sm text-gray-700 leading-relaxed font-serif">
-            {spread.leftText || (
-              <span className="text-gray-300 italic">No text</span>
-            )}
+            {spread.leftText || <span className="text-gray-300 italic">No text</span>}
           </p>
         </div>
-
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-          <p className="text-[10px] font-semibold tracking-widest text-violet-400 uppercase mb-2">
-            Right Page
-          </p>
+          <p className="text-[10px] font-semibold tracking-widest text-violet-400 uppercase mb-2">Right Page</p>
           {spread.rightText ? (
-            <p className="text-sm text-gray-700 leading-relaxed font-serif">
-              {spread.rightText}
-            </p>
+            <p className="text-sm text-gray-700 leading-relaxed font-serif">{spread.rightText}</p>
           ) : (
             <p className="text-xs text-gray-300 italic">Single page spread</p>
           )}
         </div>
       </div>
 
-      {/* ── In this scene ── */}
+      {/* In this scene */}
       {(spread.characters.length > 0 || spread.location) && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-5 py-4">
           <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mb-3 flex items-center gap-1.5">
@@ -403,134 +378,69 @@ function GenerationPanel({
           <div className="flex flex-wrap gap-5">
             {spread.characters.map((c, i) => (
               <div key={c.id} className="flex flex-col items-center gap-1.5">
-                <Avatar
-                  name={c.name}
-                  imageUrl={c.imageUrl}
-                  size={52}
-                  index={i}
-                />
-                <span className="text-[11px] font-semibold text-gray-600">
-                  {c.name}
-                </span>
+                <Avatar name={c.name} imageUrl={c.imageUrl} size={52} index={i} />
+                <span className="text-[11px] font-semibold text-gray-600">{c.name}</span>
               </div>
             ))}
             {spread.location && (
               <div className="flex flex-col items-center gap-1.5">
-                <Avatar
-                  name={spread.location.name}
-                  imageUrl={spread.location.imageUrl}
-                  size={52}
-                  rounded="xl"
-                  index={spread.characters.length}
-                />
-                <span className="text-[11px] font-semibold text-gray-600">
-                  {spread.location.name}
-                </span>
+                <Avatar name={spread.location.name} imageUrl={spread.location.imageUrl} size={52} rounded="xl" index={spread.characters.length} />
+                <span className="text-[11px] font-semibold text-gray-600">{spread.location.name}</span>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* ── Scene info ── */}
+      {/* Scene info */}
       {(spread.scene || spread.mood) && (
         <div className="bg-violet-50 border border-violet-100 rounded-xl px-4 py-3">
           <div className="flex items-start gap-2">
             <Sparkles className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />
             <div>
-              {spread.scene && (
-                <p className="text-sm text-violet-700 leading-relaxed">
-                  {spread.scene}
-                </p>
-              )}
+              {spread.scene && <p className="text-sm text-violet-700 leading-relaxed">{spread.scene}</p>}
               {spread.mood && (
-                <p className="text-xs text-violet-400 mt-1 font-medium uppercase tracking-wide">
-                  Mood: {spread.mood}
-                </p>
+                <p className="text-xs text-violet-400 mt-1 font-medium uppercase tracking-wide">Mood: {spread.mood}</p>
               )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Illustration canvas ── */}
+      {/* Illustration canvas */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="relative w-full aspect-[16/9] bg-gradient-to-br from-violet-50 via-pink-50 to-amber-50">
           <AnimatePresence mode="wait">
             {busy && (
-              <motion.div
-                key="loading"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 flex flex-col items-center justify-center gap-3"
-              >
+              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col items-center justify-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
                   <Sparkles className="w-6 h-6 text-violet-400 animate-pulse" />
                 </div>
-                <p className="text-sm font-medium text-gray-500">
-                  {status === "queued"
-                    ? "Queued for generation…"
-                    : "Illustrating your spread…"}
-                </p>
+                <p className="text-sm font-medium text-gray-500">{status === "queued" ? "Queued for generation…" : "Illustrating your spread…"}</p>
                 <div className="flex gap-1 mt-1">
                   {[0, 1, 2].map((i) => (
-                    <motion.div
-                      key={i}
-                      className="w-1.5 h-1.5 rounded-full bg-violet-400"
-                      animate={{ opacity: [0.3, 1, 0.3] }}
-                      transition={{
-                        repeat: Infinity,
-                        duration: 1.2,
-                        delay: i * 0.2,
-                      }}
-                    />
+                    <motion.div key={i} className="w-1.5 h-1.5 rounded-full bg-violet-400" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.2 }} />
                   ))}
                 </div>
               </motion.div>
             )}
-
             {!busy && resultImageUrl && (
-              <motion.div
-                key="result"
-                initial={{ opacity: 0, scale: 1.02 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0"
-              >
-                <Image
-                  src={resultImageUrl}
-                  alt={`Spread: ${spread.pageLabel}`}
-                  fill
-                  className="object-cover"
-                  priority
-                />
+              <motion.div key="result" initial={{ opacity: 0, scale: 1.02 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
+                <Image src={resultImageUrl} alt={`Spread: ${spread.pageLabel}`} fill className="object-cover" priority />
               </motion.div>
             )}
-
             {!busy && !resultImageUrl && (
-              <motion.div
-                key="empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 flex flex-col items-center justify-center gap-3"
-              >
+              <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col items-center justify-center gap-3">
                 <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center">
                   <Eye className="w-7 h-7 text-gray-300" />
                 </div>
-                <p className="text-sm text-gray-400">
-                  Your illustration will appear here
-                </p>
+                <p className="text-sm text-gray-400">Your illustration will appear here</p>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Controls */}
-     {/* Controls */}
-     <div className="p-4 space-y-3">
-          {/* Locked — this spread can't be generated (free preview used on another) */}
+        <div className="p-4 space-y-3">
           {isLocked && !busy && (
             <div className="text-center py-4 space-y-3">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-100 text-gray-500 text-sm font-medium">
@@ -538,48 +448,27 @@ function GenerationPanel({
                 Preview used on another spread
               </div>
               <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
-                Your free preview illustration has been generated on a different spread.
-                Order your book to generate all spreads.
+                Your free preview illustration has been generated on a different spread. Order your book to generate all spreads.
               </p>
             </div>
           )}
 
-          {/* No image yet, not locked → simple generate button */}
           {!resultImageUrl && !busy && !isLocked && (
-            <button
-              onClick={handleQuickGenerate}
-              className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2"
-              style={{
-                background:
-                  "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
-              }}
-            >
+            <button onClick={handleQuickGenerate} className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2" style={{ background: "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)" }}>
               <Wand2 className="w-4 h-4" />
               Generate Free Preview
             </button>
           )}
 
-          {/* Has image, this IS the preview spread → can redraw */}
           {resultImageUrl && !busy && !isLocked && (
-            <button
-              onClick={() => setShowRedraw(true)}
-              className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2"
-              style={{
-                background:
-                  "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
-              }}
-            >
+            <button onClick={() => setShowRedraw(true)} className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2" style={{ background: "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)" }}>
               <RefreshCw className="w-4 h-4" />
               Redraw — Edit Characters, Outfits & More
             </button>
           )}
 
-          {/* Generating → disabled state */}
           {busy && (
-            <button
-              disabled
-              className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2 opacity-50 cursor-not-allowed bg-gray-400"
-            >
+            <button disabled className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2 opacity-50 cursor-not-allowed bg-gray-400">
               <Loader2 className="w-4 h-4 animate-spin" />
               {status === "queued" ? "Queued…" : "Generating…"}
             </button>
@@ -588,12 +477,9 @@ function GenerationPanel({
           {styleWarning && (
             <div className="flex items-center gap-2 text-amber-600 text-xs bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
-              {styleWarning === "no_style_guide" &&
-                "No style guide found — generating with default style."}
-              {styleWarning === "style_not_locked" &&
-                "Your style guide isn't locked yet. Lock it in Design for best results."}
-              {styleWarning === "no_reference_image" &&
-                "No style reference image uploaded. Add one in Design for better consistency."}
+              {styleWarning === "no_style_guide" && "No style guide found — generating with default style."}
+              {styleWarning === "style_not_locked" && "Your style guide isn't locked yet. Lock it in Design for best results."}
+              {styleWarning === "no_reference_image" && "No style reference image uploaded. Add one in Design for better consistency."}
             </div>
           )}
           {error && (
@@ -605,7 +491,6 @@ function GenerationPanel({
         </div>
       </div>
 
-      {/* ── RedrawModal ── */}
       <RedrawModal
         isOpen={showRedraw}
         onClose={() => setShowRedraw(false)}
@@ -643,15 +528,19 @@ export default function PreviewPageClient({
 
     fetch(`/api/stories/${storyId}/spreads-preview`)
       .then(async (res) => {
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || `HTTP ${res.status}`);
-        }
+        if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
         return res.json();
       })
       .then((data: SpreadOption[]) => {
-        setSpreads(data);
-        if (data.length > 0) setSelectedId(data[0].spreadId);
+        // Deduplicate by spreadId
+        const seen = new Set<string>();
+        const unique = data.filter((s) => {
+          if (seen.has(s.spreadId)) return false;
+          seen.add(s.spreadId);
+          return true;
+        });
+        setSpreads(unique);
+        if (unique.length > 0) setSelectedId(unique[0].spreadId);
       })
       .catch((e) => setFetchError(e.message ?? "Failed to load spreads"))
       .finally(() => setLoading(false));
@@ -659,16 +548,24 @@ export default function PreviewPageClient({
 
   const selected = spreads.find((s) => s.spreadId === selectedId) ?? null;
 
-  // Track which spread (if any) has been generated as the free preview
   const [previewGeneratedId, setPreviewGeneratedId] = useState<string | null>(null);
 
-  // On load, check if any spread already has an image
   useEffect(() => {
     const existing = spreads.find((s) => s.existingImageUrl);
     if (existing) setPreviewGeneratedId(existing.spreadId);
   }, [spreads]);
 
   const hasUsedFreePreview = !!previewGeneratedId;
+
+  async function handleContinue() {
+    await fetch(`/api/stories/${storyId}/complete-step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ step: "preview" }),
+    }).catch(() => {});
+    router.push(`/stories/${storyId}/checkout`);
+  }
+
   return (
     <>
       <UnifiedStoryHeader
@@ -683,7 +580,17 @@ export default function PreviewPageClient({
         hasPages
       />
 
-      <main className="max-w-[1160px] mx-auto px-4 sm:px-6 py-10">
+      {/* ── Mobile ── */}
+      <div className="md:hidden">
+        <MobilePreview
+          storyId={storyId}
+          storyTitle={storyTitle}
+          onContinue={handleContinue}
+        />
+      </div>
+
+      {/* ── Desktop ── */}
+      <main className="hidden md:block max-w-[1160px] mx-auto px-4 sm:px-6 py-10">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-1">
@@ -718,7 +625,7 @@ export default function PreviewPageClient({
         )}
 
         <div className="grid lg:grid-cols-[280px_1fr] gap-6 items-start">
-          {/* ── Spread picker sidebar ── */}
+          {/* Spread picker sidebar */}
           <aside className="space-y-2 lg:sticky lg:top-6 max-h-[calc(100vh-120px)] overflow-y-auto pb-2 pr-1">
             <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase px-1 mb-3">
               Choose a spread
@@ -738,12 +645,8 @@ export default function PreviewPageClient({
                 <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center mx-auto mb-2">
                   <Eye className="w-5 h-5 text-gray-300" />
                 </div>
-                <p className="text-sm text-gray-400">
-                  No spreads found for this story.
-                </p>
-                <p className="text-xs text-gray-300 mt-1">
-                  Run &quot;Decide Scenes&quot; first.
-                </p>
+                <p className="text-sm text-gray-400">No spreads found for this story.</p>
+                <p className="text-xs text-gray-300 mt-1">Run &quot;Decide Scenes&quot; first.</p>
               </div>
             )}
 
@@ -759,10 +662,10 @@ export default function PreviewPageClient({
               ))}
           </aside>
 
-          {/* ── Generation panel ── */}
+          {/* Generation panel */}
           <div>
             {selected ? (
-            <GenerationPanel
+              <GenerationPanel
                 spread={selected}
                 storyId={storyId}
                 isLocked={hasUsedFreePreview && previewGeneratedId !== selected.spreadId}
@@ -773,9 +676,7 @@ export default function PreviewPageClient({
                 <div className="w-16 h-16 rounded-2xl bg-violet-50 flex items-center justify-center mb-4">
                   <Eye className="w-7 h-7 text-violet-300" />
                 </div>
-                <p className="text-gray-400 text-sm">
-                  Select a spread on the left to get started
-                </p>
+                <p className="text-gray-400 text-sm">Select a spread on the left to get started</p>
               </div>
             ) : null}
           </div>
@@ -785,27 +686,13 @@ export default function PreviewPageClient({
         {spreads.length > 0 && (
           <div className="mt-10 bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-              <p className="font-semibold text-gray-800 text-sm">
-                Happy with your style?
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                When you&apos;re ready, continue to order your printed book.
-              </p>
+              <p className="font-semibold text-gray-800 text-sm">Happy with your style?</p>
+              <p className="text-xs text-gray-400 mt-0.5">When you&apos;re ready, continue to order your printed book.</p>
             </div>
             <button
-              onClick={async () => {
-                await fetch(`/api/stories/${storyId}/complete-step`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ step: "preview" }),
-                });
-                router.push(`/stories/${storyId}/checkout`);
-              }}
+              onClick={handleContinue}
               className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm text-white flex-shrink-0 hover:opacity-90 transition-opacity"
-              style={{
-                background:
-                  "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
-              }}
+              style={{ background: "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)" }}
             >
               Continue to Order
               <ChevronRight className="w-4 h-4" />

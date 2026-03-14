@@ -90,7 +90,7 @@ function AddressSheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end"
+      className="fixed inset-0 z-[60] flex items-end justify-center"
       style={{ background: "rgba(20,8,40,0.6)", backdropFilter: "blur(6px)" }}
       onClick={(e) => e.target === e.currentTarget && !isSubmitting && onClose()}
     >
@@ -99,7 +99,7 @@ function AddressSheet({
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
         transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-h-[92vh] overflow-y-auto"
+        className="w-full max-h-[92vh] flex flex-col"
         style={{
           background: "white",
           borderRadius: "24px 24px 0 0",
@@ -107,13 +107,13 @@ function AddressSheet({
         }}
       >
         {/* Handle */}
-        <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-white z-10" style={{ borderRadius: "24px 24px 0 0" }}>
+        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
           <div className="w-10 h-1 rounded-full" style={{ background: "rgba(180,150,210,0.25)" }} />
         </div>
 
         {/* Header */}
         <div
-          className="flex items-center justify-between px-6 py-4 sticky top-5 bg-white z-10"
+          className="flex items-center justify-between px-5 py-3.5 flex-shrink-0"
           style={{ borderBottom: "1px solid rgba(180,150,210,0.1)" }}
         >
           <div className="flex items-center gap-2.5">
@@ -142,83 +142,92 @@ function AddressSheet({
           </button>
         </div>
 
-        {/* Form */}
-        <div className="px-6 py-5 flex flex-col gap-4">
-          {/* Name row */}
-          <div className="flex gap-3">
+        {/* Scrollable form */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
+          <div className="flex flex-col gap-3.5">
+            {/* Name row */}
+            <div className="flex gap-2.5">
+              <InputField
+                label="First name"
+                value={address.firstName}
+                onChange={(v) => update("firstName", v)}
+                error={errors.firstName}
+                disabled={isSubmitting}
+              />
+              <InputField
+                label="Last name"
+                value={address.lastName}
+                onChange={(v) => update("lastName", v)}
+                error={errors.lastName}
+                disabled={isSubmitting}
+              />
+            </div>
+
             <InputField
-              label="First name"
-              value={address.firstName}
-              onChange={(v) => update("firstName", v)}
-              error={errors.firstName}
+              label="Address line 1"
+              value={address.addressLine1}
+              onChange={(v) => update("addressLine1", v)}
+              error={errors.addressLine1}
               disabled={isSubmitting}
             />
+
             <InputField
-              label="Last name"
-              value={address.lastName}
-              onChange={(v) => update("lastName", v)}
-              error={errors.lastName}
+              label="Address line 2 (optional)"
+              value={address.addressLine2}
+              onChange={(v) => update("addressLine2", v)}
               disabled={isSubmitting}
+            />
+
+            {/* City + Postcode row */}
+            <div className="flex gap-2.5">
+              <InputField
+                label="City"
+                value={address.city}
+                onChange={(v) => update("city", v)}
+                error={errors.city}
+                disabled={isSubmitting}
+              />
+              <InputField
+                label="Postcode"
+                value={address.postCode}
+                onChange={(v) => update("postCode", v)}
+                error={errors.postCode}
+                disabled={isSubmitting}
+              />
+            </div>
+
+            <InputField
+              label="Email"
+              value={address.email}
+              onChange={(v) => update("email", v)}
+              error={errors.email}
+              disabled={isSubmitting}
+              type="email"
+            />
+
+            <InputField
+              label="Phone (optional)"
+              value={address.phone}
+              onChange={(v) => update("phone", v)}
+              disabled={isSubmitting}
+              type="tel"
             />
           </div>
-
-          <InputField
-            label="Address line 1"
-            value={address.addressLine1}
-            onChange={(v) => update("addressLine1", v)}
-            error={errors.addressLine1}
-            disabled={isSubmitting}
-          />
-
-          <InputField
-            label="Address line 2 (optional)"
-            value={address.addressLine2}
-            onChange={(v) => update("addressLine2", v)}
-            disabled={isSubmitting}
-          />
-
-          {/* City + Postcode row */}
-          <div className="flex gap-3">
-            <InputField
-              label="City"
-              value={address.city}
-              onChange={(v) => update("city", v)}
-              error={errors.city}
-              disabled={isSubmitting}
-            />
-            <InputField
-              label="Postcode"
-              value={address.postCode}
-              onChange={(v) => update("postCode", v)}
-              error={errors.postCode}
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <InputField
-            label="Email"
-            value={address.email}
-            onChange={(v) => update("email", v)}
-            error={errors.email}
-            disabled={isSubmitting}
-            type="email"
-          />
-
-          <InputField
-            label="Phone (optional)"
-            value={address.phone}
-            onChange={(v) => update("phone", v)}
-            disabled={isSubmitting}
-            type="tel"
-          />
         </div>
 
-        {/* Submit */}
-        <div className="px-6 pb-10 pt-2">
+        {/* Submit — pinned to bottom */}
+        <div
+          className="flex-shrink-0 px-5 pt-3 pb-8"
+          style={{
+            background: "rgba(255,255,255,0.95)",
+            backdropFilter: "blur(8px)",
+            borderTop: "1px solid rgba(180,150,210,0.1)",
+          }}
+        >
           <button
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+            className="w-full py-3.5 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
             style={{
               background: "linear-gradient(135deg, #B05CE6, #E91E8C)",
               boxShadow: "0 4px 20px rgba(176,92,230,0.3)",
@@ -264,7 +273,7 @@ function InputField({
   type?: string;
 }) {
   return (
-    <div className="flex-1">
+    <div className="flex-1 min-w-0">
       <label
         className="block text-[11px] font-bold uppercase tracking-wider mb-1.5"
         style={{ color: error ? "#E91E63" : "#8B7BA0", fontFamily: FONT }}
@@ -276,7 +285,7 @@ function InputField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="w-full rounded-xl px-3.5 py-3 text-sm outline-none transition-all disabled:opacity-50"
+        className="w-full rounded-xl px-3 py-2.5 text-sm outline-none transition-all disabled:opacity-50"
         style={{
           border: error
             ? "1.5px solid rgba(233,30,99,0.4)"
@@ -302,13 +311,13 @@ function InputField({
 function ProcessingOverlay({ step }: { step: string }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-[60] flex items-center justify-center"
       style={{ background: "rgba(20,8,40,0.7)", backdropFilter: "blur(8px)" }}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="mx-8 p-8 rounded-3xl text-center"
+        className="mx-6 p-8 rounded-3xl text-center"
         style={{ background: "white", maxWidth: 340 }}
       >
         <div
@@ -341,13 +350,13 @@ function ProcessingOverlay({ step }: { step: string }) {
 function SuccessOverlay({ onDone }: { onDone: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-[60] flex items-center justify-center"
       style={{ background: "rgba(20,8,40,0.7)", backdropFilter: "blur(8px)" }}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="mx-8 p-8 rounded-3xl text-center"
+        className="mx-6 p-8 rounded-3xl text-center"
         style={{ background: "white", maxWidth: 340 }}
       >
         <div
@@ -400,13 +409,13 @@ function ErrorOverlay({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-[60] flex items-center justify-center"
       style={{ background: "rgba(20,8,40,0.7)", backdropFilter: "blur(8px)" }}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="mx-8 p-8 rounded-3xl text-center"
+        className="mx-6 p-8 rounded-3xl text-center"
         style={{ background: "white", maxWidth: 340 }}
       >
         <div

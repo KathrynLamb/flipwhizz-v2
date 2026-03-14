@@ -123,7 +123,7 @@ export default function Header({ session }: { session: any }) {
                 }}
               />
 
-              <div className="relative z-10 flex items-center justify-between px-6 py-5">
+              <div className="relative z-10 flex items-center justify-between px-6 py-2">
                 <Logo />
                 <button
                   onClick={() => setIsOpen(false)}
@@ -211,15 +211,16 @@ function Logo() {
   return (
     <Link href="/" className="flex items-center group">
       <Image
-        src="/Flipwhizz_logo.png"
+        // src="/Flipwhizz_logo.png"
+        src="/Flipwhizz_logo_NEW.png"
         alt="FlipWhizz"
-        width={84}
-        height={84}
-        className="transition-transform duration-300 group-hover:rotate-6"
+        width={180}
+        height={180}
+        className="transition-transform duration-300 group-hover:rotate-6 group-hover:animate-"
       />
-      <span className="font-serif text-2xl font-bold tracking-wide text-[#8B5A83]">
+      {/* <span className="font-serif text-2xl font-bold tracking-wide text-[#8B5A83]">
         FlipWhizz
-      </span>
+      </span> */}
     </Link>
   );
 }

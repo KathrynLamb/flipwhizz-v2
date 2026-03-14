@@ -62,10 +62,10 @@ export default function HomeClient({ session, fonts }: Props) {
         {/* NAV */}
         <header className="relative z-50 w-full px-6 py-6 md:px-12 flex justify-between items-center">
           <div className="flex items-center gap-2 text-[#FDF8F0]">
-            <span className="text-2xl">📖</span>
+            {/* <span className="text-2xl">📖</span>
             <span className="font-serif text-2xl font-bold">
               FlipWhizz
-            </span>
+            </span> */}
           </div>
 
           <nav className="hidden md:flex items-center gap-8 text-[#FDF8F0]/90 text-sm font-medium">
@@ -88,7 +88,7 @@ export default function HomeClient({ session, fonts }: Props) {
                 href="/projects"
                 className="px-6 py-2 rounded-full bg-[#F4A261] text-[#0F2236] font-bold hover:bg-[#E76F51]"
               >
-                My Library!!!!
+                My Library
               </Link>
             )}
           </nav>
