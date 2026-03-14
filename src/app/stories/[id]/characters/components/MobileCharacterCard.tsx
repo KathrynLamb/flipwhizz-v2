@@ -503,9 +503,9 @@ function MobileEditSheet({
   );
 
   const [openSections, setOpenSections] = useState<Set<string>>(
-    new Set(["description"])
+    new Set()
   );
-
+  
   const imageUrl = character.portraitImageUrl || character.referenceImageUrl;
 
   const traits = useMemo(() => {
