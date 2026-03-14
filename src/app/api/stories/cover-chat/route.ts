@@ -19,7 +19,27 @@ const client = new Anthropic({
 /*                              SYSTEM PROMPT                                 */
 /* -------------------------------------------------------------------------- */
 
-function buildCoverChatSystemPrompt(story: any) {
+type WorldRef = {
+  characters: { id: string; name: string; role: string | null }[];
+  locations: { id: string; name: string }[];
+};
+
+function buildCoverChatSystemPrompt(story: any, world?: WorldRef) {
+  const characterBlock = world?.characters?.length
+    ? world.characters
+        .map(
+          (c) =>
+            `  - ID: "${c.id}" | Name: "${c.name}"${c.role ? ` | Role: ${c.role}` : ""}`
+        )
+        .join("\n")
+    : "  (no characters loaded)";
+
+  const locationBlock = world?.locations?.length
+    ? world.locations
+        .map((l) => `  - ID: "${l.id}" | Name: "${l.name}"`)
+        .join("\n")
+    : "  (no locations loaded)";
+
   return `
 You are helping a parent quickly decide a children's book cover.
 
@@ -34,6 +54,12 @@ Title: ${story.title}
 Story excerpt:
 ${story.fullDraft?.slice(0, 400) || "No story text provided"}
 
+AVAILABLE CHARACTERS IN THIS STORY:
+${characterBlock}
+
+AVAILABLE LOCATIONS IN THIS STORY:
+${locationBlock}
+
 YOUR GOAL:
 Reach a clear, final decision in 2–3 assistant turns MAX.
 
@@ -42,6 +68,7 @@ WHAT YOU NEED TO COLLECT:
 FRONT COVER
 - What should we SEE?
   (single character, group scene, symbolic image, moment from story)
+- Which specific characters should appear? (use their names from the list above)
 
 AUTHOR TEXT
 - Exact author credit text (e.g. "By Sophie", "By Mum and Sophie", or none)
@@ -53,15 +80,16 @@ BACK COVER
   - both
   - or nothing
 - Rough visual idea (continue front scene or simpler background)
+- Which location if any should feature?
 
 RULES:
 - Be warm, direct, and efficient
 - Ask grouped questions
-- If vague, offer 2–3 concrete options
+- If vague, offer 2–3 concrete options using the actual character/location names
 - DO NOT ask about fonts, colours, lighting, or layout
 - When you have enough, clearly say you're ready
 
-OUTPUT JSON ONLY:
+OUTPUT FORMAT — ALWAYS return valid JSON and nothing else:
 
 {
   "message": "what you say to the user",
@@ -69,8 +97,19 @@ OUTPUT JSON ONLY:
   "summary": {
     "front": "one-line summary",
     "back": "one-line summary"
-  }
+  },
+  "mentionedCharacterIds": ["id1", "id2"],
+  "mentionedLocationIds": ["id1"]
 }
+
+TAGGING RULES for mentionedCharacterIds and mentionedLocationIds:
+- Include the ID of EVERY character you mention, suggest, or ask about in THIS message
+- Include the ID of EVERY location you mention, suggest, or ask about in THIS message
+- Use the EXACT IDs from the AVAILABLE CHARACTERS / AVAILABLE LOCATIONS lists
+- If you say "Should Sophia be on the front cover?" → include Sophia's ID
+- If you suggest a group of characters → include ALL their IDs
+- If no characters or locations come up in a message → use empty arrays []
+- These arrays control which reference images the user sees, so be thorough
 
 When stage === "ready", your message MUST end with:
 "Perfect — I have everything I need to create your cover."
@@ -83,7 +122,7 @@ When stage === "ready", your message MUST end with:
 
 export async function POST(req: Request) {
   try {
-    const { message, history = [], storyId } = await req.json();
+    const { message, history = [], storyId, world } = await req.json();
 
     if (!message || !storyId) {
       return NextResponse.json(
@@ -135,6 +174,21 @@ export async function POST(req: Request) {
 
     /* ------------------------------ CLAUDE INPUT ---------------------------- */
 
+    // Build world reference for the system prompt
+    const worldRef: WorldRef | undefined = world
+      ? {
+          characters: (world.characters ?? []).map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            role: c.role ?? null,
+          })),
+          locations: (world.locations ?? []).map((l: any) => ({
+            id: l.id,
+            name: l.name,
+          })),
+        }
+      : undefined;
+
     const claudeMessages = history
       .filter((m: any) => m.role === "user" || m.role === "assistant")
       .map((m: any) => ({
@@ -146,8 +200,8 @@ export async function POST(req: Request) {
 
     const completion = await client.messages.create({
       model: "claude-sonnet-4-20250514",
-      system: buildCoverChatSystemPrompt(story),
-      max_tokens: 600,
+      system: buildCoverChatSystemPrompt(story, worldRef),
+      max_tokens: 800,
       messages: claudeMessages,
     });
 
@@ -158,6 +212,8 @@ export async function POST(req: Request) {
       message: string;
       stage: "intro" | "exploring" | "ready";
       summary?: any;
+      mentionedCharacterIds?: string[];
+      mentionedLocationIds?: string[];
     };
 
     try {
@@ -170,6 +226,8 @@ export async function POST(req: Request) {
         message: raw,
         stage: "exploring",
         summary: {},
+        mentionedCharacterIds: [],
+        mentionedLocationIds: [],
       };
     }
 
@@ -177,6 +235,14 @@ export async function POST(req: Request) {
     if (!["intro", "exploring", "ready"].includes(parsed.stage)) {
       parsed.stage = "exploring";
     }
+
+    // 🔒 Ensure arrays exist and contain only strings
+    parsed.mentionedCharacterIds = Array.isArray(parsed.mentionedCharacterIds)
+      ? parsed.mentionedCharacterIds.filter((id) => typeof id === "string")
+      : [];
+    parsed.mentionedLocationIds = Array.isArray(parsed.mentionedLocationIds)
+      ? parsed.mentionedLocationIds.filter((id) => typeof id === "string")
+      : [];
 
     // 🔒 Enforce ready termination
     if (
@@ -201,6 +267,8 @@ export async function POST(req: Request) {
       reply: parsed.message,
       stage: parsed.stage,
       summary: parsed.summary ?? {},
+      mentionedCharacterIds: parsed.mentionedCharacterIds,
+      mentionedLocationIds: parsed.mentionedLocationIds,
       sessionId: session.id,
     });
   } catch (err) {

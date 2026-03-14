@@ -40,7 +40,6 @@ type CoverPlan = {
 
   constraints?: {
     noTextOutsideSafeZones?: boolean;
-    keepBarcodeAreaClear?: boolean;
   };
 
   reasoning?: string;
@@ -70,6 +69,12 @@ const COVER_TEMPLATE_PATH = path.resolve(
   "public",
   "templates",
   "spread-text-safe-template.png"
+);
+
+const LOGO_PATH = path.resolve(
+  process.cwd(),
+  "public",
+  "Flipwhizz_logo_NEW.png"
 );
 
 /* -------------------------------------------------------------------------- */
@@ -185,7 +190,7 @@ function resolveStyleGuide(
       geminiStyleBlock:
         "Whimsical, warm children's book illustration, storybook quality",
       geminiAvoidBlock:
-        "Photorealism, CGI, harsh shadows, logos, watermarks, guide lines, template markers",
+        "Photorealism, CGI, harsh shadows, watermarks, guide lines, template markers, barcodes, ISBN numbers",
       typographyBlock:
         "Large, child-friendly hand-lettered text with excellent contrast",
     };
@@ -239,7 +244,7 @@ function resolveStyleGuide(
   }
 
   avoidParts.push(
-    "Logos, watermarks, guide lines, template markers, text boxes, UI elements, borders"
+    "Watermarks, guide lines, template markers, text boxes, UI elements, borders, barcodes, ISBN numbers, barcode-like patterns"
   );
 
   const typographyBlock =
@@ -458,6 +463,25 @@ Use appropriate clothing for a book cover — the character should look their be
       }
     }
 
+    // ── 4.5️⃣ FLIPWHIZZ LOGO REFERENCE ─────────────────────────────────
+    try {
+      parts.push(await getImagePart(LOGO_PATH));
+      parts.push({
+        text: `
+↑ THIS IS THE FLIPWHIZZ LOGO — REPRODUCE IT ON THE BACK COVER ↑
+
+Place this logo in the BOTTOM-LEFT area of the back cover (approximately 5%-25% from left, 85%-95% from top).
+Reproduce the logo as closely as possible — it's a playful, colourful handwritten "FlipWhizz" with a rainbow swirl.
+Below the logo, add small clean text: "flipwhizz.com"
+Keep it small and subtle — a publisher's mark, not a dominant element.
+Do NOT alter the logo's colours or style. Match it exactly from the reference image above.
+`.trim(),
+      });
+      console.log("🏷️ FlipWhizz logo reference included in cover prompt");
+    } catch (err) {
+      console.warn("⚠️ Could not load FlipWhizz logo:", err);
+    }
+
     // ── 5️⃣ COVER INSTRUCTIONS ──────────────────────────────────────────
     parts.push({
       text: `
@@ -494,7 +518,18 @@ BACK COVER (left third, 8%-30% from left):
 ${coverPlan.back.blurbText ? `"${coverPlan.back.blurbText}"` : ""}
 ${coverPlan.back.dedicationText ? `"${coverPlan.back.dedicationText}"` : ""}
 
+BACK COVER BRANDING (bottom-left of back cover):
+- Reproduce the FlipWhizz logo shown in the reference image above
+- Below it: "flipwhizz.com" in small, clean text
+- Keep it small and subtle — a publisher's mark
+
+⚠️ ABSOLUTELY NO BARCODES:
+This book is printed through a service that adds its own barcode separately.
+DO NOT draw any barcode, ISBN box, white rectangle, or barcode-like pattern anywhere on the cover.
+If you add a barcode, the cover will be REJECTED.
+
 IMPORTANT - DO NOT INCLUDE:
+- Barcodes, ISBN numbers, or any barcode-like elements or white rectangles
 - "TEXT SAFE ZONE" labels
 - Guide boxes or borders
 - Template overlay
@@ -515,9 +550,7 @@ ${geminiStyleBlock}
 AVOID:
 ${geminiAvoidBlock}
 
-${coverPlan.constraints?.keepBarcodeAreaClear ? "Keep the bottom-left area of the back cover clear for a barcode." : ""}
-
-FINAL REMINDER: ALL text must be generously inset from every edge. The outer 10% on all sides will be trimmed during printing. Text near edges = text destroyed.
+FINAL REMINDER: ALL text must be generously inset from every edge. The outer 10% on all sides will be trimmed during printing. Text near edges = text destroyed. NO BARCODES ANYWHERE.
 
 Create a seamless, professional children's book wrap-around cover now.
 `.trim(),

@@ -218,29 +218,33 @@ export default function StoryReaderClient({
 
   const handleConfirmStory = async () => {
     try {
+      // Lock the story
       const res = await fetch(`/api/stories/${id}/lock`, { method: "POST" });
       const data = await res.json();
-
+  
+      // Always mark "write" as complete (ensures getNextStepHref skips it)
+      await fetch(`/api/stories/${id}/complete-step`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step: "write" }),
+      }).catch(() => {});
+  
       if (data.alreadyConfirmed) {
-        // Already confirmed — figure out where they should go next
         const storyRes = await fetch(`/api/stories/${id}`, {
           cache: "no-store",
         });
         if (storyRes.ok) {
-          const data = await storyRes.json();
-          const story = data.story ?? data;
+          const storyData = await storyRes.json();
+          const story = storyData.story ?? storyData;
           router.push(getNextStepHref(id, story));
         } else {
-          // Fallback if fetch fails
           router.push(`/stories/${id}/illustration-style`);
         }
         return;
       }
-
+  
       // First time — trigger extraction
-      fetch(`/api/stories/${id}/ensure-world`, { method: "POST" }).catch(
-        () => {}
-      );
+      fetch(`/api/stories/${id}/ensure-world`, { method: "POST" }).catch(() => {});
       router.push(`/stories/${id}/extract`);
     } catch {
       alert("Failed to lock story. Please try again.");

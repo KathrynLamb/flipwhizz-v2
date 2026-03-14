@@ -123,6 +123,9 @@ export default function CoverDesignChat({
   const [worldLocations, setWorldLocations] = useState<WorldLocation[]>([]);
   const [worldLoading, setWorldLoading] = useState(true);
 
+  const [mentionedCharacterIds, setMentionedCharacterIds] = useState<Set<string>>(new Set());
+  const [mentionedLocationIds, setMentionedLocationIds] = useState<Set<string>>(new Set());
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hasStartedChatRef = useRef(false);
 
@@ -223,6 +226,14 @@ export default function CoverDesignChat({
 
         const data = await res.json();
         setMessages([{ role: "assistant", content: data.reply }]);
+        
+        if (data.mentionedCharacterIds?.length) {
+          setMentionedCharacterIds(new Set(data.mentionedCharacterIds));
+        }
+        if (data.mentionedLocationIds?.length) {
+          setMentionedLocationIds(new Set(data.mentionedLocationIds));
+        }
+        setMessages([{ role: "assistant", content: data.reply }]);
       } catch {
         setMessages([
           {
@@ -256,14 +267,31 @@ export default function CoverDesignChat({
           storyId,
           message: userMsg.content,
           history: messages,
+          world: {
+            characters: worldCharacters.map((c) => ({ id: c.id, name: c.name, role: c.role })),
+            locations: worldLocations.map((l) => ({ id: l.id, name: l.name })),
+          },
         }),
       });
-
+      
       const data = await res.json();
-      setMessages([
-        ...nextMessages,
-        { role: "assistant", content: data.reply },
-      ]);
+      setMessages([...nextMessages, { role: "assistant", content: data.reply }]);
+      
+      // Accumulate mentioned IDs
+      if (data.mentionedCharacterIds?.length) {
+        setMentionedCharacterIds((prev) => {
+          const next = new Set(prev);
+          data.mentionedCharacterIds.forEach((id: string) => next.add(id));
+          return next;
+        });
+      }
+      if (data.mentionedLocationIds?.length) {
+        setMentionedLocationIds((prev) => {
+          const next = new Set(prev);
+          data.mentionedLocationIds.forEach((id: string) => next.add(id));
+          return next;
+        });
+      }
     } catch {
       setMessages([
         ...nextMessages,
@@ -787,8 +815,8 @@ export default function CoverDesignChat({
 
                 {/* ── World Reference Panel ────────────────────────────────── */}
                 <WorldReferencePanel
-                  characters={worldCharacters}
-                  locations={worldLocations}
+                  characters={worldCharacters.filter((c) => mentionedCharacterIds.has(c.id))}
+                  locations={worldLocations.filter((l) => mentionedLocationIds.has(l.id))}
                   loading={worldLoading}
                 />
               </div>
@@ -838,7 +866,26 @@ function WorldReferencePanel({
     );
   }
 
-  if (characters.length === 0 && locations.length === 0) return null;
+  if (characters.length === 0 && locations.length === 0 && !loading) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="rounded-[22px] p-5 text-center"
+        style={{
+          background: "white",
+          border: "1px solid rgba(180,150,210,0.12)",
+          boxShadow: "0 2px 12px rgba(100,60,140,0.06)",
+        }}
+      >
+        <User className="w-6 h-6 mx-auto mb-2" style={{ color: "#C4A8E0" }} />
+        <p className="text-xs font-medium" style={{ color: "#A897BD" }}>
+          Character references will appear here as we discuss your cover
+        </p>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div

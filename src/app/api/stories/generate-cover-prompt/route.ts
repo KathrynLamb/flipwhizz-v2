@@ -135,7 +135,6 @@ STRICT FORMAT:
 
   "constraints": {
     "noTextOutsideSafeZones": true,
-    "keepBarcodeAreaClear": true
   },
 
   "reasoning": "brief explanation of choices (optional)"
