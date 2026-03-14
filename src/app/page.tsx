@@ -79,39 +79,67 @@ export default async function Home() {
 
   return (
     <main
-      className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans bg-[#FDF8F0] text-slate-900 overflow-x-hidden`}
+      className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans bg-white text-slate-900 overflow-x-hidden`}
     >
       {/* ========================================
           HERO SECTION
           ======================================== */}
-      <section className="relative w-full min-h-[85vh] md:min-h-[90vh] flex flex-col">
-        <div className="absolute inset-0 z-0">
-          <Image
-            src="/LandingPage/hero-new2.jpg"
-            alt="A child's imagination coming to life from their sketchbook"
-            fill
-            priority
-            className="object-cover object-[center_40%] md:object-center mt-24"
-          />
-        </div>
-        <div className="relative z-30 ">
+      <section className="relative w-full flex flex-col bg-white">
+        {/* Header — renders in normal flow, image sits below */}
+        <div className="relative z-30">
           <Header session={session} />
+        </div>
+
+        {/* Hero image — below nav, fully visible */}
+        <div className="relative w-full">
+          {/* Desktop */}
+          <div className="hidden md:block relative w-full" style={{ height: "min(75vh, 700px)" }}>
+            <Image
+              src="/LandingPage/hero-new201.jpg"
+              alt="Big Imaginations Deserve Beautiful Books — create one-of-a-kind illustrated children's books about anything"
+              fill
+              priority
+              className="object-cover object-top"
+            />
+          </div>
+          {/* Mobile */}
+          <div className="md:hidden relative w-full" style={{ height: "min(65vh, 500px)" }}>
+            <Image
+              src="/LandingPage/hero-mobile.jpg"
+              alt="Big Imaginations Deserve Beautiful Books — create one-of-a-kind illustrated children's books about anything"
+              fill
+              priority
+              className="object-cover object-top"
+            />
+          </div>
         </div>
       </section>
 
       {/* ========================================
           CTA STRIP
           ======================================== */}
-      <section className="relative z-20 -mt-2 pb-16 pt-0">
-        <div className="flex flex-col items-center gap-5">
-          <div className="animate-fade-in-up">
-            <HeroButton session={session} hasProjects={hasProjects} />
-          </div>
+      <section className="pt-4 pb-12 md:pt-6 md:pb-16 bg-white">
+        <div className="flex flex-col items-center gap-4 px-6">
+          {/* Primary CTA button — logo gradient */}
+          <Link
+            href={hasProjects ? "/projects" : "/projects/new"}
+            className="group relative px-10 py-4 md:px-14 md:py-5 rounded-full text-base md:text-lg font-bold text-white tracking-wide transition-all duration-300 hover:scale-105 hover:shadow-xl active:scale-[0.98]"
+            style={{
+              background: "linear-gradient(135deg, #F28B7B, #E88BAE, #9B7DC9)",
+              boxShadow: "0 6px 24px rgba(232,139,174,0.35)",
+            }}
+          >
+            <span className="relative z-10">
+              {hasProjects ? "Create Another Story" : "Create Your First Story"}
+            </span>
+          </Link>
+
+          {/* Supporting text */}
           <div className="text-center space-y-1">
-            <p className="text-base text-[#261C15] font-medium">
+            <p className="text-sm md:text-base text-gray-600 font-medium">
               See your first illustrated spread for free — no card, no commitment.
             </p>
-            <p className="text-sm text-[#6B5D52]">
+            <p className="text-xs md:text-sm text-gray-400">
               The whole thing takes about 5 minutes.
             </p>
           </div>
@@ -121,45 +149,28 @@ export default async function Home() {
       {/* ========================================
           HOW IT WORKS
           ======================================== */}
-      <section id="how-it-works" className="py-24 px-6 md:px-12 bg-white">
-        <div className="mx-auto max-w-5xl">
-          <div className="text-center mb-16">
-            <h2 className="font-serif text-4xl md:text-5xl text-[#261C15] font-bold">
-              How It Works
-            </h2>
-            <p className="mt-4 text-lg text-[#6B5D52]">
-              Three simple steps to a story they&apos;ll treasure forever.
-            </p>
+      <section id="how-it-works" className="py-24 px-6 md:px-12 bg-[#FDF8F0]">
+  
+      <div className="relative w-full">
+          {/* Desktop */}
+          <div className="hidden md:block relative w-full" style={{ height: "min(75vh, 700px)" }}>
+            <Image
+              src="/LandingPage/HowItWorks.jpg"
+              alt="Big Imaginations Deserve Beautiful Books — create one-of-a-kind illustrated children's books about anything"
+              fill
+              priority
+              className="object-cover object-top"
+            />
           </div>
-
-          <div className="grid md:grid-cols-3 gap-12 md:gap-8">
-            <div className="text-center space-y-4">
-              <div className="mx-auto w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center">
-                <span className="text-2xl font-serif font-bold text-purple-600">1</span>
-              </div>
-              <h3 className="font-serif text-xl font-bold text-[#261C15]">Tell Us About Them</h3>
-              <p className="text-[#6B5D52] text-sm leading-relaxed">
-                Share their name, their favourite things, their quirks, and what makes them laugh. The more you share, the more personal it gets.
-              </p>
-            </div>
-            <div className="text-center space-y-4">
-              <div className="mx-auto w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center">
-                <span className="text-2xl font-serif font-bold text-teal-600">2</span>
-              </div>
-              <h3 className="font-serif text-xl font-bold text-[#261C15]">We Craft Their Story</h3>
-              <p className="text-[#6B5D52] text-sm leading-relaxed">
-                Our AI writes a unique narrative and illustrates every page with characters that look and feel like your child&apos;s world.
-              </p>
-            </div>
-            <div className="text-center space-y-4">
-              <div className="mx-auto w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
-                <span className="text-2xl font-serif font-bold text-amber-600">3</span>
-              </div>
-              <h3 className="font-serif text-xl font-bold text-[#261C15]">Hold It in Your Hands</h3>
-              <p className="text-[#6B5D52] text-sm leading-relaxed">
-                Read it on screen or order a beautifully printed book — a real keepsake designed to be held, gifted, and read under the duvet.
-              </p>
-            </div>
+          {/* Mobile */}
+          <div className="md:hidden relative w-full" style={{ height: "min(65vh, 500px)" }}>
+            <Image
+              src="/LandingPage/hero-mobile.jpg"
+              alt="Big Imaginations Deserve Beautiful Books — create one-of-a-kind illustrated children's books about anything"
+              fill
+              priority
+              className="object-cover object-top"
+            />
           </div>
         </div>
       </section>
@@ -167,7 +178,7 @@ export default async function Home() {
       {/* ========================================
           THIS IS OLIVIA'S BOOK
           ======================================== */}
-      <section className="py-20 md:py-28 px-6 md:px-12 bg-[#FDF8F0]">
+      <section className="py-20 md:py-28 px-6 md:px-12 bg-white">
         <div className="mx-auto max-w-5xl">
           <div className="text-center mb-12">
             <h2 className="font-serif text-4xl md:text-5xl text-[#261C15] font-bold">
@@ -287,7 +298,8 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ======================================== FOOTER
+      {/* ========================================
+          FOOTER
           ======================================== */}
       <Footer />
     </main>
