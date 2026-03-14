@@ -503,7 +503,7 @@ function MobileEditSheet({
   );
 
   const [openSections, setOpenSections] = useState<Set<string>>(
-    // new Set(["description"])
+    new Set(["description"])
   );
 
   const imageUrl = character.portraitImageUrl || character.referenceImageUrl;
