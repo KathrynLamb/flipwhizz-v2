@@ -4,10 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2,
   ImagePlus,
-  Download,
   Sparkles,
   Wand2,
-  MessageSquare,
   X,
   ChevronLeft,
   ChevronRight,
@@ -20,6 +18,7 @@ import Link from "next/link";
 import Image from "next/image";
 import StudioPaywall from "@/components/StudioPaywall";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
+import RedrawModal from "@/app/stories/[id]/studio/components/redrawModal";
 
 /* -------------------------------------------------------------------------- */
 /*                                    Types                                   */
@@ -34,6 +33,7 @@ type Page = {
 
 type Spread = {
   id: string;
+  spreadId: string | null;
   left: Page;
   right: Page | null;
 };
@@ -42,149 +42,26 @@ type Spread = {
 /*                                   Helpers                                  */
 /* -------------------------------------------------------------------------- */
 
-function groupIntoSpreads(pages: Page[]): Spread[] {
+function groupIntoSpreads(
+  pages: Page[],
+  dbSpreads?: { id: string; leftPageId: string | null; rightPageId: string | null }[]
+): Spread[] {
   const spreads: Spread[] = [];
   const sorted = [...pages].sort((a, b) => a.pageNumber - b.pageNumber);
   for (let i = 0; i < sorted.length; i += 2) {
+    const dbSpread = dbSpreads?.find(
+      (s) =>
+        s.leftPageId === sorted[i].id ||
+        (sorted[i + 1] && s.rightPageId === sorted[i + 1]?.id)
+    );
     spreads.push({
       id: `spread-${sorted[i].id}`,
+      spreadId: dbSpread?.id ?? null,
       left: sorted[i],
       right: sorted[i + 1] || null,
     });
   }
   return spreads;
-}
-
-/* -------------------------------------------------------------------------- */
-/*                            Feedback Bottom Sheet                           */
-/* -------------------------------------------------------------------------- */
-
-function FeedbackSheet({
-  onClose,
-  onSubmit,
-  isSubmitting,
-}: {
-  onClose: () => void;
-  onSubmit: (feedback: string) => void;
-  isSubmitting: boolean;
-}) {
-  const [feedback, setFeedback] = useState("");
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end"
-      style={{ background: "rgba(20,8,40,0.6)", backdropFilter: "blur(6px)" }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <motion.div
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
-        transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full"
-        style={{
-          background: "white",
-          borderRadius: "24px 24px 0 0",
-          fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
-        }}
-      >
-        {/* Handle */}
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 rounded-full" style={{ background: "rgba(180,150,210,0.25)" }} />
-        </div>
-
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-6 py-4"
-          style={{ borderBottom: "1px solid rgba(180,150,210,0.1)" }}
-        >
-          <div className="flex items-center gap-2.5">
-            <div
-              className="w-8 h-8 rounded-xl flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg, #B05CE6, #D946EF)" }}
-            >
-              <Wand2 className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <h3 className="text-base font-extrabold" style={{ color: "#2D2235" }}>
-                Request Changes
-              </h3>
-              <p className="text-[11px]" style={{ color: "#8B7BA0" }}>
-                Describe what to improve
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-full"
-            style={{ background: "rgba(180,150,210,0.08)", border: "none", color: "#8B7BA0" }}
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Textarea */}
-        <div className="px-6 py-5">
-          <textarea
-            autoFocus
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            rows={5}
-            disabled={isSubmitting}
-            placeholder="e.g. Make the background more detailed, adjust the lighting, add more warmth to the colours…"
-            className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed outline-none resize-none"
-            style={{
-              border: "1.5px solid rgba(180,150,210,0.2)",
-              background: "#FDFBFF",
-              color: "#2D2235",
-              fontFamily: "inherit",
-            }}
-          />
-        </div>
-
-        {/* Actions */}
-        <div className="px-6 pb-10 flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 py-3.5 rounded-2xl text-sm font-semibold"
-            style={{
-              background: "rgba(180,150,210,0.08)",
-              color: "#6B5C80",
-              border: "none",
-              fontFamily: "inherit",
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => {
-              if (feedback.trim()) {
-                onSubmit(feedback);
-                setFeedback("");
-              }
-            }}
-            disabled={isSubmitting || !feedback.trim()}
-            className="flex-1 py-3.5 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-40"
-            style={{
-              background: "linear-gradient(135deg, #B05CE6, #E91E8C)",
-              boxShadow: "0 4px 16px rgba(176,92,230,0.3)",
-              border: "none",
-              fontFamily: "inherit",
-            }}
-          >
-            {isSubmitting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                Regenerate
-              </>
-            )}
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -200,7 +77,6 @@ function DotProgress({
   current: number;
   onDotClick: (i: number) => void;
 }) {
-  // Show max 7 dots; collapse to a counter if more
   const MAX_DOTS = 7;
 
   if (total > MAX_DOTS) {
@@ -244,17 +120,15 @@ function DotProgress({
 }
 
 /* -------------------------------------------------------------------------- */
-/*                              Spread Card                                   */
+/*                              Spread Card (clean, no overlays)              */
 /* -------------------------------------------------------------------------- */
 
 function SpreadCard({
   spread,
   isGenerating,
-  onFeedback,
 }: {
   spread: Spread;
   isGenerating: boolean;
-  onFeedback: () => void;
 }) {
   const hasImage = !!spread.left.imageUrl;
 
@@ -273,36 +147,12 @@ function SpreadCard({
         }}
       >
         {hasImage ? (
-          <>
-            <img
-              src={spread.left.imageUrl!}
-              alt={`Pages ${spread.left.pageNumber}–${spread.right?.pageNumber ?? ""}`}
-              className="w-full h-full object-cover"
-              draggable={false}
-            />
-
-            {/* Page badge */}
-            <div
-              className="absolute top-3 left-3 px-3 py-1.5 rounded-full text-xs font-bold text-white"
-              style={{ background: "rgba(30,10,50,0.7)", backdropFilter: "blur(8px)" }}
-            >
-              Pages {spread.left.pageNumber}
-              {spread.right ? `–${spread.right.pageNumber}` : ""}
-            </div>
-
-            {/* Feedback button */}
-            <button
-              onClick={onFeedback}
-              className="absolute top-3 right-3 w-9 h-9 rounded-full flex items-center justify-center text-white transition-transform active:scale-95"
-              style={{
-                background: "linear-gradient(135deg, #B05CE6, #E91E8C)",
-                boxShadow: "0 4px 12px rgba(176,92,230,0.4)",
-                border: "none",
-              }}
-            >
-              <Wand2 className="w-4 h-4" />
-            </button>
-          </>
+          <img
+            src={spread.left.imageUrl!}
+            alt={`Pages ${spread.left.pageNumber}–${spread.right?.pageNumber ?? ""}`}
+            className="w-full h-full object-cover"
+            draggable={false}
+          />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center gap-3">
             {isGenerating ? (
@@ -341,6 +191,49 @@ function SpreadCard({
 }
 
 /* -------------------------------------------------------------------------- */
+/*                    Spread Info Bar (below image, not overlaid)              */
+/* -------------------------------------------------------------------------- */
+
+function SpreadInfoBar({
+  spread,
+  onRedraw,
+}: {
+  spread: Spread;
+  onRedraw: () => void;
+}) {
+  const hasImage = !!spread.left.imageUrl;
+  const pageLabel = spread.right
+    ? `Pages ${spread.left.pageNumber}–${spread.right.pageNumber}`
+    : `Page ${spread.left.pageNumber}`;
+
+  return (
+    <div className="flex items-center justify-between px-5 pt-3 pb-1">
+      <span
+        className="text-xs font-bold"
+        style={{ color: "#9B59D0" }}
+      >
+        {pageLabel}
+      </span>
+
+      {hasImage && (
+        <button
+          onClick={onRedraw}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-transform active:scale-95"
+          style={{
+            background: "rgba(176,92,230,0.1)",
+            color: "#9B59D0",
+            border: "none",
+          }}
+        >
+          <Wand2 className="w-3.5 h-3.5" />
+          Redraw
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /*                               Mobile Studio                                */
 /* -------------------------------------------------------------------------- */
 
@@ -348,10 +241,12 @@ export default function MobileStudio({
   story,
   pages: initialPages,
   mode,
+  dbSpreads,
 }: {
   story: any;
   pages: Page[];
   mode: "live" | "edit";
+  dbSpreads?: { id: string; leftPageId: string | null; rightPageId: string | null }[];
 }) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -362,14 +257,17 @@ export default function MobileStudio({
   );
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
+
+  /* ── Redraw state (full modal) ── */
+  const [redrawTarget, setRedrawTarget] = useState<Spread | null>(null);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [regeneratingSpreads, setRegeneratingSpreads] = useState<Set<string>>(new Set());
 
   const [index, setIndex] = useState(0);
   const [viewportWidth, setViewportWidth] = useState<number | null>(null);
   const x = useMotionValue(0);
 
-  const interiorSpreads = useMemo(() => groupIntoSpreads(pages), [pages]);
+  const interiorSpreads = useMemo(() => groupIntoSpreads(pages, dbSpreads), [pages, dbSpreads]);
   const slides = useMemo(() => {
     if (!story.coverSpreadUrl) return interiorSpreads;
     return ["__COVER__", ...interiorSpreads];
@@ -382,6 +280,12 @@ export default function MobileStudio({
   const currentSlide = slides[index];
   const isCover = currentSlide === "__COVER__";
   const currentSpread = !isCover ? (currentSlide as Spread) : null;
+
+  const redrawLabel = redrawTarget
+    ? redrawTarget.right
+      ? `Pages ${redrawTarget.left.pageNumber}–${redrawTarget.right.pageNumber}`
+      : `Page ${redrawTarget.left.pageNumber}`
+    : "";
 
   /* ── Measure ── */
   useEffect(() => {
@@ -407,13 +311,29 @@ export default function MobileStudio({
       if (!res.ok) return;
       const updated: Page[] = await res.json();
       setPages(updated);
-      if (updated.every((p) => p.imageUrl)) {
+
+      // Check if regenerating spreads are done
+      if (regeneratingSpreads.size > 0) {
+        const updatedSpreads = groupIntoSpreads(updated, dbSpreads);
+        const stillRegenerating = new Set<string>();
+        regeneratingSpreads.forEach((spreadId) => {
+          const spread = updatedSpreads.find((s) => s.id === spreadId);
+          if (spread && !spread.left.imageUrl) {
+            stillRegenerating.add(spreadId);
+          }
+        });
+        if (stillRegenerating.size !== regeneratingSpreads.size) {
+          setRegeneratingSpreads(stillRegenerating);
+        }
+      }
+
+      if (updated.every((p) => p.imageUrl) && regeneratingSpreads.size === 0) {
         setIsPolling(false);
         setIsGenerating(false);
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [isPolling, story.id]);
+  }, [isPolling, story.id, regeneratingSpreads, dbSpreads]);
 
   /* ── Navigation ── */
   function clamp(i: number) {
@@ -438,7 +358,7 @@ export default function MobileStudio({
   /* ── Actions ── */
   async function handleGenerateAll() {
     if (isGenerating) return;
-    if (story.paymentStatus !== "paid") return; // Safety check
+    if (story.paymentStatus !== "paid") return;
     setIsGenerating(true);
     setIsPolling(true);
     try {
@@ -451,14 +371,54 @@ export default function MobileStudio({
     }
   }
 
-  async function handleFeedback(feedback: string) {
+  async function handleRedrawSpread(payload: {
+    feedback: string;
+    includedCharacterIds: string[];
+    outfitOverrides: Record<string, string>;
+    locationId: string | null;
+    freshStart?: boolean;
+  }) {
+    if (!redrawTarget || isSubmittingFeedback) return;
     setIsSubmittingFeedback(true);
+
+    const pageIds = [redrawTarget.left.id];
+    if (redrawTarget.right) pageIds.push(redrawTarget.right.id);
+
     try {
-      setFeedbackOpen(false);
+      const res = await fetch(
+        `/api/stories/${story.id}/spreads/regenerate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pageIds,
+            spreadId: redrawTarget.spreadId,
+            feedback: payload.freshStart ? "" : payload.feedback,
+            includedCharacterIds: payload.includedCharacterIds,
+            outfitOverrides: payload.outfitOverrides,
+            locationId: payload.locationId,
+            freshStart: payload.freshStart ?? false,
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to start regeneration");
+      }
+
+      setRegeneratingSpreads((prev) => new Set(prev).add(redrawTarget.id));
+
+      setPages((prev) =>
+        prev.map((p) =>
+          pageIds.includes(p.id) ? { ...p, imageUrl: null } : p
+        )
+      );
+
       setIsPolling(true);
-      setIsGenerating(true);
-    } catch {
-      alert("Failed to submit feedback");
+      setRedrawTarget(null);
+    } catch (err: any) {
+      alert(err.message || "Failed to redraw spread");
     } finally {
       setIsSubmittingFeedback(false);
     }
@@ -504,7 +464,6 @@ export default function MobileStudio({
           fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
         }}
       >
-        {/* Simple mobile header */}
         <div
           className="sticky top-0 z-50 px-4 py-3 flex items-center gap-3"
           style={{
@@ -539,6 +498,21 @@ export default function MobileStudio({
         minHeight: "100%",
       }}
     >
+      {/* ── Redraw Modal (full, with characters/locations/outfits) ── */}
+      <AnimatePresence>
+        {redrawTarget && (
+          <RedrawModal
+            isOpen
+            onClose={() => setRedrawTarget(null)}
+            onSubmit={handleRedrawSpread}
+            isSubmitting={isSubmittingFeedback}
+            storyId={story.id}
+            spreadId={redrawTarget.spreadId ?? ""}
+            spreadLabel={redrawLabel}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Story Header with step navigation ── */}
       <UnifiedStoryHeader
         storyId={story.id}
@@ -648,19 +622,12 @@ export default function MobileStudio({
                         className="w-full h-full object-cover"
                         draggable={false}
                       />
-                      <div
-                        className="absolute top-3 left-3 px-3 py-1.5 rounded-full text-xs font-bold text-white"
-                        style={{ background: "rgba(30,10,50,0.7)", backdropFilter: "blur(8px)" }}
-                      >
-                        Cover
-                      </div>
                     </div>
                   </div>
                 ) : (
                   <SpreadCard
                     spread={s as Spread}
-                    isGenerating={isGenerating}
-                    onFeedback={() => setFeedbackOpen(true)}
+                    isGenerating={isGenerating || regeneratingSpreads.has((s as Spread).id)}
                   />
                 )}
               </div>
@@ -669,9 +636,22 @@ export default function MobileStudio({
         </motion.div>
       </div>
 
+      {/* ── Info bar below the spread (page label + redraw) ── */}
+      {isCover ? (
+        <div className="flex items-center justify-center px-5 pt-3 pb-1">
+          <span className="text-xs font-bold" style={{ color: "#9B59D0" }}>
+            Cover
+          </span>
+        </div>
+      ) : currentSpread ? (
+        <SpreadInfoBar
+          spread={currentSpread}
+          onRedraw={() => setRedrawTarget(currentSpread)}
+        />
+      ) : null}
+
       {/* ── Navigation row: prev · dots · next ── */}
-      <div className="flex items-center justify-between px-6 py-4">
-        {/* Prev arrow */}
+      <div className="flex items-center justify-between px-6 py-3">
         <button
           onClick={() => snapTo(index - 1)}
           disabled={index === 0}
@@ -685,14 +665,12 @@ export default function MobileStudio({
           <ChevronLeft className="w-5 h-5" />
         </button>
 
-        {/* Dot indicators */}
         <DotProgress
           total={slides.length}
           current={index}
           onDotClick={snapTo}
         />
 
-        {/* Next arrow */}
         <button
           onClick={() => snapTo(index + 1)}
           disabled={index === slides.length - 1}
@@ -711,7 +689,6 @@ export default function MobileStudio({
 
       {/* ── Bottom actions ── */}
       <div className="px-4 pb-8 flex flex-col gap-3">
-        {/* Design Cover — only show when cover isn't done yet */}
         {!story.coverSpreadUrl && (
           <button
             onClick={() => router.push(`/stories/${story.id}/cover`)}
@@ -727,22 +704,10 @@ export default function MobileStudio({
           </button>
         )}
 
-        {/* Order Book — show when all illustrations + cover are done */}
         {allGenerated && story.coverSpreadUrl && (
           <OrderBookButton storyId={story.id} />
         )}
       </div>
-
-      {/* ── Feedback Sheet ── */}
-      <AnimatePresence>
-        {feedbackOpen && (
-          <FeedbackSheet
-            onClose={() => setFeedbackOpen(false)}
-            onSubmit={handleFeedback}
-            isSubmitting={isSubmittingFeedback}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }

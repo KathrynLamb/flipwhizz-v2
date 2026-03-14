@@ -219,7 +219,7 @@ function CharacterRow({
   const [showNewForm, setShowNewForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  async function handleSaveOutfit(outfitName: string, description: string, ) {
+  async function handleSaveOutfit(outfitName: string, description: string) {
     setIsSaving(true);
     try {
       const res = await fetch("/api/character-outfits/create", {
@@ -232,7 +232,6 @@ function CharacterRow({
           outfitDescription: description,
         }),
       });
-      
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -246,11 +245,8 @@ function CharacterRow({
         isDefault: false,
       };
 
-      // Notify parent to update the outfits list
       onOutfitCreated?.(newOutfit);
-      // Auto-select the new outfit
       onOutfitChange?.(newOutfit.outfitKey);
-
       setShowNewForm(false);
     } catch (err: any) {
       alert(err.message || "Failed to save outfit");
@@ -377,7 +373,6 @@ function CharacterRow({
                 </button>
               ))}
 
-              {/* + New Outfit button */}
               {!showNewForm && (
                 <button
                   onClick={() => setShowNewForm(true)}
@@ -388,7 +383,6 @@ function CharacterRow({
                 </button>
               )}
 
-              {/* New outfit form */}
               <AnimatePresence>
                 {showNewForm && (
                   <NewOutfitForm
@@ -620,7 +614,6 @@ export default function RedrawModal({
     setOutfitOverrides((prev) => ({ ...prev, [characterId]: outfitKey }));
   }
 
-  /** Add a newly created outfit to the correct character's availableOutfits */
   function handleOutfitCreated(characterId: string, outfit: OutfitOption) {
     if (!refs) return;
 
@@ -671,13 +664,23 @@ export default function RedrawModal({
   ).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+    <div
+      className="fixed inset-0 z-[60] flex items-end md:items-center justify-center p-0 md:p-6"
+      style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-hidden border border-gray-200/50 flex flex-col"
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 40 }}
+        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        className="bg-white shadow-2xl w-full md:max-w-xl md:rounded-2xl rounded-t-2xl overflow-hidden border border-gray-200/50 flex flex-col max-h-[92vh] md:max-h-[calc(100vh-48px)]"
       >
+        {/* ── Handle (mobile only) ── */}
+        <div className="flex justify-center pt-3 pb-1 md:hidden">
+          <div className="w-10 h-1 rounded-full bg-gray-300" />
+        </div>
+
         {/* ── Header ── */}
         <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center flex-shrink-0">
           <div>
@@ -698,7 +701,7 @@ export default function RedrawModal({
         </div>
 
         {/* ── Scrollable body ── */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 min-h-0">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
@@ -895,7 +898,7 @@ export default function RedrawModal({
             className="w-full px-4 py-2 rounded-xl border border-orange-300 text-orange-600 hover:bg-orange-50 transition-colors font-medium text-xs flex items-center justify-center gap-2"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            Fresh Start — regenerate from scratch (no feedback, no previous image)
+            Fresh Start — regenerate from scratch
           </button>
 
           <div className="flex gap-3">
