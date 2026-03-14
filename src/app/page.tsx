@@ -149,31 +149,26 @@ export default async function Home() {
       {/* ========================================
           HOW IT WORKS
           ======================================== */}
-      <section id="how-it-works" className="py-24 px-6 md:px-12 bg-[#FDF8F0]">
-  
-      <div className="relative w-full">
-          {/* Desktop */}
-          <div className="hidden md:block relative w-full" style={{ height: "min(75vh, 700px)" }}>
-            <Image
-              src="/LandingPage/HowItWorks.jpg"
-              alt="Big Imaginations Deserve Beautiful Books — create one-of-a-kind illustrated children's books about anything"
-              fill
-              priority
-              className="object-cover object-top"
-            />
-          </div>
-          {/* Mobile */}
-          <div className="md:hidden relative w-full" style={{ height: "min(65vh, 500px)" }}>
-            <Image
-              src="/LandingPage/hero-mobile.jpg"
-              alt="Big Imaginations Deserve Beautiful Books — create one-of-a-kind illustrated children's books about anything"
-              fill
-              priority
-              className="object-cover object-top"
-            />
-          </div>
-        </div>
-      </section>
+<section id="how-it-works" className="bg-white">
+  {/* Desktop */}
+  <div className="hidden md:block relative w-full" style={{ aspectRatio: "16 / 9" }}>
+    <Image
+      src="/LandingPage/how-it-works.jpg"
+      alt="How FlipWhizz works: 1. Share your idea, 2. We craft their story, 3. Hold it in your hands"
+      fill
+      className="object-contain"
+    />
+  </div>
+  {/* Mobile */}
+  <div className="md:hidden relative w-full" style={{ aspectRatio: "9 / 16" }}>
+    <Image
+      src="/LandingPage/how-it-works-mobile.jpg"
+      alt="How FlipWhizz works: 1. Share your idea, 2. We craft their story, 3. Hold it in your hands"
+      fill
+      className="object-contain"
+    />
+  </div>
+</section>
 
       {/* ========================================
           THIS IS OLIVIA'S BOOK
