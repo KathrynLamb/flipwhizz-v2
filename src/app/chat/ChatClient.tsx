@@ -3,13 +3,16 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
+import Link from "next/link";
 import { 
   Send, 
   Sparkles, 
   ArrowLeft,
   Loader2, 
   Zap,
-  BookOpen
+  BookOpen,
+  LogOut
 } from "lucide-react";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
@@ -29,50 +32,33 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   async function waitForPagesAndNavigate(storyId: string) {
-    console.log("🔄 Starting to poll for pages:", storyId);
-    
     for (let attempt = 0; attempt < 30; attempt++) {
       try {
-        console.log(`📡 Attempt ${attempt + 1}/30...`);
         const res = await fetch(`/api/stories/${storyId}/pages`);
         const data = await res.json();
-        
-        console.log("📦 Pages response:", data);
-  
         if (Array.isArray(data) && data.length > 0) {
-          console.log("✅ Pages found! Navigating...");
           router.push(`/stories/${storyId}/pages`);
           return;
         }
       } catch (err) {
-        console.error("❌ Polling error:", err);
+        console.error("Polling error:", err);
       }
-  
       await new Promise((r) => setTimeout(r, 1000));
     }
-  
-    console.error("⏰ Timed out waiting for pages");
-    // Fallback: navigate anyway
     router.push(`/stories/${storyId}/pages`);
   }
 
-  // Initial Load
   useEffect(() => {
     async function initializeStudio() {
       if (!projectId) return;
-
       try {
         const chatRes = await fetch(`/api/chat/history?projectId=${projectId}`);
         const chatData = await chatRes.json();
-        if (chatData.messages) {
-          setMessages(chatData.messages);
-        }
+        if (chatData.messages) setMessages(chatData.messages);
 
         const storyRes = await fetch(`/api/stories/by-project?projectId=${projectId}`);
         const storyData = await storyRes.json();
-        if (storyData.storyId) {
-          await waitForPagesAndNavigate(storyData.storyId);
-        }
+        if (storyData.storyId) await waitForPagesAndNavigate(storyData.storyId);
       } catch (err) {
         console.error("Studio sync failed:", err);
       } finally {
@@ -82,7 +68,6 @@ export default function ChatPage() {
     initializeStudio();
   }, [projectId, router]);
 
-  // Auto-scroll
   useEffect(() => {
     if (projectId && messages.length > 0) {
       localStorage.setItem(`chat_backup_${projectId}`, JSON.stringify(messages));
@@ -92,7 +77,6 @@ export default function ChatPage() {
     }, 100);
   }, [messages, projectId]);
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -102,15 +86,12 @@ export default function ChatPage() {
 
   async function sendMessage() {
     if (!input.trim() || loading) return;
-
     const text = input.trim();
     const userMessage: ChatMsg = { role: "user", content: text };
     const nextHistory = [...messages, userMessage];
-
     setMessages(nextHistory);
     setInput("");
     setLoading(true);
-
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     try {
@@ -119,14 +100,8 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, history: nextHistory, projectId }),
       });
-
       const data = await res.json();
-      const assistantMessage: ChatMsg = {
-        role: "assistant",
-        content: data.reply ?? "Hmm, let me think about that again...",
-      };
-
-      setMessages((m) => [...m, assistantMessage]);
+      setMessages((m) => [...m, { role: "assistant", content: data.reply ?? "Hmm, let me think about that again..." }]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -137,16 +112,13 @@ export default function ChatPage() {
   async function createStoryFromChat() {
     if (!projectId || storyCreating) return;
     setStoryCreating(true);
-  
     try {
       const res = await fetch("/api/stories/create-from-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId }),
       });
-  
       const data = await res.json();
-  
       if (data.storyId) {
         setStoryId(data.storyId);
         await waitForPagesAndNavigate(data.storyId);
@@ -167,17 +139,19 @@ export default function ChatPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       
-      {/* Top Bar - iOS Style */}
+      {/* Top Bar */}
       <div className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200/50">
         <div className="px-4 py-3 flex items-center justify-between">
+          {/* Back to stories */}
           <button
             onClick={() => router.push("/projects")}
-            className="flex items-center gap-2 text-purple-600 active:opacity-60 transition-opacity font-semibold text-[15px] min-h-[44px] -ml-2 pl-2 pr-3"
+            className="flex items-center gap-1.5 active:opacity-60 transition-opacity font-semibold text-[15px] min-h-[44px] -ml-2 pl-2 pr-3"
+            style={{ color: "#D94590" }}
           >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Projects</span>
+                   <Image src="/Flipwhizz_logo_NEW.png" alt="/" width={150} height={150} />
           </button>
 
+          {/* Centre: Logo + Story Studio */}
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
             {isSyncing ? (
               <>
@@ -186,11 +160,16 @@ export default function ChatPage() {
               </>
             ) : (
               <>
-                <div className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-sm font-semibold text-gray-900">Story Studio</span>
+
+                <span className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+                  Story Studio
+                </span>
               </>
             )}
           </div>
+
+          {/* Right spacer */}
+          <div className="w-16" />
         </div>
       </div>
 
@@ -256,7 +235,6 @@ export default function ChatPage() {
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 {msg.role === "user" ? (
-                  // User Message - iMessage Style
                   <div className="max-w-[85%]">
                     <div className="bg-purple-500 text-white px-5 py-3 rounded-[20px] rounded-tr-[4px] shadow-sm">
                       <p className="text-[16px] leading-[1.4] font-normal whitespace-pre-wrap break-words">
@@ -265,7 +243,6 @@ export default function ChatPage() {
                     </div>
                   </div>
                 ) : (
-                  // AI Message - Wider, cleaner design
                   <div className="max-w-[85%]">
                     <div className="flex gap-2 items-end">
                       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center flex-shrink-0 shadow-sm">
@@ -293,21 +270,9 @@ export default function ChatPage() {
                   <Sparkles className="w-4 h-4 text-white" />
                 </div>
                 <div className="bg-white px-5 py-3 rounded-[20px] rounded-bl-[4px] shadow-sm border border-gray-100 flex gap-1.5">
-                  <motion.div 
-                    animate={{ y: [0, -4, 0] }} 
-                    transition={{ repeat: Infinity, duration: 0.6, delay: 0 }}
-                    className="w-2 h-2 bg-gray-400 rounded-full" 
-                  />
-                  <motion.div 
-                    animate={{ y: [0, -4, 0] }} 
-                    transition={{ repeat: Infinity, duration: 0.6, delay: 0.1 }}
-                    className="w-2 h-2 bg-gray-400 rounded-full" 
-                  />
-                  <motion.div 
-                    animate={{ y: [0, -4, 0] }} 
-                    transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }}
-                    className="w-2 h-2 bg-gray-400 rounded-full" 
-                  />
+                  <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0 }} className="w-2 h-2 bg-gray-400 rounded-full" />
+                  <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.1 }} className="w-2 h-2 bg-gray-400 rounded-full" />
+                  <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }} className="w-2 h-2 bg-gray-400 rounded-full" />
                 </div>
               </motion.div>
             )}
@@ -330,19 +295,8 @@ export default function ChatPage() {
             <button
               onClick={createStoryFromChat}
               disabled={storyCreating}
-              className="
-                w-full
-                bg-gradient-to-r from-purple-500 to-pink-500
-                text-white rounded-2xl
-                px-6 py-4
-                font-bold text-[17px]
-                shadow-lg
-                active:scale-[0.98]
-                transition-transform
-                disabled:opacity-60
-                flex items-center justify-center gap-3
-                min-h-[56px]
-              "
+              className="w-full text-white rounded-2xl px-6 py-4 font-bold text-[17px] shadow-lg active:scale-[0.98] transition-transform disabled:opacity-60 flex items-center justify-center gap-3 min-h-[56px]"
+              style={{ background: "#D94590", boxShadow: "0 8px 28px rgba(217,69,144,0.3)" }}
             >
               {storyCreating ? (
                 <>
@@ -361,7 +315,7 @@ export default function ChatPage() {
         </motion.div>
       )}
 
-      {/* Input Area - iMessage Style */}
+      {/* Input Area */}
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border-t border-gray-200/50">
         <div className="px-4 py-3">
           <div className="max-w-2xl mx-auto">
@@ -369,7 +323,7 @@ export default function ChatPage() {
             {/* Progress Indicator */}
             {messages.length > 0 && messages.length < 3 && (
               <div className="mb-2 px-1">
-                <div className="flex items-center gap-2 text-xs font-semibold text-purple-600">
+                <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: "#D94590" }}>
                   <Zap className="w-3.5 h-3.5" />
                   <span>{3 - messages.length} more message{3 - messages.length !== 1 ? 's' : ''} to unlock book creation</span>
                 </div>
@@ -377,7 +331,6 @@ export default function ChatPage() {
             )}
 
             <div className="flex items-end gap-2">
-              {/* Text Input */}
               <div className="flex-1 bg-gray-100 rounded-[20px] min-h-[44px] flex items-center px-4 py-2">
                 <textarea
                   ref={textareaRef}
@@ -390,29 +343,21 @@ export default function ChatPage() {
                     }
                   }}
                   placeholder="Message"
-                  className="
-                    w-full max-h-[100px] bg-transparent border-0 
-                    focus:ring-0 focus:outline-none
-                    text-[16px] text-gray-900 placeholder:text-gray-500
-                    resize-none font-normal
-                  "
+                  className="w-full max-h-[100px] bg-transparent border-0 focus:ring-0 focus:outline-none text-[16px] text-gray-900 placeholder:text-gray-500 resize-none font-normal"
                   rows={1}
                   style={{ lineHeight: '1.4' }}
                 />
               </div>
               
-              {/* Send Button */}
               <button
                 onClick={sendMessage}
                 disabled={!input.trim() || loading}
-                className={`
-                  w-11 h-11 rounded-full flex-shrink-0
-                  flex items-center justify-center
-                  transition-all duration-200
-                  ${input.trim() 
-                    ? "bg-purple-500 text-white active:scale-90 shadow-md" 
-                    : "bg-gray-200 text-gray-400"}
-                `}
+                className="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center transition-all duration-200 active:scale-90"
+                style={{
+                  background: input.trim() ? "#D94590" : "#E5E7EB",
+                  color: input.trim() ? "white" : "#9CA3AF",
+                  boxShadow: input.trim() ? "0 3px 12px rgba(217,69,144,0.3)" : "none",
+                }}
               >
                 {loading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -423,8 +368,6 @@ export default function ChatPage() {
             </div>
           </div>
         </div>
-
-        {/* Safe area spacing for iOS */}
         <div className="h-[env(safe-area-inset-bottom)]" />
       </div>
     </div>
