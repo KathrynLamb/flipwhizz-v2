@@ -530,6 +530,7 @@ Create a seamless, professional children's book wrap-around cover now.
     console.log(
       "📦 Parts being sent to Gemini:",
       parts.map((p, i) => ({
+        p,
         index: i,
         type: p.text ? "text" : p.inlineData ? "image" : "unknown",
         preview: p.text ? p.text.substring(0, 100).replace(/\n/g, " ") : `image/${p.inlineData?.mimeType}`,
