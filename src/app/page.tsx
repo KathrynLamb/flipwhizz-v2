@@ -28,9 +28,6 @@ export default async function Home() {
     : [];
   const coverByStoryId = new Map(selectedCovers.map((c) => [c.storyId, c.imageUrl]));
 
-  if (!session?.user?.id) {
-    return <main className="min-h-screen bg-white" />;
-  }
 
   let hasProjects = false;
   if (session?.user?.id) {
