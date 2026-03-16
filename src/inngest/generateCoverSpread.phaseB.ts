@@ -12,7 +12,7 @@ import {
   storyLocations,
   bookCovers,
 } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, inArray } from "drizzle-orm";
 import { v2 as cloudinary } from "cloudinary";
 import { Readable } from "node:stream";
 import { v4 as uuid } from "uuid";
@@ -37,6 +37,9 @@ type CoverPlan = {
     dedicationText?: string;
     visualIntent: string;
   };
+
+  coverCharacterIds?: string[];
+  coverLocationIds?: string[];
 
   constraints?: {
     noTextOutsideSafeZones?: boolean;
@@ -84,25 +87,11 @@ const LOGO_PATH = path.resolve(
 function assertCoverPlan(
   plan: CoverPlan | null | undefined
 ): asserts plan is CoverPlan {
-  if (!plan) {
-    throw new Error("Missing coverPlan");
-  }
-
-  if (plan.format !== "wrap-spread") {
-    throw new Error("coverPlan.format must be 'wrap-spread'");
-  }
-
-  if (!plan.front?.titleText || !plan.front?.visualIntent) {
-    throw new Error("Invalid coverPlan.front");
-  }
-
-  if (!plan.spine?.spineText) {
-    throw new Error("Invalid coverPlan.spine");
-  }
-
-  if (!plan.back?.visualIntent) {
-    throw new Error("Invalid coverPlan.back");
-  }
+  if (!plan) throw new Error("Missing coverPlan");
+  if (plan.format !== "wrap-spread") throw new Error("coverPlan.format must be 'wrap-spread'");
+  if (!plan.front?.titleText || !plan.front?.visualIntent) throw new Error("Invalid coverPlan.front");
+  if (!plan.spine?.spineText) throw new Error("Invalid coverPlan.spine");
+  if (!plan.back?.visualIntent) throw new Error("Invalid coverPlan.back");
 }
 
 function isDataUrl(value: string) {
@@ -118,22 +107,12 @@ function guessMimeType(file: string) {
 
 async function getImagePart(source: string) {
   if (isDataUrl(source)) {
-    throw new Error(
-      "❌ getImagePart received a data URL. " +
-        "Only file paths or http(s) URLs are allowed."
-    );
+    throw new Error("❌ getImagePart received a data URL. Only file paths or http(s) URLs are allowed.");
   }
-
   const buffer = source.startsWith("http")
     ? Buffer.from(await (await fetch(source)).arrayBuffer())
     : await fs.readFile(source);
-
-  return {
-    inlineData: {
-      data: buffer.toString("base64"),
-      mimeType: guessMimeType(source),
-    },
-  };
+  return { inlineData: { data: buffer.toString("base64"), mimeType: guessMimeType(source) } };
 }
 
 function extractInlineImage(result: any) {
@@ -144,22 +123,15 @@ function extractInlineImage(result: any) {
 
 async function uploadToCloudinary(base64: string, storyId: string) {
   const buffer = Buffer.from(base64, "base64");
-
   return new Promise<string>((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: `flipwhizz/stories/${storyId}/covers`,
-        filename_override: uuid(),
-        resource_type: "image",
-        timeout: 60000,
-      },
+      { folder: `flipwhizz/stories/${storyId}/covers`, filename_override: uuid(), resource_type: "image", timeout: 60000 },
       (err, res) => {
         if (err) return reject(err);
         if (!res?.secure_url) return reject(new Error("Cloudinary returned no URL"));
         resolve(res.secure_url);
       }
     );
-
     Readable.from(buffer).pipe(stream);
   });
 }
@@ -168,31 +140,15 @@ async function uploadToCloudinary(base64: string, storyId: string) {
 /*                          STYLE GUIDE RESOLUTION                            */
 /* -------------------------------------------------------------------------- */
 
-type ColorPalette = {
-  primary?: string;
-  secondary?: string;
-  accent?: string;
-  mood?: string;
-  hex?: string[];
-};
+type ColorPalette = { primary?: string; secondary?: string; accent?: string; mood?: string; hex?: string[] };
+type ResolvedStyleGuide = { geminiStyleBlock: string; geminiAvoidBlock: string; typographyBlock: string };
 
-type ResolvedStyleGuide = {
-  geminiStyleBlock: string;
-  geminiAvoidBlock: string;
-  typographyBlock: string;
-};
-
-function resolveStyleGuide(
-  style: typeof storyStyleGuide.$inferSelect | null | undefined
-): ResolvedStyleGuide {
+function resolveStyleGuide(style: typeof storyStyleGuide.$inferSelect | null | undefined): ResolvedStyleGuide {
   if (!style) {
     return {
-      geminiStyleBlock:
-        "Whimsical, warm children's book illustration, storybook quality",
-      geminiAvoidBlock:
-        "Photorealism, CGI, harsh shadows, watermarks, guide lines, template markers, barcodes, ISBN numbers",
-      typographyBlock:
-        "Large, child-friendly hand-lettered text with excellent contrast",
+      geminiStyleBlock: "Whimsical, warm children's book illustration, storybook quality",
+      geminiAvoidBlock: "Photorealism, CGI, harsh shadows, watermarks, guide lines, template markers, barcodes, ISBN numbers",
+      typographyBlock: "Large, child-friendly hand-lettered text with excellent contrast",
     };
   }
 
@@ -202,59 +158,27 @@ function resolveStyleGuide(
   const colorPalette = style.colorPalette as ColorPalette | null;
 
   const styleLines: string[] = [];
-
   if (promptBase) {
     styleLines.push(promptBase);
   } else {
-    styleLines.push(
-      artStyle
-        ? `${artStyle}, children's book illustration, storybook quality`
-        : "Whimsical, warm children's book illustration, storybook quality"
-    );
+    styleLines.push(artStyle ? `${artStyle}, children's book illustration, storybook quality` : "Whimsical, warm children's book illustration, storybook quality");
   }
-
-  if (artStyle) {
-    styleLines.push(`Art style: ${artStyle}`);
-  }
-
+  if (artStyle) styleLines.push(`Art style: ${artStyle}`);
   if (colorPalette?.primary) {
-    const paletteNames = [
-      colorPalette.primary,
-      colorPalette.secondary,
-      colorPalette.accent,
-    ]
-      .filter(Boolean)
-      .join(", ");
-
+    const paletteNames = [colorPalette.primary, colorPalette.secondary, colorPalette.accent].filter(Boolean).join(", ");
     styleLines.push(`Colour palette: ${paletteNames}`);
-
-    if (colorPalette.hex?.length) {
-      styleLines.push(`Exact palette hex values: ${colorPalette.hex.join(", ")}`);
-    }
-
-    if (colorPalette.mood) {
-      styleLines.push(`Palette mood: ${colorPalette.mood}`);
-    }
+    if (colorPalette.hex?.length) styleLines.push(`Exact palette hex values: ${colorPalette.hex.join(", ")}`);
+    if (colorPalette.mood) styleLines.push(`Palette mood: ${colorPalette.mood}`);
   }
 
   const avoidParts: string[] = [];
-
-  if (negativePrompt) {
-    avoidParts.push(negativePrompt);
-  }
-
-  avoidParts.push(
-    "Watermarks, guide lines, template markers, text boxes, UI elements, borders, barcodes, ISBN numbers, barcode-like patterns"
-  );
-
-  const typographyBlock =
-    style.typography?.trim() ??
-    "Large, child-friendly hand-lettered text with excellent contrast";
+  if (negativePrompt) avoidParts.push(negativePrompt);
+  avoidParts.push("Watermarks, guide lines, template markers, text boxes, UI elements, borders, barcodes, ISBN numbers, barcode-like patterns");
 
   return {
     geminiStyleBlock: styleLines.join("\n"),
     geminiAvoidBlock: avoidParts.join(", "),
-    typographyBlock,
+    typographyBlock: style.typography?.trim() ?? "Large, child-friendly hand-lettered text with excellent contrast",
   };
 }
 
@@ -263,11 +187,7 @@ function resolveStyleGuide(
 /* -------------------------------------------------------------------------- */
 
 export const generateCoverSpreadPhaseB = inngest.createFunction(
-  {
-    id: "generate-cover-spread-phase-b",
-    retries: 1,
-    concurrency: 1,
-  },
+  { id: "generate-cover-spread-phase-b", retries: 1, concurrency: 1 },
   { event: "story/generate.cover.spread" },
   async ({ event, step }) => {
     const { storyId } = event.data;
@@ -278,15 +198,19 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
     -------------------------------------------------- */
 
     const story = await step.run("load-story", async () =>
-      db.query.stories.findFirst({
-        where: eq(stories.id, storyId),
-      })
+      db.query.stories.findFirst({ where: eq(stories.id, storyId) })
     );
-
     if (!story) throw new Error("Story not found");
 
     const coverPlan = story.coverPlan as CoverPlan | null;
     assertCoverPlan(coverPlan);
+
+    // Extract cover-specific character/location IDs from the plan
+    const planCharIds = Array.isArray(coverPlan.coverCharacterIds) ? coverPlan.coverCharacterIds : [];
+    const planLocIds = Array.isArray(coverPlan.coverLocationIds) ? coverPlan.coverLocationIds : [];
+
+    console.log("📋 Cover plan character IDs:", planCharIds);
+    console.log("📋 Cover plan location IDs:", planLocIds);
 
     /* --------------------------------------------------
        2. STYLE GUIDE + RESOLVE
@@ -295,9 +219,7 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
     const style = await db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),
     });
-
-    const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } =
-      resolveStyleGuide(style);
+    const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } = resolveStyleGuide(style);
 
     console.log("🎨 Style guide resolved:", {
       hasPromptBase: !!style?.userNotes,
@@ -310,43 +232,84 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
 
     /* --------------------------------------------------
        3. CHARACTER + LOCATION REFERENCES
+       
+       If coverCharacterIds are specified in the plan,
+       ONLY load those characters. Otherwise load all.
     -------------------------------------------------- */
 
-    const chars = await db
-      .select({
-        name: characters.name,
-        imageUrl: sql<string>`
-          COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})
-        `,
-        appearance: characters.appearance,
-      })
-      .from(storyCharacters)
-      .innerJoin(characters, eq(storyCharacters.characterId, characters.id))
-      .where(eq(storyCharacters.storyId, storyId));
+    let chars: { id: string; name: string; imageUrl: string | null; appearance: string | null }[];
 
-    const location = await db
-      .select({
-        name: locations.name,
-        imageUrl: sql<string>`
-          COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})
-        `,
-        description: locations.description,
-      })
-      .from(storyLocations)
-      .innerJoin(locations, eq(storyLocations.locationId, locations.id))
-      .where(eq(storyLocations.storyId, storyId))
-      .limit(1)
-      .then((r) => r[0]);
+    if (planCharIds.length > 0) {
+      // Load ONLY the characters specified in the cover plan
+      chars = await db
+        .select({
+          id: characters.id,
+          name: characters.name,
+          imageUrl: sql<string>`COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})`,
+          appearance: characters.appearance,
+        })
+        .from(characters)
+        .where(inArray(characters.id, planCharIds));
+
+      console.log(`🎭 Loading ${planCharIds.length} specific cover characters (from plan)`);
+    } else {
+      // Fallback: load all characters linked to the story
+      chars = await db
+        .select({
+          id: characters.id,
+          name: characters.name,
+          imageUrl: sql<string>`COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})`,
+          appearance: characters.appearance,
+        })
+        .from(storyCharacters)
+        .innerJoin(characters, eq(storyCharacters.characterId, characters.id))
+        .where(eq(storyCharacters.storyId, storyId));
+
+      console.log(`🎭 Loading ALL ${chars.length} story characters (no plan filter)`);
+    }
+
+    // Load location — filtered if plan specifies, otherwise first story location
+    let locationRef: { name: string; imageUrl: string | null; description: string | null } | null = null;
+
+    if (planLocIds.length > 0) {
+      const loc = await db
+        .select({
+          name: locations.name,
+          imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
+          description: locations.description,
+        })
+        .from(locations)
+        .where(inArray(locations.id, planLocIds))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (loc) locationRef = loc;
+      console.log("🗺️ Loading specific cover location:", loc?.name ?? "NOT FOUND");
+    } else {
+      const loc = await db
+        .select({
+          name: locations.name,
+          imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
+          description: locations.description,
+        })
+        .from(storyLocations)
+        .innerJoin(locations, eq(storyLocations.locationId, locations.id))
+        .where(eq(storyLocations.storyId, storyId))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (loc) locationRef = loc;
+      console.log("🗺️ Loading first story location (no plan filter):", loc?.name ?? "NONE");
+    }
 
     console.log("🎭 Characters for cover:", chars.map((c) => ({
+      id: c.id,
       name: c.name,
       hasImage: !!c.imageUrl && !isDataUrl(c.imageUrl),
     })));
 
     console.log("🗺️ Location for cover:",
-      location
-        ? { name: location.name, hasImage: !!location.imageUrl && !isDataUrl(location.imageUrl) }
-        : "NONE"
+      locationRef ? { name: locationRef.name, hasImage: !!locationRef.imageUrl && !isDataUrl(locationRef.imageUrl!) } : "NONE"
     );
 
     /* --------------------------------------------------
@@ -398,10 +361,7 @@ DO NOT:
     });
 
     // ── 2️⃣ STYLE REFERENCE IMAGE (if available) ────────────────────────
-    if (
-      style?.sampleIllustrationUrl &&
-      !isDataUrl(style.sampleIllustrationUrl)
-    ) {
+    if (style?.sampleIllustrationUrl && !isDataUrl(style.sampleIllustrationUrl)) {
       try {
         parts.push(await getImagePart(style.sampleIllustrationUrl));
         parts.push({
@@ -430,12 +390,12 @@ Do NOT import a different style — stay true to this reference above all else.
     }
 
     // ── 3️⃣ LOCATION REFERENCE (if available) ───────────────────────────
-    if (location?.imageUrl && !isDataUrl(location.imageUrl)) {
+    if (locationRef?.imageUrl && !isDataUrl(locationRef.imageUrl)) {
       try {
-        parts.push(await getImagePart(location.imageUrl));
+        parts.push(await getImagePart(locationRef.imageUrl));
         parts.push({
           text: `
-↑ THIS IS THE SETTING REFERENCE (${location.name.toUpperCase()}) ↑
+↑ THIS IS THE SETTING REFERENCE (${locationRef.name.toUpperCase()}) ↑
 Use this environment as inspiration for the cover's background and atmosphere.
 Match the visual tone and setting details.
 `.trim(),
@@ -447,7 +407,16 @@ Match the visual tone and setting details.
 
     // ── 4️⃣ CHARACTER REFERENCES ────────────────────────────────────────
     for (const c of chars) {
-      if (!c.imageUrl || isDataUrl(c.imageUrl)) continue;
+      if (!c.imageUrl || isDataUrl(c.imageUrl)) {
+        // No image — include text description as fallback
+        if (c.appearance) {
+          parts.push({
+            text: `CHARACTER: ${c.name.toUpperCase()}\nAppearance: ${c.appearance}\n(No reference image available — use this description to draw the character)`,
+          });
+          console.log(`⚠️ ${c.name}: no image, using text description`);
+        }
+        continue;
+      }
 
       try {
         parts.push(await getImagePart(c.imageUrl));
@@ -458,6 +427,7 @@ Match this character's face, hair colour, eye colour, skin tone, and body type E
 Use appropriate clothing for a book cover — the character should look their best.
 `.trim(),
         });
+        console.log(`✅ ${c.name}: reference image included`);
       } catch (err) {
         console.warn(`⚠️ Could not load character image for ${c.name}:`, err);
       }
@@ -562,9 +532,7 @@ Create a seamless, professional children's book wrap-around cover now.
       parts.map((p, i) => ({
         index: i,
         type: p.text ? "text" : p.inlineData ? "image" : "unknown",
-        preview: p.text
-          ? p.text.substring(0, 80).replace(/\n/g, " ")
-          : `image/${p.inlineData?.mimeType}`,
+        preview: p.text ? p.text.substring(0, 100).replace(/\n/g, " ") : `image/${p.inlineData?.mimeType}`,
       }))
     );
 
@@ -577,27 +545,12 @@ Create a seamless, professional children's book wrap-around cover now.
       contents: [{ role: "user", parts }],
       config: {
         responseModalities: ["IMAGE"],
-        imageConfig: {
-          aspectRatio: ASPECT_RATIO,
-          imageSize: IMAGE_SIZE,
-        },
+        imageConfig: { aspectRatio: ASPECT_RATIO, imageSize: IMAGE_SIZE },
         safetySettings: [
-          {
-            category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-            threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-          },
-          {
-            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-            threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-          },
-          {
-            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-            threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-          },
-          {
-            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-            threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-          },
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
         ],
       },
     });
@@ -612,31 +565,25 @@ Create a seamless, professional children's book wrap-around cover now.
     const url = await uploadToCloudinary(image.data, storyId);
 
     await db.transaction(async (tx) => {
-      await tx
-        .update(bookCovers)
-        .set({ isSelected: false })
-        .where(eq(bookCovers.storyId, storyId));
-
+      await tx.update(bookCovers).set({ isSelected: false }).where(eq(bookCovers.storyId, storyId));
       await tx.insert(bookCovers).values({
-        id: uuid(),
-        storyId,
-        imageUrl: url,
-        promptUsed: JSON.stringify(coverPlan),
-        isSelected: true,
-        createdAt: new Date(),
+        id: uuid(), storyId, imageUrl: url, promptUsed: JSON.stringify(coverPlan), isSelected: true, createdAt: new Date(),
       });
-
-      await tx
-        .update(stories)
-        .set({
-          coverSpreadUrl: url,
-          updatedAt: new Date(),
-        })
-        .where(eq(stories.id, storyId));
+      await tx.update(stories).set({ coverSpreadUrl: url, updatedAt: new Date() }).where(eq(stories.id, storyId));
     });
 
     console.log("✅ Cover generated and saved:", url);
 
-    return { success: true, coverUrl: url };
+    return {
+      success: true,
+      coverUrl: url,
+      debug: {
+        charsUsed: chars.map(c => ({ name: c.name, hasImage: !!c.imageUrl && !isDataUrl(c.imageUrl) })),
+        locationUsed: locationRef?.name ?? "none",
+        planCharIds,
+        planLocIds,
+        partsCount: parts.length,
+      },
+    };
   }
 );

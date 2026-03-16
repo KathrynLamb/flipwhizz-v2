@@ -67,6 +67,9 @@ export default function PhotoSuggestions({
     analysis.suggestions?.outfitStyle || "reference_photo"
   );
 
+  const [accepted, setAccepted] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
   if (analysis.status === "pending") {
     return (
       <motion.div
@@ -94,8 +97,8 @@ export default function PhotoSuggestions({
   const suggestions = analysis.suggestions;
   const hasDescriptionSuggestion = !!suggestions.enrichedDescription;
 
-  const [accepted, setAccepted] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  // const [accepted, setAccepted] = useState(false);
+  // const [generating, setGenerating] = useState(false);
 
   async function handleAccept() {
     setSaving(true);

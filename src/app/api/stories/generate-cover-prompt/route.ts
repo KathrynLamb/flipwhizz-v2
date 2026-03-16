@@ -43,7 +43,7 @@ function buildWorldContext(
   if (chars.length > 0) {
     lines.push("AVAILABLE CHARACTERS:");
     for (const c of chars) {
-      lines.push(`- ${c.name} (${c.role ?? "character"})`);
+      lines.push(`- ${c.name} (${c.role ?? "character"}) [ID: ${c.id}]`);
       if (c.appearance) lines.push(`  Appearance: ${c.appearance}`);
       if (c.description) lines.push(`  Description: ${c.description}`);
       if (c.outfits?.length) {
@@ -68,7 +68,7 @@ function buildWorldContext(
     lines.push("AVAILABLE LOCATIONS:");
     for (const l of locs) {
       lines.push(
-        `- ${l.name}${l.significance ? ` (${l.significance})` : ""}`
+        `- ${l.name}${l.significance ? ` (${l.significance})` : ""} [ID: ${l.id}]`
       );
       if (l.description) lines.push(`  ${l.description}`);
     }
@@ -110,6 +110,11 @@ When the user refers to characters or locations by name, use the AVAILABLE CHARA
 and AVAILABLE LOCATIONS above to understand who/what they mean. The visualIntent
 fields should describe these characters/locations accurately based on the data above.
 
+IMPORTANT: Include coverCharacterIds and coverLocationIds arrays with the EXACT IDs
+of the characters and locations that should appear on the cover. These IDs are shown
+in square brackets next to each character/location name above. Only include characters
+and locations that were explicitly agreed upon in the conversation.
+
 OUTPUT JSON ONLY. NO MARKDOWN. NO COMMENTS.
 
 STRICT FORMAT:
@@ -133,8 +138,11 @@ STRICT FORMAT:
     "visualIntent": "short description of visual treatment on the BACK cover"
   },
 
+  "coverCharacterIds": ["id-of-character-1", "id-of-character-2"],
+  "coverLocationIds": ["id-of-location-1"],
+
   "constraints": {
-    "noTextOutsideSafeZones": true,
+    "noTextOutsideSafeZones": true
   },
 
   "reasoning": "brief explanation of choices (optional)"
@@ -147,6 +155,9 @@ RULES:
 - If no back text was requested, OMIT blurbText and dedicationText
 - visualIntent describes imagery ONLY — not layout, typography, or positioning
 - When describing characters in visualIntent, include their appearance details from the character data above
+- coverCharacterIds MUST contain the IDs of ONLY the characters that should appear on the cover
+- coverLocationIds MUST contain the IDs of ONLY the locations that should appear on the cover
+- If no specific location was discussed, use an empty array for coverLocationIds
 
 This JSON will be saved and LOCKED before image generation.
 `.trim();
@@ -212,6 +223,8 @@ export async function POST(req: Request) {
       feedback,
       characters: chars,
       locations: locs,
+      coverCharacterIds: clientCharIds,
+      coverLocationIds: clientLocIds,
     } = await req.json();
 
     if (!storyId || !Array.isArray(conversationHistory)) {
@@ -234,22 +247,20 @@ export async function POST(req: Request) {
       );
     }
 
-    // Build world context from client-provided data (or empty if not sent)
     const worldContext = buildWorldContext(chars ?? [], locs ?? []);
 
     /* ----------------------------- FINALISE PLAN ---------------------------- */
 
-    if (mode === "generate") {
+    if (mode === "generate" || mode === "regenerate") {
+      const userContent = mode === "regenerate"
+        ? `Previous conversation:\n${JSON.stringify(conversationHistory)}\n\nUser feedback for regeneration: "${feedback ?? ""}"`
+        : JSON.stringify(conversationHistory);
+
       const completion = await client.messages.create({
         model: "claude-sonnet-4-20250514",
         system: buildCoverPlanSystemPrompt(story, worldContext),
         max_tokens: 1200,
-        messages: [
-          {
-            role: "user",
-            content: JSON.stringify(conversationHistory),
-          },
-        ],
+        messages: [{ role: "user", content: userContent }],
       });
 
       const raw =
@@ -269,54 +280,27 @@ export async function POST(req: Request) {
         );
       }
 
-      await db
-        .update(stories)
-        .set({
-          coverPlan,
-          coverPlanLocked: true,
-          updatedAt: new Date(),
-        })
-        .where(eq(stories.id, storyId));
-
-      return NextResponse.json({
-        success: true,
-        coverPlan,
-      });
-    }
-
-    /* ------------------------------- REGENERATE ------------------------------ */
-
-    if (mode === "regenerate") {
-      const completion = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        system: buildCoverPlanSystemPrompt(story, worldContext),
-        max_tokens: 1200,
-        messages: [
-          {
-            role: "user",
-            content: `Previous conversation:\n${JSON.stringify(
-              conversationHistory
-            )}\n\nUser feedback for regeneration: "${feedback ?? ""}"`,
-          },
-        ],
-      });
-
-      const raw =
-        completion.content.find((b) => b.type === "text")?.text ?? "";
-
-      let coverPlan: any;
-      try {
-        const match =
-          raw.match(/```json\s*([\s\S]*?)\s*```/) ||
-          raw.match(/\{[\s\S]*\}/);
-        coverPlan = JSON.parse(match ? match[1] || match[0] : raw);
-      } catch (err) {
-        console.error("❌ Failed to parse regenerated cover plan:", raw);
-        return NextResponse.json(
-          { error: "Failed to parse cover plan" },
-          { status: 500 }
-        );
+      // Merge client-side IDs as fallback if Claude didn't include them
+      if (!Array.isArray(coverPlan.coverCharacterIds) || coverPlan.coverCharacterIds.length === 0) {
+        if (Array.isArray(clientCharIds) && clientCharIds.length > 0) {
+          coverPlan.coverCharacterIds = clientCharIds;
+          console.log("📌 Using client-provided coverCharacterIds:", clientCharIds);
+        }
+      } else {
+        console.log("📌 Using Claude-extracted coverCharacterIds:", coverPlan.coverCharacterIds);
       }
+
+      if (!Array.isArray(coverPlan.coverLocationIds) || coverPlan.coverLocationIds.length === 0) {
+        if (Array.isArray(clientLocIds) && clientLocIds.length > 0) {
+          coverPlan.coverLocationIds = clientLocIds;
+          console.log("📌 Using client-provided coverLocationIds:", clientLocIds);
+        }
+      } else {
+        console.log("📌 Using Claude-extracted coverLocationIds:", coverPlan.coverLocationIds);
+      }
+
+      console.log("📋 Final cover plan character IDs:", coverPlan.coverCharacterIds ?? []);
+      console.log("📋 Final cover plan location IDs:", coverPlan.coverLocationIds ?? []);
 
       await db
         .update(stories)

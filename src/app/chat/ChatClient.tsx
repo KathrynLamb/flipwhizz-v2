@@ -54,6 +54,7 @@ export default function ChatPage() {
       try {
         const chatRes = await fetch(`/api/chat/history?projectId=${projectId}`);
         const chatData = await chatRes.json();
+
         if (chatData.messages) setMessages(chatData.messages);
 
         const storyRes = await fetch(`/api/stories/by-project?projectId=${projectId}`);
@@ -161,7 +162,7 @@ export default function ChatPage() {
             ) : (
               <>
 
-                <span className="md:hidden text-lg font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+                <span className=" text-lg font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
                   Story Studio
                 </span>
               </>
