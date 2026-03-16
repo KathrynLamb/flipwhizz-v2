@@ -3,5 +3,14 @@
       "src/app/api/stories/[id]/export-complete/route.ts": {
         "maxDuration": 60
       }
-    }
+    },
+    "redirects": [
+      {
+        "source": "/:path*",
+        "has": [{ "type": "host", "value": "www.flipwhizz.com" }],
+        "destination": "https://flipwhizz.com/:path*",
+        "permanent": true
+      }
+    ]
+
   }

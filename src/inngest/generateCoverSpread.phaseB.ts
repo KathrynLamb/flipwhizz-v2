@@ -313,6 +313,7 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
       id: c.id,
       name: c.name,
       hasImage: !!c.imageUrl && !isDataUrl(c.imageUrl),
+      imageAddress: c.imageUrl,
     })));
 
     console.log("🗺️ Location for cover:",
