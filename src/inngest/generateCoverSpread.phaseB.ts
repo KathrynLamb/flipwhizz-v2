@@ -106,13 +106,20 @@ function guessMimeType(file: string) {
 }
 
 async function getImagePart(source: string) {
-  if (isDataUrl(source)) {
-    throw new Error("❌ getImagePart received a data URL. Only file paths or http(s) URLs are allowed.");
-  }
+  console.log(`📥 getImagePart fetching: ${source}`);
+  
   const buffer = source.startsWith("http")
     ? Buffer.from(await (await fetch(source)).arrayBuffer())
     : await fs.readFile(source);
-  return { inlineData: { data: buffer.toString("base64"), mimeType: guessMimeType(source) } };
+
+  console.log(`📥 getImagePart got ${buffer.length} bytes from: ${source}`);
+  
+  return {
+    inlineData: {
+      data: buffer.toString("base64"),
+      mimeType: guessMimeType(source),
+    },
+  };
 }
 
 function extractInlineImage(result: any) {
@@ -407,6 +414,7 @@ Match the visual tone and setting details.
 
     // ── 4️⃣ CHARACTER REFERENCES ────────────────────────────────────────
     for (const c of chars) {
+      console.log(`🔍 ${c.name} imageUrl value: "${c.imageUrl}"`);
       if (!c.imageUrl || isDataUrl(c.imageUrl)) {
         // No image — include text description as fallback
         if (c.appearance) {
