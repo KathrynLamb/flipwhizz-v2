@@ -20,7 +20,7 @@ export default async function StoryPagesPage({
   }
 
   const user = await getUserFromSession();
-  if (!user) redirect("/sign-in");
+  if (!user) redirect("/auth/signin");
 
   // Fetch story
   const story = await db.query.stories.findFirst({

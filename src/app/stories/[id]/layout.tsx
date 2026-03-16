@@ -30,7 +30,7 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
   const { id: storyId } = await params;
 
   const user = await getUserFromSession();
-  if (!user) redirect("/sign-in");
+  if (!user) redirect("/auth/signin");
 
   try {
     // ✅ Fetch story and verify ownership
