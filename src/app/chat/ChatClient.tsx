@@ -4,15 +4,12 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
-import Link from "next/link";
-import { 
-  Send, 
-  Sparkles, 
-  ArrowLeft,
-  Loader2, 
+import {
+  Send,
+  Sparkles,
+  Loader2,
   Zap,
   BookOpen,
-  LogOut
 } from "lucide-react";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
@@ -21,7 +18,7 @@ export default function ChatPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = useMemo(() => searchParams.get("project"), [searchParams]);
-  
+
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -102,7 +99,10 @@ export default function ChatPage() {
         body: JSON.stringify({ message: text, history: nextHistory, projectId }),
       });
       const data = await res.json();
-      setMessages((m) => [...m, { role: "assistant", content: data.reply ?? "Hmm, let me think about that again..." }]);
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", content: data.reply ?? "Hmm, let me think about that again..." },
+      ]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -130,54 +130,59 @@ export default function ChatPage() {
       setStoryCreating(false);
     }
   }
-  
-  if (!projectId) return (
-    <div className="flex h-screen items-center justify-center bg-gray-50">
-      <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
-    </div>
-  );
+
+  if (!projectId) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      
       {/* Top Bar */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200/50">
-        <div className="px-4 py-3 flex items-center justify-between">
-          {/* Back to stories */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-white/85 backdrop-blur-xl border-b border-gray-200/50">
+        <div className="px-4 py-3 flex items-center justify-between min-h-[64px]">
+          {/* Left: logo only */}
           <button
             onClick={() => router.push("/projects")}
-            className="flex items-center gap-1.5 active:opacity-60 transition-opacity font-semibold text-[15px] min-h-[44px] -ml-2 pl-2 pr-3"
-            style={{ color: "#D94590" }}
+            className="flex items-center active:opacity-60 transition-opacity min-h-[44px]"
+            aria-label="Back to library"
           >
-                   <Image src="/Flipwhizz_logo_NEW.png" alt="/" width={150} height={150} />
+            <Image
+              src="/Flipwhizz_logo_NEW.png"
+              alt="FlipWhizz"
+              width={136}
+              height={40}
+              className="h-auto w-[136px] sm:w-[150px]"
+              priority
+            />
           </button>
 
-          {/* Centre: Logo + Story Studio */}
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
+          {/* Right: desktop-only sync status */}
+          <div className="hidden sm:flex items-center gap-2">
             {isSyncing ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
                 <span className="text-sm font-semibold text-gray-600">Syncing...</span>
               </>
             ) : (
-              <>
-
-                <span className=" text-lg font-extrabold tracking-tight bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
-                  Story Studio
-                </span>
-              </>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-50 text-xs font-semibold text-purple-600">
+                <Sparkles className="w-3.5 h-3.5" />
+                Story Studio
+              </div>
             )}
           </div>
 
-          {/* Right spacer */}
-          <div className="w-16" />
+          {/* Mobile spacer */}
+          <div className="sm:hidden w-6" />
         </div>
       </div>
 
       {/* Messages Container */}
-      <div className="pt-[60px] pb-[140px] px-4">
+      <div className="pt-[72px] pb-[140px] px-4">
         <div className="max-w-2xl mx-auto">
-          
           {/* Welcome State */}
           <AnimatePresence>
             {messages.length === 0 && !isSyncing && (
@@ -193,28 +198,28 @@ export default function ChatPage() {
 
                 <div className="space-y-3">
                   <h1 className="text-4xl font-black text-gray-900">
-                    Let's Create Magic! ✨
+                    Let&apos;s Create Magic! ✨
                   </h1>
-                  
+
                   <p className="text-[17px] text-gray-600 leading-relaxed max-w-sm mx-auto">
                     Tell me about your character, their world, or the adventure you want to go on
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-2 justify-center pt-4">
-                  <button 
+                  <button
                     onClick={() => setInput("A brave dragon who's afraid of heights")}
                     className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
                   >
                     🐉 Brave Dragon
                   </button>
-                  <button 
+                  <button
                     onClick={() => setInput("A magical forest where trees can talk")}
                     className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
                   >
                     🌳 Magical Forest
                   </button>
-                  <button 
+                  <button
                     onClick={() => setInput("An underwater adventure with friendly dolphins")}
                     className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
                   >
@@ -260,9 +265,8 @@ export default function ChatPage() {
               </motion.div>
             ))}
 
-            {/* Typing Indicator */}
             {loading && (
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 className="flex items-end gap-2"
@@ -271,9 +275,21 @@ export default function ChatPage() {
                   <Sparkles className="w-4 h-4 text-white" />
                 </div>
                 <div className="bg-white px-5 py-3 rounded-[20px] rounded-bl-[4px] shadow-sm border border-gray-100 flex gap-1.5">
-                  <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0 }} className="w-2 h-2 bg-gray-400 rounded-full" />
-                  <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.1 }} className="w-2 h-2 bg-gray-400 rounded-full" />
-                  <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }} className="w-2 h-2 bg-gray-400 rounded-full" />
+                  <motion.div
+                    animate={{ y: [0, -4, 0] }}
+                    transition={{ repeat: Infinity, duration: 0.6, delay: 0 }}
+                    className="w-2 h-2 bg-gray-400 rounded-full"
+                  />
+                  <motion.div
+                    animate={{ y: [0, -4, 0] }}
+                    transition={{ repeat: Infinity, duration: 0.6, delay: 0.1 }}
+                    className="w-2 h-2 bg-gray-400 rounded-full"
+                  />
+                  <motion.div
+                    animate={{ y: [0, -4, 0] }}
+                    transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }}
+                    className="w-2 h-2 bg-gray-400 rounded-full"
+                  />
                 </div>
               </motion.div>
             )}
@@ -320,13 +336,16 @@ export default function ChatPage() {
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border-t border-gray-200/50">
         <div className="px-4 py-3">
           <div className="max-w-2xl mx-auto">
-            
-            {/* Progress Indicator */}
             {messages.length > 0 && messages.length < 3 && (
               <div className="mb-2 px-1">
-                <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: "#D94590" }}>
+                <div
+                  className="flex items-center gap-2 text-xs font-semibold"
+                  style={{ color: "#D94590" }}
+                >
                   <Zap className="w-3.5 h-3.5" />
-                  <span>{3 - messages.length} more message{3 - messages.length !== 1 ? 's' : ''} to unlock book creation</span>
+                  <span>
+                    {3 - messages.length} more message{3 - messages.length !== 1 ? "s" : ""} to unlock book creation
+                  </span>
                 </div>
               </div>
             )}
@@ -346,10 +365,10 @@ export default function ChatPage() {
                   placeholder="Message"
                   className="w-full max-h-[100px] bg-transparent border-0 focus:ring-0 focus:outline-none text-[16px] text-gray-900 placeholder:text-gray-500 resize-none font-normal"
                   rows={1}
-                  style={{ lineHeight: '1.4' }}
+                  style={{ lineHeight: "1.4" }}
                 />
               </div>
-              
+
               <button
                 onClick={sendMessage}
                 disabled={!input.trim() || loading}
@@ -363,7 +382,7 @@ export default function ChatPage() {
                 {loading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
-                  <Send className="w-5 h-5" style={{ transform: 'translateX(1px)' }} />
+                  <Send className="w-5 h-5" style={{ transform: "translateX(1px)" }} />
                 )}
               </button>
             </div>

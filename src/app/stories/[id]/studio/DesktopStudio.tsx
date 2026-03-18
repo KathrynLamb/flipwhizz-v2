@@ -12,6 +12,7 @@ import {
   BookImage,
   ChevronRight,
   PartyPopper,
+  Printer,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -458,6 +459,29 @@ function StudioActionCard({
             Tweak Cover
           </button>
 
+
+          <button
+  onClick={async () => {
+    const res = await fetch(`/api/stories/${storyId}/export-home-print`, { method: 'POST' });
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'book-print-at-home.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      alert('Failed to export PDF');
+    }
+  }}
+  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all hover:shadow-md active:scale-[0.97]"
+  style={{ background: 'rgba(180,150,210,0.08)', color: '#6B5C80', border: '1px solid rgba(180,150,210,0.15)', fontFamily: 'inherit', cursor: 'pointer' }}
+>
+  <Printer className="w-3.5 h-3.5" />
+  Print at Home
+</button>
+
           {/* Export PDF — primary */}
           <button
             onClick={onExportPDF}
@@ -604,6 +628,14 @@ export default function DesktopStudio({
   }, [isPolling, story.id, regeneratingSpreads, dbSpreads]);
 
   /* ------------------------------- Actions -------------------------------- */
+
+  // After the existing useEffect hooks, add:
+useEffect(() => {
+  // Auto-start generation if paid but no spreads have images yet
+  if (isPaid && completedCount === 0 && !isGenerating && story.status !== 'generating') {
+    handleGenerateAll();
+  }
+}, [isPaid, completedCount, isGenerating, story.status]);
 
   async function handleGenerateAll() {
     if (isGenerating) return;
