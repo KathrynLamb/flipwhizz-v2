@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { coverConversations, stories } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { coverConversations, stories, bookCovers } from "@/db/schema";
+import { eq, asc, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import CoverDesignChat from "./CoverDesignChat";
 import type { StepKey } from "@/lib/storySteps";
@@ -29,6 +29,17 @@ export default async function CoverPage({
     content: msg.content,
   }));
 
+  const selectedCover = await db.query.bookCovers.findFirst({
+    where: and(
+      eq(bookCovers.storyId, storyId),
+      eq(bookCovers.isSelected, true)
+    ),
+    columns: {
+      charactersShown: true,
+      locationsShown: true,
+    },
+  });
+
   const completedSteps = (story.completedSteps as StepKey[]) ?? [];
 
   return (
@@ -41,6 +52,8 @@ export default async function CoverPage({
       completedSteps={completedSteps}
       paymentStatus={story.paymentStatus}
       coverSpreadUrl={story.coverSpreadUrl}
+      initialCharacterIds={selectedCover?.charactersShown ?? []}
+      initialLocationIds={selectedCover?.locationsShown ?? []}
     />
   );
 }

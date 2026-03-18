@@ -58,6 +58,8 @@ export default function CheckoutPage() {
     if (!storyId) return;
     let cancelled = false;
 
+
+
     // Fetch product/pricing
     fetch(`/api/stories/${storyId}/product`)
       .then((r) => r.json())
@@ -96,6 +98,8 @@ export default function CheckoutPage() {
       cancelled = true;
     };
   }, [storyId]);
+
+  console.log('story', story)
 
   /* ── MISSING STORY ID ── */
   if (!storyId) {
@@ -417,7 +421,7 @@ export default function CheckoutPage() {
                     }}
                   >
                     <img
-                      src={story.sampleIllustrationUrl}
+                      src={story.coverSpreadUrl}
                       alt="Style preview"
                       className="w-full h-auto object-cover"
                       loading="lazy"

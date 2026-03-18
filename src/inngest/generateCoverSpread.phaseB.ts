@@ -577,7 +577,14 @@ Create a seamless, professional children's book wrap-around cover now.
     await db.transaction(async (tx) => {
       await tx.update(bookCovers).set({ isSelected: false }).where(eq(bookCovers.storyId, storyId));
       await tx.insert(bookCovers).values({
-        id: uuid(), storyId, imageUrl: url, promptUsed: JSON.stringify(coverPlan), isSelected: true, createdAt: new Date(),
+        id: uuid(),
+        storyId,
+        imageUrl: url,
+        promptUsed: JSON.stringify(coverPlan),
+        isSelected: true,
+        charactersShown: planCharIds,
+        locationsShown: planLocIds,
+        createdAt: new Date(),
       });
       await tx.update(stories).set({ coverSpreadUrl: url, updatedAt: new Date() }).where(eq(stories.id, storyId));
     });

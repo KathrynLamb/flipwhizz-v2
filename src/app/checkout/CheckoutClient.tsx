@@ -32,6 +32,8 @@ export default function CheckoutPage() {
   if (!storyId) return <div className="p-10 text-white">Missing Story ID</div>;
   if (loading) return <div className="p-10 text-white">Loading checkout...</div>;
 
+  console.log('story', story)
+
   return (
     <div className="min-h-screen bg-[#0b0b10] text-white flex flex-col items-center justify-center p-6">
       
@@ -56,7 +58,7 @@ export default function CheckoutPage() {
 
                   <div className="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-black">
                     <img
-                      src={story.sampleIllustrationUrl}
+                      src={story.cover}
                       alt="Sample illustration preview"
                       className="w-full h-auto object-cover"
                       loading="lazy"

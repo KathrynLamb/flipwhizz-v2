@@ -78,6 +78,8 @@ type Props = {
   completedSteps?: StepKey[];
   paymentStatus?: string | null;
   coverSpreadUrl?: string | null;
+  initialCharacterIds?: string[];
+  initialLocationIds?: string[];
 };
 
 /* -------------------------------------------------------------------------- */
@@ -107,6 +109,8 @@ export default function CoverDesignChat({
   completedSteps = [],
   paymentStatus,
   coverSpreadUrl: initialCoverUrl,
+  initialCharacterIds,
+  initialLocationIds
 }: Props) {
   const router = useRouter();
 
@@ -123,8 +127,12 @@ export default function CoverDesignChat({
   const [worldLocations, setWorldLocations] = useState<WorldLocation[]>([]);
   const [worldLoading, setWorldLoading] = useState(true);
 
-  const [mentionedCharacterIds, setMentionedCharacterIds] = useState<Set<string>>(new Set());
-  const [mentionedLocationIds, setMentionedLocationIds] = useState<Set<string>>(new Set());
+  const [mentionedCharacterIds, setMentionedCharacterIds] = useState<Set<string>>(
+    new Set(initialCharacterIds)
+  );
+  const [mentionedLocationIds, setMentionedLocationIds] = useState<Set<string>>(
+    new Set(initialLocationIds)
+  );
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hasStartedChatRef = useRef(false);
