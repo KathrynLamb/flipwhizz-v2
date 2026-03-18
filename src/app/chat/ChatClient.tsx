@@ -25,44 +25,63 @@ export default function ChatPage() {
   const [isSyncing, setIsSyncing] = useState(true);
   const [storyCreating, setStoryCreating] = useState(false);
   const [storyId, setStoryId] = useState<string | null>(null);
+
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  async function waitForPagesAndNavigate(storyId: string) {
+  async function waitForPagesAndNavigate(nextStoryId: string) {
     for (let attempt = 0; attempt < 30; attempt++) {
       try {
-        const res = await fetch(`/api/stories/${storyId}/pages`);
+        const res = await fetch(`/api/stories/${nextStoryId}/pages`, {
+          cache: "no-store",
+        });
         const data = await res.json();
+
         if (Array.isArray(data) && data.length > 0) {
-          router.push(`/stories/${storyId}/pages`);
+          router.push(`/stories/${nextStoryId}/pages`);
           return;
         }
       } catch (err) {
         console.error("Polling error:", err);
       }
+
       await new Promise((r) => setTimeout(r, 1000));
     }
-    router.push(`/stories/${storyId}/pages`);
+
+    router.push(`/stories/${nextStoryId}/pages`);
   }
 
   useEffect(() => {
     async function initializeStudio() {
       if (!projectId) return;
+
       try {
-        const chatRes = await fetch(`/api/chat/history?projectId=${projectId}`);
+        const chatRes = await fetch(`/api/chat/history?projectId=${projectId}`, {
+          cache: "no-store",
+        });
         const chatData = await chatRes.json();
 
-        if (chatData.messages) setMessages(chatData.messages);
+        if (chatData.messages) {
+          setMessages(chatData.messages);
+        }
 
-        const storyRes = await fetch(`/api/stories/by-project?projectId=${projectId}`);
+        const storyRes = await fetch(`/api/stories/by-project?projectId=${projectId}`, {
+          cache: "no-store",
+        });
         const storyData = await storyRes.json();
-        if (storyData.storyId) await waitForPagesAndNavigate(storyData.storyId);
+
+        if (storyData.storyId) {
+          setStoryId(storyData.storyId);
+          await waitForPagesAndNavigate(storyData.storyId);
+          return;
+        }
       } catch (err) {
         console.error("Studio sync failed:", err);
       } finally {
         setIsSyncing(false);
       }
     }
+
     initializeStudio();
   }, [projectId, router]);
 
@@ -70,6 +89,7 @@ export default function ChatPage() {
     if (projectId && messages.length > 0) {
       localStorage.setItem(`chat_backup_${projectId}`, JSON.stringify(messages));
     }
+
     setTimeout(() => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 100);
@@ -84,13 +104,18 @@ export default function ChatPage() {
 
   async function sendMessage() {
     if (!input.trim() || loading) return;
+
     const text = input.trim();
     const userMessage: ChatMsg = { role: "user", content: text };
     const nextHistory = [...messages, userMessage];
+
     setMessages(nextHistory);
     setInput("");
     setLoading(true);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
 
     try {
       const res = await fetch("/api/chat", {
@@ -98,10 +123,15 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, history: nextHistory, projectId }),
       });
+
       const data = await res.json();
+
       setMessages((m) => [
         ...m,
-        { role: "assistant", content: data.reply ?? "Hmm, let me think about that again..." },
+        {
+          role: "assistant",
+          content: data.reply ?? "Hmm, let me think about that again...",
+        },
       ]);
     } catch (err) {
       console.error(err);
@@ -111,18 +141,24 @@ export default function ChatPage() {
   }
 
   async function createStoryFromChat() {
-    if (!projectId || storyCreating) return;
+    if (!projectId || storyCreating || storyId) return;
+
     setStoryCreating(true);
+
     try {
       const res = await fetch("/api/stories/create-from-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId }),
       });
+
       const data = await res.json();
+
       if (data.storyId) {
         setStoryId(data.storyId);
         await waitForPagesAndNavigate(data.storyId);
+      } else {
+        console.error("No storyId returned from create-from-chat", data);
       }
     } catch (err) {
       console.error("Story creation failed:", err);
@@ -142,48 +178,69 @@ export default function ChatPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top Bar */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-white/85 backdrop-blur-xl border-b border-gray-200/50">
-        <div className="px-4 py-3 flex items-center justify-between min-h-[64px]">
-          {/* Left: logo only */}
-          <button
-            onClick={() => router.push("/projects")}
-            className="flex items-center active:opacity-60 transition-opacity min-h-[44px]"
-            aria-label="Back to library"
-          >
-            <Image
-              src="/Flipwhizz_logo_NEW.png"
-              alt="FlipWhizz"
-              width={136}
-              height={40}
-              className="h-auto w-[136px] sm:w-[150px]"
-              priority
-            />
-          </button>
+{/* Top Bar */}
+<div className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200/50">
+  <div className="px-4 py-3 flex items-center justify-between min-h-[64px]">
+    {/* Left */}
+    <button
+      onClick={() => router.push("/projects")}
+      className="flex items-center active:opacity-60 transition-opacity min-h-[44px]"
+      aria-label="Back to library"
+    >
+      <Image
+        src="/Flipwhizz_logo_NEW.png"
+        alt="FlipWhizz"
+        width={150}
+        height={150}
+        className="h-auto w-[136px] sm:w-[150px]"
+      />
+    </button>
 
-          {/* Right: desktop-only sync status */}
-          <div className="hidden sm:flex items-center gap-2">
-            {isSyncing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
-                <span className="text-sm font-semibold text-gray-600">Syncing...</span>
-              </>
-            ) : (
-              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-50 text-xs font-semibold text-purple-600">
-                <Sparkles className="w-3.5 h-3.5" />
-                Story Studio
-              </div>
-            )}
-          </div>
+    {/* Center sync status */}
+    <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
+      {isSyncing && (
+        <>
+          <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
+          <span className="text-sm font-semibold text-gray-600">Syncing...</span>
+        </>
+      )}
+    </div>
 
-          {/* Mobile spacer */}
-          <div className="sm:hidden w-6" />
-        </div>
-      </div>
+    {/* Right CTA */}
+    <div className="flex items-center justify-end min-w-[120px]">
+      {messages.length >= 3 && !storyId ? (
+        <button
+          onClick={createStoryFromChat}
+          disabled={storyCreating}
+          className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-lg transition-transform active:scale-[0.98] disabled:opacity-60"
+          style={{
+            background: "#D94590",
+            boxShadow: "0 8px 28px rgba(217,69,144,0.25)",
+          }}
+        >
+          {storyCreating ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="hidden sm:inline">Creating...</span>
+            </>
+          ) : (
+            <>
+              <BookOpen className="w-4 h-4" />
+              <span className="hidden sm:inline">Create My Book</span>
+              <span className="sm:hidden">Create</span>
+            </>
+          )}
+        </button>
+      ) : (
+        <div className="w-[120px]" />
+      )}
+    </div>
+  </div>
+</div>
 
-      {/* Messages Container */}
+      {/* Messages */}
       <div className="pt-[72px] pb-[140px] px-4">
         <div className="max-w-2xl mx-auto">
-          {/* Welcome State */}
           <AnimatePresence>
             {messages.length === 0 && !isSyncing && (
               <motion.div
@@ -230,7 +287,6 @@ export default function ChatPage() {
             )}
           </AnimatePresence>
 
-          {/* Messages */}
           <div className="space-y-3">
             {messages.map((msg, i) => (
               <motion.div
@@ -299,38 +355,6 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Floating Create Story Button */}
-      {messages.length >= 3 && !storyId && (
-        <motion.div
-          initial={{ opacity: 0, y: 20, scale: 0.9 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 20, scale: 0.9 }}
-          transition={{ type: "spring", damping: 25, stiffness: 300 }}
-          className="fixed bottom-[100px] left-0 right-0 z-40 px-4"
-        >
-          <div className="max-w-2xl mx-auto">
-            <button
-              onClick={createStoryFromChat}
-              disabled={storyCreating}
-              className="w-full text-white rounded-2xl px-6 py-4 font-bold text-[17px] shadow-lg active:scale-[0.98] transition-transform disabled:opacity-60 flex items-center justify-center gap-3 min-h-[56px]"
-              style={{ background: "#D94590", boxShadow: "0 8px 28px rgba(217,69,144,0.3)" }}
-            >
-              {storyCreating ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Creating Your Book...</span>
-                </>
-              ) : (
-                <>
-                  <BookOpen className="w-5 h-5" />
-                  <span>Create My Book</span>
-                  <span className="text-2xl">📖</span>
-                </>
-              )}
-            </button>
-          </div>
-        </motion.div>
-      )}
 
       {/* Input Area */}
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border-t border-gray-200/50">
