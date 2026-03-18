@@ -988,15 +988,19 @@ async function applyEdits() {
             {/* Input */}
             <div className="flex-none bg-white border-t border-gray-200 px-4 py-3 space-y-3">
               <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-                  placeholder="What would you like to change?"
-                  className="flex-1 rounded-full border-2 border-gray-200 px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
-                  disabled={isLoading}
-                />
+              <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+                    placeholder="What would you like to change?"
+                    className="flex-1 rounded-full border-2 border-gray-200 px-5 py-3 text-[16px] font-medium text-gray-900 placeholder:text-gray-400 bg-white focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                    style={{
+                      WebkitTextFillColor: "#111827",
+                      opacity: 1,
+                    }}
+                    disabled={isLoading}
+                  />
                 <button
                   onClick={handleSendMessage}
                   disabled={!input.trim() || isLoading}
