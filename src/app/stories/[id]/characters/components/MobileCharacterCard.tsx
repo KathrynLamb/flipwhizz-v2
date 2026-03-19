@@ -28,6 +28,9 @@ import {
 import { useRouter } from "next/navigation";
 import { CharacterOutfit } from "@/app/stories/[id]/characters/CharactersClient";
 
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "@/lib/firebaseClient";
+
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
 /* ------------------------------------------------------------------ */
@@ -123,25 +126,40 @@ export function MobileCharacterCard({
     onLockToggle?.(character.id, newLocked);
   }
 
-  async function uploadReference(file: File) {
-    if (locked) return;
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("characterId", character.id);
-      const res = await fetch("/api/characters/upload-reference", {
-        method: "POST",
-        body: fd,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setImageUrl(data.url);
-        router.refresh();
-      }
-    } finally {
-      setUploading(false);
-    }
+  // async function uploadReference(file: File) {
+  //   if (locked) return;
+  //   setUploading(true);
+  //   try {
+  //     const fd = new FormData();
+  //     fd.append("file", file);
+  //     fd.append("characterId", character.id);
+  //     const res = await fetch("/api/characters/upload-reference", {
+  //       method: "POST",
+  //       body: fd,
+  //     });
+  //     if (res.ok) {
+  //       const data = await res.json();
+  //       setImageUrl(data.url);
+  //       router.refresh();
+  //     }
+  //   } finally {
+  //     setUploading(false);
+  //   }
+  // }
+
+
+  
+  async function uploadToFirebase(file: File, storyId: string) {
+    const path = `story-references/${storyId}/${crypto.randomUUID()}-${file.name}`;
+    const storageRef = ref(storage, path);
+  
+    await uploadBytes(storageRef, file, {
+      contentType: file.type,
+    });
+  
+    const publicUrl = await getDownloadURL(storageRef);
+  
+    return { publicUrl, path };
   }
 
   async function useAiImage() {
@@ -154,6 +172,38 @@ export function MobileCharacterCard({
         body: JSON.stringify({ characterId: character.id }),
       });
       if (res.ok) router.refresh();
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handlePhotoUpload(file: File) {
+    if (locked) return;
+  
+    setUploading(true);
+    try {
+      const { publicUrl, path } = await uploadToFirebase(file, storyId);
+  
+      const res = await fetch("/api/characters/upload-reference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          characterId: character.id,
+          imageUrl: publicUrl,
+          storagePath: path,
+        }),
+      });
+  
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to save reference image");
+      }
+  
+      setImageUrl(publicUrl);
+      router.refresh();
+    } catch (err) {
+      console.error("Photo upload failed:", err);
+      alert("Photo upload failed. Please try again.");
     } finally {
       setUploading(false);
     }
@@ -301,16 +351,20 @@ export function MobileCharacterCard({
           {/* Upload buttons */}
           {!locked && !uploading && !isDragging && (
             <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
-              <button
+            <button
                 onClick={(e) => {
                   e.stopPropagation();
+
                   const input = document.createElement("input");
                   input.type = "file";
                   input.accept = "image/*";
-                  input.onchange = (ev) => {
+
+                  input.onchange = async (ev) => {
                     const file = (ev.target as HTMLInputElement).files?.[0];
-                    if (file) uploadReference(file);
+                    if (!file) return;
+                    await handlePhotoUpload(file);
                   };
+
                   input.click();
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/90 text-stone-900 shadow-lg backdrop-blur-sm active:scale-95 transition-transform"
