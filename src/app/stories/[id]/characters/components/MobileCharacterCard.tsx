@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import {
   motion,
   useMotionValue,
@@ -101,6 +102,14 @@ export function MobileCharacterCard({
   const editOpacity = useTransform(x, [-150, -35, 0], [1, 0.35, 0]);
   const lockOpacity = useTransform(x, [0, 35, 150], [0, 0.35, 1]);
 
+  const isMountedRef = useRef(true);
+
+useEffect(() => {
+  return () => {
+    isMountedRef.current = false;
+  };
+}, []);
+
   const traits = useMemo(() => {
     return character.personalityTraits
       ? character.personalityTraits
@@ -164,6 +173,7 @@ export function MobileCharacterCard({
 
   async function useAiImage() {
     if (locked) return;
+  
     setUploading(true);
     try {
       const res = await fetch("/api/characters/use-ai-image", {
@@ -171,9 +181,14 @@ export function MobileCharacterCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId: character.id }),
       });
-      if (res.ok) router.refresh();
+  
+      if (res.ok) {
+        router.refresh();
+      }
     } finally {
-      setUploading(false);
+      if (isMountedRef.current) {
+        setUploading(false);
+      }
     }
   }
 
@@ -199,13 +214,20 @@ export function MobileCharacterCard({
         throw new Error(data?.error || "Failed to save reference image");
       }
   
-      setImageUrl(publicUrl);
+      if (isMountedRef.current) {
+        setImageUrl(publicUrl);
+      }
+  
       router.refresh();
     } catch (err) {
       console.error("Photo upload failed:", err);
-      alert("Photo upload failed. Please try again.");
+      if (isMountedRef.current) {
+        alert("Photo upload failed. Please try again.");
+      }
     } finally {
-      setUploading(false);
+      if (isMountedRef.current) {
+        setUploading(false);
+      }
     }
   }
 
@@ -350,50 +372,54 @@ export function MobileCharacterCard({
 
           {/* Upload buttons */}
           {!locked && !uploading && !isDragging && (
-            <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
-            <button
-                onClick={(e) => {
-                  e.stopPropagation();
+  <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
 
-                  const input = document.createElement("input");
-                  input.type = "file";
-                  input.accept = "image/*";
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
 
-                  input.onchange = async (ev) => {
-                    const file = (ev.target as HTMLInputElement).files?.[0];
-                    if (!file) return;
-                    await handlePhotoUpload(file);
-                  };
+        input.onchange = async (ev) => {
+          const file = (ev.target as HTMLInputElement).files?.[0];
+          if (!file) return;
+          await handlePhotoUpload(file);
+        };
 
-                  input.click();
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/90 text-stone-900 shadow-lg backdrop-blur-sm active:scale-95 transition-transform"
-              >
-                <Upload className="w-3 h-3" /> Photo
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  useAiImage();
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600 text-white shadow-lg active:scale-95 transition-transform"
-              >
-                <Sparkles className="w-3 h-3" /> AI
-              </button>
-            </div>
-          )}
+        input.click();
+      }}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/90 text-stone-900 shadow-lg backdrop-blur-sm active:scale-95 transition-transform"
+    >
+      <Upload className="w-3 h-3" /> Photo
+    </button>
+
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        useAiImage();
+      }}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600 text-white shadow-lg active:scale-95 transition-transform"
+    >
+      <Sparkles className="w-3 h-3" /> AI
+    </button>
+  </div>
+)}
 
           {/* Uploading overlay */}
           {uploading && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
-              <div className="flex flex-col items-center gap-2">
-                <Loader2 className="w-8 h-8 text-white animate-spin" />
-                <span className="text-sm font-semibold text-white">
-                  Processing…
-                </span>
-              </div>
-            </div>
-          )}
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/45 pointer-events-none">
+                  <div className="flex flex-col items-center gap-2 rounded-2xl px-4 py-3 bg-black/35 backdrop-blur-sm">
+                    <Loader2 className="w-8 h-8 text-white animate-spin" />
+                    <span className="text-sm font-semibold text-white">
+                      Processing…
+                    </span>
+                    <span className="text-[11px] text-white/80">
+                      You can still swipe to the next card
+                    </span>
+                  </div>
+                </div>
+              )}
 
           {/* Info overlay */}
           <div className="absolute bottom-0 left-0 right-0 z-10 px-5 pt-5 pb-28 space-y-3">
@@ -487,23 +513,25 @@ export function MobileCharacterCard({
           </div>
 
           {/* Drag handle */}
-          {!showEdit && !uploading && (
-            <div className="absolute bottom-0 left-0 right-0 z-30 px-5 pb-4">
-              <div
-                className="w-full rounded-2xl bg-white/12 border border-white/20 backdrop-blur-md flex items-center justify-center gap-2 py-3 text-white/90"
-                style={{ touchAction: "none" }}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsDragging(true);
-                  dragControls.start(e);
-                }}
-              >
-                <div className="w-10 h-1.5 rounded-full bg-white/40" />
-                <span className="text-xs font-semibold">Swipe to edit / lock</span>
+          {!showEdit && (
+              <div className="absolute bottom-0 left-0 right-0 z-30 px-5 pb-4">
+                <div
+                  className="w-full rounded-2xl bg-white/12 border border-white/20 backdrop-blur-md flex items-center justify-center gap-2 py-3 text-white/90"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(true);
+                    dragControls.start(e);
+                  }}
+                >
+                  <div className="w-10 h-1.5 rounded-full bg-white/40" />
+                  <span className="text-xs font-semibold">
+                    {uploading ? "Processing… swipe still works" : "Swipe to edit / lock"}
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
+            )}
         </div>
       </motion.div>
 
