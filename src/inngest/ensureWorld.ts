@@ -857,24 +857,23 @@ CRITICAL RULES:
     if (!context.progress.outfitsAssigned) {
       await step.run("assign-outfits-to-spreads", async () => {
         console.log("👔 Assigning outfits to spreads...");
-
-        // Load all the data we need
+    
         const allSpreads = await db.query.storySpreads.findMany({
           where: eq(storySpreads.storyId, storyId),
           orderBy: asc(storySpreads.spreadIndex),
         });
-
+    
         const allCharacters = await db.query.storyCharacters.findMany({
           where: eq(storyCharacters.storyId, storyId),
           with: { character: true },
         });
-
+    
         const outfitTypes = await db.query.characterStoryOutfits.findMany({
           where: eq(characterStoryOutfits.storyId, storyId),
         });
-
+    
         if (allSpreads.length === 0 || outfitTypes.length === 0) {
-          console.log("⚠️  No spreads or outfit types found, skipping assignment");
+          console.log("⚠️ No spreads or outfit types found, marking outfits assigned");
           await db
             .update(storyWorkflowProgress)
             .set({
@@ -885,41 +884,40 @@ CRITICAL RULES:
             .where(eq(storyWorkflowProgress.storyId, storyId));
           return;
         }
-
-        // Build context for Claude
+    
         const outfitsByCharacter = new Map<string, typeof outfitTypes>();
         for (const outfit of outfitTypes) {
           const existing = outfitsByCharacter.get(outfit.characterId) ?? [];
           existing.push(outfit);
           outfitsByCharacter.set(outfit.characterId, existing);
         }
-
-        // Get which characters appear in which spreads (from page assignments)
+    
         const pageCharacters = await db.query.storyPageCharacters.findMany({
           where: eq(storyPageCharacters.storyId, storyId),
         });
-
+    
         const spreadContext = allSpreads.map((s) => {
           const leftPage = context.pages.find((p) => p.id === s.leftPageId);
           const rightPage = context.pages.find((p) => p.id === s.rightPageId);
-
-          // Find characters assigned to pages in this spread
+    
           const spreadPageIds = [s.leftPageId, s.rightPageId].filter(Boolean);
           const charactersInSpread = pageCharacters
             .filter((pc) => spreadPageIds.includes(pc.pageId))
             .map((pc) => pc.characterId);
+    
           const uniqueCharacterIds = [...new Set(charactersInSpread)];
-
+    
           return {
             spreadIndex: s.spreadIndex,
             text: [leftPage?.text, rightPage?.text].filter(Boolean).join(" "),
             sceneSummary: s.sceneSummary,
-            characterIds: uniqueCharacterIds,
+            characterNames: uniqueCharacterIds
+              .map((id) => allCharacters.find((sc) => sc.characterId === id)?.character.name)
+              .filter(Boolean),
           };
         });
-
+    
         const outfitOptions = allCharacters.map((sc) => ({
-          characterId: sc.characterId,
           characterName: sc.character.name,
           outfits:
             outfitsByCharacter.get(sc.characterId)?.map((o) => ({
@@ -927,101 +925,112 @@ CRITICAL RULES:
               triggers: o.triggerConditions,
             })) ?? [],
         }));
-
-        const res = await client.messages.create({
-          model: MODEL,
-          max_tokens: 3000,
-          system: `For each spread, decide which outfit each character should wear based on the scene context.
-
-RULES:
-1. Match outfit to scene context - use the trigger conditions as hints
-2. Maintain CONTINUITY - if two consecutive spreads are clearly the same scene/moment, use the same outfit
-3. Only change outfits when the story clearly indicates a change:
-   - New location type (outdoor → indoor)
-   - Time skip ("the next morning", "later that night")
-   - Activity change (skiing → hot tub)
-4. If a character appears in a spread but you're unsure which outfit, choose the most contextually appropriate one
-5. Only assign outfits to characters that actually appear in that spread
-
-Return ONLY this JSON:
-{
-  "assignments": [
+    
+        let parsedAssignments: any[] = [];
+    
+        try {
+          const res = await client.messages.create({
+            model: MODEL,
+            max_tokens: 3000,
+            system: `For each spread, decide which outfit each character should wear based on the scene context.
+    
+    Return ONLY this JSON:
     {
-      "spreadIndex": 1,
-      "characters": [
-        { "characterId": "uuid-here", "outfitKey": "ski_gear" },
-        { "characterId": "uuid-here", "outfitKey": "winter_coat" }
-      ]
-    },
-    {
-      "spreadIndex": 2,
-      "characters": [
-        { "characterId": "uuid-here", "outfitKey": "ski_gear" }
+      "assignments": [
+        {
+          "spreadIndex": 1,
+          "characters": [
+            { "characterName": "Sophia", "outfitKey": "ski_gear" }
+          ]
+        }
       ]
     }
-  ]
-}
-
-Note: If a spread has no characters, use an empty array for "characters".`,
-          messages: [
-            {
-              role: "user",
-              content: `CHARACTERS AND THEIR AVAILABLE OUTFITS:\n${JSON.stringify(outfitOptions, null, 2)}\n\nSPREADS TO ASSIGN (with characters present):\n${JSON.stringify(spreadContext, null, 2)}`,
-            },
-          ],
-        });
-
-        const data = extractJson(extractClaudeText(res.content));
-
-        // Save assignments
+    
+    Rules:
+    1. Match outfit to scene context using triggers as hints
+    2. Maintain continuity across consecutive spreads in the same scene
+    3. Only change outfits when the story clearly suggests a change
+    4. Only assign outfits to characters that appear in the spread
+    5. If unsure, choose the most contextually appropriate outfit
+    6. Use EXACT characterName and EXACT outfitKey from the provided data`,
+            messages: [
+              {
+                role: "user",
+                content: `CHARACTERS AND THEIR AVAILABLE OUTFITS:\n${JSON.stringify(
+                  outfitOptions,
+                  null,
+                  2
+                )}\n\nSPREADS TO ASSIGN:\n${JSON.stringify(spreadContext, null, 2)}`,
+              },
+            ],
+          });
+    
+          const rawText = extractClaudeText(res.content);
+          console.log("👔 [assign-outfits] Claude response:", rawText.slice(0, 3000));
+    
+          const data = extractJson(rawText);
+          parsedAssignments = data.assignments ?? [];
+          console.log("👔 [assign-outfits] Parsed assignments:", parsedAssignments.length);
+        } catch (err) {
+          console.error("❌ [assign-outfits] Model/parse failed, falling back", err);
+    
+          // Fallback: assign first available outfit for each character in each spread
+          parsedAssignments = spreadContext.map((spread) => ({
+            spreadIndex: spread.spreadIndex,
+            characters: (spread.characterNames ?? []).map((characterName) => {
+              const option = outfitOptions.find((o) => o.characterName === characterName);
+              return {
+                characterName,
+                outfitKey: option?.outfits?.[0]?.key ?? null,
+              };
+            }).filter((c) => c.outfitKey),
+          }));
+        }
+    
         await db.transaction(async (tx) => {
-          // Clear existing spread outfit assignments
           const spreadIds = allSpreads.map((s) => s.id);
           if (spreadIds.length > 0) {
             await tx
               .delete(spreadCharacterOutfits)
               .where(inArray(spreadCharacterOutfits.spreadId, spreadIds));
           }
-
+    
           let totalAssignments = 0;
-
-          for (const assignment of data.assignments ?? []) {
-            const spread = allSpreads.find(
-              (s) => s.spreadIndex === assignment.spreadIndex
-            );
+    
+          for (const assignment of parsedAssignments) {
+            const spread = allSpreads.find((s) => s.spreadIndex === assignment.spreadIndex);
             if (!spread) continue;
-
+    
             for (const charAssign of assignment.characters ?? []) {
-              // Look up the full outfit description
+              const storyChar = allCharacters.find(
+                (sc) => sc.character.name.toLowerCase() === charAssign.characterName?.toLowerCase()
+              );
+              if (!storyChar) continue;
+    
               const outfitType = outfitTypes.find(
                 (o) =>
-                  o.characterId === charAssign.characterId &&
+                  o.characterId === storyChar.characterId &&
                   o.outfitKey === charAssign.outfitKey
               );
-
-              if (!outfitType) {
-                console.warn(
-                  `⚠️  Outfit not found: ${charAssign.outfitKey} for character ${charAssign.characterId}`
-                );
-                continue;
-              }
-
+    
+              if (!outfitType) continue;
+    
               await tx.insert(spreadCharacterOutfits).values({
                 id: uuid(),
                 spreadId: spread.id,
-                characterId: charAssign.characterId,
+                characterId: storyChar.characterId,
                 outfitKey: charAssign.outfitKey,
                 outfitDescription: outfitType.outfitDescription,
                 createdAt: new Date(),
               });
+    
               totalAssignments++;
             }
           }
-
-          console.log(`✅ Created ${totalAssignments} outfit assignments across ${data.assignments?.length || 0} spreads`);
+    
+          console.log(`✅ Created ${totalAssignments} outfit assignments`);
         });
-
-        // Mark progress
+    
         await db
           .update(storyWorkflowProgress)
           .set({
@@ -1031,8 +1040,6 @@ Note: If a spread has no characters, use an empty array for "characters".`,
           })
           .where(eq(storyWorkflowProgress.storyId, storyId));
       });
-    } else {
-      console.log("✓ Outfits already assigned, skipping");
     }
 
     /* --------------------------------------------------
