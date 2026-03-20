@@ -26,6 +26,9 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "@/lib/firebaseClient";
+
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
 /* ------------------------------------------------------------------ */
@@ -118,18 +121,45 @@ export function MobileLocationCard({
     }
   }
 
+  async function uploadToFirebase(file: File) {
+    const path = `story-references/${storyId}/${crypto.randomUUID()}-${file.name}`;
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file, { contentType: file.type });
+    const publicUrl = await getDownloadURL(storageRef);
+    return { publicUrl, path };
+  }
+
   async function uploadReference(file: File) {
     if (locked) return;
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("locationId", location.id);
+      const { publicUrl, path } = await uploadToFirebase(file);
+
       const res = await fetch("/api/locations/upload-reference", {
         method: "POST",
-        body: fd,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          locationId: location.id,
+          imageUrl: publicUrl,
+          storagePath: path,
+        }),
       });
-      if (res.ok) router.refresh();
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to save reference image");
+      }
+
+      if (isMountedRef.current) {
+        // Update local image immediately so the card shows it
+      }
+
+      router.refresh();
+    } catch (err) {
+      console.error("Photo upload failed:", err);
+      if (isMountedRef.current) {
+        alert("Photo upload failed. Please try again.");
+      }
     } finally {
       if (isMountedRef.current) setUploading(false);
     }
