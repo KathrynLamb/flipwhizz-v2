@@ -287,7 +287,7 @@ export default function TermsPage() {
           className="flex flex-wrap items-center justify-between gap-4 text-sm"
           style={{ color: "#A897BD" }}
         >
-          <p>© {new Date().getFullYear()} Karstaway Ltd. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Flipwhizz Ltd. All rights reserved.</p>
           <div className="flex gap-6">
             <Link href="/privacy" className="hover:underline underline-offset-2">
               Privacy Policy

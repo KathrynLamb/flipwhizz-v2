@@ -281,7 +281,7 @@ export default function ContactPage() {
           style={{ color: "#A897BD" }}
         >
           <p>
-            © {new Date().getFullYear()} Karstaway Ltd. All rights reserved.
+            © {new Date().getFullYear()} Flipwhizz Ltd. All rights reserved.
           </p>
           <div className="flex gap-6">
             <Link
