@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect } from "react";
 import {
   Loader2,
   X,
@@ -35,9 +35,7 @@ type AssignedCharacter = {
   portraitImageUrl: string | null;
   fullBodyImageUrl: string | null;
   referenceImageUrl: string | null;
-  spreadRole: string;
-  confidence: number;
-  reason: string;
+  role: string | null;
   currentOutfitKey: string | null;
   currentOutfitDescription: string | null;
   availableOutfits: OutfitOption[];
@@ -49,7 +47,7 @@ type AvailableCharacter = {
   portraitImageUrl: string | null;
   fullBodyImageUrl: string | null;
   referenceImageUrl: string | null;
-  storyRole: string | null;
+  role: string | null;
   availableOutfits: OutfitOption[];
 };
 
@@ -94,7 +92,9 @@ function bestCharacterImage(c: {
   fullBodyImageUrl?: string | null;
   referenceImageUrl?: string | null;
 }) {
-  return c.portraitImageUrl || c.fullBodyImageUrl || c.referenceImageUrl || null;
+  return (
+    c.portraitImageUrl || c.fullBodyImageUrl || c.referenceImageUrl || null
+  );
 }
 
 function bestLocationImage(l: {
@@ -196,7 +196,6 @@ function CharacterRow({
   isIncluded,
   onToggle,
   outfitKey,
-  outfitDescription,
   outfits,
   onOutfitChange,
   onOutfitCreated,
@@ -209,7 +208,6 @@ function CharacterRow({
   isIncluded: boolean;
   onToggle: () => void;
   outfitKey: string | null;
-  outfitDescription: string | null;
   outfits: OutfitOption[];
   onOutfitChange?: (key: string) => void;
   onOutfitCreated?: (outfit: OutfitOption) => void;
@@ -264,7 +262,6 @@ function CharacterRow({
       }`}
     >
       <div className="flex items-center gap-3 p-3">
-        {/* Portrait */}
         <div
           className={`w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 ${
             isIncluded ? "ring-2 ring-purple-400" : "opacity-50"
@@ -283,7 +280,6 @@ function CharacterRow({
           )}
         </div>
 
-        {/* Name + role */}
         <div className="flex-1 min-w-0">
           <p
             className={`text-sm font-bold truncate ${
@@ -297,7 +293,6 @@ function CharacterRow({
           )}
         </div>
 
-        {/* Outfit picker (only when included) */}
         {isIncluded && onOutfitChange && (
           <button
             onClick={() => {
@@ -318,7 +313,6 @@ function CharacterRow({
           </button>
         )}
 
-        {/* Include/exclude toggle */}
         <button
           onClick={onToggle}
           className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${
@@ -335,7 +329,6 @@ function CharacterRow({
         </button>
       </div>
 
-      {/* Outfit dropdown */}
       <AnimatePresence>
         {showOutfits && isIncluded && onOutfitChange && (
           <motion.div
@@ -565,7 +558,6 @@ export default function RedrawModal({
 
   const [showAvailable, setShowAvailable] = useState(false);
 
-  // Fetch references when modal opens
   useEffect(() => {
     if (!isOpen || !spreadId) return;
 
@@ -592,6 +584,7 @@ export default function RedrawModal({
             outfits[c.characterId] = c.currentOutfitKey;
           }
         }
+
         setOutfitOverrides(outfits);
         setSelectedLocation(data.assignedLocation);
       })
@@ -615,10 +608,9 @@ export default function RedrawModal({
   }
 
   function handleOutfitCreated(characterId: string, outfit: OutfitOption) {
-    if (!refs) return;
-
     setRefs((prev) => {
       if (!prev) return prev;
+
       return {
         ...prev,
         assignedCharacters: prev.assignedCharacters.map((c) =>
@@ -635,13 +627,12 @@ export default function RedrawModal({
     });
   }
 
-  // Split characters
   const includedChars = refs
     ? refs.assignedCharacters.map((c) => ({
         characterId: c.characterId,
         name: c.name,
         imageUrl: bestCharacterImage(c),
-        role: c.spreadRole,
+        role: c.role,
         outfits: c.availableOutfits,
         outfitDescription: c.currentOutfitDescription,
       }))
@@ -652,7 +643,7 @@ export default function RedrawModal({
         characterId: c.characterId,
         name: c.name,
         imageUrl: bestCharacterImage(c),
-        role: c.storyRole,
+        role: c.role,
         outfits: c.availableOutfits,
         outfitDescription: null as string | null,
       }))
@@ -676,12 +667,10 @@ export default function RedrawModal({
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
         className="bg-white shadow-2xl w-full md:max-w-xl md:rounded-2xl rounded-t-2xl overflow-hidden border border-gray-200/50 flex flex-col max-h-[92vh] md:max-h-[calc(100vh-48px)]"
       >
-        {/* ── Handle (mobile only) ── */}
         <div className="flex justify-center pt-3 pb-1 md:hidden">
           <div className="w-10 h-1 rounded-full bg-gray-300" />
         </div>
 
-        {/* ── Header ── */}
         <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center flex-shrink-0">
           <div>
             <h3 className="font-bold text-base flex items-center gap-2">
@@ -700,7 +689,6 @@ export default function RedrawModal({
           </button>
         </div>
 
-        {/* ── Scrollable body ── */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 min-h-0">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
@@ -719,7 +707,6 @@ export default function RedrawModal({
             </div>
           ) : refs ? (
             <>
-              {/* ── Scene Plan ── */}
               {refs.spread.sceneSummary && (
                 <div className="bg-gray-50 rounded-xl p-3">
                   <SectionHeader icon={Info} label="Scene Plan" />
@@ -729,7 +716,6 @@ export default function RedrawModal({
                 </div>
               )}
 
-              {/* ── Location ── */}
               <div>
                 <SectionHeader icon={MapPin} label="Location" />
                 <LocationPicker
@@ -739,7 +725,6 @@ export default function RedrawModal({
                 />
               </div>
 
-              {/* ── Characters (included) ── */}
               <div>
                 <SectionHeader
                   icon={User}
@@ -758,7 +743,6 @@ export default function RedrawModal({
                       isIncluded={includedCharacterIds.has(c.characterId)}
                       onToggle={() => toggleCharacter(c.characterId)}
                       outfitKey={outfitOverrides[c.characterId] ?? null}
-                      outfitDescription={c.outfitDescription}
                       outfits={c.outfits}
                       onOutfitChange={(key) => setOutfit(c.characterId, key)}
                       onOutfitCreated={(outfit) =>
@@ -769,7 +753,6 @@ export default function RedrawModal({
                   ))}
                 </div>
 
-                {/* ── Add more characters ── */}
                 {availableChars.length > 0 && (
                   <div className="mt-3">
                     <button
@@ -777,8 +760,7 @@ export default function RedrawModal({
                       className="flex items-center gap-2 text-xs text-purple-600 hover:text-purple-700 font-bold w-full py-2"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      Add characters not in this scene
-                      ({availableChars.length})
+                      Add characters not in this scene ({availableChars.length})
                       {showAvailable ? (
                         <ChevronUp className="w-3.5 h-3.5 ml-auto" />
                       ) : (
@@ -809,7 +791,6 @@ export default function RedrawModal({
                                 outfitKey={
                                   outfitOverrides[c.characterId] ?? null
                                 }
-                                outfitDescription={null}
                                 outfits={c.outfits}
                                 onOutfitChange={(key) =>
                                   setOutfit(c.characterId, key)
@@ -828,7 +809,6 @@ export default function RedrawModal({
                 )}
               </div>
 
-              {/* ── Style guide ── */}
               {refs.styleGuide && (
                 <div>
                   <SectionHeader icon={Palette} label="Style Guide" />
@@ -858,7 +838,6 @@ export default function RedrawModal({
                 </div>
               )}
 
-              {/* ── Feedback ── */}
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <Wand2 className="w-4 h-4 text-purple-600" />
@@ -882,7 +861,6 @@ export default function RedrawModal({
           ) : null}
         </div>
 
-        {/* ── Footer ── */}
         <div className="px-5 py-3 border-t border-gray-100 flex flex-col gap-2 flex-shrink-0">
           <button
             onClick={() =>

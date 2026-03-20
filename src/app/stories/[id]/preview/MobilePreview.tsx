@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import Image from "next/image";
+import { useState, useEffect, useRef } from "react";
+import { motion } from "framer-motion";
 import {
   Eye,
   Sparkles,
@@ -16,12 +14,11 @@ import {
   ChevronRight,
   AlertCircle,
   Lock,
-  ChevronLeft,
 } from "lucide-react";
 import RedrawModal from "@/app/stories/[id]/studio/components/redrawModal";
 
 /* ------------------------------------------------------------------ */
-/* TYPES                                                               */
+/* TYPES                                                              */
 /* ------------------------------------------------------------------ */
 
 interface SpreadCharacter {
@@ -53,8 +50,16 @@ interface SpreadOption {
 
 type GenerationStatus = "idle" | "queued" | "generating" | "done" | "error";
 
+type RedrawSubmitPayload = {
+  feedback: string;
+  includedCharacterIds: string[];
+  outfitOverrides: Record<string, string>;
+  locationId: string | null;
+  freshStart?: boolean;
+};
+
 /* ------------------------------------------------------------------ */
-/* CONSTANTS                                                           */
+/* CONSTANTS                                                          */
 /* ------------------------------------------------------------------ */
 
 const FONT = "'Bricolage Grotesque', system-ui, sans-serif";
@@ -72,7 +77,7 @@ function accentFor(i: number) {
 }
 
 /* ------------------------------------------------------------------ */
-/* SPREAD THUMBNAIL (horizontal scroller)                              */
+/* SPREAD THUMBNAIL (horizontal scroller)                             */
 /* ------------------------------------------------------------------ */
 
 function SpreadThumb({
@@ -94,12 +99,15 @@ function SpreadThumb({
       className="flex-shrink-0 rounded-2xl overflow-hidden transition-all active:scale-[0.97]"
       style={{
         width: 140,
-        border: selected ? "2.5px solid #B05CE6" : "2px solid rgba(180,150,210,0.12)",
-        boxShadow: selected ? "0 4px 16px rgba(176,92,230,0.2)" : "0 2px 8px rgba(0,0,0,0.04)",
+        border: selected
+          ? "2.5px solid #B05CE6"
+          : "2px solid rgba(180,150,210,0.12)",
+        boxShadow: selected
+          ? "0 4px 16px rgba(176,92,230,0.2)"
+          : "0 2px 8px rgba(0,0,0,0.04)",
         fontFamily: FONT,
       }}
     >
-      {/* Image / placeholder */}
       <div
         className="relative w-full overflow-hidden"
         style={{
@@ -132,7 +140,6 @@ function SpreadThumb({
         )}
       </div>
 
-      {/* Label */}
       <div className="px-2.5 py-2" style={{ background: "white" }}>
         <p
           className="text-[11px] font-bold truncate"
@@ -141,7 +148,10 @@ function SpreadThumb({
           {spread.pageLabel}
         </p>
         {spread.location && (
-          <p className="text-[10px] truncate mt-0.5 flex items-center gap-1" style={{ color: "#8B7BA0" }}>
+          <p
+            className="text-[10px] truncate mt-0.5 flex items-center gap-1"
+            style={{ color: "#8B7BA0" }}
+          >
             <MapPin className="w-2.5 h-2.5 flex-shrink-0" />
             {spread.location.name}
           </p>
@@ -152,7 +162,7 @@ function SpreadThumb({
 }
 
 /* ------------------------------------------------------------------ */
-/* GENERATION SECTION                                                  */
+/* GENERATION SECTION                                                 */
 /* ------------------------------------------------------------------ */
 
 function MobileGenerationSection({
@@ -167,7 +177,9 @@ function MobileGenerationSection({
   onGenerated: () => void;
 }) {
   const [status, setStatus] = useState<GenerationStatus>("idle");
-  const [resultImageUrl, setResultImageUrl] = useState<string | null>(spread.existingImageUrl);
+  const [resultImageUrl, setResultImageUrl] = useState<string | null>(
+    spread.existingImageUrl
+  );
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [styleWarning, setStyleWarning] = useState<string | null>(null);
@@ -175,7 +187,6 @@ function MobileGenerationSection({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Reset on spread change
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     setStatus("idle");
@@ -185,9 +196,8 @@ function MobileGenerationSection({
     setStyleWarning(null);
     setShowRedraw(false);
     setIsSubmitting(false);
-  }, [spread.spreadId]);
+  }, [spread.spreadId, spread.existingImageUrl]);
 
-  // Poll
   useEffect(() => {
     if (!jobId || (status !== "queued" && status !== "generating")) return;
 
@@ -195,22 +205,34 @@ function MobileGenerationSection({
       try {
         const res = await fetch(`/api/inngest/job-status/${jobId}`);
         if (!res.ok) return;
+
         const data = await res.json();
         setStatus(data.status);
-        if (data.imageUrl) setResultImageUrl(data.imageUrl);
+
+        if (data.imageUrl) {
+          setResultImageUrl(data.imageUrl);
+        }
+
         if (data.status === "done" || data.status === "error") {
           if (pollRef.current) clearInterval(pollRef.current);
-          if (data.status === "error") setError("Generation failed — try again.");
+          if (data.status === "error") {
+            setError("Generation failed — try again.");
+          }
         }
-      } catch { /* swallow */ }
+      } catch {
+        // swallow
+      }
     }, 2500);
 
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, [jobId, status]);
 
   async function handleQuickGenerate() {
     setError(null);
     setStatus("queued");
+
     try {
       const res = await fetch(`/api/stories/${storyId}/generate-spread`, {
         method: "POST",
@@ -221,7 +243,11 @@ function MobileGenerationSection({
           pageLabel: spread.pageLabel,
         }),
       });
-      if (!res.ok) throw new Error(await res.text() || "Request failed");
+
+      if (!res.ok) {
+        throw new Error((await res.text()) || "Request failed");
+      }
+
       const { jobId: id, styleWarning: sw } = await res.json();
       setJobId(id);
       setStyleWarning(sw ?? null);
@@ -233,17 +259,12 @@ function MobileGenerationSection({
     }
   }
 
-  async function handleRedrawSubmit(payload: {
-    feedback: string;
-    includedCharacterIds: string[];
-    outfitOverrides: Record<string, string>;
-    locationId: string | null;
-    freshStart?: boolean;
-  }) {
+  async function handleRedrawSubmit(payload: RedrawSubmitPayload) {
     setIsSubmitting(true);
     setError(null);
     setShowRedraw(false);
     setStatus("queued");
+
     try {
       const res = await fetch(`/api/stories/${storyId}/generate-spread`, {
         method: "POST",
@@ -252,14 +273,23 @@ function MobileGenerationSection({
           leftPageId: spread.leftPageId,
           rightPageId: spread.rightPageId,
           pageLabel: spread.pageLabel,
-          feedback: payload.feedback || undefined,
-          includedCharacterIds: payload.includedCharacterIds,
-          outfitOverrides: payload.outfitOverrides,
-          locationId: payload.locationId,
-          freshStart: payload.freshStart,
+          feedback: payload.feedback?.trim() || undefined,
+          existingSpreadImageUrl: payload.freshStart
+            ? null
+            : resultImageUrl ?? spread.existingImageUrl ?? null,
+          freshStart: payload.freshStart ?? false,
+          referenceOverrides: {
+            includedCharacterIds: payload.includedCharacterIds,
+            outfitOverrides: payload.outfitOverrides,
+            locationId: payload.locationId,
+          },
         }),
       });
-      if (!res.ok) throw new Error(await res.text() || "Request failed");
+
+      if (!res.ok) {
+        throw new Error((await res.text()) || "Request failed");
+      }
+
       const { jobId: id, styleWarning: sw } = await res.json();
       setJobId(id);
       setStyleWarning(sw ?? null);
@@ -277,14 +307,15 @@ function MobileGenerationSection({
 
   return (
     <>
-      {/* ── Illustration canvas ── */}
       <div
         className="mx-4 rounded-2xl overflow-hidden"
         style={{
           boxShadow: resultImageUrl
             ? "0 8px 32px rgba(100,40,160,0.15)"
             : "0 2px 12px rgba(100,40,160,0.06)",
-          border: resultImageUrl ? "none" : "1.5px dashed rgba(176,92,230,0.2)",
+          border: resultImageUrl
+            ? "none"
+            : "1.5px dashed rgba(176,92,230,0.2)",
           background: resultImageUrl ? "transparent" : "rgba(176,92,230,0.04)",
         }}
       >
@@ -295,7 +326,10 @@ function MobileGenerationSection({
                 className="w-12 h-12 rounded-2xl flex items-center justify-center"
                 style={{ background: "rgba(176,92,230,0.1)" }}
               >
-                <Sparkles className="w-6 h-6 animate-pulse" style={{ color: "#B05CE6" }} />
+                <Sparkles
+                  className="w-6 h-6 animate-pulse"
+                  style={{ color: "#B05CE6" }}
+                />
               </div>
               <p className="text-xs font-semibold" style={{ color: "#9B59D0" }}>
                 {status === "queued" ? "Queued…" : "Illustrating…"}
@@ -307,7 +341,11 @@ function MobileGenerationSection({
                     className="w-1.5 h-1.5 rounded-full"
                     style={{ background: "#B05CE6" }}
                     animate={{ opacity: [0.3, 1, 0.3] }}
-                    transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.2 }}
+                    transition={{
+                      repeat: Infinity,
+                      duration: 1.2,
+                      delay: i * 0.2,
+                    }}
                   />
                 ))}
               </div>
@@ -345,10 +383,16 @@ function MobileGenerationSection({
               >
                 <Lock className="w-6 h-6" style={{ color: "#C4A0E0" }} />
               </div>
-              <p className="text-xs font-semibold text-center" style={{ color: "#C4A0E0" }}>
+              <p
+                className="text-xs font-semibold text-center"
+                style={{ color: "#C4A0E0" }}
+              >
                 Preview used on another spread
               </p>
-              <p className="text-[10px] text-center leading-relaxed" style={{ color: "#C4A0E0" }}>
+              <p
+                className="text-[10px] text-center leading-relaxed"
+                style={{ color: "#C4A0E0" }}
+              >
                 Order your book to generate all spreads
               </p>
             </div>
@@ -356,7 +400,6 @@ function MobileGenerationSection({
         </div>
       </div>
 
-      {/* ── Action button ── */}
       <div className="px-4 pt-3">
         {!resultImageUrl && !busy && !isLocked && (
           <button
@@ -405,7 +448,6 @@ function MobileGenerationSection({
           </button>
         )}
 
-        {/* Warnings */}
         {styleWarning && (
           <div
             className="flex items-start gap-2 mt-2.5 px-3 py-2 rounded-xl text-[11px]"
@@ -413,9 +455,12 @@ function MobileGenerationSection({
           >
             <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
             <span>
-              {styleWarning === "no_style_guide" && "No style guide found — using default style."}
-              {styleWarning === "style_not_locked" && "Style guide not locked yet — lock it in Design for best results."}
-              {styleWarning === "no_reference_image" && "No style reference image — add one in Design for consistency."}
+              {styleWarning === "no_style_guide" &&
+                "No style guide found — using default style."}
+              {styleWarning === "style_not_locked" &&
+                "Style guide not locked yet — lock it in Design for best results."}
+              {styleWarning === "no_reference_image" &&
+                "No style reference image — add one in Design for consistency."}
             </span>
           </div>
         )}
@@ -431,7 +476,6 @@ function MobileGenerationSection({
         )}
       </div>
 
-      {/* ── Redraw Modal ── */}
       <RedrawModal
         isOpen={showRedraw}
         onClose={() => setShowRedraw(false)}
@@ -446,7 +490,7 @@ function MobileGenerationSection({
 }
 
 /* ------------------------------------------------------------------ */
-/* MAIN MOBILE PREVIEW COMPONENT                                       */
+/* MAIN MOBILE PREVIEW COMPONENT                                      */
 /* ------------------------------------------------------------------ */
 
 export default function MobilePreview({
@@ -462,7 +506,9 @@ export default function MobilePreview({
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [previewGeneratedId, setPreviewGeneratedId] = useState<string | null>(null);
+  const [previewGeneratedId, setPreviewGeneratedId] = useState<string | null>(
+    null
+  );
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -471,22 +517,27 @@ export default function MobilePreview({
 
     fetch(`/api/stories/${storyId}/spreads-preview`)
       .then(async (res) => {
-        if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
+        if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
         return res.json();
       })
       .then((data: SpreadOption[]) => {
-        // Deduplicate by spreadId
         const seen = new Set<string>();
         const unique = data.filter((s) => {
           if (seen.has(s.spreadId)) return false;
           seen.add(s.spreadId);
           return true;
         });
+
         setSpreads(unique);
-        if (unique.length > 0) setSelectedId(unique[0].spreadId);
-        // Check for existing preview
+
+        if (unique.length > 0) {
+          setSelectedId(unique[0].spreadId);
+        }
+
         const existing = unique.find((s) => s.existingImageUrl);
-        if (existing) setPreviewGeneratedId(existing.spreadId);
+        if (existing) {
+          setPreviewGeneratedId(existing.spreadId);
+        }
       })
       .catch((e) => setFetchError(e.message ?? "Failed to load spreads"))
       .finally(() => setLoading(false));
@@ -500,7 +551,6 @@ export default function MobilePreview({
       className="w-full flex flex-col pb-6"
       style={{ background: "#FDFBFF", fontFamily: FONT, minHeight: "100%" }}
     >
-      {/* ── Title section ── */}
       <div className="px-4 pt-5 pb-3">
         <h1
           className="text-xl font-extrabold flex items-center gap-2"
@@ -509,34 +559,50 @@ export default function MobilePreview({
           <span className="text-lg">👁️</span>
           Preview Your Book
         </h1>
-        <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "#8B7BA0" }}>
-          Pick a spread and generate a sample illustration using your characters, locations, and style.
+        <p
+          className="text-sm mt-1.5 leading-relaxed"
+          style={{ color: "#8B7BA0" }}
+        >
+          Pick a spread and generate a sample illustration using your
+          characters, locations, and style.
         </p>
       </div>
 
-      {/* ── Pro tip ── */}
       <div
         className="mx-4 mb-4 px-3.5 py-3 rounded-xl flex items-start gap-2.5"
-        style={{ background: "rgba(176,92,230,0.06)", border: "1px solid rgba(176,92,230,0.1)" }}
+        style={{
+          background: "rgba(176,92,230,0.06)",
+          border: "1px solid rgba(176,92,230,0.1)",
+        }}
       >
-        <Sparkles className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#B05CE6" }} />
+        <Sparkles
+          className="w-4 h-4 flex-shrink-0 mt-0.5"
+          style={{ color: "#B05CE6" }}
+        />
         <p className="text-[12px] leading-relaxed" style={{ color: "#7B4DAA" }}>
-          Generate a sample, then tap <strong>Redraw</strong> to swap characters, change outfits, or give feedback.
+          Generate a sample, then tap <strong>Redraw</strong> to swap
+          characters, change outfits, or give feedback.
         </p>
       </div>
 
-      {/* ── Error ── */}
       {fetchError && (
         <div
           className="mx-4 mb-4 px-3.5 py-3 rounded-xl flex items-start gap-2.5"
-          style={{ background: "rgba(233,30,99,0.06)", border: "1px solid rgba(233,30,99,0.1)" }}
+          style={{
+            background: "rgba(233,30,99,0.06)",
+            border: "1px solid rgba(233,30,99,0.1)",
+          }}
         >
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#E91E63" }} />
-          <p className="text-[12px]" style={{ color: "#E91E63" }}>{fetchError}</p>
+          <AlertCircle
+            className="w-4 h-4 flex-shrink-0 mt-0.5"
+            style={{ color: "#E91E63" }}
+          />
+          <p className="text-[12px]" style={{ color: "#E91E63" }}>
+            {fetchError}
+          </p>
         </div>
       )}
 
-      {/* ── Horizontal spread picker ── */}
       <div className="mb-4">
         <p
           className="px-4 mb-2.5 text-[10px] font-bold uppercase tracking-widest"
@@ -551,7 +617,11 @@ export default function MobilePreview({
               <div
                 key={i}
                 className="flex-shrink-0 rounded-2xl animate-pulse"
-                style={{ width: 140, height: 100, background: "rgba(176,92,230,0.08)" }}
+                style={{
+                  width: 140,
+                  height: 100,
+                  background: "rgba(176,92,230,0.08)",
+                }}
               />
             ))}
           </div>
@@ -559,7 +629,10 @@ export default function MobilePreview({
           <div
             ref={scrollerRef}
             className="flex gap-3 px-4 overflow-x-auto pb-2"
-            style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
+            style={{
+              scrollSnapType: "x mandatory",
+              WebkitOverflowScrolling: "touch",
+            }}
           >
             {spreads.map((s, i) => (
               <SpreadThumb
@@ -574,25 +647,29 @@ export default function MobilePreview({
         )}
       </div>
 
-      {/* ── Selected spread detail ── */}
       {selected && (
         <>
-          {/* Generation area */}
           <MobileGenerationSection
             spread={selected}
             storyId={storyId}
-            isLocked={hasUsedFreePreview && previewGeneratedId !== selected.spreadId}
+            isLocked={
+              hasUsedFreePreview && previewGeneratedId !== selected.spreadId
+            }
             onGenerated={() => setPreviewGeneratedId(selected.spreadId)}
           />
 
-          {/* Scene + characters info */}
           <div className="px-4 pt-4 space-y-3">
-            {/* Page text */}
             <div
               className="rounded-2xl p-4"
-              style={{ background: "white", border: "1px solid rgba(180,150,210,0.1)" }}
+              style={{
+                background: "white",
+                border: "1px solid rgba(180,150,210,0.1)",
+              }}
             >
-              <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: "#B05CE6" }}>
+              <p
+                className="text-[10px] font-bold uppercase tracking-widest mb-2"
+                style={{ color: "#B05CE6" }}
+              >
                 Story Text
               </p>
               <p
@@ -604,20 +681,28 @@ export default function MobilePreview({
               </p>
             </div>
 
-            {/* Characters + location */}
             {(selected.characters.length > 0 || selected.location) && (
               <div
                 className="rounded-2xl px-4 py-3.5"
-                style={{ background: "white", border: "1px solid rgba(180,150,210,0.1)" }}
+                style={{
+                  background: "white",
+                  border: "1px solid rgba(180,150,210,0.1)",
+                }}
               >
-                <p className="text-[10px] font-bold uppercase tracking-widest mb-3 flex items-center gap-1.5" style={{ color: "#A897BD" }}>
+                <p
+                  className="text-[10px] font-bold uppercase tracking-widest mb-3 flex items-center gap-1.5"
+                  style={{ color: "#A897BD" }}
+                >
                   <Users className="w-3 h-3" /> In this scene
                 </p>
                 <div className="flex flex-wrap gap-4">
                   {selected.characters.map((c, i) => {
                     const accent = accentFor(i);
                     return (
-                      <div key={c.id} className="flex flex-col items-center gap-1.5">
+                      <div
+                        key={c.id}
+                        className="flex flex-col items-center gap-1.5"
+                      >
                         <div
                           className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0"
                           style={{
@@ -626,22 +711,34 @@ export default function MobilePreview({
                           }}
                         >
                           {c.imageUrl ? (
-                            <img src={c.imageUrl} alt={c.name} className="w-full h-full object-cover" />
+                            <img
+                              src={c.imageUrl}
+                              alt={c.name}
+                              className="w-full h-full object-cover"
+                            />
                           ) : (
                             <div
                               className="w-full h-full flex items-center justify-center"
-                              style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}
+                              style={{
+                                background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
+                              }}
                             >
-                              <span className="text-white font-bold text-sm">{c.name[0]}</span>
+                              <span className="text-white font-bold text-sm">
+                                {c.name[0]}
+                              </span>
                             </div>
                           )}
                         </div>
-                        <span className="text-[11px] font-semibold" style={{ color: "#5A4D6B" }}>
+                        <span
+                          className="text-[11px] font-semibold"
+                          style={{ color: "#5A4D6B" }}
+                        >
                           {c.name}
                         </span>
                       </div>
                     );
                   })}
+
                   {selected.location && (
                     <div className="flex flex-col items-center gap-1.5">
                       <div
@@ -652,17 +749,27 @@ export default function MobilePreview({
                         }}
                       >
                         {selected.location.imageUrl ? (
-                          <img src={selected.location.imageUrl} alt={selected.location.name} className="w-full h-full object-cover" />
+                          <img
+                            src={selected.location.imageUrl}
+                            alt={selected.location.name}
+                            className="w-full h-full object-cover"
+                          />
                         ) : (
                           <div
                             className="w-full h-full flex items-center justify-center"
-                            style={{ background: "linear-gradient(135deg, #34D399, #60A5FA)" }}
+                            style={{
+                              background:
+                                "linear-gradient(135deg, #34D399, #60A5FA)",
+                            }}
                           >
                             <MapPin className="w-4 h-4 text-white" />
                           </div>
                         )}
                       </div>
-                      <span className="text-[11px] font-semibold" style={{ color: "#5A4D6B" }}>
+                      <span
+                        className="text-[11px] font-semibold"
+                        style={{ color: "#5A4D6B" }}
+                      >
                         {selected.location.name}
                       </span>
                     </div>
@@ -671,19 +778,30 @@ export default function MobilePreview({
               </div>
             )}
 
-            {/* Scene summary */}
             {selected.scene && (
               <div
                 className="rounded-xl px-3.5 py-3 flex items-start gap-2.5"
-                style={{ background: "rgba(176,92,230,0.05)", border: "1px solid rgba(176,92,230,0.1)" }}
+                style={{
+                  background: "rgba(176,92,230,0.05)",
+                  border: "1px solid rgba(176,92,230,0.1)",
+                }}
               >
-                <Sparkles className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: "#B05CE6" }} />
+                <Sparkles
+                  className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"
+                  style={{ color: "#B05CE6" }}
+                />
                 <div>
-                  <p className="text-[12px] leading-relaxed" style={{ color: "#6B4D8A" }}>
+                  <p
+                    className="text-[12px] leading-relaxed"
+                    style={{ color: "#6B4D8A" }}
+                  >
                     {selected.scene}
                   </p>
                   {selected.mood && (
-                    <p className="text-[10px] mt-1 font-bold uppercase tracking-wider" style={{ color: "#B05CE6" }}>
+                    <p
+                      className="text-[10px] mt-1 font-bold uppercase tracking-wider"
+                      style={{ color: "#B05CE6" }}
+                    >
                       Mood: {selected.mood}
                     </p>
                   )}
@@ -694,7 +812,6 @@ export default function MobilePreview({
         </>
       )}
 
-      {/* ── Continue CTA ── */}
       {spreads.length > 0 && (
         <div className="px-4 pt-6">
           <button

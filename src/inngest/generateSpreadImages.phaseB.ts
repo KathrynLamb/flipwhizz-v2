@@ -1,5 +1,3 @@
-// src/inngest/generateSpreadImages.phaseB.ts
-
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { eq, inArray, asc, desc, or, sql, and } from "drizzle-orm";
@@ -163,6 +161,37 @@ function extractInlineImage(result: any) {
   };
 }
 
+type OutfitRef = {
+  characterId: string;
+  outfitKey: string;
+  outfitDescription: string;
+};
+
+type CharacterRef = {
+  id: string;
+  name: string;
+  portraitUrl: string | null;
+  fullBodyUrl: string | null;
+  referenceUrl: string | null;
+  description: string | null;
+  appearance: string | null;
+};
+
+function buildCharacterImageList(character: CharacterRef) {
+  const candidates = [
+    { label: "portrait reference", url: character.portraitUrl },
+    { label: "full-body reference", url: character.fullBodyUrl },
+    { label: "extra reference", url: character.referenceUrl },
+  ];
+
+  const seen = new Set<string>();
+
+  return candidates.filter(
+    (item): item is { label: string; url: string } =>
+      !!item.url && !isDataUrl(item.url) && !seen.has(item.url) && !!seen.add(item.url)
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /*                          STYLE GUIDE EXTRACTION                            */
 /* -------------------------------------------------------------------------- */
@@ -186,10 +215,12 @@ function resolveStyleGuide(
 ): ResolvedStyleGuide {
   if (!style) {
     return {
-      geminiStyleBlock: "Whimsical, warm children's book illustration, storybook quality",
+      geminiStyleBlock:
+        "Whimsical, warm children's book illustration, storybook quality",
       geminiAvoidBlock:
         "Photorealism, CGI, harsh shadows, logos, watermarks, guide lines, template markers",
-      typographyBlock: "Large, child-friendly hand-lettered text with excellent contrast",
+      typographyBlock:
+        "Large, child-friendly hand-lettered text with excellent contrast",
     };
   }
 
@@ -244,8 +275,9 @@ function resolveStyleGuide(
     "Logos, watermarks, guide lines, template markers, text boxes, UI elements, borders"
   );
 
-  const typographyBlock = style.typography?.trim()
-    ?? "Large, child-friendly hand-lettered text with excellent contrast";
+  const typographyBlock =
+    style.typography?.trim() ??
+    "Large, child-friendly hand-lettered text with excellent contrast";
 
   return {
     geminiStyleBlock: styleLines.join("\n"),
@@ -278,7 +310,8 @@ export const generateBookSpreads = inngest.createFunction(
             eq(storyCharacters.storyId, storyId),
             or(
               sql`${characters.portraitImageUrl} IS NOT NULL`,
-              sql`${characters.referenceImageUrl} IS NOT NULL`
+              sql`${characters.referenceImageUrl} IS NOT NULL`,
+              sql`${characters.fullBodyImageUrl} IS NOT NULL`
             )
           )
         )
@@ -307,7 +340,10 @@ export const generateBookSpreads = inngest.createFunction(
       });
     }
 
-    if (events.length) await step.sendEvent("dispatch-spread-workers", events);
+    if (events.length) {
+      await step.sendEvent("dispatch-spread-workers", events);
+    }
+
     return { spreadsQueued: events.length };
   }
 );
@@ -321,7 +357,10 @@ export const generateSingleSpread = inngest.createFunction(
   { event: "story/generate.single.spread" },
   async ({ event, step }) => {
     const parsed = GenerateSingleSpreadEventSchema.safeParse(event.data);
-    if (!parsed.success) throw new Error("Invalid spread payload");
+    if (!parsed.success) {
+      console.error("Invalid spread payload", parsed.error.flatten());
+      throw new Error("Invalid spread payload");
+    }
 
     const {
       storyId,
@@ -361,14 +400,15 @@ export const generateSingleSpread = inngest.createFunction(
         where: eq(storyStyleGuide.storyId, storyId),
       });
 
-      const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } = resolveStyleGuide(style);
+      const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } =
+        resolveStyleGuide(style);
 
       console.log("🎨 Style guide resolved:", {
-        hasPromptBase:      !!style?.userNotes,
-        hasNegativePrompt:  !!style?.negativePrompt,
-        hasArtStyle:        !!style?.artStyle,
-        hasColorPalette:    !!style?.colorPalette,
-        hasSampleImage:     !!style?.sampleIllustrationUrl,
+        hasPromptBase: !!style?.userNotes,
+        hasNegativePrompt: !!style?.negativePrompt,
+        hasArtStyle: !!style?.artStyle,
+        hasColorPalette: !!style?.colorPalette,
+        hasSampleImage: !!style?.sampleIllustrationUrl,
       });
 
       // ========================================
@@ -376,7 +416,7 @@ export const generateSingleSpread = inngest.createFunction(
       // ========================================
       const spread = await db
         .select({
-          spreadId:     storySpreads.id,
+          spreadId: storySpreads.id,
           sceneSummary: storySpreads.sceneSummary,
         })
         .from(storySpreads)
@@ -392,7 +432,9 @@ export const generateSingleSpread = inngest.createFunction(
         .limit(1)
         .then((r) => r[0]);
 
-      if (!spread) throw new Error(`No spread plan for ${pageLabel}`);
+      if (!spread) {
+        throw new Error(`No spread plan for ${pageLabel}`);
+      }
 
       // ========================================
       // RESOLVE CHARACTERS
@@ -403,7 +445,11 @@ export const generateSingleSpread = inngest.createFunction(
 
       if (hasOverrides && referenceOverrides!.includedCharacterIds.length > 0) {
         charIds = referenceOverrides!.includedCharacterIds;
-        console.log("🔄 Using user-overridden character list:", charIds.length, "characters");
+        console.log(
+          "🔄 Using user-overridden character list:",
+          charIds.length,
+          "characters"
+        );
       } else {
         const pageCharAssignments = await db
           .select({ characterId: storyPageCharacters.characterId })
@@ -411,22 +457,28 @@ export const generateSingleSpread = inngest.createFunction(
           .where(inArray(storyPageCharacters.pageId, spreadPageIds));
 
         charIds = [...new Set(pageCharAssignments.map((a) => a.characterId))];
-        console.log("📋 Using default page character assignments:", charIds.length, "characters");
+        console.log(
+          "📋 Using default page character assignments:",
+          charIds.length,
+          "characters"
+        );
       }
 
-      const charRefs = charIds.length === 0
-        ? []
-        : await db
-            .select({
-              id:              characters.id,
-              name:            characters.name,
-              portraitUrl:     characters.portraitImageUrl,
-              referenceUrl:   characters.referenceImageUrl,
-              description:     characters.description,
-              appearance:      characters.appearance,
-            })
-            .from(characters)
-            .where(inArray(characters.id, charIds));
+      const charRefs: CharacterRef[] =
+        charIds.length === 0
+          ? []
+          : await db
+              .select({
+                id: characters.id,
+                name: characters.name,
+                portraitUrl: characters.portraitImageUrl,
+                fullBodyUrl: characters.fullBodyImageUrl,
+                referenceUrl: characters.referenceImageUrl,
+                description: characters.description,
+                appearance: characters.appearance,
+              })
+              .from(characters)
+              .where(inArray(characters.id, charIds));
 
       // ========================================
       // RESOLVE LOCATION
@@ -440,8 +492,8 @@ export const generateSingleSpread = inngest.createFunction(
       if (hasOverrides && referenceOverrides!.locationId) {
         const loc = await db
           .select({
-            name:        locations.name,
-            imageUrl:    sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
+            name: locations.name,
+            imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
             description: locations.description,
           })
           .from(locations)
@@ -450,7 +502,7 @@ export const generateSingleSpread = inngest.createFunction(
           .then((r) => r[0]);
 
         if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) {
-          locationRef = loc as any;
+          locationRef = loc;
           console.log("🔄 Using user-overridden location:", loc.name);
         }
       } else {
@@ -464,8 +516,8 @@ export const generateSingleSpread = inngest.createFunction(
         if (locIds.length > 0) {
           const loc = await db
             .select({
-              name:        locations.name,
-              imageUrl:    sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
+              name: locations.name,
+              imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
               description: locations.description,
             })
             .from(locations)
@@ -474,7 +526,7 @@ export const generateSingleSpread = inngest.createFunction(
             .then((r) => r[0]);
 
           if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) {
-            locationRef = loc as any;
+            locationRef = loc;
           } else if (loc?.imageUrl && isDataUrl(loc.imageUrl)) {
             console.warn(
               `⚠️ Skipping base64 location image for ${loc.name}. Location refs must be URLs.`
@@ -486,14 +538,18 @@ export const generateSingleSpread = inngest.createFunction(
       // ========================================
       // RESOLVE OUTFITS
       // ========================================
-      let outfitByCharacterId: Map<string, { characterId: string; outfitKey: string; outfitDescription: string }>;
+      let outfitByCharacterId = new Map<string, OutfitRef>();
 
-      if (hasOverrides && Object.keys(referenceOverrides!.outfitOverrides).length > 0) {
+      if (
+        hasOverrides &&
+        Object.keys(referenceOverrides!.outfitOverrides).length > 0
+      ) {
         const overrideEntries = Object.entries(referenceOverrides!.outfitOverrides);
+
         const outfitLookups = await db
           .select({
-            characterId:      characterStoryOutfits.characterId,
-            outfitKey:        characterStoryOutfits.outfitKey,
+            characterId: characterStoryOutfits.characterId,
+            outfitKey: characterStoryOutfits.outfitKey,
             outfitDescription: characterStoryOutfits.outfitDescription,
           })
           .from(characterStoryOutfits)
@@ -507,11 +563,11 @@ export const generateSingleSpread = inngest.createFunction(
             )
           );
 
-        outfitByCharacterId = new Map();
         for (const [characterId, outfitKey] of overrideEntries) {
           const match = outfitLookups.find(
             (o) => o.characterId === characterId && o.outfitKey === outfitKey
           );
+
           if (match) {
             outfitByCharacterId.set(characterId, {
               characterId,
@@ -520,7 +576,12 @@ export const generateSingleSpread = inngest.createFunction(
             });
           }
         }
-        console.log("🔄 Using user-overridden outfits:", outfitByCharacterId.size, "outfits");
+
+        console.log(
+          "🔄 Using user-overridden outfits:",
+          outfitByCharacterId.size,
+          "outfits"
+        );
       } else {
         const outfitAssignments = spread.spreadId
           ? await db.query.spreadCharacterOutfits.findMany({
@@ -528,27 +589,72 @@ export const generateSingleSpread = inngest.createFunction(
             })
           : [];
 
-        outfitByCharacterId = new Map(
-          outfitAssignments.map((o) => [
-            o.characterId,
-            {
-              characterId: o.characterId,
-              outfitKey: o.outfitKey,
-              outfitDescription: o.outfitDescription,
-            },
-          ])
+        const characterIdsWithAssignments = [
+          ...new Set(outfitAssignments.map((o) => o.characterId)),
+        ];
+
+        const canonicalOutfits =
+          characterIdsWithAssignments.length > 0
+            ? await db
+                .select({
+                  characterId: characterStoryOutfits.characterId,
+                  outfitKey: characterStoryOutfits.outfitKey,
+                  outfitDescription: characterStoryOutfits.outfitDescription,
+                })
+                .from(characterStoryOutfits)
+                .where(
+                  and(
+                    eq(characterStoryOutfits.storyId, storyId),
+                    inArray(
+                      characterStoryOutfits.characterId,
+                      characterIdsWithAssignments
+                    )
+                  )
+                )
+            : [];
+
+        for (const assignment of outfitAssignments) {
+          const match = canonicalOutfits.find(
+            (o) =>
+              o.characterId === assignment.characterId &&
+              o.outfitKey === assignment.outfitKey
+          );
+
+          if (match) {
+            outfitByCharacterId.set(assignment.characterId, {
+              characterId: assignment.characterId,
+              outfitKey: match.outfitKey,
+              outfitDescription: match.outfitDescription,
+            });
+          } else if (assignment.outfitDescription) {
+            // Fallback only if canonical row is missing
+            outfitByCharacterId.set(assignment.characterId, {
+              characterId: assignment.characterId,
+              outfitKey: assignment.outfitKey,
+              outfitDescription: assignment.outfitDescription,
+            });
+          }
+        }
+
+        console.log(
+          "📋 Using fallback spread outfit assignments:",
+          outfitByCharacterId.size,
+          "outfits"
         );
       }
 
       console.log(
         "🎭 Characters in spread:",
-        charRefs.map((c) => ({
-          name:        c.name,
-          hasPortrait: !!c.portraitUrl,
-          hasReference: !!c.referenceUrl,
-          hasOutfit:   outfitByCharacterId.has(c.id),
-          outfit:      outfitByCharacterId.get(c.id)?.outfitKey ?? "none",
-        }))
+        charRefs.map((c) => {
+          const imageRefs = buildCharacterImageList(c);
+          return {
+            name: c.name,
+            refImageCount: imageRefs.length,
+            refTypes: imageRefs.map((img) => img.label),
+            hasOutfit: outfitByCharacterId.has(c.id),
+            outfit: outfitByCharacterId.get(c.id)?.outfitKey ?? "none",
+          };
+        })
       );
 
       console.log(
@@ -557,6 +663,8 @@ export const generateSingleSpread = inngest.createFunction(
           ? { name: locationRef.name, hasImage: !!locationRef.imageUrl }
           : "NONE"
       );
+
+      console.log("🔄 Existing spread image included:", !!existingSpreadImageUrl);
 
       // ========================================
       // BUILD GEMINI PROMPT PARTS
@@ -653,42 +761,57 @@ Do NOT simply copy this image — create a fresh illustration that addresses the
 
       // ── 3️⃣ LOCATION REFERENCE (if available) ───────────────────────────
       if (locationRef) {
-        parts.push(await getImagePart(locationRef.imageUrl));
-        parts.push({
-          text: `
+        try {
+          parts.push(await getImagePart(locationRef.imageUrl));
+          parts.push({
+            text: `
 ↑ THIS IS THE LOCATION REFERENCE (${locationRef.name.toUpperCase()}) ↑
 Match this environment, setting, and spatial layout exactly.
 Use it as the backdrop across the full spread.
 `.trim(),
-        });
+          });
+        } catch (err) {
+          console.warn("⚠️ Could not load location reference image:", err);
+        }
       }
 
-      // ── 4️⃣ CHARACTERS — IMAGE-FIRST, MINIMAL TEXT ─────────────────────
+      // ── 4️⃣ CHARACTERS — MULTI-REFERENCE WHEN AVAILABLE ─────────────────
       for (const c of charRefs) {
-        const imageUrl = c.portraitUrl || c.referenceUrl;
-        const hasImage = imageUrl && !isDataUrl(imageUrl);
+        const imageRefs = buildCharacterImageList(c);
+        const outfit = outfitByCharacterId.get(c.id);
 
-        if (!hasImage) {
+        if (imageRefs.length === 0) {
           const desc = c.appearance || c.description;
           if (desc) {
             parts.push({
               text: `CHARACTER: ${c.name.toUpperCase()}\nAppearance: ${desc}`,
             });
           }
-          console.warn(`⚠️ ${c.name}: no image, using text description only`);
+          console.warn(`⚠️ ${c.name}: no image refs, using text description only`);
           continue;
         }
 
-        const outfit = outfitByCharacterId.get(c.id);
-
-        parts.push(await getImagePart(imageUrl!));
-        parts.push({
-          text: `↑ THIS IS ${c.name.toUpperCase()} — match this character's face and body EXACTLY ↑`,
-        });
+        for (const [index, imageRef] of imageRefs.entries()) {
+          try {
+            parts.push(await getImagePart(imageRef.url));
+            parts.push({
+              text:
+                index === 0
+                  ? `↑ THIS IS ${c.name.toUpperCase()} — primary ${imageRef.label}; match this character's face, body, and proportions exactly ↑`
+                  : `↑ ADDITIONAL ${c.name.toUpperCase()} ${imageRef.label.toUpperCase()} — use this to reinforce consistency ↑`,
+            });
+          } catch (err) {
+            console.warn(
+              `⚠️ Could not load ${imageRef.label} for ${c.name}:`,
+              err
+            );
+          }
+        }
 
         if (outfit) {
           parts.push({
-            text: `🎽 ${c.name.toUpperCase()} OUTFIT (${outfit.outfitKey}): ${outfit.outfitDescription}\nDo NOT copy clothing from the reference image — use the outfit above.`,
+            text: `🎽 ${c.name.toUpperCase()} OUTFIT (${outfit.outfitKey}): ${outfit.outfitDescription}
+Do NOT copy clothing from the reference image — use the outfit above.`,
           });
           console.log(`✅ ${c.name}: outfit "${outfit.outfitKey}"`);
         } else {
@@ -769,9 +892,9 @@ Create a clean, professional illustration with seamlessly integrated text.
         "📦 Parts being sent to Gemini:",
         parts.map((p, i) => ({
           index: i,
-          type:    p.text ? "text" : p.inlineData ? "image" : "unknown",
+          type: p.text ? "text" : p.inlineData ? "image" : "unknown",
           preview: p.text
-            ? p.text.substring(0, 80).replace(/\n/g, " ")
+            ? p.text.substring(0, 100).replace(/\n/g, " ")
             : `image/${p.inlineData?.mimeType}`,
         }))
       );
@@ -786,11 +909,11 @@ Create a clean, professional illustration with seamlessly integrated text.
           responseModalities: ["IMAGE"],
           imageConfig: {
             aspectRatio: IMAGE_ASPECT_RATIO,
-            imageSize:   IMAGE_SIZE,
+            imageSize: IMAGE_SIZE,
           },
           safetySettings: [
             {
-              category:  HarmCategory.HARM_CATEGORY_HARASSMENT,
+              category: HarmCategory.HARM_CATEGORY_HARASSMENT,
               threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
             },
           ],
@@ -798,7 +921,9 @@ Create a clean, professional illustration with seamlessly integrated text.
       });
 
       const image = extractInlineImage(response);
-      if (!image) throw new Error("No image returned from Gemini");
+      if (!image) {
+        throw new Error("No image returned from Gemini");
+      }
 
       return saveImageToStorage(image.data, image.mimeType, storyId);
     });
