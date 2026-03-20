@@ -218,8 +218,8 @@ export function MobileLocationCard({
   async function handleSwipeLeft() {
     if (locked) {
       // Unlock the location
-      await unlockLocation();
-      // Bounce card to indicate unlock, don't advance
+      const success = await unlockLocation();
+      // Bounce card back either way
       await controls.start({
         x: -80,
         rotate: -6,
@@ -231,6 +231,9 @@ export function MobileLocationCard({
         opacity: 1,
         transition: { type: "spring", stiffness: 420, damping: 32, mass: 0.85 },
       });
+      if (!success) {
+        alert("Failed to unlock. Please try again.");
+      }
     } else {
       // Open edit sheet
       await openEditViaSwipe();
