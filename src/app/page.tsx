@@ -108,7 +108,7 @@ export default async function Home() {
           <div className="grid md:grid-cols-3 gap-8 items-stretch">
             {/* DIGITAL */}
             <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm flex flex-col hover:shadow-lg transition-shadow duration-300">
-              <h3 className="font-serif text-2xl font-bold mb-2" style={{ color: "#D94590" }}>Digital Keepsake</h3>
+              <h3 className="font-serif text-2xl font-bold mb-2" style={{ color: "#D94590" }}>Print at home PDF</h3>
               <p className="text-sm text-[#6B5D52] mb-6">A beautifully illustrated story, ready to read or print.</p>
               <div className="mb-6"><span className="text-4xl font-serif font-bold" style={{ color: "#D94590" }}>£14</span><span className="text-[#6B5D52]"> one-off</span></div>
               <ul className="space-y-3 text-sm text-[#4A4038] mb-8">

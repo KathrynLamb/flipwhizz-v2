@@ -44,9 +44,12 @@ type TierDef = {
 const TIERS: TierDef[] = [
   {
     key: 'digital',
-    label: 'Digital Keepsake',
-    price: '14.00',
-    priceCents: 1400,
+    // label: 'Digital Keepsake',
+    // price: '14.00',
+    // priceCents: 1400,
+    label: 'Print at home PDF',
+    price: '2.00',
+    priceCents: 200,
     icon: <Download className="w-4 h-4" />,
     description: 'Read on any device, print at home',
     features: [

@@ -27,8 +27,8 @@ const TIERS: {
 }[] = [
   {
     key: "digital",
-    label: "Digital Keepsake",
-    price: "£14",
+    label: "Print at home PDF",
+    price: "£2",
     description: "Read on any device, download the PDF, keep forever.",
     icon: Monitor,
     features: [
