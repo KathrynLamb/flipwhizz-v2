@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   motion,
   useMotionValue,
@@ -574,22 +575,26 @@ export function MobileCharacterCard({
         </div>
       </motion.div>
 
-      {/* Edit sheet */}
-      <AnimatePresence>
-        {showEdit && (
-          <MobileEditSheet
-            character={character}
-            storyId={storyId}
-            outfits={outfits}
-            accent={accent}
-            onClose={() => setShowEdit(false)}
-            onSave={() => {
-              setShowEdit(false);
-              router.refresh();
-            }}
-          />
+      {/* Edit sheet — portalled to body to escape stacking context */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {showEdit && (
+              <MobileEditSheet
+                character={character}
+                storyId={storyId}
+                outfits={outfits}
+                accent={accent}
+                onClose={() => setShowEdit(false)}
+                onSave={() => {
+                  setShowEdit(false);
+                  router.refresh();
+                }}
+              />
+            )}
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
     </>
   );
 }
