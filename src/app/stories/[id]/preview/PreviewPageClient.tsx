@@ -258,6 +258,7 @@ function GenerationPanel({
   const [styleWarning, setStyleWarning] = useState<string | null>(null);
   const [showRedraw, setShowRedraw] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showImageLightbox, setShowImageLightbox] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -272,6 +273,7 @@ function GenerationPanel({
     setStyleWarning(null);
     setShowRedraw(false);
     setIsSubmitting(false);
+    setShowImageLightbox(false);
   }, [spread.spreadId, spread.existingImageUrl]);
 
   useEffect(() => {
@@ -311,6 +313,24 @@ function GenerationPanel({
       }
     };
   }, [jobId, status]);
+
+  useEffect(() => {
+    function handleEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setShowImageLightbox(false);
+      }
+    }
+
+    if (showImageLightbox) {
+      window.addEventListener("keydown", handleEsc);
+      document.body.style.overflow = "hidden";
+    }
+
+    return () => {
+      window.removeEventListener("keydown", handleEsc);
+      document.body.style.overflow = "";
+    };
+  }, [showImageLightbox]);
 
   async function handleQuickGenerate() {
     setError(null);
@@ -389,252 +409,297 @@ function GenerationPanel({
   const busy = status === "queued" || status === "generating";
 
   return (
-    <div className="space-y-4">
-      {/* Page text */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-          <p className="text-[10px] font-semibold tracking-widest text-violet-400 uppercase mb-2">
-            Left Page
-          </p>
-          <p className="text-sm text-gray-700 leading-relaxed font-serif">
-            {spread.leftText || (
-              <span className="text-gray-300 italic">No text</span>
-            )}
-          </p>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-          <p className="text-[10px] font-semibold tracking-widest text-violet-400 uppercase mb-2">
-            Right Page
-          </p>
-          {spread.rightText ? (
-            <p className="text-sm text-gray-700 leading-relaxed font-serif">
-              {spread.rightText}
+    <>
+      <div className="space-y-4">
+        {/* Page text */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <p className="text-[10px] font-semibold tracking-widest text-violet-400 uppercase mb-2">
+              Left Page
             </p>
-          ) : (
-            <p className="text-xs text-gray-300 italic">Single page spread</p>
-          )}
-        </div>
-      </div>
-
-      {/* In this scene */}
-      {(spread.characters.length > 0 || spread.location) && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-5 py-4">
-          <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mb-3 flex items-center gap-1.5">
-            <Users className="w-3 h-3" /> In this scene
-          </p>
-
-          <div className="flex flex-wrap gap-5">
-            {spread.characters.map((c, i) => (
-              <div key={c.id} className="flex flex-col items-center gap-1.5">
-                <Avatar
-                  name={c.name}
-                  imageUrl={c.imageUrl}
-                  size={52}
-                  index={i}
-                />
-                <span className="text-[11px] font-semibold text-gray-600">
-                  {c.name}
-                </span>
-              </div>
-            ))}
-
-            {spread.location && (
-              <div className="flex flex-col items-center gap-1.5">
-                <Avatar
-                  name={spread.location.name}
-                  imageUrl={spread.location.imageUrl}
-                  size={52}
-                  rounded="xl"
-                  index={spread.characters.length}
-                />
-                <span className="text-[11px] font-semibold text-gray-600">
-                  {spread.location.name}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Scene info */}
-      {(spread.scene || spread.mood) && (
-        <div className="bg-violet-50 border border-violet-100 rounded-xl px-4 py-3">
-          <div className="flex items-start gap-2">
-            <Sparkles className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />
-            <div>
-              {spread.scene && (
-                <p className="text-sm text-violet-700 leading-relaxed">
-                  {spread.scene}
-                </p>
+            <p className="text-sm text-gray-700 leading-relaxed font-serif">
+              {spread.leftText || (
+                <span className="text-gray-300 italic">No text</span>
               )}
-              {spread.mood && (
-                <p className="text-xs text-violet-400 mt-1 font-medium uppercase tracking-wide">
-                  Mood: {spread.mood}
-                </p>
-              )}
-            </div>
+            </p>
           </div>
-        </div>
-      )}
 
-      {/* Illustration canvas */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="relative w-full aspect-[16/9] bg-gradient-to-br from-violet-50 via-pink-50 to-amber-50">
-          <AnimatePresence mode="wait">
-            {busy && (
-              <motion.div
-                key="loading"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 flex flex-col items-center justify-center gap-3"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
-                  <Sparkles className="w-6 h-6 text-violet-400 animate-pulse" />
-                </div>
-                <p className="text-sm font-medium text-gray-500">
-                  {status === "queued"
-                    ? "Queued for generation…"
-                    : "Illustrating your spread…"}
-                </p>
-                <div className="flex gap-1 mt-1">
-                  {[0, 1, 2].map((i) => (
-                    <motion.div
-                      key={i}
-                      className="w-1.5 h-1.5 rounded-full bg-violet-400"
-                      animate={{ opacity: [0.3, 1, 0.3] }}
-                      transition={{
-                        repeat: Infinity,
-                        duration: 1.2,
-                        delay: i * 0.2,
-                      }}
-                    />
-                  ))}
-                </div>
-              </motion.div>
-            )}
-
-            {!busy && resultImageUrl && (
-              <motion.div
-                key="result"
-                initial={{ opacity: 0, scale: 1.02 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0"
-              >
-                <Image
-                  src={resultImageUrl}
-                  alt={`Spread: ${spread.pageLabel}`}
-                  fill
-                  className="object-cover"
-                  priority
-                />
-              </motion.div>
-            )}
-
-            {!busy && !resultImageUrl && (
-              <motion.div
-                key="empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 flex flex-col items-center justify-center gap-3"
-              >
-                <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center">
-                  <Eye className="w-7 h-7 text-gray-300" />
-                </div>
-                <p className="text-sm text-gray-400">
-                  Your illustration will appear here
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        <div className="p-4 space-y-3">
-          {isLocked && !busy && (
-            <div className="text-center py-4 space-y-3">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-100 text-gray-500 text-sm font-medium">
-                <Lock className="w-4 h-4" />
-                Preview used on another spread
-              </div>
-              <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
-                Your free preview illustration has been generated on a different
-                spread. Order your book to generate all spreads.
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <p className="text-[10px] font-semibold tracking-widest text-violet-400 uppercase mb-2">
+              Right Page
+            </p>
+            {spread.rightText ? (
+              <p className="text-sm text-gray-700 leading-relaxed font-serif">
+                {spread.rightText}
               </p>
-            </div>
-          )}
-
-          {!resultImageUrl && !busy && !isLocked && (
-            <button
-              onClick={handleQuickGenerate}
-              className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2"
-              style={{
-                background:
-                  "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
-              }}
-            >
-              <Wand2 className="w-4 h-4" />
-              Generate Free Preview
-            </button>
-          )}
-
-          {resultImageUrl && !busy && !isLocked && (
-            <button
-              onClick={() => setShowRedraw(true)}
-              className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2"
-              style={{
-                background:
-                  "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
-              }}
-            >
-              <RefreshCw className="w-4 h-4" />
-              Redraw — Edit Characters, Outfits & More
-            </button>
-          )}
-
-          {busy && (
-            <button
-              disabled
-              className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2 opacity-50 cursor-not-allowed bg-gray-400"
-            >
-              <Loader2 className="w-4 h-4 animate-spin" />
-              {status === "queued" ? "Queued…" : "Generating…"}
-            </button>
-          )}
-
-          {styleWarning && (
-            <div className="flex items-center gap-2 text-amber-600 text-xs bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
-              {styleWarning === "no_style_guide" &&
-                "No style guide found — generating with default style."}
-              {styleWarning === "style_not_locked" &&
-                "Your style guide isn't locked yet. Lock it in Design for best results."}
-              {styleWarning === "no_reference_image" &&
-                "No style reference image uploaded. Add one in Design for better consistency."}
-            </div>
-          )}
-
-          {error && (
-            <div className="flex items-center gap-2 text-red-500 text-xs">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-              {error}
-            </div>
-          )}
+            ) : (
+              <p className="text-xs text-gray-300 italic">Single page spread</p>
+            )}
+          </div>
         </div>
+
+        {/* In this scene */}
+        {(spread.characters.length > 0 || spread.location) && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-5 py-4">
+            <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mb-3 flex items-center gap-1.5">
+              <Users className="w-3 h-3" /> In this scene
+            </p>
+
+            <div className="flex flex-wrap gap-5">
+              {spread.characters.map((c, i) => (
+                <div key={c.id} className="flex flex-col items-center gap-1.5">
+                  <Avatar
+                    name={c.name}
+                    imageUrl={c.imageUrl}
+                    size={52}
+                    index={i}
+                  />
+                  <span className="text-[11px] font-semibold text-gray-600">
+                    {c.name}
+                  </span>
+                </div>
+              ))}
+
+              {spread.location && (
+                <div className="flex flex-col items-center gap-1.5">
+                  <Avatar
+                    name={spread.location.name}
+                    imageUrl={spread.location.imageUrl}
+                    size={52}
+                    rounded="xl"
+                    index={spread.characters.length}
+                  />
+                  <span className="text-[11px] font-semibold text-gray-600">
+                    {spread.location.name}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Scene info */}
+        {(spread.scene || spread.mood) && (
+          <div className="bg-violet-50 border border-violet-100 rounded-xl px-4 py-3">
+            <div className="flex items-start gap-2">
+              <Sparkles className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />
+              <div>
+                {spread.scene && (
+                  <p className="text-sm text-violet-700 leading-relaxed">
+                    {spread.scene}
+                  </p>
+                )}
+                {spread.mood && (
+                  <p className="text-xs text-violet-400 mt-1 font-medium uppercase tracking-wide">
+                    Mood: {spread.mood}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Illustration canvas */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="relative w-full aspect-[16/9] bg-gradient-to-br from-violet-50 via-pink-50 to-amber-50">
+            <AnimatePresence mode="wait">
+              {busy && (
+                <motion.div
+                  key="loading"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-3"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+                    <Sparkles className="w-6 h-6 text-violet-400 animate-pulse" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-500">
+                    {status === "queued"
+                      ? "Queued for generation…"
+                      : "Illustrating your spread…"}
+                  </p>
+                  <div className="flex gap-1 mt-1">
+                    {[0, 1, 2].map((i) => (
+                      <motion.div
+                        key={i}
+                        className="w-1.5 h-1.5 rounded-full bg-violet-400"
+                        animate={{ opacity: [0.3, 1, 0.3] }}
+                        transition={{
+                          repeat: Infinity,
+                          duration: 1.2,
+                          delay: i * 0.2,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {!busy && resultImageUrl && (
+                <motion.button
+                  key="result"
+                  type="button"
+                  initial={{ opacity: 0, scale: 1.02 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setShowImageLightbox(true)}
+                  className="absolute inset-0 group cursor-zoom-in"
+                >
+                  <Image
+                    src={resultImageUrl}
+                    alt={`Spread: ${spread.pageLabel}`}
+                    fill
+                    className="object-cover"
+                    priority
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                  <div className="absolute bottom-3 right-3 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                    Click to enlarge
+                  </div>
+                </motion.button>
+              )}
+
+              {!busy && !resultImageUrl && (
+                <motion.div
+                  key="empty"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-3"
+                >
+                  <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+                    <Eye className="w-7 h-7 text-gray-300" />
+                  </div>
+                  <p className="text-sm text-gray-400">
+                    Your illustration will appear here
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <div className="p-4 space-y-3">
+            {isLocked && !busy && (
+              <div className="text-center py-4 space-y-3">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-100 text-gray-500 text-sm font-medium">
+                  <Lock className="w-4 h-4" />
+                  Preview used on another spread
+                </div>
+                <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
+                  Your free preview illustration has been generated on a different
+                  spread. Order your book to generate all spreads.
+                </p>
+              </div>
+            )}
+
+            {!resultImageUrl && !busy && !isLocked && (
+              <button
+                onClick={handleQuickGenerate}
+                className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
+                }}
+              >
+                <Wand2 className="w-4 h-4" />
+                Generate Free Preview
+              </button>
+            )}
+
+            {resultImageUrl && !busy && !isLocked && (
+              <button
+                onClick={() => setShowRedraw(true)}
+                className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
+                }}
+              >
+                <RefreshCw className="w-4 h-4" />
+                Redraw — Edit Characters, Outfits & More
+              </button>
+            )}
+
+            {busy && (
+              <button
+                disabled
+                className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2 opacity-50 cursor-not-allowed bg-gray-400"
+              >
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {status === "queued" ? "Queued…" : "Generating…"}
+              </button>
+            )}
+
+            {styleWarning && (
+              <div className="flex items-center gap-2 text-amber-600 text-xs bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
+                {styleWarning === "no_style_guide" &&
+                  "No style guide found — generating with default style."}
+                {styleWarning === "style_not_locked" &&
+                  "Your style guide isn't locked yet. Lock it in Design for best results."}
+                {styleWarning === "no_reference_image" &&
+                  "No style reference image uploaded. Add one in Design for better consistency."}
+              </div>
+            )}
+
+            {error && (
+              <div className="flex items-center gap-2 text-red-500 text-xs">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                {error}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <RedrawModal
+          isOpen={showRedraw}
+          onClose={() => setShowRedraw(false)}
+          onSubmit={handleRedrawSubmit}
+          isSubmitting={isSubmitting}
+          storyId={storyId}
+          spreadId={spread.spreadId}
+          spreadLabel={spread.pageLabel}
+        />
       </div>
 
-      <RedrawModal
-        isOpen={showRedraw}
-        onClose={() => setShowRedraw(false)}
-        onSubmit={handleRedrawSubmit}
-        isSubmitting={isSubmitting}
-        storyId={storyId}
-        spreadId={spread.spreadId}
-        spreadLabel={spread.pageLabel}
-      />
-    </div>
+      <AnimatePresence>
+        {showImageLightbox && resultImageUrl && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowImageLightbox(false)}
+            className="fixed inset-0 z-[80] bg-black/85 backdrop-blur-sm flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-6xl h-[85vh] rounded-2xl overflow-hidden shadow-2xl"
+            >
+              <Image
+                src={resultImageUrl}
+                alt={`Large preview of ${spread.pageLabel}`}
+                fill
+                className="object-contain bg-black"
+                sizes="100vw"
+                priority
+              />
+              <button
+                type="button"
+                onClick={() => setShowImageLightbox(false)}
+                className="absolute top-4 right-4 rounded-full bg-white/90 px-3 py-2 text-sm font-medium text-gray-800 shadow hover:bg-white"
+              >
+                Close
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 
