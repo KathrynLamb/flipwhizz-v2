@@ -125,12 +125,11 @@ export function MobileCharacterCard({
 
   const outfits = character.outfits || [];
 
-  async function handleLock(): Promise<boolean> {
+  /** Always locks — never toggles. Safe to call if already locked. */
+  async function lockCharacter(): Promise<boolean> {
+    if (locked) return true; // already locked, nothing to do
     try {
-      const endpoint = locked
-        ? "/api/characters/unlock"
-        : "/api/characters/lock";
-      const res = await fetch(endpoint, {
+      const res = await fetch("/api/characters/lock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId: character.id }),
@@ -138,9 +137,8 @@ export function MobileCharacterCard({
 
       if (!res.ok) return false;
 
-      const newLocked = !locked;
-      setLocked(newLocked);
-      onLockToggle?.(character.id, newLocked);
+      setLocked(true);
+      onLockToggle?.(character.id, true);
       return true;
     } catch {
       return false;
@@ -222,7 +220,7 @@ export function MobileCharacterCard({
 
   async function throwCardRight() {
     // Lock the character FIRST, then animate away
-    const success = await handleLock();
+    const success = await lockCharacter();
     if (!success) return;
 
     await controls.start({

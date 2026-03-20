@@ -98,6 +98,23 @@ export default function CharactersClient({
     setCharactersLocal(characters);
   }, [characters]);
 
+  // Lock to portrait on mobile
+useEffect(() => {
+  const lockOrientation = async () => {
+    try {
+      await (screen.orientation as any)?.lock?.('portrait');
+    } catch {
+      // Not supported or not allowed — CSS fallback handles it
+    }
+  };
+  lockOrientation();
+  return () => {
+    try {
+      (screen.orientation as any)?.unlock?.();
+    } catch {}
+  };
+}, []);
+
   function handleDelete(id: string) {
     setCharactersLocal((prev) => prev.filter((c) => c.id !== id));
   }
@@ -117,7 +134,10 @@ export default function CharactersClient({
     }
   }
 
+  console.log("charactersLocal", charactersLocal)
+
   const lockedCount = charactersLocal.filter((c) => c.locked).length;
+  
   const totalCount = charactersLocal.length;
   const allLocked = lockedCount === totalCount && totalCount > 0;
 
@@ -151,9 +171,22 @@ export default function CharactersClient({
 
         {/* Scrollbar hide */}
         <style jsx global>{`
-          .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-          .scrollbar-hide::-webkit-scrollbar { display: none; }
-        `}</style>
+            .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+            .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+            @media (orientation: landscape) and (max-height: 500px) {
+              html {
+                transform: rotate(-90deg);
+                transform-origin: left top;
+                width: 100vh;
+                height: 100vw;
+                overflow-x: hidden;
+                position: absolute;
+                top: 100%;
+                left: 0;
+              }
+            }
+          `}</style>
 
         {/* Header */}
         <UnifiedStoryHeader
