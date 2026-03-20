@@ -121,6 +121,23 @@ export function MobileLocationCard({
     }
   }
 
+  async function unlockLocation(): Promise<boolean> {
+    if (!locked) return true;
+    try {
+      const res = await fetch("/api/locations/unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locationId: location.id }),
+      });
+      if (!res.ok) return false;
+      setLocked(false);
+      onLockToggle?.(location.id, false);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function uploadToFirebase(file: File) {
     const path = `story-references/${storyId}/${crypto.randomUUID()}-${file.name}`;
     const storageRef = ref(storage, path);
@@ -181,8 +198,12 @@ export function MobileLocationCard({
   }
 
   async function throwCardRight() {
-    const success = await lockLocation();
-    if (!success) return;
+    if (!locked) {
+      // Lock first, then animate away
+      const success = await lockLocation();
+      if (!success) return;
+    }
+    // If already locked, just advance (keep)
 
     await controls.start({
       x: 650,
@@ -192,6 +213,28 @@ export function MobileLocationCard({
     });
 
     onSwiped?.(location.id, "lock");
+  }
+
+  async function handleSwipeLeft() {
+    if (locked) {
+      // Unlock the location
+      await unlockLocation();
+      // Bounce card to indicate unlock, don't advance
+      await controls.start({
+        x: -80,
+        rotate: -6,
+        transition: { duration: 0.15, ease: "easeOut" },
+      });
+      await controls.start({
+        x: 0,
+        rotate: 0,
+        opacity: 1,
+        transition: { type: "spring", stiffness: 420, damping: 32, mass: 0.85 },
+      });
+    } else {
+      // Open edit sheet
+      await openEditViaSwipe();
+    }
   }
 
   async function openEditViaSwipe() {
@@ -232,7 +275,7 @@ export function MobileLocationCard({
       info.offset.x < -SWIPE_DISTANCE || info.velocity.x < -SWIPE_VELOCITY;
 
     if (swipedRight) return throwCardRight();
-    if (swipedLeft) return openEditViaSwipe();
+    if (swipedLeft) return handleSwipeLeft();
     return snapBack();
   }
 
@@ -300,13 +343,15 @@ export function MobileLocationCard({
               <div
                 className="absolute top-10 left-6 px-5 py-2.5 rounded-2xl rotate-[-20deg]"
                 style={{
-                  background: "rgba(176,92,230,0.92)",
+                  background: locked
+                    ? "rgba(239,68,68,0.92)"
+                    : "rgba(176,92,230,0.92)",
                   border: "3px solid white",
                   boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
                 }}
               >
                 <span className="text-white font-extrabold text-2xl tracking-wide">
-                  EDIT
+                  {locked ? "UNLOCK" : "EDIT"}
                 </span>
               </div>
             </motion.div>
@@ -318,13 +363,15 @@ export function MobileLocationCard({
               <div
                 className="absolute top-10 right-6 px-5 py-2.5 rounded-2xl rotate-[20deg]"
                 style={{
-                  background: "rgba(16,185,129,0.92)",
+                  background: locked
+                    ? "rgba(67,184,156,0.92)"
+                    : "rgba(16,185,129,0.92)",
                   border: "3px solid white",
                   boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
                 }}
               >
                 <span className="text-white font-extrabold text-2xl tracking-wide">
-                  LOCK ✓
+                  {locked ? "KEEP ✓" : "LOCK ✓"}
                 </span>
               </div>
             </motion.div>
@@ -472,7 +519,7 @@ export function MobileLocationCard({
                   {uploading
                     ? "Processing…"
                     : locked
-                      ? "Swipe → unlock"
+                      ? "← unlock · keep →"
                       : "← edit · lock →"}
                 </span>
               </div>
@@ -490,6 +537,10 @@ export function MobileLocationCard({
                 location={location}
                 storyId={storyId}
                 accent={accent}
+                locked={locked}
+                onUploadReference={uploadReference}
+                onUseAiImage={useAiImage}
+                uploading={uploading}
                 onClose={() => setShowEdit(false)}
                 onSave={() => {
                   setShowEdit(false);
@@ -512,12 +563,20 @@ function MobileLocationEditSheet({
   location,
   storyId,
   accent,
+  locked,
+  onUploadReference,
+  onUseAiImage,
+  uploading,
   onClose,
   onSave,
 }: {
   location: Location;
   storyId: string;
   accent: { from: string; to: string };
+  locked: boolean;
+  onUploadReference: (file: File) => Promise<void>;
+  onUseAiImage: () => Promise<void>;
+  uploading: boolean;
   onClose: () => void;
   onSave: () => void;
 }) {
@@ -643,6 +702,68 @@ function MobileLocationEditSheet({
 
         {/* Scrollable edit fields */}
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+          {/* Reference image section */}
+          {!locked && (
+            <div>
+              <label
+                className="flex items-center gap-2 mb-2 text-[11px] font-bold uppercase tracking-widest"
+                style={{ color: "#A897BD" }}
+              >
+                <span className="text-base">🖼️</span> Reference Image
+              </label>
+
+              {uploading ? (
+                <div
+                  className="flex items-center justify-center gap-2 py-4 rounded-2xl"
+                  style={{
+                    background: "rgba(139,92,246,0.04)",
+                    border: "2px dashed rgba(139,92,246,0.2)",
+                  }}
+                >
+                  <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#8b5cf6" }} />
+                  <span className="text-sm font-semibold" style={{ color: "#8b5cf6" }}>
+                    Uploading…
+                  </span>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.accept = "image/*";
+                      input.onchange = async (ev) => {
+                        const file = (ev.target as HTMLInputElement).files?.[0];
+                        if (!file) return;
+                        await onUploadReference(file);
+                      };
+                      input.click();
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold active:scale-[0.98] transition-all"
+                    style={{
+                      background: "white",
+                      border: "2px solid rgba(180,150,210,0.15)",
+                      color: "#5A4D6B",
+                    }}
+                  >
+                    <Upload className="w-4 h-4" /> Upload Photo
+                  </button>
+                  <button
+                    onClick={() => onUseAiImage()}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white active:scale-[0.98] transition-all"
+                    style={{
+                      background: "linear-gradient(135deg, #8b5cf6, #d946ef)",
+                      boxShadow: "0 2px 8px rgba(139,92,246,0.2)",
+                      border: "none",
+                    }}
+                  >
+                    <Sparkles className="w-4 h-4" /> Generate AI
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <label
               className="flex items-center gap-2 mb-2 text-[11px] font-bold uppercase tracking-widest"
