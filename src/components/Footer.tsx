@@ -1,5 +1,3 @@
-"use client"; 
-
 import Link from "next/link";
 import Image from "next/image";
 import { getAllPosts } from "@/lib/blog";
@@ -10,8 +8,43 @@ const RAINBOW = ["#E8457A", "#F5A623", "#7BC67E", "#5EAED4"];
 export default function Footer() {
   const recentPosts = getAllPosts().slice(0, 3);
 
+  const navItems = [
+    { href: "/", label: "Home", colorVar: "--nav-hover-0" },
+    { href: "#how-it-works", label: "How It Works", colorVar: "--nav-hover-0" },
+    { href: "#gallery", label: "Gallery", colorVar: "--nav-hover-1" },
+    { href: "#pricing", label: "Pricing", colorVar: "--nav-hover-3" },
+    { href: "/blog", label: "Blog", colorVar: "--nav-hover-2" },
+    { href: "/contact", label: "Contact", colorVar: "--nav-hover-3" },
+  ];
+
   return (
-    <footer className="relative overflow-hidden" style={{ background: "#2D2235" }}>
+    <footer
+      className="relative overflow-hidden"
+      style={{
+        background: "#2D2235",
+        ["--nav-hover-0" as any]: RAINBOW[0],
+        ["--nav-hover-1" as any]: RAINBOW[1],
+        ["--nav-hover-2" as any]: RAINBOW[2],
+        ["--nav-hover-3" as any]: RAINBOW[3],
+      }}
+    >
+      {/* Hover styles */}
+      <style>{`
+        .footer-nav-link { color: rgba(254,252,250,0.45); transition: color 0.2s, transform 0.2s; }
+        .footer-nav-link:hover { transform: translateX(4px); }
+        .footer-nav-link[data-color="0"]:hover { color: ${RAINBOW[0]}; }
+        .footer-nav-link[data-color="1"]:hover { color: ${RAINBOW[1]}; }
+        .footer-nav-link[data-color="2"]:hover { color: ${RAINBOW[2]}; }
+        .footer-nav-link[data-color="3"]:hover { color: ${RAINBOW[3]}; }
+        .footer-blog-link span.blog-title { color: rgba(254,252,250,0.6); transition: color 0.2s; }
+        .footer-blog-link:hover span.blog-title-0 { color: ${RAINBOW[0]}; }
+        .footer-blog-link:hover span.blog-title-1 { color: ${RAINBOW[1]}; }
+        .footer-blog-link:hover span.blog-title-2 { color: ${RAINBOW[2]}; }
+        .footer-blog-link:hover span.blog-title-3 { color: ${RAINBOW[3]}; }
+        .footer-allposts { color: ${RAINBOW[2]}; transition: color 0.2s; }
+        .footer-allposts:hover { color: ${RAINBOW[1]}; }
+      `}</style>
+
       {/* ── Soft curved transition from page background ── */}
       <div className="absolute top-0 left-0 w-full overflow-hidden leading-none">
         <svg
@@ -97,25 +130,22 @@ export default function Footer() {
             >
               Navigate
             </p>
-            {[
-              { href: "/", label: "Home", color: RAINBOW[0] },
-              { href: "#how-it-works", label: "How It Works", color: RAINBOW[0] },
-              { href: "#gallery", label: "Gallery", color: RAINBOW[1] },
-              { href: "#pricing", label: "Pricing", color: RAINBOW[3] },
-              { href: "/blog", label: "Blog", color: RAINBOW[2] },
-              { href: "/contact", label: "Contact", color: RAINBOW[3] },
-            ].map(({ href, label, color }) => (
-              <Link
-                key={href}
-                href={href}
-                className="text-sm w-fit transition-all duration-200 hover:translate-x-1"
-                style={{ color: "rgba(254,252,250,0.45)" }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = color; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(254,252,250,0.45)"; }}
-              >
-                {label}
-              </Link>
-            ))}
+            {navItems.map(({ href, label }, i) => {
+              // Map to colour index
+              const colorIdx = href === "/" || href === "#how-it-works" ? 0
+                : href === "#gallery" ? 1
+                : href === "/blog" ? 2 : 3;
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className="footer-nav-link text-sm w-fit"
+                  data-color={colorIdx}
+                >
+                  {label}
+                </Link>
+              );
+            })}
           </div>
 
           {/* Blog column */}
@@ -135,15 +165,10 @@ export default function Footer() {
                 <Link
                   key={post.slug}
                   href={`/blog/${post.slug}`}
-                  className="group flex flex-col gap-1 py-2.5"
-                  style={{ borderBottom: `1px solid rgba(254,252,250,0.05)` }}
+                  className="footer-blog-link flex flex-col gap-1 py-2.5"
+                  style={{ borderBottom: "1px solid rgba(254,252,250,0.05)" }}
                 >
-                  <span
-                    className="text-sm leading-snug transition-colors duration-200"
-                    style={{ color: "rgba(254,252,250,0.6)" }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = RAINBOW[i % RAINBOW.length]; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(254,252,250,0.6)"; }}
-                  >
+                  <span className={`blog-title blog-title-${i % RAINBOW.length} text-sm leading-snug`}>
                     {post.title}
                   </span>
                   <span className="text-xs" style={{ color: "rgba(254,252,250,0.2)" }}>
@@ -158,10 +183,7 @@ export default function Footer() {
             )}
             <Link
               href="/blog"
-              className="mt-2 text-xs font-semibold w-fit transition-colors duration-200"
-              style={{ color: RAINBOW[2] }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = RAINBOW[1]; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = RAINBOW[2]; }}
+              className="footer-allposts mt-2 text-xs font-semibold w-fit"
             >
               All posts →
             </Link>
