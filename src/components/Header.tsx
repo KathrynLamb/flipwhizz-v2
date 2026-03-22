@@ -8,6 +8,9 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const PINK = "#D94590";
 
+// Rainbow colours sampled from the FlipWhizz logo
+const NAV_COLORS = ["#E8457A", "#F5A623", "#7BC67E", "#5EAED4"];
+
 export default function Header({ session }: { session: any }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -26,19 +29,20 @@ export default function Header({ session }: { session: any }) {
   return (
     <header className="relative z-50 w-full">
       {/* Desktop */}
-      <div className="hidden md:flex items-center justify-between px-12 py-4 bg-white/95 backdrop-blur-xl border-b border-gray-100">
+      <div className="hidden lg:flex items-center justify-between px-12 py-4 bg-white/95 backdrop-blur-xl border-b border-gray-100">
         <Logo />
         <nav className="flex items-center gap-9">
-          {navLinks.map(({ href, label }) => (
+          {navLinks.map(({ href, label }, i) => (
             <Link
               key={href}
               href={href}
-              className="relative group text-gray-500 text-sm font-semibold tracking-wide transition-colors duration-300 hover:text-gray-900"
+              className="relative group text-sm font-semibold tracking-wide transition-colors duration-300"
+              style={{ color: NAV_COLORS[i] }}
             >
-              {label}
+              <span className="group-hover:opacity-80 transition-opacity duration-300">{label}</span>
               <span
                 className="absolute -bottom-0.5 left-0 w-0 h-[2px] rounded-full group-hover:w-full transition-all duration-300"
-                style={{ background: PINK }}
+                style={{ background: NAV_COLORS[i] }}
               />
             </Link>
           ))}
@@ -46,9 +50,8 @@ export default function Header({ session }: { session: any }) {
         <div className="flex items-center gap-3">
           {!session ? (
             <Link
-              href="/api/auth/signin"
+              href="/auth/signin"
               className="px-6 py-2.5 rounded-full text-sm font-semibold text-gray-500 border-2 border-gray-200 hover:text-white transition-all duration-300"
-              style={{ ["--hover-bg" as any]: PINK }}
               onMouseEnter={(e) => { e.currentTarget.style.background = PINK; e.currentTarget.style.borderColor = PINK; e.currentTarget.style.color = "white"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = ""; e.currentTarget.style.borderColor = ""; e.currentTarget.style.color = ""; }}
             >
@@ -75,7 +78,7 @@ export default function Header({ session }: { session: any }) {
       </div>
 
       {/* Mobile */}
-      <div className="md:hidden flex items-center justify-between px-6 py-4 bg-white/95 backdrop-blur-xl border-b border-gray-100">
+      <div className="lg:hidden flex items-center justify-between px-6 py-4 bg-white/95 backdrop-blur-xl border-b border-gray-100">
         <Logo />
         <button
           onClick={() => setIsOpen(!isOpen)}
@@ -111,16 +114,21 @@ export default function Header({ session }: { session: any }) {
               <nav className="flex-1 flex flex-col justify-center px-8">
                 {navLinks.map(({ href, label }, i) => (
                   <motion.div key={href} initial={{ opacity: 0, x: -28 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.18 + i * 0.08, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
-                    <Link href={href} onClick={() => setIsOpen(false)} className="group flex items-center justify-between py-5 border-b border-gray-100">
-                      <span className="font-serif text-3xl font-bold tracking-tight text-gray-300 group-hover:text-gray-800 transition-colors duration-300">{label}</span>
-                      <span className="text-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" style={{ color: PINK }}>→</span>
+                    <Link href={href} onClick={() => setIsOpen(false)} className="group flex items-center justify-between py-5" style={{ borderBottom: `1px solid ${NAV_COLORS[i]}20` }}>
+                      <span
+                        className="font-serif text-3xl font-bold tracking-tight transition-opacity duration-300 group-hover:opacity-70"
+                        style={{ color: NAV_COLORS[i] }}
+                      >
+                        {label}
+                      </span>
+                      <span className="text-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" style={{ color: NAV_COLORS[i] }}>→</span>
                     </Link>
                   </motion.div>
                 ))}
               </nav>
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42, duration: 0.4, ease: [0.16, 1, 0.3, 1] }} className="relative z-10 px-8 pb-16 flex flex-col gap-3">
                 {!session ? (
-                  <Link href="/api/auth/signin" onClick={() => setIsOpen(false)} className="w-full py-4 rounded-2xl text-center text-base font-semibold text-gray-500 border-2 border-gray-200 transition-all">Sign In</Link>
+                  <Link href="/auth/signin" onClick={() => setIsOpen(false)} className="w-full py-4 rounded-2xl text-center text-base font-semibold text-gray-500 border-2 border-gray-200 transition-all">Sign In</Link>
                 ) : (
                   <>
                     <Link href="/projects" onClick={() => setIsOpen(false)} className="w-full py-4 rounded-2xl text-center text-base font-bold text-white tracking-wide transition-all hover:scale-[1.02] active:scale-[0.98]" style={{ background: PINK, boxShadow: `0 4px 20px ${PINK}30` }}>✦ My Library</Link>

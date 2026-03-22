@@ -27,7 +27,7 @@ export default function HeroButton({
 
   const styles =
     variant === "primary"
-      ? "bg-[#8B5A83] text-white hover:bg-[#7A4E73] shadow-lg hover:shadow-xl"
+      ? "bg-[#D94590] text-white hover:bg-[#D94590]/60 shadow-lg hover:shadow-xl"
       : variant === "outline"
         ? "bg-transparent text-[#8B5A83] border-2 border-[#8B5A83]/30 hover:border-[#8B5A83]/60"
         : "bg-[#8B5A83] text-white shadow-lg hover:bg-[#7A4E73] hover:scale-105 hover:shadow-xl";

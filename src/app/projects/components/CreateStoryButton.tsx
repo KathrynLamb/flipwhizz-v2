@@ -28,7 +28,7 @@ export default function CreateStoryButton() {
       setIsLoading(false);
     }
   }
-
+   
   return (
     <button
       onClick={createProject}
