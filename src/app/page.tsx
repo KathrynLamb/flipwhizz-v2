@@ -81,7 +81,7 @@ export default async function Home() {
         />
         <div className="relative flex flex-col items-center gap-5 px-6">
           <Link
-            href={hasProjects ? "/projects" : "/projects/new"}
+            href={hasProjects ? "/projects" : "/projects/create"}
             className="group px-10 py-4 lg:px-14 lg:py-5 rounded-full text-base lg:text-lg font-bold text-white tracking-wide transition-all duration-300 hover:scale-105 active:scale-[0.98]"
             style={{
               background: "#D94590",

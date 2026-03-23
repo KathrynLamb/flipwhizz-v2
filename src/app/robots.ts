@@ -1,12 +1,20 @@
-import { MetadataRoute } from 'next'
+import { MetadataRoute } from "next";
 
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
-      userAgent: '*',
-      allow: '/',
-      disallow: ['/dashboard', '/studio', '/orders', '/account', '/api/', '/login', '/signup', '/create'],
+      userAgent: "*",
+      allow: "/",
+      disallow: [
+        "/dashboard",
+        "/studio",
+        "/orders",
+        "/account",
+        "/api/",
+        "/login",
+        "/signup",
+      ],
     },
-    sitemap: 'https://www.flipwhizz.com/sitemap.xml',
-  }
+    sitemap: "https://www.flipwhizz.com/sitemap.xml",
+  };
 }
