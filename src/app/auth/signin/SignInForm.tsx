@@ -110,7 +110,7 @@ export default function SignInForm() {
         />
 
         {/* Logo */}
-        <div className="flex justify-center mb-6">
+        <div className="flex justify-center mb-4">
           <Link href="/">
             <Image src="/Flipwhizz_logo_NEW.png" alt="FlipWhizz" width={160} height={160} />
           </Link>

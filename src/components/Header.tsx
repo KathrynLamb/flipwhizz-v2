@@ -29,7 +29,7 @@ export default function Header({ session }: { session: any }) {
   return (
     <header className="relative z-50 w-full">
       {/* Desktop */}
-      <div className="hidden lg:flex items-center justify-between px-12 py-4 bg-white/95 backdrop-blur-xl border-b border-gray-100">
+      <div className="hidden lg:flex items-center justify-between px-12 py-1 bg-white/95 backdrop-blur-xl border-b border-gray-100">
         <Logo />
         <nav className="flex items-center gap-9">
           {navLinks.map(({ href, label }, i) => (

@@ -1,5 +1,6 @@
 'use client';
-
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "@/lib/firebaseClient";
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -119,16 +120,31 @@ export default function CharacterCard({
     if (locked) return;
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('characterId', character.id);
-      const res = await fetch('/api/characters/upload-reference', { method: 'POST', body: fd });
+      // Step 1: Upload to Firebase
+      const path = `story-references/${storyId}/${crypto.randomUUID()}-${file.name}`;
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, file, { contentType: file.type });
+      const publicUrl = await getDownloadURL(storageRef);
+  
+      // Step 2: Save URL to character
+      const res = await fetch('/api/characters/upload-reference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          characterId: character.id,
+          imageUrl: publicUrl,
+          storagePath: path,
+        }),
+      });
+  
       if (res.ok) {
         const data = await res.json();
         setCurrentImageUrl(data.url);
         onUpdate?.();
         router.refresh();
       }
+    } catch (err) {
+      console.error('Photo upload failed:', err);
     } finally {
       setUploading(false);
     }
