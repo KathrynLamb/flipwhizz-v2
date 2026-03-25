@@ -54,7 +54,8 @@ type RedrawSubmitPayload = {
   feedback: string;
   includedCharacterIds: string[];
   outfitOverrides: Record<string, string>;
-  locationId: string | null;
+  primaryLocationId: string | null;
+  includedLocationIds: string[];
   freshStart?: boolean;
 };
 
@@ -264,7 +265,7 @@ function MobileGenerationSection({
     setError(null);
     setShowRedraw(false);
     setStatus("queued");
-
+  
     try {
       const res = await fetch(`/api/stories/${storyId}/generate-spread`, {
         method: "POST",
@@ -281,20 +282,21 @@ function MobileGenerationSection({
           referenceOverrides: {
             includedCharacterIds: payload.includedCharacterIds,
             outfitOverrides: payload.outfitOverrides,
-            locationId: payload.locationId,
+            primaryLocationId: payload.primaryLocationId,
+            includedLocationIds: payload.includedLocationIds,
           },
         }),
       });
-
+  
       if (!res.ok) {
         throw new Error((await res.text()) || "Request failed");
       }
-
+  
       const { jobId: id, styleWarning: sw } = await res.json();
       setJobId(id);
       setStyleWarning(sw ?? null);
       setStatus("generating");
-      onGenerated();
+      onGenerated?.();
     } catch (e: any) {
       setError(e.message ?? "Something went wrong");
       setStatus("error");

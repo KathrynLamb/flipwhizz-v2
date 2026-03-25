@@ -26,12 +26,40 @@ const client = new Anthropic({
 const MODEL = "claude-sonnet-4-20250514";
 
 /* -------------------------------------------------------------------------- */
+/*                                   TYPES                                    */
+/* -------------------------------------------------------------------------- */
+
+type SpreadLocationRole =
+  | "primary"
+  | "secondary"
+  | "background"
+  | "referenced"
+  | "memory";
+
+type ClaudeSpreadLocationDecision = {
+  locationId: string;
+  role: SpreadLocationRole;
+  reason: string;
+};
+
+type ClaudeSpreadDecision = {
+  spreadIndex: number;
+  characterIds: string[];
+  locations: ClaudeSpreadLocationDecision[];
+};
+
+type ClaudeToolInput = {
+  spreads: ClaudeSpreadDecision[];
+};
+
+/* -------------------------------------------------------------------------- */
 /*                         CLAUDE TOOL (HARD CONTRACT)                         */
 /* -------------------------------------------------------------------------- */
 
 const decideSpreadScenesTool: Anthropic.Tool = {
   name: "decide_spread_scenes",
-  description: "Assign characters and locations to each spread in the story",
+  description:
+    "Assign characters and one or more locations to each spread in the story",
   input_schema: {
     type: "object",
     required: ["spreads"],
@@ -40,7 +68,7 @@ const decideSpreadScenesTool: Anthropic.Tool = {
         type: "array",
         items: {
           type: "object",
-          required: ["spreadIndex", "characterIds"],
+          required: ["spreadIndex", "characterIds", "locations"],
           properties: {
             spreadIndex: {
               type: "number",
@@ -51,26 +79,43 @@ const decideSpreadScenesTool: Anthropic.Tool = {
               description: "Array of character IDs that appear in this spread",
               items: { type: "string" },
             },
-            locationId: {
-              type: "string",
+            locations: {
+              type: "array",
               description:
-                "The primary location ID for this spread, or empty string if none",
+                "Array of locations relevant to this spread. Use one primary location when there is a clear main visible setting. Add additional locations only if they are also relevant as referenced, memory, background, or secondary context.",
+              items: {
+                type: "object",
+                required: ["locationId", "role", "reason"],
+                properties: {
+                  locationId: {
+                    type: "string",
+                    description: "A location ID from the provided list",
+                  },
+                  role: {
+                    type: "string",
+                    enum: [
+                      "primary",
+                      "secondary",
+                      "background",
+                      "referenced",
+                      "memory",
+                    ],
+                    description:
+                      "How this location functions in the spread",
+                  },
+                  reason: {
+                    type: "string",
+                    description:
+                      "Short explanation of why this location is relevant",
+                  },
+                },
+              },
             },
           },
         },
       },
     },
   },
-};
-
-type ClaudeSpreadDecision = {
-  spreadIndex: number;
-  characterIds: string[];
-  locationId?: string;
-};
-
-type ClaudeToolInput = {
-  spreads: ClaudeSpreadDecision[];
 };
 
 /* -------------------------------------------------------------------------- */
@@ -87,6 +132,16 @@ function extractDecideScenesToolInput(
   return toolUse?.input ?? null;
 }
 
+function isValidLocationRole(value: unknown): value is SpreadLocationRole {
+  return (
+    value === "primary" ||
+    value === "secondary" ||
+    value === "background" ||
+    value === "referenced" ||
+    value === "memory"
+  );
+}
+
 function isValidClaudeToolInput(value: unknown): value is ClaudeToolInput {
   if (!value || typeof value !== "object") return false;
 
@@ -99,7 +154,7 @@ function isValidClaudeToolInput(value: unknown): value is ClaudeToolInput {
     const s = spread as {
       spreadIndex?: unknown;
       characterIds?: unknown;
-      locationId?: unknown;
+      locations?: unknown;
     };
 
     if (typeof s.spreadIndex !== "number" || !Number.isFinite(s.spreadIndex)) {
@@ -109,11 +164,20 @@ function isValidClaudeToolInput(value: unknown): value is ClaudeToolInput {
     if (!Array.isArray(s.characterIds)) return false;
     if (!s.characterIds.every((id) => typeof id === "string")) return false;
 
-    if (
-      s.locationId !== undefined &&
-      typeof s.locationId !== "string"
-    ) {
-      return false;
+    if (!Array.isArray(s.locations)) return false;
+
+    for (const loc of s.locations) {
+      if (!loc || typeof loc !== "object") return false;
+
+      const l = loc as {
+        locationId?: unknown;
+        role?: unknown;
+        reason?: unknown;
+      };
+
+      if (typeof l.locationId !== "string") return false;
+      if (!isValidLocationRole(l.role)) return false;
+      if (typeof l.reason !== "string") return false;
     }
   }
 
@@ -122,14 +186,66 @@ function isValidClaudeToolInput(value: unknown): value is ClaudeToolInput {
 
 function normalizeClaudeToolInput(input: ClaudeToolInput): ClaudeToolInput {
   return {
-    spreads: input.spreads.map((spread) => ({
-      spreadIndex: spread.spreadIndex,
-      characterIds: Array.from(
-        new Set((spread.characterIds ?? []).filter((id) => typeof id === "string"))
-      ),
-      locationId:
-        typeof spread.locationId === "string" ? spread.locationId : "",
-    })),
+    spreads: input.spreads.map((spread) => {
+      const uniqueCharacterIds = Array.from(
+        new Set(
+          (spread.characterIds ?? []).filter((id) => typeof id === "string")
+        )
+      );
+
+      const seenLocationIds = new Set<string>();
+      let normalizedLocations = (spread.locations ?? [])
+        .filter(
+          (loc) =>
+            loc &&
+            typeof loc.locationId === "string" &&
+            loc.locationId.trim() &&
+            isValidLocationRole(loc.role)
+        )
+        .filter((loc) => {
+          const key = loc.locationId.trim();
+          if (seenLocationIds.has(key)) return false;
+          seenLocationIds.add(key);
+          return true;
+        })
+        .map((loc) => ({
+          locationId: loc.locationId.trim(),
+          role: loc.role,
+          reason:
+            typeof loc.reason === "string" && loc.reason.trim()
+              ? loc.reason.trim()
+              : "Derived from spread text",
+        }));
+
+      const primaryLocations = normalizedLocations.filter(
+        (loc) => loc.role === "primary"
+      );
+
+      if (normalizedLocations.length > 0 && primaryLocations.length === 0) {
+        normalizedLocations = normalizedLocations.map((loc, index) => ({
+          ...loc,
+          role: index === 0 ? ("primary" as const) : loc.role,
+        }));
+      }
+
+      if (primaryLocations.length > 1) {
+        let firstPrimarySeen = false;
+        normalizedLocations = normalizedLocations.map((loc) => {
+          if (loc.role !== "primary") return loc;
+          if (!firstPrimarySeen) {
+            firstPrimarySeen = true;
+            return loc;
+          }
+          return { ...loc, role: "secondary" as const };
+        });
+      }
+
+      return {
+        spreadIndex: spread.spreadIndex,
+        characterIds: uniqueCharacterIds,
+        locations: normalizedLocations,
+      };
+    }),
   };
 }
 
@@ -139,14 +255,14 @@ function normalizeClaudeToolInput(input: ClaudeToolInput): ClaudeToolInput {
 
 export const decideScenes = inngest.createFunction(
   {
-    id: "decide-scenes-v3",
+    id: "decide-scenes-v4",
     retries: 2,
   },
   { event: "story/decide-spread-scenes" },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
 
-    console.log("🟣 [decide-scenes-v3] Starting:", storyId);
+    console.log("🟣 [decide-scenes-v4] Starting:", storyId);
 
     /* ------------------------------------------------------------------ */
     /* Load spreads                                                        */
@@ -164,7 +280,6 @@ export const decideScenes = inngest.createFunction(
     }
 
     const spreadByIndex = new Map(spreads.map((s) => [s.spreadIndex, s]));
-
     console.log(`📚 Loaded ${spreads.length} spreads`);
 
     /* ------------------------------------------------------------------ */
@@ -227,6 +342,9 @@ export const decideScenes = inngest.createFunction(
 
     console.log(`📍 Loaded ${locs.length} locations`);
 
+    const validCharacterIds = new Set(chars.map((c) => c.id));
+    const validLocationIds = new Set(locs.map((l) => l.id));
+
     /* ------------------------------------------------------------------ */
     /* Build Claude input                                                  */
     /* ------------------------------------------------------------------ */
@@ -271,42 +389,37 @@ ${right}
       .sort((a, b) => a - b);
 
     /* ------------------------------------------------------------------ */
-    /* Claude (TOOLS — REPAIRABLE CONTRACT)                                */
+    /* Claude                                                              */
     /* ------------------------------------------------------------------ */
 
     const systemPrompt = `
 You are performing a STRUCTURAL planning task.
 
-For each spread, decide which characters appear and what the primary location is.
+For each spread, decide:
+1. which characters appear
+2. which locations are relevant to the spread
 
 You MUST return ONLY via the decide_spread_scenes tool.
 
-The tool input MUST look exactly like this shape:
-
-{
-  "spreads": [
-    {
-      "spreadIndex": 1,
-      "characterIds": ["character-id-1", "character-id-2"],
-      "locationId": "location-id-1"
-    },
-    {
-      "spreadIndex": 2,
-      "characterIds": [],
-      "locationId": ""
-    }
-  ]
-}
+Use locations carefully:
+- "primary" = the main visible setting of the spread
+- "secondary" = another physically present but less dominant setting
+- "background" = a weak environmental location signal
+- "referenced" = a location mentioned in narration/dialogue but not the main visible setting
+- "memory" = flashback, remembered, imagined, or non-present location context
 
 Rules:
 - Use ONLY the character and location IDs provided in the user message
 - Do NOT invent or guess IDs
-- If no location is relevant, use empty string ""
 - If no characters appear, use empty array []
+- If no locations are relevant, use empty array []
 - Every spreadIndex from the input must be included exactly once
 - "spreads" must always be present
 - "spreads" must always be an array
-- Do not omit required fields
+- Each spread must include: spreadIndex, characterIds, locations
+- Prefer exactly one "primary" location when a clear main setting exists
+- Do not mark a merely mentioned past location as "primary" if the visible action is happening somewhere else
+- Do not add commentary outside the tool
 `.trim();
 
     const userPrompt = `
@@ -328,7 +441,7 @@ ${spreadText}
 
       return client.messages.create({
         model: MODEL,
-        max_tokens: 2000,
+        max_tokens: 2500,
         tools: [decideSpreadScenesTool],
         tool_choice: {
           type: "tool",
@@ -345,7 +458,6 @@ ${spreadText}
     });
 
     console.log("🔍 Extracting tool use from Claude response...");
-
     let rawToolInput = extractDecideScenesToolInput(firstResult);
 
     if (!rawToolInput) {
@@ -364,7 +476,7 @@ ${spreadText}
       const repairedResult = await step.run("repair-tool-output", async () => {
         return client.messages.create({
           model: MODEL,
-          max_tokens: 1200,
+          max_tokens: 1500,
           tools: [decideSpreadScenesTool],
           tool_choice: {
             type: "tool",
@@ -381,7 +493,13 @@ Required shape:
     {
       "spreadIndex": 1,
       "characterIds": ["id1", "id2"],
-      "locationId": "location-id-or-empty-string"
+      "locations": [
+        {
+          "locationId": "location-id-1",
+          "role": "primary",
+          "reason": "Main visible setting"
+        }
+      ]
     }
   ]
 }
@@ -391,6 +509,8 @@ Rules:
 - spreads must be an array
 - every spreadIndex from the input must appear exactly once
 - use only IDs already provided
+- every spread must include characterIds and locations
+- locations must be an array, not a string
 - do not omit required fields
 - do not add commentary
 `.trim(),
@@ -465,16 +585,26 @@ ${expectedSpreadIndexes.join(", ")}
           throw new Error(`Invalid spreadIndex ${decision.spreadIndex}`);
         }
 
-        const characterIds = decision.characterIds || [];
-        const locationId =
-          decision.locationId && decision.locationId !== ""
-            ? decision.locationId
-            : null;
+        const characterPresence = (decision.characterIds || [])
+          .filter((characterId) => validCharacterIds.has(characterId))
+          .map((characterId) => ({
+            characterId,
+            role: "primary" as const,
+            confidence: 0.8,
+            reason: "Derived from spread text",
+          }));
+
+        const locationPresence = (decision.locations || [])
+          .filter((loc) => validLocationIds.has(loc.locationId))
+          .map((loc) => ({
+            locationId: loc.locationId,
+            role: loc.role,
+            confidence: loc.role === "primary" ? 0.9 : 0.7,
+            reason: loc.reason || "Derived from spread text",
+          }));
 
         console.log(
-          `✅ Spread ${decision.spreadIndex}: ${characterIds.length} characters, location: ${
-            locationId || "none"
-          }`
+          `✅ Spread ${decision.spreadIndex}: ${characterPresence.length} characters, ${locationPresence.length} locations`
         );
 
         await db
@@ -482,13 +612,8 @@ ${expectedSpreadIndexes.join(", ")}
           .values({
             id: uuid(),
             spreadId: spread.id,
-            characters: characterIds.map((characterId: string) => ({
-              characterId,
-              role: "primary",
-              confidence: 0.8,
-              reason: "Derived from spread text",
-            })),
-            primaryLocationId: locationId,
+            characters: characterPresence,
+            locations: locationPresence,
             source: "claude",
             locked: true,
             createdAt: new Date(),
@@ -497,13 +622,8 @@ ${expectedSpreadIndexes.join(", ")}
           .onConflictDoUpdate({
             target: storySpreadPresence.spreadId,
             set: {
-              characters: characterIds.map((characterId: string) => ({
-                characterId,
-                role: "primary",
-                confidence: 0.8,
-                reason: "Derived from spread text",
-              })),
-              primaryLocationId: locationId,
+              characters: characterPresence,
+              locations: locationPresence,
               updatedAt: new Date(),
             },
           });
@@ -534,7 +654,7 @@ ${expectedSpreadIndexes.join(", ")}
       });
     });
 
-    console.log("✅ [decide-scenes-v3] Workflow complete!");
+    console.log("✅ [decide-scenes-v4] Workflow complete!");
 
     return { ok: true, spreadsProcessed: toolInput.spreads.length };
   }

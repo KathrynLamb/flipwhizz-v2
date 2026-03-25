@@ -375,7 +375,8 @@ export default function MobileStudio({
     feedback: string;
     includedCharacterIds: string[];
     outfitOverrides: Record<string, string>;
-    locationId: string | null;
+    primaryLocationId: string | null;
+    includedLocationIds: string[];
     freshStart?: boolean;
   }) {
     if (!redrawTarget || isSubmittingFeedback) return;
@@ -396,7 +397,8 @@ export default function MobileStudio({
             feedback: payload.freshStart ? "" : payload.feedback,
             includedCharacterIds: payload.includedCharacterIds,
             outfitOverrides: payload.outfitOverrides,
-            locationId: payload.locationId,
+            primaryLocationId: payload.primaryLocationId,
+            includedLocationIds: payload.includedLocationIds,
             freshStart: payload.freshStart ?? false,
           }),
         }

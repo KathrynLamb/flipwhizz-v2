@@ -843,11 +843,14 @@ export const storySpreadPresence = pgTable("story_spread_presence", {
     .unique(),
 
   // Claude's decision (locked)
-  primaryLocationId: uuid("primary_location_id").references(
-    () => locations.id,
-    { onDelete: "set null" }
-  ),
-
+  locations: jsonb("locations").$type<
+  {
+    locationId: string;
+    role: "primary" | "secondary" | "background" | "referenced" | "memory";
+    confidence: number;
+    reason: string;
+  }[]
+>(),
   characters: jsonb("characters").$type<
     {
       characterId: string;
@@ -906,3 +909,5 @@ export const storySpreadScene = pgTable("story_spread_scene", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+

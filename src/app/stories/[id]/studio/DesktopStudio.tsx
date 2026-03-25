@@ -107,95 +107,6 @@ function CoverSpreadPreview({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*                              Spread Card                                   */
-/* -------------------------------------------------------------------------- */
-
-// function SpreadCard({
-//   spread,
-//   isGeneratingAll,
-//   isRegenerating,
-//   onRedraw,
-// }: {
-//   spread: Spread;
-//   isGeneratingAll: boolean;
-//   isRegenerating: boolean;
-//   onRedraw: () => void;
-// }) {
-//   const pageLabel = spread.right
-//     ? `Pages ${spread.left.pageNumber}–${spread.right.pageNumber}`
-//     : `Page ${spread.left.pageNumber}`;
-
-//   const hasImage = !!spread.left.imageUrl;
-
-//   return (
-//     <div className="group bg-white rounded-2xl border overflow-hidden relative">
-//       {/* Spread number label */}
-//       <div className="absolute top-3 left-3 z-10 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-white">
-//         {pageLabel}
-//       </div>
-
-//       {/* Redraw button */}
-//       {hasImage && !isRegenerating && (
-//         <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-//           <button
-//             onClick={onRedraw}
-//             className="flex items-center gap-1.5 bg-white/90 backdrop-blur-md text-gray-700 hover:text-purple-600 hover:bg-white px-3 py-1.5 rounded-full text-xs font-bold shadow-md border border-gray-200/50 transition-all"
-//           >
-//             <RotateCcw className="w-3.5 h-3.5" />
-//             Redraw
-//           </button>
-//         </div>
-//       )}
-
-//       {/* Image area */}
-//       <div className="aspect-[2/1] bg-gray-100 relative">
-//         {isRegenerating ? (
-//           <div className="flex h-full items-center justify-center">
-//             <div className="flex flex-col items-center gap-3">
-//               <div className="relative">
-//                 <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
-//                 <Sparkles className="w-4 h-4 text-pink-500 absolute -top-1 -right-1 animate-pulse" />
-//               </div>
-//               <p className="text-sm text-purple-600 font-medium">
-//                 Redrawing spread…
-//               </p>
-//             </div>
-//           </div>
-//         ) : hasImage ? (
-//           <img
-//             src={spread.left.imageUrl!}
-//             className="w-full h-full object-contain"
-//             alt={pageLabel}
-//           />
-//         ) : (
-//           <div className="flex h-full items-center justify-center text-gray-400">
-//             {isGeneratingAll ? (
-//               <div className="flex flex-col items-center gap-2">
-//                 <Loader2 className="w-8 h-8 animate-spin" />
-//                 <p className="text-sm">Generating...</p>
-//               </div>
-//             ) : (
-//               <ImagePlus className="w-12 h-12" />
-//             )}
-//           </div>
-//         )}
-//       </div>
-
-//       {/* Text preview (only when no image) */}
-//       {!hasImage && (
-//         <div className="px-5 py-3 border-t border-gray-100">
-//           <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
-//             {spread.left.text}
-//             {spread.right?.text ? ` ${spread.right.text}` : ""}
-//           </p>
-//         </div>
-//       )}
-//     </div>
-//   );
-// }
-
-
 function SpreadCard({
   spread,
   isGeneratingAll,
@@ -658,7 +569,8 @@ useEffect(() => {
     feedback: string;
     includedCharacterIds: string[];
     outfitOverrides: Record<string, string>;
-    locationId: string | null;
+    primaryLocationId: string | null;
+    includedLocationIds: string[];
     freshStart?: boolean;
   }) {
     if (!redrawTarget || isSubmittingFeedback) return;
@@ -679,7 +591,8 @@ useEffect(() => {
             feedback: payload.freshStart ? "" : payload.feedback,
             includedCharacterIds: payload.includedCharacterIds,
             outfitOverrides: payload.outfitOverrides,
-            locationId: payload.locationId,
+            primaryLocationId: payload.primaryLocationId,
+            includedLocationIds: payload.includedLocationIds,
             freshStart: payload.freshStart ?? false,
           }),
         }
@@ -724,7 +637,8 @@ useEffect(() => {
                 feedback: "",
                 includedCharacterIds: [],
                 outfitOverrides: {},
-                locationId: null,
+                primaryLocationId: null,
+                includedLocationIds: [],
                 freshStart: true,
               }),
             }

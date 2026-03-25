@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   RotateCcw,
+  Star,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -60,6 +61,10 @@ type LocationData = {
   significance: string | null;
 };
 
+type AssignedLocation = LocationData & {
+  role?: "primary" | "secondary" | "background" | "referenced" | "memory" | null;
+};
+
 type StyleGuideData = {
   summary: string | null;
   artStyle: string | null;
@@ -80,7 +85,13 @@ type SpreadReferences = {
   }[];
   assignedCharacters: AssignedCharacter[];
   availableCharacters: AvailableCharacter[];
-  assignedLocation: LocationData | null;
+
+  // backwards compatible support
+  assignedLocation?: LocationData | null;
+
+  // new shape
+  assignedLocations?: AssignedLocation[];
+
   availableLocations: LocationData[];
   styleGuide: StyleGuideData | null;
 };
@@ -394,99 +405,172 @@ function CharacterRow({
   );
 }
 
-/* ─────────── Location Picker ─────────── */
+/* ─────────── Multi Location Picker ─────────── */
 
-function LocationPicker({
-  current,
+function MultiLocationPicker({
   all,
-  onChange,
+  includedLocationIds,
+  primaryLocationId,
+  onToggleLocation,
+  onSetPrimary,
 }: {
-  current: LocationData | null;
   all: LocationData[];
-  onChange: (location: LocationData) => void;
+  includedLocationIds: Set<string>;
+  primaryLocationId: string | null;
+  onToggleLocation: (locationId: string) => void;
+  onSetPrimary: (locationId: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const img = current ? bestLocationImage(current) : null;
+
+  const included = all.filter((loc) => includedLocationIds.has(loc.id));
+  const available = all.filter((loc) => !includedLocationIds.has(loc.id));
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-purple-300 transition-colors bg-white"
-      >
-        <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
-          {img ? (
-            <img
-              src={img}
-              alt={current!.name}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-gray-400">
-              <MapPin className="w-4 h-4" />
-            </div>
-          )}
-        </div>
+    <div className="space-y-3">
+      <div className="space-y-2">
+        {included.length > 0 ? (
+          included.map((loc) => {
+            const img = bestLocationImage(loc);
+            const isPrimary = primaryLocationId === loc.id;
 
-        <div className="flex-1 text-left">
-          <p className="text-sm font-bold text-gray-900">
-            {current?.name ?? "No location assigned"}
-          </p>
-        </div>
-
-        <ChevronDown
-          className={`w-4 h-4 text-gray-400 transition-transform ${
-            isOpen ? "rotate-180" : ""
-          }`}
-        />
-      </button>
-
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 max-h-48 overflow-y-auto"
-          >
-            {all.map((loc) => {
-              const locImg = bestLocationImage(loc);
-              return (
-                <button
-                  key={loc.id}
-                  onClick={() => {
-                    onChange(loc);
-                    setIsOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 p-3 hover:bg-purple-50 transition-colors ${
-                    current?.id === loc.id ? "bg-purple-50" : ""
-                  }`}
-                >
-                  <div className="w-8 h-8 rounded-md overflow-hidden bg-gray-200 flex-shrink-0">
-                    {locImg ? (
+            return (
+              <div
+                key={loc.id}
+                className="rounded-xl border border-purple-300 bg-white p-3"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 ${
+                      isPrimary ? "ring-2 ring-yellow-400" : "ring-2 ring-purple-400"
+                    }`}
+                  >
+                    {img ? (
                       <img
-                        src={locImg}
+                        src={img}
                         alt={loc.name}
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400">
-                        <MapPin className="w-3 h-3" />
+                      <div className="w-full h-full bg-gray-200 flex items-center justify-center text-gray-400">
+                        <MapPin className="w-5 h-5" />
                       </div>
                     )}
                   </div>
-                  <span className="text-sm font-medium text-gray-700 flex-1 text-left">
-                    {loc.name}
-                  </span>
-                  {current?.id === loc.id && (
-                    <Check className="w-4 h-4 text-purple-600" />
-                  )}
-                </button>
-              );
-            })}
-          </motion.div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-900 truncate">
+                      {loc.name}
+                    </p>
+                    {loc.description && (
+                      <p className="text-[10px] text-gray-500 line-clamp-1 mt-0.5">
+                        {loc.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => onSetPrimary(loc.id)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                      isPrimary
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-purple-50 text-purple-700 hover:bg-purple-100"
+                    }`}
+                  >
+                    <Star className="w-3.5 h-3.5" />
+                    {isPrimary ? "Primary" : "Make primary"}
+                  </button>
+
+                  <button
+                    onClick={() => onToggleLocation(loc.id)}
+                    className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors bg-purple-600 text-white hover:bg-purple-700"
+                    title="Remove location"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-4 text-xs text-gray-500">
+            No locations selected yet.
+          </div>
         )}
-      </AnimatePresence>
+      </div>
+
+      {available.length > 0 && (
+        <div>
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="flex items-center gap-2 text-xs text-purple-600 hover:text-purple-700 font-bold w-full py-1"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add locations not currently included ({available.length})
+            {isOpen ? (
+              <ChevronUp className="w-3.5 h-3.5 ml-auto" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 ml-auto" />
+            )}
+          </button>
+
+          <AnimatePresence>
+            {isOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="space-y-2 pt-1">
+                  {available.map((loc) => {
+                    const img = bestLocationImage(loc);
+
+                    return (
+                      <button
+                        key={loc.id}
+                        onClick={() => {
+                          onToggleLocation(loc.id);
+                          if (!primaryLocationId) onSetPrimary(loc.id);
+                        }}
+                        className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-purple-50 hover:border-purple-300 transition-colors text-left"
+                      >
+                        <div className="w-11 h-11 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0 opacity-70">
+                          {img ? (
+                            <img
+                              src={img}
+                              alt={loc.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-400">
+                              <MapPin className="w-5 h-5" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-gray-700 truncate">
+                            {loc.name}
+                          </p>
+                          {loc.description && (
+                            <p className="text-[10px] text-gray-500 line-clamp-1 mt-0.5">
+                              {loc.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-200 text-gray-500 hover:bg-gray-300 transition-colors">
+                          <EyeOff className="w-4 h-4" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }
@@ -534,7 +618,8 @@ export default function RedrawModal({
     feedback: string;
     includedCharacterIds: string[];
     outfitOverrides: Record<string, string>;
-    locationId: string | null;
+    primaryLocationId: string | null;
+    includedLocationIds: string[];
     freshStart?: boolean;
   }) => void;
   isSubmitting: boolean;
@@ -553,8 +638,11 @@ export default function RedrawModal({
   const [outfitOverrides, setOutfitOverrides] = useState<
     Record<string, string>
   >({});
-  const [selectedLocation, setSelectedLocation] =
-    useState<LocationData | null>(null);
+
+  const [includedLocationIds, setIncludedLocationIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [primaryLocationId, setPrimaryLocationId] = useState<string | null>(null);
 
   const [showAvailable, setShowAvailable] = useState(false);
 
@@ -584,9 +672,25 @@ export default function RedrawModal({
             outfits[c.characterId] = c.currentOutfitKey;
           }
         }
-
         setOutfitOverrides(outfits);
-        setSelectedLocation(data.assignedLocation);
+
+        const assignedLocations =
+          data.assignedLocations && data.assignedLocations.length > 0
+            ? data.assignedLocations
+            : data.assignedLocation
+              ? [{ ...data.assignedLocation, role: "primary" as const }]
+              : [];
+
+        setIncludedLocationIds(
+          new Set(assignedLocations.map((loc) => loc.id))
+        );
+
+        const foundPrimary =
+          assignedLocations.find((loc) => loc.role === "primary")?.id ??
+          assignedLocations[0]?.id ??
+          null;
+
+        setPrimaryLocationId(foundPrimary);
       })
       .catch((err) => setError(err.message))
       .finally(() => setIsLoading(false));
@@ -601,6 +705,32 @@ export default function RedrawModal({
       else next.add(id);
       return next;
     });
+  }
+
+  function toggleLocation(locationId: string) {
+    setIncludedLocationIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(locationId)) {
+        next.delete(locationId);
+
+        if (primaryLocationId === locationId) {
+          const remaining = Array.from(next);
+          setPrimaryLocationId(remaining[0] ?? null);
+        }
+      } else {
+        next.add(locationId);
+      }
+      return next;
+    });
+  }
+
+  function choosePrimaryLocation(locationId: string) {
+    setIncludedLocationIds((prev) => {
+      const next = new Set(prev);
+      next.add(locationId);
+      return next;
+    });
+    setPrimaryLocationId(locationId);
   }
 
   function setOutfit(characterId: string, outfitKey: string) {
@@ -717,11 +847,17 @@ export default function RedrawModal({
               )}
 
               <div>
-                <SectionHeader icon={MapPin} label="Location" />
-                <LocationPicker
-                  current={selectedLocation}
+                <SectionHeader
+                  icon={MapPin}
+                  label="Locations"
+                  count={includedLocationIds.size}
+                />
+                <MultiLocationPicker
                   all={refs.availableLocations}
-                  onChange={setSelectedLocation}
+                  includedLocationIds={includedLocationIds}
+                  primaryLocationId={primaryLocationId}
+                  onToggleLocation={toggleLocation}
+                  onSetPrimary={choosePrimaryLocation}
                 />
               </div>
 
@@ -868,7 +1004,8 @@ export default function RedrawModal({
                 feedback: "",
                 includedCharacterIds: Array.from(includedCharacterIds),
                 outfitOverrides,
-                locationId: selectedLocation?.id ?? null,
+                primaryLocationId,
+                includedLocationIds: Array.from(includedLocationIds),
                 freshStart: true,
               })
             }
@@ -893,7 +1030,8 @@ export default function RedrawModal({
                   feedback,
                   includedCharacterIds: Array.from(includedCharacterIds),
                   outfitOverrides,
-                  locationId: selectedLocation?.id ?? null,
+                  primaryLocationId,
+                  includedLocationIds: Array.from(includedLocationIds),
                 })
               }
               disabled={isSubmitting || isLoading}
