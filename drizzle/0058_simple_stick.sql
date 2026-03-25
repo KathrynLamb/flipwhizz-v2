@@ -1,0 +1,1 @@
+ALTER TABLE "story_products" ADD COLUMN "checkout_address" jsonb;

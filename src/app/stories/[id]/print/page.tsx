@@ -42,30 +42,45 @@ export default async function PrintRoute({
 
   return (
     <main className="min-h-screen" style={{ background: "#FDFBFF" }}>
-      <PrintPage
-        story={{
-          id: story.id,
-          projectId: story.projectId,
-          title: story.title,
-          coverSpreadUrl: story.coverSpreadUrl,
-          pdfUrl: story.pdfUrl,
-          status: story.status,
-          paymentStatus: story.paymentStatus,
-          completedSteps: (story.completedSteps as string[]) ?? [],
-        }}
-        order={
-          latestOrder
-            ? {
-                id: latestOrder.id,
-                status: latestOrder.status,
-                gelatoOrderId: latestOrder.gelatoOrderId,
-                gelatoStatus: latestOrder.gelatoStatus,
-                createdAt: latestOrder.createdAt?.toISOString() ?? null,
-              }
-            : null
-        }
-        productType={product?.productType ?? "undecided"}
-      />
+<PrintPage
+      story={{
+        id: story.id,
+        projectId: story.projectId,
+        title: story.title,
+        coverSpreadUrl: story.coverSpreadUrl,
+        pdfUrl: story.pdfUrl,
+        status: story.status,
+        paymentStatus: story.paymentStatus,
+        completedSteps: (story.completedSteps as string[]) ?? [],
+      }}
+      order={
+        latestOrder
+          ? {
+              id: latestOrder.id,
+              status: latestOrder.status,
+              gelatoOrderId: latestOrder.gelatoOrderId,
+              gelatoStatus: latestOrder.gelatoStatus,
+              createdAt: latestOrder.createdAt?.toISOString() ?? null,
+            }
+          : null
+      }
+      productType={product?.productType ?? "undecided"}
+      initialShippingAddress={
+        (product?.checkoutAddress as
+          | {
+              firstName: string;
+              lastName: string;
+              addressLine1: string;
+              addressLine2: string;
+              city: string;
+              postCode: string;
+              countryIsoCode: string;
+              email: string;
+              phone: string;
+            }
+          | null) ?? null
+      }
+    />
     </main>
   );
 }

@@ -15,7 +15,9 @@ if (!PAYPAL_CLIENT_ID || !PAYPAL_CLIENT_SECRET) {
 }
 
 export async function getPaypalAccessToken(): Promise<string> {
-  const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString("base64");
+  const auth = Buffer.from(
+    `${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`
+  ).toString("base64");
 
   const res = await fetch(`${PAYPAL_BASE_URL}/v1/oauth2/token`, {
     method: "POST",
@@ -36,15 +38,23 @@ export async function getPaypalAccessToken(): Promise<string> {
   return data.access_token as string;
 }
 
+export type PaypalShippingPreference =
+  | "NO_SHIPPING"
+  | "GET_FROM_FILE"
+  | "SET_PROVIDED_ADDRESS";
+
 type CreateOrderArgs = {
   storyId: string;
   product: string;
   amount: string; // "29.99"
   currency?: string; // "GBP"
+  shippingPreference?: PaypalShippingPreference;
 };
 
 export async function paypalCreateOrder(args: CreateOrderArgs) {
   const token = await getPaypalAccessToken();
+
+  const shippingPreference = args.shippingPreference ?? "GET_FROM_FILE";
 
   const res = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders`, {
     method: "POST",
@@ -65,10 +75,19 @@ export async function paypalCreateOrder(args: CreateOrderArgs) {
           },
         },
       ],
+      payment_source: {
+        paypal: {
+          experience_context: {
+            user_action: "PAY_NOW",
+            shipping_preference: shippingPreference,
+          },
+        },
+      },
     }),
   });
 
   const data = await res.json();
+
   if (!res.ok) {
     console.error("[PayPal] create order failed:", data);
     throw new Error(data?.message || "Failed to create PayPal order");
@@ -80,15 +99,19 @@ export async function paypalCreateOrder(args: CreateOrderArgs) {
 export async function paypalCaptureOrder(orderID: string) {
   const token = await getPaypalAccessToken();
 
-  const res = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders/${orderID}/capture`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
+  const res = await fetch(
+    `${PAYPAL_BASE_URL}/v2/checkout/orders/${orderID}/capture`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
 
   const data = await res.json();
+
   if (!res.ok) {
     console.error("[PayPal] capture failed:", data);
     throw new Error(data?.message || "Failed to capture PayPal order");

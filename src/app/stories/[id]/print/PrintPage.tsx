@@ -58,6 +58,7 @@ type Props = {
   story: Story;
   order: Order | null;
   productType: string;
+  initialShippingAddress: ShippingAddress | null;
 };
 
 const FONT = "'Bricolage Grotesque', system-ui, sans-serif";
@@ -106,14 +107,16 @@ function getProductIcon(type: string) {
 /*                              MAIN COMPONENT                                */
 /* -------------------------------------------------------------------------- */
 
-export default function PrintPage({ story, order, productType }: Props) {
+export default function PrintPage({ story, order, productType, initialShippingAddress}: Props) {
   const [currentOrder, setCurrentOrder] = useState<Order | null>(order);
   const [flowStatus, setFlowStatus] = useState<
     "idle" | "address" | "processing" | "success" | "error"
   >(order ? "idle" : "idle");
   const [processingStep, setProcessingStep] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const [savedAddress, setSavedAddress] = useState<ShippingAddress | null>(null);
+  const [savedAddress, setSavedAddress] = useState<ShippingAddress | null>(
+    initialShippingAddress ?? null
+  );
   const [isExporting, setIsExporting] = useState(false);
 
   const hasOrder = !!currentOrder;
@@ -375,10 +378,11 @@ export default function PrintPage({ story, order, productType }: Props) {
       <AnimatePresence>
         {flowStatus === "address" && (
           <AddressSheet
-            onClose={() => setFlowStatus("idle")}
-            onSubmit={handleOrder}
-            isSubmitting={false}
-          />
+          onClose={() => setFlowStatus("idle")}
+          onSubmit={handleOrder}
+          isSubmitting={false}
+          initialAddress={initialShippingAddress}
+        />
         )}
       </AnimatePresence>
 
@@ -593,10 +597,12 @@ function AddressSheet({
   onClose,
   onSubmit,
   isSubmitting,
+  initialAddress,
 }: {
   onClose: () => void;
   onSubmit: (address: ShippingAddress) => void;
   isSubmitting: boolean;
+  initialAddress?: ShippingAddress | null;
 }) {
   const [address, setAddress] = useState<ShippingAddress>(EMPTY_ADDRESS);
   const [errors, setErrors] = useState<

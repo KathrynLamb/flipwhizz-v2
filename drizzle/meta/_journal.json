@@ -407,6 +407,13 @@
       "when": 1774194117370,
       "tag": "0057_lovely_bloodaxe",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1774437071948,
+      "tag": "0058_simple_stick",
+      "breakpoints": true
     }
   ]
 }

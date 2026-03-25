@@ -118,7 +118,7 @@ export const storyProducts = pgTable("story_products", {
   // Snapshot of pricing at time of checkout (not authoritative yet)
   estimatedPrice: integer("estimated_price"), // in cents
   currency: varchar("currency", { length: 10 }).default("GBP"),
-
+  checkoutAddress: jsonb("checkout_address"),
   // Fulfilment flags
   requiresShipping: boolean("requires_shipping").default(false),
   requiresPdf: boolean("requires_pdf").default(true),
