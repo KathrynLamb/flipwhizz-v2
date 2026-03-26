@@ -1,0 +1,1 @@
+ALTER TABLE "story_spread_presence" ADD COLUMN "locations" jsonb;

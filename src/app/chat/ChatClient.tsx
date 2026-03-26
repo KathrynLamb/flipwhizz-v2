@@ -1,3 +1,4 @@
+// src/app/chat/ChatClient.tsx
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
@@ -10,14 +11,26 @@ import {
   Loader2,
   Zap,
   BookOpen,
+  Globe2,
 } from "lucide-react";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
+
+interface WorldContext {
+  id: string;
+  name: string;
+  description: string | null;
+  bookNumber: number;
+  readerName: string | null;
+  themes: string[];
+}
 
 export default function ChatPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = useMemo(() => searchParams.get("project"), [searchParams]);
+  const worldIdParam = useMemo(() => searchParams.get("worldId"), [searchParams]);
+  const bookNumberParam = useMemo(() => searchParams.get("bookNumber"), [searchParams]);
 
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
@@ -25,9 +38,33 @@ export default function ChatPage() {
   const [isSyncing, setIsSyncing] = useState(true);
   const [storyCreating, setStoryCreating] = useState(false);
   const [storyId, setStoryId] = useState<string | null>(null);
+  const [worldContext, setWorldContext] = useState<WorldContext | null>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load world context if worldId is in the URL
+  useEffect(() => {
+    async function loadWorldContext() {
+      if (!worldIdParam) return;
+      try {
+        const res = await fetch(`/api/worlds/${worldIdParam}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setWorldContext({
+          id: data.id,
+          name: data.name,
+          description: data.description,
+          bookNumber: Number(bookNumberParam) || 1,
+          readerName: data.readers?.[0]?.reader?.name ?? null,
+          themes: (data.themes as string[]) ?? [],
+        });
+      } catch {
+        // World not found — continue without context
+      }
+    }
+    loadWorldContext();
+  }, [worldIdParam, bookNumberParam]);
 
   async function waitForPagesAndNavigate(nextStoryId: string) {
     for (let attempt = 0; attempt < 30; attempt++) {
@@ -121,7 +158,12 @@ export default function ChatPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history: nextHistory, projectId }),
+        body: JSON.stringify({
+          message: text,
+          history: nextHistory,
+          projectId,
+          ...(worldIdParam && { worldId: worldIdParam }),
+        }),
       });
 
       const data = await res.json();
@@ -149,7 +191,10 @@ export default function ChatPage() {
       const res = await fetch("/api/stories/create-from-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({
+          projectId,
+          ...(worldIdParam && { worldId: worldIdParam }),
+        }),
       });
 
       const data = await res.json();
@@ -175,71 +220,88 @@ export default function ChatPage() {
     );
   }
 
+  // Derive display values
+  const isWorldBook = !!worldContext;
+  const bookNumber = worldContext?.bookNumber ?? 1;
+  const readerName = worldContext?.readerName;
+  const worldName = worldContext?.name;
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top Bar */}
-{/* Top Bar */}
-<div className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200/50">
-  <div className="px-4 py-3 flex items-center justify-between min-h-[64px]">
-    {/* Left */}
-    <button
-      onClick={() => router.push("/projects")}
-      className="flex items-center active:opacity-60 transition-opacity min-h-[44px]"
-      aria-label="Back to library"
-    >
-      <Image
-        src="/Flipwhizz_logo_NEW.png"
-        alt="FlipWhizz"
-        width={150}
-        height={150}
-        className="h-auto w-[136px] sm:w-[150px]"
-      />
-    </button>
+      <div className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200/50">
+        <div className="px-4 py-3 flex items-center justify-between min-h-[64px]">
+          {/* Left */}
+          <button
+            onClick={() => router.push("/projects")}
+            className="flex items-center active:opacity-60 transition-opacity min-h-[44px]"
+            aria-label="Back to library"
+          >
+            <Image
+              src="/Flipwhizz_logo_NEW.png"
+              alt="FlipWhizz"
+              width={150}
+              height={150}
+              className="h-auto w-[136px] sm:w-[150px]"
+            />
+          </button>
 
-    {/* Center sync status */}
-    <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
-      {isSyncing && (
-        <>
-          <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
-          <span className="text-sm font-semibold text-gray-600">Syncing...</span>
-        </>
-      )}
-    </div>
+          {/* Center — world context or sync status */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
+            {isSyncing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
+                <span className="text-sm font-semibold text-gray-600">Syncing...</span>
+              </>
+            ) : isWorldBook ? (
+              <div className="flex items-center gap-2">
+                <Globe2 className="w-4 h-4 text-[#7B5EA7]" />
+                <span className="text-sm font-semibold text-gray-700 hidden sm:inline">
+                  {worldName} — Book {bookNumber}
+                </span>
+                <span className="text-sm font-semibold text-gray-700 sm:hidden">
+                  Book {bookNumber}
+                </span>
+              </div>
+            ) : null}
+          </div>
 
-    {/* Right CTA */}
-    <div className="flex items-center justify-end min-w-[120px]">
-      {messages.length >= 3 && !storyId ? (
-        <button
-          onClick={createStoryFromChat}
-          disabled={storyCreating}
-          className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-lg transition-transform active:scale-[0.98] disabled:opacity-60"
-          style={{
-            background: "#D94590",
-            boxShadow: "0 8px 28px rgba(217,69,144,0.25)",
-          }}
-        >
-          {storyCreating ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="hidden sm:inline">Creating...</span>
-            </>
-          ) : (
-            <>
-              <BookOpen className="w-4 h-4" />
-              <span className="hidden sm:inline">Create My Book</span>
-              <span className="sm:hidden">Create</span>
-            </>
-          )}
-        </button>
-      ) : (
-        <div className="w-[120px]" />
-      )}
-    </div>
-  </div>
-</div>
+          {/* Right CTA */}
+          <div className="flex items-center justify-end min-w-[120px]">
+            {messages.length >= 3 && !storyId ? (
+              <button
+                onClick={createStoryFromChat}
+                disabled={storyCreating}
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-lg transition-transform active:scale-[0.98] disabled:opacity-60"
+                style={{
+                  background: "#D94590",
+                  boxShadow: "0 8px 28px rgba(217,69,144,0.25)",
+                }}
+              >
+                {storyCreating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="hidden sm:inline">Creating...</span>
+                  </>
+                ) : (
+                  <>
+                    <BookOpen className="w-4 h-4" />
+                    <span className="hidden sm:inline">
+                      {isWorldBook ? `Create Book ${bookNumber}` : "Create My Book"}
+                    </span>
+                    <span className="sm:hidden">Create</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <div className="w-[120px]" />
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Messages */}
-      <div className="pt-[72px] pb-[140px] px-4">
+      <div className="h-[calc(100vh-64px-140px)] mt-[64px] overflow-y-auto px-4">
         <div className="max-w-2xl mx-auto">
           <AnimatePresence>
             {messages.length === 0 && !isSyncing && (
@@ -249,39 +311,117 @@ export default function ChatPage() {
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="text-center py-16 px-4 space-y-6"
               >
-                <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
-                  <Sparkles className="w-10 h-10 text-white" />
+                {/* Icon */}
+                <div
+                  className="w-20 h-20 mx-auto rounded-3xl flex items-center justify-center shadow-lg"
+                  style={{
+                    background: isWorldBook
+                      ? "linear-gradient(135deg, #7B5EA7, #D94590)"
+                      : "linear-gradient(135deg, #A855F7, #EC4899)",
+                  }}
+                >
+                  {isWorldBook ? (
+                    <Globe2 className="w-10 h-10 text-white" />
+                  ) : (
+                    <Sparkles className="w-10 h-10 text-white" />
+                  )}
                 </div>
 
+                {/* Heading — personalised for world context */}
                 <div className="space-y-3">
-                  <h1 className="text-4xl font-black text-gray-900">
-                    Let&apos;s Create Magic! ✨
-                  </h1>
-
-                  <p className="text-[17px] text-gray-600 leading-relaxed max-w-sm mx-auto">
-                    Tell me about your character, their world, or the adventure you want to go on
-                  </p>
+                  {isWorldBook ? (
+                    <>
+                      <h1 className="text-3xl sm:text-4xl font-black text-gray-900">
+                        {readerName
+                          ? `${readerName}'s next adventure`
+                          : `Book ${bookNumber} awaits`}
+                      </h1>
+                      <p className="text-[17px] text-gray-600 leading-relaxed max-w-md mx-auto">
+                        {worldContext?.description
+                          ? `Back in ${worldName} — ${worldContext.description.toLowerCase()}`
+                          : `Continuing the story in ${worldName}. What happens next?`}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h1 className="text-4xl font-black text-gray-900">
+                        Let&apos;s Create Magic! ✨
+                      </h1>
+                      <p className="text-[17px] text-gray-600 leading-relaxed max-w-sm mx-auto">
+                        Tell me about your character, their world, or the adventure you want to go on
+                      </p>
+                    </>
+                  )}
                 </div>
 
+                {/* World context banner */}
+                {isWorldBook && (
+                  <div
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium"
+                    style={{
+                      background: "rgba(123,94,167,0.08)",
+                      color: "#7B5EA7",
+                    }}
+                  >
+                    <Globe2 className="w-4 h-4" />
+                    Characters & world carry forward from{" "}
+                    {bookNumber > 1 ? `Book ${bookNumber - 1}` : "this world"}
+                  </div>
+                )}
+
+                {/* Prompt suggestions — context-aware */}
                 <div className="flex flex-wrap gap-2 justify-center pt-4">
-                  <button
-                    onClick={() => setInput("A brave dragon who's afraid of heights")}
-                    className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
-                  >
-                    🐉 Brave Dragon
-                  </button>
-                  <button
-                    onClick={() => setInput("A magical forest where trees can talk")}
-                    className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
-                  >
-                    🌳 Magical Forest
-                  </button>
-                  <button
-                    onClick={() => setInput("An underwater adventure with friendly dolphins")}
-                    className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
-                  >
-                    🐬 Ocean Quest
-                  </button>
+                  {isWorldBook
+                    ? [
+                        {
+                          emoji: "🌍",
+                          label: "Explore somewhere new",
+                          text: "Let's explore somewhere completely new this time",
+                        },
+                        {
+                          emoji: "🤝",
+                          label: "New friend",
+                          text: "I'd love a story about making a new friend",
+                        },
+                        {
+                          emoji: "🎉",
+                          label: "Celebration",
+                          text: "Something about a big celebration or festival",
+                        },
+                      ].map((prompt) => (
+                        <button
+                          key={prompt.label}
+                          onClick={() => setInput(prompt.text)}
+                          className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
+                        >
+                          {prompt.emoji} {prompt.label}
+                        </button>
+                      ))
+                    : [
+                        {
+                          emoji: "🐉",
+                          label: "Brave Dragon",
+                          text: "A brave dragon who's afraid of heights",
+                        },
+                        {
+                          emoji: "🌳",
+                          label: "Magical Forest",
+                          text: "A magical forest where trees can talk",
+                        },
+                        {
+                          emoji: "🐬",
+                          label: "Ocean Quest",
+                          text: "An underwater adventure with friendly dolphins",
+                        },
+                      ].map((prompt) => (
+                        <button
+                          key={prompt.label}
+                          onClick={() => setInput(prompt.text)}
+                          className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
+                        >
+                          {prompt.emoji} {prompt.label}
+                        </button>
+                      ))}
                 </div>
               </motion.div>
             )}
@@ -355,7 +495,6 @@ export default function ChatPage() {
         </div>
       </div>
 
-
       {/* Input Area */}
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border-t border-gray-200/50">
         <div className="px-4 py-3">
@@ -386,7 +525,11 @@ export default function ChatPage() {
                       sendMessage();
                     }
                   }}
-                  placeholder="Message"
+                  placeholder={
+                    isWorldBook
+                      ? `What happens next in ${worldName}...`
+                      : "Message"
+                  }
                   className="w-full max-h-[100px] bg-transparent border-0 focus:ring-0 focus:outline-none text-[16px] text-gray-900 placeholder:text-gray-500 resize-none font-normal"
                   rows={1}
                   style={{ lineHeight: "1.4" }}

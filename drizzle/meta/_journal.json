@@ -414,6 +414,20 @@
       "when": 1774437071948,
       "tag": "0058_simple_stick",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1774455972517,
+      "tag": "0059_known_robin_chapel",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1774456458462,
+      "tag": "0060_boring_falcon",
+      "breakpoints": true
     }
   ]
 }

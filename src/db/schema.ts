@@ -45,7 +45,12 @@ export const stories = pgTable("stories", {
     .references(() => projects.id, { onDelete: "cascade" })
     .notNull(),
 
-  /* ---------------- CORE STORY ---------------- */
+  // legacy columns still present in DB
+  readerId: uuid("reader_id").references(() => readers.id, {
+    onDelete: "set null",
+  }),
+  worldId: uuid("world_id"),
+  bookNumber: integer("book_number"),
 
   title: varchar("title", { length: 200 }).notNull(),
   description: text("description"),
@@ -55,22 +60,11 @@ export const stories = pgTable("stories", {
 
   status: varchar("status", { length: 30 }).default("planning"),
   storyConfirmed: boolean("story_confirmed").default(false).notNull(),
-
   public: boolean("public").default(false).notNull(),
 
-  /* ---------------- COVER (PRINT CANONICAL) ---------------- */
-
-  /**
-   * ✅ SINGLE wrap-around cover image
-   * Back + Spine + Front in one image
-   * This is what exportCoverPDF uses
-   */
   coverSpreadUrl: text("cover_spread_url"),
-
   coverPlan: jsonb("cover_plan"),
   coverPlanLocked: boolean("cover_plan_locked").default(false),
-
-  /* ---------------- AUTHOR LETTER ---------------- */
 
   authorLetter: jsonb("author_letter").$type<{
     opening: string;
@@ -79,24 +73,15 @@ export const stories = pgTable("stories", {
     invitation: string;
   }>(),
 
-  /* ---------------- PAYMENT / ORDER ---------------- */
-
   paymentStatus: text("payment_status").default("pending"),
   paymentId: text("payment_id"),
-
   orderStatus: text("order_status").default("not_ready"),
-
-  /* ---------------- PDF / EXPORT ---------------- */
 
   pdfUrl: text("pdf_url"),
   pdfUpdatedAt: timestamp("pdf_updated_at"),
 
-  /* ---------------- WORKFLOW ---------------- */
-
   currentStep: integer("current_step").default(1),
   completedSteps: jsonb("completed_steps").default("[]"),
-
-  /* ---------------- HOUSEKEEPING ---------------- */
 
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -842,20 +827,27 @@ export const storySpreadPresence = pgTable("story_spread_presence", {
     .notNull()
     .unique(),
 
-  // Claude's decision (locked)
+  // Backward-compat primary location
+  primaryLocationId: uuid("primary_location_id").references(
+    () => locations.id,
+    { onDelete: "set null" }
+  ),
+
+  // New multi-location model
   locations: jsonb("locations").$type<
-  {
-    locationId: string;
-    role: "primary" | "secondary" | "background" | "referenced" | "memory";
-    confidence: number;
-    reason: string;
-  }[]
->(),
+    {
+      locationId: string;
+      role: "primary" | "secondary" | "background" | "referenced" | "memory";
+      confidence: number;
+      reason: string;
+    }[]
+  >(),
+
   characters: jsonb("characters").$type<
     {
       characterId: string;
       role: "primary" | "secondary" | "background";
-      confidence: number; // 0–1
+      confidence: number;
       reason: string;
     }[]
   >(),

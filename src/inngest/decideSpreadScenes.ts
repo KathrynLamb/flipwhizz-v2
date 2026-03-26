@@ -1,4 +1,3 @@
-// src/inngest/decideScenes.ts
 import { inngest } from "@/inngest/client";
 import { db } from "@/db";
 import {
@@ -217,18 +216,18 @@ function normalizeClaudeToolInput(input: ClaudeToolInput): ClaudeToolInput {
               : "Derived from spread text",
         }));
 
-      const primaryLocations = normalizedLocations.filter(
+      const primaryCount = normalizedLocations.filter(
         (loc) => loc.role === "primary"
-      );
+      ).length;
 
-      if (normalizedLocations.length > 0 && primaryLocations.length === 0) {
+      if (normalizedLocations.length > 0 && primaryCount === 0) {
         normalizedLocations = normalizedLocations.map((loc, index) => ({
           ...loc,
           role: index === 0 ? ("primary" as const) : loc.role,
         }));
       }
 
-      if (primaryLocations.length > 1) {
+      if (primaryCount > 1) {
         let firstPrimarySeen = false;
         normalizedLocations = normalizedLocations.map((loc) => {
           if (loc.role !== "primary") return loc;
@@ -573,10 +572,10 @@ ${expectedSpreadIndexes.join(", ")}
 
     await step.run("save-spread-presence", async () => {
       console.log(`📝 Processing ${toolInput.spreads.length} spread decisions`);
-
+    
       for (const decision of toolInput.spreads) {
         const spread = spreadByIndex.get(decision.spreadIndex);
-
+    
         if (!spread) {
           console.error(
             `❌ Invalid spreadIndex ${decision.spreadIndex}. Available:`,
@@ -584,7 +583,7 @@ ${expectedSpreadIndexes.join(", ")}
           );
           throw new Error(`Invalid spreadIndex ${decision.spreadIndex}`);
         }
-
+    
         const characterPresence = (decision.characterIds || [])
           .filter((characterId) => validCharacterIds.has(characterId))
           .map((characterId) => ({
@@ -593,7 +592,7 @@ ${expectedSpreadIndexes.join(", ")}
             confidence: 0.8,
             reason: "Derived from spread text",
           }));
-
+    
         const locationPresence = (decision.locations || [])
           .filter((loc) => validLocationIds.has(loc.locationId))
           .map((loc) => ({
@@ -602,11 +601,11 @@ ${expectedSpreadIndexes.join(", ")}
             confidence: loc.role === "primary" ? 0.9 : 0.7,
             reason: loc.reason || "Derived from spread text",
           }));
-
+    
         console.log(
           `✅ Spread ${decision.spreadIndex}: ${characterPresence.length} characters, ${locationPresence.length} locations`
         );
-
+    
         await db
           .insert(storySpreadPresence)
           .values({
@@ -628,7 +627,7 @@ ${expectedSpreadIndexes.join(", ")}
             },
           });
       }
-
+    
       console.log(
         `✅ Saved ${toolInput.spreads.length} spread presence records`
       );

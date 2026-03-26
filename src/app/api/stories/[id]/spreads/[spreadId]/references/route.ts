@@ -2,8 +2,6 @@ import { db } from "@/db";
 import {
   storySpreads,
   storyPages,
-  storyPageCharacters,
-  storyPageLocations,
   characters,
   locations,
   storyCharacters,
@@ -11,6 +9,7 @@ import {
   storyStyleGuide,
   characterStoryOutfits,
   spreadCharacterOutfits,
+  storySpreadPresence,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -19,6 +18,20 @@ type OutfitOption = {
   outfitKey: string;
   outfitDescription: string;
   isDefault: boolean;
+};
+
+type SpreadPresenceCharacter = {
+  characterId: string;
+  role: "primary" | "secondary" | "background";
+  confidence: number;
+  reason: string;
+};
+
+type SpreadPresenceLocation = {
+  locationId: string;
+  role: "primary" | "secondary" | "background" | "referenced" | "memory";
+  confidence: number;
+  reason: string;
 };
 
 export async function GET(
@@ -54,39 +67,33 @@ export async function GET(
           .where(inArray(storyPages.id, spreadPageIds))
       : [];
 
-    /* ───────── 3. Per-page character assignments ───────── */
+    /* ───────── 3. Spread-level presence (NEW source of truth) ───────── */
 
-    const pageCharAssignments = spreadPageIds.length
-      ? await db
-          .select({
-            pageId: storyPageCharacters.pageId,
-            characterId: storyPageCharacters.characterId,
-          })
-          .from(storyPageCharacters)
-          .where(inArray(storyPageCharacters.pageId, spreadPageIds))
+    const spreadPresence = await db.query.storySpreadPresence.findFirst({
+      where: eq(storySpreadPresence.spreadId, spreadId),
+    });
+
+    const assignedCharacterPresence: SpreadPresenceCharacter[] = Array.isArray(
+      spreadPresence?.characters
+    )
+      ? (spreadPresence!.characters as SpreadPresenceCharacter[])
+      : [];
+
+    const assignedLocationPresence: SpreadPresenceLocation[] = Array.isArray(
+      spreadPresence?.locations
+    )
+      ? (spreadPresence!.locations as SpreadPresenceLocation[])
       : [];
 
     const assignedCharacterIds = [
-      ...new Set(pageCharAssignments.map((a) => a.characterId)),
+      ...new Set(assignedCharacterPresence.map((c) => c.characterId)),
     ];
-
-    /* ───────── 4. Per-page location assignments ───────── */
-
-    const pageLocAssignments = spreadPageIds.length
-      ? await db
-          .select({
-            pageId: storyPageLocations.pageId,
-            locationId: storyPageLocations.locationId,
-          })
-          .from(storyPageLocations)
-          .where(inArray(storyPageLocations.pageId, spreadPageIds))
-      : [];
 
     const assignedLocationIds = [
-      ...new Set(pageLocAssignments.map((a) => a.locationId)),
+      ...new Set(assignedLocationPresence.map((l) => l.locationId)),
     ];
 
-    /* ───────── 5. All story characters ───────── */
+    /* ───────── 4. All story characters ───────── */
 
     const storyCharacterRows = await db
       .select({
@@ -112,7 +119,7 @@ export async function GET(
           .where(inArray(characters.id, allCharacterIds))
       : [];
 
-    /* ───────── 6. All story locations ───────── */
+    /* ───────── 5. All story locations ───────── */
 
     const storyLocationRows = await db
       .select({
@@ -137,9 +144,8 @@ export async function GET(
           .where(inArray(locations.id, allLocationIds))
       : [];
 
-    /* ───────── 7. Outfit data ───────── */
+    /* ───────── 6. Outfit data ───────── */
 
-    // Spread-level selected outfit keys
     const outfitAssignments = await db
       .select({
         characterId: spreadCharacterOutfits.characterId,
@@ -149,7 +155,6 @@ export async function GET(
       .from(spreadCharacterOutfits)
       .where(eq(spreadCharacterOutfits.spreadId, spreadId));
 
-    // Canonical story-level outfit library
     const allOutfits = await db
       .select({
         characterId: characterStoryOutfits.characterId,
@@ -173,13 +178,13 @@ export async function GET(
       });
     }
 
-    /* ───────── 8. Style guide ───────── */
+    /* ───────── 7. Style guide ───────── */
 
     const styleGuide = await db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),
     });
 
-    /* ───────── 9. Build response ───────── */
+    /* ───────── 8. Build characters response ───────── */
 
     const assignedCharacterIdSet = new Set(assignedCharacterIds);
 
@@ -194,18 +199,15 @@ export async function GET(
 
       const availableOutfits = outfitsByCharacter[characterId] ?? [];
 
-      // Canonical selected outfit = match spread assignment key against story outfit library
       const selectedOutfit = spreadAssignment?.outfitKey
         ? availableOutfits.find(
             (o) => o.outfitKey === spreadAssignment.outfitKey
           ) ?? null
         : null;
 
-      // Fallback to default story outfit
       const defaultOutfit =
         availableOutfits.find((o) => o.isDefault) ?? null;
 
-      // Only fall back to spread snapshot text if canonical match is missing
       const resolvedCurrentOutfit =
         selectedOutfit ??
         defaultOutfit ??
@@ -217,6 +219,10 @@ export async function GET(
             }
           : null);
 
+      const spreadPresenceForCharacter =
+        assignedCharacterPresence.find((c) => c.characterId === characterId) ??
+        null;
+
       return {
         characterId,
         name: char?.name ?? "Unknown",
@@ -224,6 +230,7 @@ export async function GET(
         fullBodyImageUrl: char?.fullBodyImageUrl ?? null,
         referenceImageUrl: char?.referenceImageUrl ?? null,
         role: storyRole,
+        presenceRole: spreadPresenceForCharacter?.role ?? null,
         currentOutfitKey: resolvedCurrentOutfit?.outfitKey ?? null,
         currentOutfitDescription:
           resolvedCurrentOutfit?.outfitDescription ?? null,
@@ -248,17 +255,50 @@ export async function GET(
         };
       });
 
-    const primaryLocationId = assignedLocationIds[0] ?? null;
-    const primaryLocation = primaryLocationId
-      ? allLocationData.find((l) => l.id === primaryLocationId) ?? null
-      : null;
+    /* ───────── 9. Build locations response (NEW multi-location) ───────── */
 
-    const allLocationsWithSignificance = allLocationData.map((l) => ({
-      ...l,
-      significance:
-        storyLocationRows.find((sl) => sl.locationId === l.id)?.significance ??
-        null,
-    }));
+    const assignedLocationIdSet = new Set(assignedLocationIds);
+
+    const assignedLocations = assignedLocationPresence
+      .map((presence) => {
+        const loc = allLocationData.find((l) => l.id === presence.locationId);
+        if (!loc) return null;
+
+        return {
+          id: loc.id,
+          name: loc.name,
+          portraitImageUrl: loc.portraitImageUrl,
+          referenceImageUrl: loc.referenceImageUrl,
+          description: loc.description,
+          significance:
+            storyLocationRows.find((sl) => sl.locationId === loc.id)
+              ?.significance ?? null,
+          role: presence.role,
+          confidence: presence.confidence,
+          reason: presence.reason,
+        };
+      })
+      .filter(Boolean);
+
+    const primaryLocation =
+      assignedLocations.find((loc) => loc?.role === "primary") ??
+      assignedLocations[0] ??
+      null;
+
+    const availableLocations = allLocationData
+      .filter((l) => !assignedLocationIdSet.has(l.id))
+      .map((l) => ({
+        id: l.id,
+        name: l.name,
+        portraitImageUrl: l.portraitImageUrl,
+        referenceImageUrl: l.referenceImageUrl,
+        description: l.description,
+        significance:
+          storyLocationRows.find((sl) => sl.locationId === l.id)?.significance ??
+          null,
+      }));
+
+    /* ───────── 10. Response ───────── */
 
     return NextResponse.json({
       spread: {
@@ -274,16 +314,9 @@ export async function GET(
       })),
       assignedCharacters,
       availableCharacters,
-      assignedLocation: primaryLocation
-        ? {
-            ...primaryLocation,
-            significance:
-              storyLocationRows.find(
-                (sl) => sl.locationId === primaryLocation.id
-              )?.significance ?? null,
-          }
-        : null,
-      availableLocations: allLocationsWithSignificance,
+      primaryLocation,
+      assignedLocations,
+      availableLocations,
       styleGuide: styleGuide
         ? {
             summary: styleGuide.summary,

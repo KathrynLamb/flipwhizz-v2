@@ -14,7 +14,8 @@ type GenerateSpreadRequestBody = {
   referenceOverrides?: {
     includedCharacterIds: string[];
     outfitOverrides: Record<string, string>;
-    locationId: string | null;
+    primaryLocationId: string | null;
+    includedLocationIds: string[];
   };
 };
 
@@ -52,19 +53,24 @@ export async function POST(
         referenceOverrides.outfitOverrides &&
         typeof referenceOverrides.outfitOverrides === "object" &&
         !Array.isArray(referenceOverrides.outfitOverrides);
-      const locationIdValid =
-        referenceOverrides.locationId === null ||
-        typeof referenceOverrides.locationId === "string";
-
+        const primaryLocationIdValid =
+        referenceOverrides.primaryLocationId === null ||
+        typeof referenceOverrides.primaryLocationId === "string";
+      
+      const includedLocationIdsValid = Array.isArray(
+        referenceOverrides.includedLocationIds
+      );
+      
       if (
         !includedCharacterIdsValid ||
         !outfitOverridesValid ||
-        !locationIdValid
+        !primaryLocationIdValid ||
+        !includedLocationIdsValid
       ) {
         return NextResponse.json(
           {
             error:
-              "referenceOverrides must include includedCharacterIds[], outfitOverrides{}, and locationId",
+              "referenceOverrides must include includedCharacterIds[], outfitOverrides{}, primaryLocationId, and includedLocationIds[]",
           },
           { status: 400 }
         );
@@ -116,13 +122,14 @@ export async function POST(
           freshStart || !existingSpreadImageUrl
             ? null
             : existingSpreadImageUrl,
-        referenceOverrides: referenceOverrides
-          ? {
-              includedCharacterIds: referenceOverrides.includedCharacterIds,
-              outfitOverrides: referenceOverrides.outfitOverrides,
-              locationId: referenceOverrides.locationId,
-            }
-          : undefined,
+            referenceOverrides: referenceOverrides
+            ? {
+                includedCharacterIds: referenceOverrides.includedCharacterIds,
+                outfitOverrides: referenceOverrides.outfitOverrides,
+                primaryLocationId: referenceOverrides.primaryLocationId,
+                includedLocationIds: referenceOverrides.includedLocationIds,
+              }
+            : undefined,
       },
     });
 
