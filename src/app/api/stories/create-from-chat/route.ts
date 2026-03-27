@@ -279,20 +279,25 @@ async function findOrCreateWorld(
       .where(and(eq(worlds.id, explicitWorldId), eq(worlds.userId, userId)))
       .limit(1);
 
-    if (existingWorld.length > 0) {
-      const bookCountResult = await db.execute(
-        rawSql`SELECT COALESCE(MAX(book_number), 0) + 1 as next_book
-               FROM stories WHERE world_id = ${explicitWorldId}`
-      );
-      const nextBook = Number(
-        (bookCountResult.rows?.[0] as any)?.next_book ?? 1
-      );
+      if (existingWorld.length > 0) {
+        const existingBooks = await db
+          .select({ bookNumber: stories.bookNumber })
+          .from(stories)
+          .where(eq(stories.worldId, explicitWorldId));
+  
+        const maxBook = existingBooks.reduce(
+          (max, b) => Math.max(max, b.bookNumber ?? 0),
+          0
+        );
+        const nextBook = maxBook + 1;
+      
 
       console.log(
         `🔵 Adding to existing world: ${existingWorld[0].name} (Book ${nextBook})`
       );
       return { worldId: explicitWorldId, bookNumber: nextBook };
     }
+
   }
 
   // Create a new world

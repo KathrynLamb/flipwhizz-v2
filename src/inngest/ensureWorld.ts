@@ -17,9 +17,15 @@ import {
   spreadCharacterOutfits,
   projects,
 } from "@/db/schema";
+import { worlds } from "@/db/schema-worlds";
 import { eq, asc, and, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
+import {
+  extractCharactersWorldAware,
+  extractLocationsWorldAware,
+  autoPromoteFirstBookEntities,
+} from "@/inngest/worldAwareExtraction";
 
 export const runtime = "nodejs";
 
@@ -115,7 +121,7 @@ export const ensureWorld = inngest.createFunction(
         });
       }
 
-      return { story, project, pages, progress: progress! };
+      return { story, project, pages, progress: progress!, worldId: story.worldId ?? null,   bookNumber: story.bookNumber ?? null };
     });
 
     console.log("📊 Current progress:", {
@@ -131,19 +137,31 @@ export const ensureWorld = inngest.createFunction(
 
     /* --------------------------------------------------
        STEP 1: Extract Characters (if not done)
-    -------------------------------------------------- */
-    if (!context.progress.charactersExtracted) {
-      await step.run("extract-characters", async () => {
-        console.log("👥 Extracting characters...");
+/* --------------------------------------------------
+   STEP 1: Extract Characters (if not done)
+-------------------------------------------------- */
+if (!context.progress.charactersExtracted) {
+  await step.run("extract-characters", async () => {
+    const storyText = context.pages
+      .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
+      .join("\n");
 
-        const text = context.pages
-          .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
-          .join("\n");
+    if (context.worldId) {
+      // WORLD-AWARE: match against existing roster
+      await extractCharactersWorldAware({
+        storyId,
+        worldId: context.worldId,
+        userId: context.project.userId!,
+        storyText,
+      });
+    } else {
+      // STANDALONE: original extraction logic
+      console.log("👥 Extracting characters (standalone)...");
 
-        const res = await client.messages.create({
-          model: MODEL,
-          max_tokens: 2000,
-          system: `Extract ALL characters from this story. Return ONLY this JSON:
+      const res = await client.messages.create({
+        model: MODEL,
+        max_tokens: 2000,
+        system: `Extract ALL characters from this story. Return ONLY this JSON:
 {
   "characters": [
     {
@@ -162,73 +180,84 @@ Include:
 
 For appearance, be specific: age, hair color/style, eye color, skin tone, body type, distinctive features.
 DO NOT include clothing in appearance - that will be handled separately per scene.`,
-          messages: [{ role: "user", content: text }],
-        });
-
-        const data = extractJson(extractClaudeText(res.content));
-
-        // Save characters
-        await db.transaction(async (tx) => {
-          // Clear existing
-          await tx
-            .delete(storyCharacters)
-            .where(eq(storyCharacters.storyId, storyId));
-
-          // Insert new
-          for (const c of data.characters ?? []) {
-            if (!c.name) continue;
-
-            const characterId = uuid();
-            await tx.insert(characters).values({
-              id: characterId,
-              userId: context.project.userId!,
-              name: cap(c.name, 80)!,
-              description: cap(c.description, 500),
-              appearance: cap(c.appearance, 500),
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            });
-
-            await tx.insert(storyCharacters).values({
-              storyId,
-              characterId,
-              role: cap(c.role, 40),
-              arcSummary: null,
-            });
-          }
-
-          console.log(`✅ Created ${data.characters?.length || 0} characters`);
-        });
-
-        // Mark progress
-        await db
-          .update(storyWorkflowProgress)
-          .set({
-            charactersExtracted: true,
-            charactersExtractedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(storyWorkflowProgress.storyId, storyId));
+        messages: [{ role: "user", content: storyText }],
       });
-    } else {
-      console.log("✓ Characters already extracted, skipping");
+
+      const data = extractJson(extractClaudeText(res.content));
+
+      await db.transaction(async (tx) => {
+        // Clear existing story ↔ character links
+        await tx
+          .delete(storyCharacters)
+          .where(eq(storyCharacters.storyId, storyId));
+
+        // Insert newly extracted characters
+        for (const c of data.characters ?? []) {
+          if (!c?.name) continue;
+
+          const characterId = uuid();
+
+          await tx.insert(characters).values({
+            id: characterId,
+            userId: context.project.userId!,
+            name: cap(c.name, 80)!,
+            description: cap(c.description, 500),
+            appearance: cap(c.appearance, 500),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+
+          await tx.insert(storyCharacters).values({
+            storyId,
+            characterId,
+            role: cap(c.role, 40),
+            arcSummary: null,
+          });
+        }
+
+        console.log(`✅ Created ${data.characters?.length || 0} characters`);
+      });
     }
 
-    /* --------------------------------------------------
-       STEP 2: Extract Locations (if not done)
-    -------------------------------------------------- */
-    if (!context.progress.locationsExtracted) {
-      await step.run("extract-locations", async () => {
-        console.log("🗺️  Extracting locations...");
+    // Mark progress
+    await db
+      .update(storyWorkflowProgress)
+      .set({
+        charactersExtracted: true,
+        charactersExtractedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(storyWorkflowProgress.storyId, storyId));
+  });
+} else {
+  console.log("✓ Characters already extracted, skipping");
+}
 
-        const text = context.pages
-          .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
-          .join("\n");
+/* --------------------------------------------------
+   STEP 2: Extract Locations (if not done)
+-------------------------------------------------- */
+if (!context.progress.locationsExtracted) {
+  await step.run("extract-locations", async () => {
+    const storyText = context.pages
+      .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
+      .join("\n");
 
-        const res = await client.messages.create({
-          model: MODEL,
-          max_tokens: 1500,
-          system: `Extract ALL locations/settings from this story. Return ONLY this JSON:
+    if (context.worldId) {
+      // WORLD-AWARE: match against existing roster
+      await extractLocationsWorldAware({
+        storyId,
+        worldId: context.worldId,
+        userId: context.project.userId!,
+        storyText,
+      });
+    } else {
+      // STANDALONE: original extraction logic
+      console.log("🗺️ Extracting locations (standalone)...");
+
+      const res = await client.messages.create({
+        model: MODEL,
+        max_tokens: 1500,
+        system: `Extract ALL locations/settings from this story. Return ONLY this JSON:
 {
   "locations": [
     {
@@ -243,71 +272,129 @@ Include:
 - Minor settings (rooms, specific places briefly mentioned)
 
 For description, focus on visual details: architecture, natural features, atmosphere, colors, lighting, etc.`,
-          messages: [{ role: "user", content: text }],
-        });
-
-        const data = extractJson(extractClaudeText(res.content));
-
-        // Save locations
-        await db.transaction(async (tx) => {
-          // Clear existing
-          await tx
-            .delete(storyLocations)
-            .where(eq(storyLocations.storyId, storyId));
-
-          // Insert new
-          for (const l of data.locations ?? []) {
-            if (!l.name) continue;
-
-            const locationId = uuid();
-            await tx.insert(locations).values({
-              id: locationId,
-              userId: context.project.userId!,
-              name: cap(l.name, 80)!,
-              description: cap(l.description, 500),
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            });
-
-            await tx.insert(storyLocations).values({
-              storyId,
-              locationId,
-              significance: null,
-            });
-          }
-
-          console.log(`✅ Created ${data.locations?.length || 0} locations`);
-        });
-
-        // Mark progress
-        await db
-          .update(storyWorkflowProgress)
-          .set({
-            locationsExtracted: true,
-            locationsExtractedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(storyWorkflowProgress.storyId, storyId));
+        messages: [{ role: "user", content: storyText }],
       });
-    } else {
-      console.log("✓ Locations already extracted, skipping");
+
+      const data = extractJson(extractClaudeText(res.content));
+
+      await db.transaction(async (tx) => {
+        // Clear existing story ↔ location links
+        await tx
+          .delete(storyLocations)
+          .where(eq(storyLocations.storyId, storyId));
+
+        // Insert new locations
+        for (const l of data.locations ?? []) {
+          if (!l?.name) continue;
+
+          const locationId = uuid();
+
+          await tx.insert(locations).values({
+            id: locationId,
+            userId: context.project.userId!,
+            name: cap(l.name, 80)!,
+            description: cap(l.description, 500),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+
+          await tx.insert(storyLocations).values({
+            storyId,
+            locationId,
+            significance: null,
+          });
+        }
+
+        console.log(`✅ Created ${data.locations?.length || 0} locations`);
+      });
     }
 
-    /* --------------------------------------------------
-       STEP 3: Extract Style Guide (if not done)
-    -------------------------------------------------- */
-    if (!context.progress.styleExtracted) {
-      await step.run("extract-style", async () => {
-        console.log("🎨 Extracting style guide...");
+    // Mark progress
+    await db
+      .update(storyWorkflowProgress)
+      .set({
+        locationsExtracted: true,
+        locationsExtractedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(storyWorkflowProgress.storyId, storyId));
+  });
+} else {
+  console.log("✓ Locations already extracted, skipping");
+}
+  /* --------------------------------------------------
+   STEP 3: Extract Style Guide (if not done)
+-------------------------------------------------- */
+if (!context.progress.styleExtracted) {
+  await step.run("extract-style", async () => {
+    const storyText = context.pages
+      .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
+      .join("\n");
 
-        const text = context.pages
-          .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
-          .join("\n");
+    /* ───────── 1. Try WORLD STYLE REUSE ───────── */
 
-        const res = await client.messages.create({
-          model: MODEL,
-          max_tokens: 1500,
-          system: `Analyze this story and create a visual style guide for illustrations. Return ONLY this JSON:
+    if (context.worldId && context.bookNumber && context.bookNumber > 1) {
+      console.log("🎨 Attempting to reuse world style guide...");
+
+      const worldRecord = await db
+        .select({ styleGuideId: worlds.styleGuideId })
+        .from(worlds)
+        .where(eq(worlds.id, context.worldId))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (worldRecord?.styleGuideId) {
+        const worldStyle = await db.query.storyStyleGuide.findFirst({
+          where: eq(storyStyleGuide.id, worldRecord.styleGuideId),
+        });
+
+        if (worldStyle) {
+          // Clear any existing style for this story first
+          await db
+            .delete(storyStyleGuide)
+            .where(eq(storyStyleGuide.storyId, storyId));
+
+          await db.insert(storyStyleGuide).values({
+            id: uuid(),
+            storyId,
+            summary: worldStyle.summary,
+            negativePrompt: worldStyle.negativePrompt,
+            artStyle: worldStyle.artStyle,
+            visualThemes: worldStyle.visualThemes,
+            colorPalette: worldStyle.colorPalette,
+            typography: worldStyle.typography,
+            sampleIllustrationUrl: worldStyle.sampleIllustrationUrl,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+
+          console.log("🎨 Reused world style guide for series continuity");
+
+          // Mark progress + EXIT EARLY
+          await db
+            .update(storyWorkflowProgress)
+            .set({
+              styleExtracted: true,
+              styleExtractedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(storyWorkflowProgress.storyId, storyId));
+
+          return;
+        }
+      }
+
+      console.log("⚠️ No reusable world style found, generating new...");
+    }
+
+    /* ───────── 2. GENERATE NEW STYLE ───────── */
+
+    console.log("🎨 Extracting style guide...");
+
+    const res = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1500,
+      system: `Analyze this story and create a visual style guide for illustrations. Return ONLY this JSON:
 {
   "style": {
     "summary": "one-sentence overall style description",
@@ -318,58 +405,74 @@ For description, focus on visual details: architecture, natural features, atmosp
       "secondary": ["color3", "color4"],
       "accent": ["color5"]
     },
-    "typography": "Describe the ideal text style for this book: the narrative font feel, and how expressive moments (sound effects, shouts, whispers) should differ. One to two sentences, matching the art style and story energy."
+    "typography": "Describe the ideal text style for this book: the narrative font feel, and how expressive moments (sound effects, shouts, whispers) should differ.",
     "negativePrompt": "what to avoid (modern elements, photorealism, etc.)"
   }
 }
 
 Consider:
-- Story tone (whimsical, serious, adventurous, etc.)
+- Story tone
 - Target age group
 - Setting time period
-- Cultural context`,
-          messages: [{ role: "user", content: text }],
-        });
+- Emotional feel`,
+      messages: [{ role: "user", content: storyText }],
+    });
 
-        const data = extractJson(extractClaudeText(res.content));
+    const data = extractJson(extractClaudeText(res.content));
 
-        // Save style guide
-        await db.transaction(async (tx) => {
-          // Clear existing
-          await tx
-            .delete(storyStyleGuide)
-            .where(eq(storyStyleGuide.storyId, storyId));
+    await db.transaction(async (tx) => {
+      // Clear existing
+      await tx
+        .delete(storyStyleGuide)
+        .where(eq(storyStyleGuide.storyId, storyId));
 
-          // Insert new
-          await tx.insert(storyStyleGuide).values({
-            id: uuid(),
-            storyId,
-            summary: cap(data.style?.summary, 100),
-            negativePrompt: cap(data.style?.negativePrompt, 100),
-            artStyle: cap(data.style?.artStyle, 100),
-            visualThemes: cap(data.style?.visualThemes, 100),
-            colorPalette: jsonOrNull(data.style?.colorPalette),
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
-
-          console.log("✅ Style guide saved");
-        });
-
-        // Mark progress
-        await db
-          .update(storyWorkflowProgress)
-          .set({
-            styleExtracted: true,
-            styleExtractedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(storyWorkflowProgress.storyId, storyId));
+      await tx.insert(storyStyleGuide).values({
+        id: uuid(),
+        storyId,
+        summary: cap(data.style?.summary, 100),
+        negativePrompt: cap(data.style?.negativePrompt, 200),
+        artStyle: cap(data.style?.artStyle, 100),
+        visualThemes: cap(data.style?.visualThemes, 200),
+        typography: cap(data.style?.typography, 200),
+        colorPalette: jsonOrNull(data.style?.colorPalette),
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
-    } else {
-      console.log("✓ Style already extracted, skipping");
+
+      console.log("✅ Style guide generated");
+    });
+
+    /* ───────── 3. OPTIONAL: SAVE TO WORLD (Book 1) ───────── */
+
+    if (context.worldId && (!context.bookNumber || context.bookNumber === 1)) {
+      console.log("🌍 Saving style guide to world for reuse...");
+
+      const storyStyle = await db.query.storyStyleGuide.findFirst({
+        where: eq(storyStyleGuide.storyId, storyId),
+      });
+
+      if (storyStyle) {
+        await db
+          .update(worlds)
+          .set({ styleGuideId: storyStyle.id })
+          .where(eq(worlds.id, context.worldId));
+      }
     }
 
+    /* ───────── 4. Mark progress ───────── */
+
+    await db
+      .update(storyWorkflowProgress)
+      .set({
+        styleExtracted: true,
+        styleExtractedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(storyWorkflowProgress.storyId, storyId));
+  });
+} else {
+  console.log("✓ Style already extracted, skipping");
+}
     /* --------------------------------------------------
        STEP 4: Build Spreads (if not done)
     -------------------------------------------------- */
@@ -1047,6 +1150,14 @@ CRITICAL RULES:
     -------------------------------------------------- */
     await step.run("mark-world-complete", async () => {
       console.log("🎉 Marking world as complete...");
+
+      // Inside the "mark-world-complete" step, BEFORE marking complete:
+        if (context.worldId && context.bookNumber === 1) {
+          await autoPromoteFirstBookEntities({
+            storyId,
+            worldId: context.worldId,
+          });
+        }
 
       await db
         .update(storyWorkflowProgress)
