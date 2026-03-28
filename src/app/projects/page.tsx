@@ -25,16 +25,18 @@ export default async function ProjectsIndexPage() {
 
   // 1. Get all readers for this user
   const userReaders = await db
-    .select({
-      id: readers.id,
-      name: readers.name,
-      gender: readers.gender,
-      aiSummary: readers.aiSummary,
-      createdAt: readers.createdAt,
-    })
-    .from(readers)
-    .where(eq(readers.userId, userId))
-    .orderBy(desc(readers.createdAt));
+  .select({
+    id: readers.id,
+    name: readers.name,
+    gender: readers.gender,
+    aiSummary: readers.aiSummary,
+    interests: readers.interests,    // ADD
+    avatarUrl: readers.avatarUrl,    // ADD
+    createdAt: readers.createdAt,
+  })
+  .from(readers)
+  .where(eq(readers.userId, userId))
+  .orderBy(desc(readers.createdAt));
 
   // 2. Get all worlds for this user
   const userWorlds = await db

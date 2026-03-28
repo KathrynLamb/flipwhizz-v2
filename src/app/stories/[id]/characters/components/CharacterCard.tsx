@@ -120,10 +120,29 @@ export default function CharacterCard({
     if (locked) return;
     setUploading(true);
     try {
+
+      let uploadFile = file;
+      if (
+        file.name.toLowerCase().endsWith('.heic') ||
+        file.name.toLowerCase().endsWith('.heif') ||
+        file.type === 'image/heic' ||
+        file.type === 'image/heif'
+      ) {
+        const heic2any = (await import('heic2any')).default;
+        const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+        uploadFile = new File(
+          [blob as Blob],
+          file.name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg'),
+          { type: 'image/jpeg' }
+        );
+      }
+  
       // Step 1: Upload to Firebase
-      const path = `story-references/${storyId}/${crypto.randomUUID()}-${file.name}`;
+
+
+      const path = `story-references/${storyId}/${crypto.randomUUID()}-${uploadFile.name}`;
       const storageRef = ref(storage, path);
-      await uploadBytes(storageRef, file, { contentType: file.type });
+      await uploadBytes(storageRef, uploadFile, { contentType: uploadFile.type });
       const publicUrl = await getDownloadURL(storageRef);
   
       // Step 2: Save URL to character

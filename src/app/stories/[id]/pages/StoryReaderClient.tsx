@@ -188,12 +188,11 @@ export default function StoryReaderClient({
 
   const applyEditsToStory = async () => {
     setIsLoading(true);
-
     try {
       const instruction = conversationHistory
-        .filter((m) => m.role === 'user')
-        .map((m) => m.content)
+        .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
         .join('\n\n');
+    
 
       const res = await fetch(`/api/stories/${id}/global-rewrite`, {
         method: 'POST',

@@ -7,5 +7,5 @@ export default async function StoryIndexPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(`/stories/${id}/hub`);
+  redirect(`/stories/${id}/extract`);
 }

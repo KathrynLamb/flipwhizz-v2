@@ -428,6 +428,13 @@
       "when": 1774456458462,
       "tag": "0060_boring_falcon",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1774716653848,
+      "tag": "0061_tan_kronos",
+      "breakpoints": true
     }
   ]
 }

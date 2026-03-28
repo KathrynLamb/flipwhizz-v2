@@ -32,9 +32,9 @@ const STEPS: StepConfig[] = [
     key: 'write',
     label: 'Write',
     icon: PenLine,
-    href: id => `/stories/${id}/hub`,
+    href: id => `/stories/${id}/extract`,
     match: (p, id) =>
-      p === `/stories/${id}` || p.startsWith(`/stories/${id}/hub`),
+      p === `/stories/${id}` || p.startsWith(`/stories/${id}/extract`),
   },
   {
     key: 'extract',

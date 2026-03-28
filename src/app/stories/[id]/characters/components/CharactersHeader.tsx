@@ -35,7 +35,7 @@ export default function CharactersHeader({
         <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Back button */}
           <button
-            onClick={() => router.push(`/stories/${storyId}/hub`)}
+            onClick={() => router.push(`/stories/${storyId}/extract`)}
             className="flex items-center gap-2 text-sm font-medium text-white/60 hover:text-white transition-colors -ml-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.04] active:scale-95"
           >
             <ArrowLeft className="w-4 h-4" />

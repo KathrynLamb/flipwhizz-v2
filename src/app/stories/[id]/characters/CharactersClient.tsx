@@ -524,7 +524,7 @@ function EmptyState({ storyId, router }: { storyId: string; router: any }) {
         Characters will appear here after extraction.
       </p>
       <button
-        onClick={() => router.push(`/stories/${storyId}/hub`)}
+        onClick={() => router.push(`/stories/${storyId}/extract`)}
         className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all active:scale-95"
         style={{
           color: '#6B5C80',

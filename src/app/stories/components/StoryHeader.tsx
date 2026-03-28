@@ -66,7 +66,7 @@ const STEPS: Step[] = [
     match: (p, id) =>
       p === `/stories/${id}` ||
       p.startsWith(`/stories/${id}/pages`) ||
-      p.startsWith(`/stories/${id}/hub`),
+      p.startsWith(`/stories/${id}/extract`),
   },
   {
     key: "design",

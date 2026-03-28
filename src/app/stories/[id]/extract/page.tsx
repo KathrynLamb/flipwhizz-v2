@@ -445,7 +445,7 @@ export default function ExtractWorldPage() {
       <header className="relative z-10">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-4 sm:px-6">
           <button
-            onClick={() => router.push(`/stories/${storyId}/hub`)}
+            onClick={() => router.push(`/stories/${storyId}/extract`)}
             className="flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-sm font-semibold text-slate-600 ring-1 ring-slate-200 backdrop-blur transition hover:bg-white"
           >
             <ArrowLeft className="h-4 w-4" />

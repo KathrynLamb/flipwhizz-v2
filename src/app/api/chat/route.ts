@@ -1,29 +1,91 @@
+// src/app/api/chat/route.ts
+
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
-import { projects, chatSessions, chatMessages, readers, stories } from "@/db/schema";
+import {
+  projects,
+  chatSessions,
+  chatMessages,
+  readers,
+  stories,
+  readerInsights,
+} from "@/db/schema";
 import { worlds, worldReaders, worldNarrativeMemory } from "@/db/schema-worlds";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, desc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
-
 import type { InferSelectModel } from "drizzle-orm";
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 // ============================================================================
-// WORLD CONTEXT LOADER
+// AGE + BIRTHDAY HELPERS
 // ============================================================================
+
+function computeAge(dob: Date | string | null, fallbackAge: number | null): number | null {
+  if (!dob) return fallbackAge;
+  const birth = new Date(dob);
+  if (isNaN(birth.getTime())) return fallbackAge;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+}
+
+function getBirthdayContext(
+  dob: Date | string | null,
+  name: string | null,
+  currentAge: number | null
+): string | null {
+  if (!dob) return null;
+  const birth = new Date(dob);
+  if (isNaN(birth.getTime())) return null;
+
+  const today = new Date();
+  const thisYearBday = new Date(today.getFullYear(), birth.getMonth(), birth.getDate());
+  const diffMs = thisYearBday.getTime() - today.getTime();
+  const daysUntil = Math.floor(diffMs / 86400000);
+
+  const childName = name || "the reader";
+  const nextAge = (currentAge ?? 0) + 1;
+
+  if (daysUntil >= 1 && daysUntil <= 14) {
+    return `🎂 ${childName}'s birthday is in ${daysUntil} day${daysUntil === 1 ? "" : "s"} — they'll be turning ${nextAge}! If it feels natural in conversation, you could warmly mention this and offer to create a birthday-themed adventure. Don't force it — only if the moment is right.`;
+  }
+  if (daysUntil === 0) {
+    return `🎂 It's ${childName}'s birthday TODAY — they're turning ${nextAge}! You could acknowledge this warmly and suggest a special birthday story.`;
+  }
+  if (daysUntil >= -3 && daysUntil < 0) {
+    return `🎂 ${childName} just turned ${currentAge} ${Math.abs(daysUntil)} day${Math.abs(daysUntil) === 1 ? "" : "s"} ago! You could warmly acknowledge their recent birthday if it comes up.`;
+  }
+
+  return null;
+}
+
+// ============================================================================
+// WORLD CONTEXT LOADER — now with structured reader fields
+// ============================================================================
+
+interface ReaderContext {
+  name: string | null;
+  age: number | null;
+  gender: string | null;
+  pronouns: string | null;
+  personalityNotes: string | null;
+  interests: string[];
+  fears: string[];
+  readingLevel: string | null;
+  birthdayHint: string | null;
+  activeInsights: Array<{ type: string; content: string }>;
+}
 
 interface WorldContextForChat {
   worldName: string;
   worldDescription: string | null;
   tonality: string | null;
   themes: string[];
-  readerName: string | null;
-  readerGender: string | null;
-  readerAiSummary: string | null;
+  reader: ReaderContext;
   bookNumber: number;
   previousBooks: Array<{
     bookNumber: number;
@@ -45,7 +107,7 @@ async function loadWorldContextForChat(
 
     if (!world) return null;
 
-    // Get the primary reader
+    // Get the primary reader with full structured fields
     const readerLink = await db
       .select({ readerId: worldReaders.readerId })
       .from(worldReaders)
@@ -53,16 +115,24 @@ async function loadWorldContextForChat(
       .limit(1)
       .then((rows) => rows[0]);
 
-    let readerName: string | null = null;
-    let readerGender: string | null = null;
-    let readerAiSummary: string | null = null;
+    let readerCtx: ReaderContext = {
+      name: null, age: null, gender: null, pronouns: null,
+      personalityNotes: null, interests: [], fears: [],
+      readingLevel: null, birthdayHint: null, activeInsights: [],
+    };
 
     if (readerLink) {
       const reader = await db
         .select({
           name: readers.name,
+          age: readers.age,
           gender: readers.gender,
-          aiSummary: readers.aiSummary,
+          pronouns: readers.pronouns,
+          personalityNotes: readers.personalityNotes,
+          interests: readers.interests,
+          fears: readers.fears,
+          readingLevel: readers.readingLevel,
+          dateOfBirth: readers.dateOfBirthDate,
         })
         .from(readers)
         .where(eq(readers.id, readerLink.readerId))
@@ -70,13 +140,38 @@ async function loadWorldContextForChat(
         .then((rows) => rows[0]);
 
       if (reader) {
-        readerName = reader.name;
-        readerGender = reader.gender;
-        readerAiSummary = reader.aiSummary;
+        const age = computeAge(reader.dateOfBirth, reader.age);
+        const birthdayHint = getBirthdayContext(reader.dateOfBirth, reader.name, age);
+
+        // Load active insights (most recent 10)
+        const insights = await db
+          .select({ insightType: readerInsights.insightType, content: readerInsights.content })
+          .from(readerInsights)
+          .where(
+            and(
+              eq(readerInsights.readerId, readerLink.readerId),
+              eq(readerInsights.isActive, true)
+            )
+          )
+          .orderBy(desc(readerInsights.createdAt))
+          .limit(10);
+
+        readerCtx = {
+          name: reader.name,
+          age,
+          gender: reader.gender,
+          pronouns: reader.pronouns,
+          personalityNotes: reader.personalityNotes,
+          interests: (reader.interests as string[]) ?? [],
+          fears: (reader.fears as string[]) ?? [],
+          readingLevel: reader.readingLevel,
+          birthdayHint,
+          activeInsights: insights.map((i) => ({ type: i.insightType, content: i.content })),
+        };
       }
     }
 
-    // Get narrative memory from previous books
+    // Get narrative memory
     const memory = await db
       .select({
         bookNumber: worldNarrativeMemory.bookNumber,
@@ -87,7 +182,6 @@ async function loadWorldContextForChat(
       .where(eq(worldNarrativeMemory.worldId, worldId))
       .orderBy(asc(worldNarrativeMemory.bookNumber));
 
-    // Get story titles for the memory entries
     const previousBooks = await Promise.all(
       memory.map(async (m) => {
         const story = await db
@@ -96,7 +190,6 @@ async function loadWorldContextForChat(
           .where(eq(stories.id, m.storyId))
           .limit(1)
           .then((rows) => rows[0]);
-
         return {
           bookNumber: m.bookNumber,
           title: story?.title ?? `Book ${m.bookNumber}`,
@@ -105,25 +198,19 @@ async function loadWorldContextForChat(
       })
     );
 
-    // Calculate next book number
     const existingBooks = await db
       .select({ bookNumber: stories.bookNumber })
       .from(stories)
       .where(eq(stories.worldId, worldId));
 
-    const maxBook = existingBooks.reduce(
-      (max, b) => Math.max(max, b.bookNumber ?? 0),
-      0
-    );
+    const maxBook = existingBooks.reduce((max, b) => Math.max(max, b.bookNumber ?? 0), 0);
 
     return {
       worldName: world.name,
       worldDescription: world.description,
       tonality: world.tonality,
       themes: (world.themes as string[]) ?? [],
-      readerName,
-      readerGender,
-      readerAiSummary,
+      reader: readerCtx,
       bookNumber: maxBook + 1,
       previousBooks,
     };
@@ -141,6 +228,27 @@ function buildChatSystemPrompt(
   project: any,
   worldCtx: WorldContextForChat | null
 ) {
+  // Build the reader section — used for both world and standalone stories
+  const r = worldCtx?.reader;
+
+  const readerSection = r?.name
+    ? `
+THE READER:
+Name: ${r.name}
+${r.age ? `Age: ${r.age}` : ""}
+${r.pronouns ? `Pronouns: ${r.pronouns}` : ""}
+${r.personalityNotes ? `Personality: ${r.personalityNotes}` : ""}
+${r.interests.length > 0 ? `Loves: ${r.interests.join(", ")}` : ""}
+${r.fears.length > 0 ? `Working through: ${r.fears.join(", ")} — these are sensitive topics the parent shared. You can gently weave them into story themes if appropriate, but NEVER mention them bluntly or make the child feel called out.` : ""}
+${r.readingLevel ? `Reading level: ${r.readingLevel}` : ""}
+${r.activeInsights.length > 0 ? `
+RECENT CONTEXT (from previous conversations):
+${r.activeInsights.map((i) => `- [${i.type}] ${i.content}`).join("\n")}
+Use these naturally — they show what's going on in this child's life right now. Don't list them back to the parent. Just let them inform your suggestions.` : ""}
+${r.birthdayHint ? `\n${r.birthdayHint}` : ""}`
+    : "";
+
+  // World section — only for series books
   const worldSection = worldCtx
     ? `
 WORLD CONTEXT — THIS IS A SERIES BOOK:
@@ -148,74 +256,51 @@ You are helping create Book ${worldCtx.bookNumber} in the "${worldCtx.worldName}
 ${worldCtx.worldDescription ? `World: ${worldCtx.worldDescription}` : ""}
 ${worldCtx.tonality ? `Tone: ${worldCtx.tonality}` : ""}
 ${worldCtx.themes.length > 0 ? `Themes: ${worldCtx.themes.join(", ")}` : ""}
+${readerSection}
+${worldCtx.previousBooks.length > 0
+  ? `
+PREVIOUS BOOKS:
+${worldCtx.previousBooks.map((b) => `Book ${b.bookNumber} "${b.title}": ${b.summary}`).join("\n")}
 
-THE READER:
-${worldCtx.readerName ? `Name: ${worldCtx.readerName}` : "A child"}
-${worldCtx.readerGender ? `Gender: ${worldCtx.readerGender}` : ""}
-${worldCtx.readerAiSummary ? `What we know: ${worldCtx.readerAiSummary}` : ""}
+You remember all of this. Reference characters, events, and callbacks from previous books naturally — the child should feel like they're returning to a world they know. But don't recite the plot summaries. Let them emerge in conversation.`
+  : "This is the FIRST book in a new series. Help the parent establish the world, characters, and tone."}
 
-${
-  worldCtx.previousBooks.length > 0
-    ? `PREVIOUS BOOKS IN THIS SERIES:
-${worldCtx.previousBooks
-  .map(
-    (b) => `Book ${b.bookNumber} "${b.title}": ${b.summary}`
-  )
-  .join("\n")}
-
-Use this history! Reference characters, events, and callbacks from previous books. The child should feel like they're returning to a world they know and love.`
-    : "This is the FIRST book in a new series. Help the parent establish the world, characters, and tone."
-}
-
-IMPORTANT: You already know about this world, the reader, and what happened before. Don't ask the parent to re-explain things you already know. Instead, build on them. For example:
-- "Last time ${worldCtx.readerName || "they"} explored [X]. Where shall we go next?"
-- "We've got [characters] ready to go. Shall we bring them all back, or introduce someone new?"
-- "The themes of ${worldCtx.themes.slice(0, 2).join(" and ")} worked beautifully. Want to continue with those or try something different?"
+IMPORTANT: You already know this child and this world. Don't ask the parent to re-explain things. Build on what you know:
+- Reference previous adventures: "Last time ${r?.name || "they"} explored [X] — where shall we go next?"
+- Acknowledge the cast: "We've got [characters] ready to go. Everyone returning, or shall we introduce someone new?"
+- Build on themes: "The ${worldCtx.themes.slice(0, 2).join(" and ")} themes worked beautifully. Continue those or try something different?"
 `
-    : "";
+    : readerSection; // For standalone stories, still include reader context if we have it
 
-  return `You are a children's book author helping a parent create a story for their child.
+  return `You are a children's book author helping a parent create a story for their child. You are warm, genuinely interested, and collaborative — like a friend who's excited to help make something special.
 ${worldSection}
+
 YOUR APPROACH:
-You're having a genuine conversation to understand what story they want to create. This could be:
+${worldCtx
+  ? `You already know the child and the world. Start by asking what THIS book should be about. Reference previous adventures naturally. Ask if they want to continue a thread or start fresh.`
+  : `Have a natural conversation to understand what story they want to create. This could be:
 - A memory from a recent experience (holiday, playdate, special moment)
-- A teaching moment (working through something difficult, learning a concept)
-- A pure adventure in their child's existing character universe
-- Just for fun
-
-Have a natural conversation. Ask 1-2 questions at a time, maximum. Listen for what excites them.
-
-DISCOVER NATURALLY:
-${
-  worldCtx
-    ? `- You already know the child and the world. Start by asking what THIS book should be about.
-- Reference previous adventures naturally to show you remember.
-- Ask if they want to continue a thread or start something fresh.`
-    : `- Start by understanding the PURPOSE: "What kind of story are we making today?"
-- If it's a MEMORY: Ask about the experience, what made it special, key details
-- If it's TEACHING: Ask what they want their child to understand/feel
-- If it's FUN: Ask about the adventure, the characters involved`
+- A teaching moment (working through something, learning a concept)
+- A pure adventure in their child's universe
+- Just for fun`
 }
 
 As you talk, gently discover:
 - Who's in this story (their child? existing characters? new friends?)
 - What happens (the core moment or adventure)
 - How it should feel (funny? gentle? exciting? cozy?)
-- Any special details (inside jokes, real personality traits)
+- Any special details (inside jokes, real personality traits, things they said)
 
-CRITICAL:
-- Keep responses SHORT (2-3 sentences, max 2 questions)
-- Sound like a person having a conversation, not following a script
-- Build on what they say - don't ignore and move to the next question
-- If they mention existing characters, ask about them naturally
-- When they seem ready, offer to write the story
+CRITICAL RULES:
+- Keep responses SHORT. 2-3 sentences, max 2 questions. This is a chat, not an interview.
+- Sound like a person, not a script. Build on what they say — don't ignore and jump ahead.
+- Listen for what EXCITES them. When their energy picks up, follow that thread.
+- If they mention something the child is going through (new school, sibling rivalry, fear), acknowledge it naturally. Don't turn it into a therapy session.
+- When they seem ready, offer to create the story. Don't push — read the room.
+- NEVER write the actual story in this chat. That happens separately.
+- NEVER use bullet points or formatted lists. This is a conversation.
 
-TONE:
-Warm, collaborative, genuinely interested. Like chatting with a friend who's excited to help.
-
-When they're ready to generate (they say "let's do it," "create it," "I'm ready," etc.), confirm briefly and signal readiness.
-
-DO NOT write the actual story in this chat. That happens separately.`;
+TONE: Warm, collaborative, genuinely interested. You're building something together.`;
 }
 
 // ============================================================================
@@ -237,20 +322,15 @@ export async function POST(req: Request) {
       .then((rows) => rows[0]);
 
     if (!project) {
-      return NextResponse.json(
-        { reply: "(project not found)" },
-        { status: 404 }
-      );
+      return NextResponse.json({ reply: "(project not found)" }, { status: 404 });
     }
 
-    // Load world context if this is a series book
-    const worldCtx = worldId
-      ? await loadWorldContextForChat(worldId)
-      : null;
+    // Load world context (includes structured reader data + insights + birthday)
+    const worldCtx = worldId ? await loadWorldContextForChat(worldId) : null;
 
     if (worldId && worldCtx) {
       console.log(
-        `🔵 Chat: World context loaded — "${worldCtx.worldName}" Book ${worldCtx.bookNumber}, reader: ${worldCtx.readerName}`
+        `🔵 Chat: "${worldCtx.worldName}" Book ${worldCtx.bookNumber}, reader: ${worldCtx.reader.name}, insights: ${worldCtx.reader.activeInsights.length}${worldCtx.reader.birthdayHint ? ", 🎂 birthday detected" : ""}`
       );
     }
 
@@ -324,7 +404,6 @@ export async function POST(req: Request) {
       createdAt: new Date(),
     });
 
-    // Detect if user is ready to generate the story
     const userMessage = message.toLowerCase();
     const readyToGenerate =
       userMessage.includes("generate") ||
@@ -349,14 +428,11 @@ export async function POST(req: Request) {
   }
 }
 
-// ============================================
-// SEPARATE STORY GENERATION ENDPOINT (unchanged)
-// ============================================
+// ============================================================================
+// STORY GENERATION PROMPT (unchanged — used by separate endpoint)
+// ============================================================================
 
-function buildStoryGenerationSystemPrompt(
-  conversationHistory: string,
-  pageCount: number
-) {
+function buildStoryGenerationSystemPrompt(conversationHistory: string, pageCount: number) {
   return `You are FlipWhizz, creating a children's story based on this conversation:
 
 ${conversationHistory}
@@ -377,70 +453,25 @@ WRITE THE STORY:
 ${pageCount} pages. Each page = 1-3 sentences, one illustratable moment.
 
 KEY PRINCIPLES:
+1. Be specific, not generic — use real details they mentioned
+2. Match their tone — if they said "funny," make it actually funny
+3. Authentic voice — characters sound different from each other
+4. Real emotions — show, don't tell
+5. Story structure — setup 30%, complication 40%, resolution 30%
 
-1. **Be specific, not generic**
-   - Use real details they mentioned
-   - If a character has a quirk, show it multiple times
-   - If the child does something specific (gymnastics, makes up songs), SHOW it with actual examples
-
-2. **Match their tone**
-   - If they said "funny," make it actually funny
-   - If they said "gentle," keep it soft
-   - If they mentioned favorite books/authors, channel that style
-
-3. **Authentic voice**
-   - Characters should sound different from each other
-   - Kids should talk/think like real kids, not mini-adults
-   - No generic fairy tale language
-
-4. **Real emotions**
-   - Include actual feelings, not just described feelings
-   - Small challenges are good - kids relate to obstacles
-   - Show, don't tell
-
-5. **Story structure**
-   - First 30%: Setup
-   - Middle 40%: Complication/adventure
-   - Final 30%: Resolution
-   - Make the resolution feel earned
-
-BANNED PHRASES (avoid anything similar):
-- "the most [adjective] ever"
-- "declared bravely"
-- "magical wonder filled"
-- "began to cry happy tears"
-- "the best X ever"
-
-FOR TEACHING STORIES:
-- Wrap the lesson in adventure, don't preach
-- Let the character discover it naturally
-- Use their existing characters if mentioned
-- Keep it subtle and age-appropriate
-
-FOR MEMORY STORIES:
-- Include specific details from the real experience
-- Weave in the child's actual personality
-- Mix reality with imagination if that was discussed
+BANNED: "the most [adjective] ever", "declared bravely", "magical wonder filled", "began to cry happy tears", "the best X ever"
 
 OUTPUT FORMAT:
 {
-  "title": "Specific, interesting title (not 'X's Adventure')",
-  "pages": [
-    { "page": 1, "text": "..." }
-  ],
+  "title": "Specific, interesting title",
+  "pages": [{ "page": 1, "text": "..." }],
   "styleGuide": {
-    "summary": "Visual style matching the story's mood. Be specific about tone, color palette, artistic approach.",
-    "negativePrompt": "Things to avoid in illustrations"
+    "summary": "Visual style — mood, palette, approach",
+    "negativePrompt": "What to avoid"
   }
 }
 
-Before writing each page, ask yourself:
-- Does this feel handcrafted for THIS child?
-- Am I showing character through action?
-- Would this surprise or delight them?
-- Have I honored what the parent wanted?
-
-Output ONLY valid JSON. No markdown, no preamble, no explanation.`;
+Output ONLY valid JSON. No markdown, no preamble.`;
 }
 
 export function prepareStoryGenerationPrompt(
@@ -451,18 +482,8 @@ export function prepareStoryGenerationPrompt(
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join("\n\n");
 
-  const system = buildStoryGenerationSystemPrompt(fullConversation, pageCount);
-
-  const message = `Generate the complete ${pageCount}-page story now as valid JSON.
-
-Remember:
-- Honor all the details from the conversation
-- Every character should have a distinct voice and behavior
-- NO generic children's book phrases - make it specific to THIS child
-- Show character traits through actions, not descriptions
-- Include the specific details they mentioned
-
-Output ONLY the JSON structure. No markdown, no preamble, no explanation.`;
-
-  return { system, message };
+  return {
+    system: buildStoryGenerationSystemPrompt(fullConversation, pageCount),
+    message: `Generate the complete ${pageCount}-page story now as valid JSON. Output ONLY the JSON.`,
+  };
 }

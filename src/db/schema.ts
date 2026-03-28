@@ -9,9 +9,8 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  date
 } from "drizzle-orm/pg-core";
-
-
 
 /* ==================== USERS ==================== */
 
@@ -541,7 +540,50 @@ export const readers = pgTable("readers", {
   gender: varchar("gender", { length: 40 }),
   aiSummary: text("ai_summary"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+  // Add to your existing readers table definition:
+
+  // Visual
+  avatarUrl: text("avatar_url"),
+  referenceImageUrl: text("reference_image_url"),
+
+  // Identity (enhanced)
+  pronouns: varchar("pronouns", { length: 50 }),
+  dateOfBirthDate: date("date_of_birth"), // proper date type
+
+  // Developmental companion
+  personalityNotes: text("personality_notes"),
+  interests: jsonb("interests").$type<string[]>().default([]),
+  fears: jsonb("fears").$type<string[]>().default([]),
+  readingLevel: varchar("reading_level", { length: 50 }),
+
+  updatedAt: timestamp("updated_at").defaultNow(),
+})
+
+// New table:
+export const readerInsights = pgTable("reader_insights", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  readerId: uuid("reader_id")
+    .notNull()
+    .references(() => readers.id, { onDelete: "cascade" }),
+  
+  insightType: varchar("insight_type", { length: 50 }).notNull(),
+  content: text("content").notNull(),
+  confidence: integer("confidence").default(80),
+  isActive: boolean("is_active").default(true),
+  
+  sourceType: varchar("source_type", { length: 30 }).default("chat"),
+  sourceStoryId: uuid("source_story_id").references(() => stories.id, { onDelete: "set null" }),
+  sourceConversationId: uuid("source_conversation_id"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedReason: text("resolved_reason"),
+}, (table) => ({
+  readerIdx: index("reader_insights_reader_idx").on(table.readerId),
+  activeIdx: index("reader_insights_active_idx").on(table.readerId, table.isActive),
+  typeIdx: index("reader_insights_type_idx").on(table.insightType),
+}));
+
 
 /* ==================== CHAT ==================== */
 

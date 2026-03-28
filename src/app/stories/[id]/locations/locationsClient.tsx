@@ -276,7 +276,7 @@ export default function LocationsClient({
               Locations will appear here after extraction. Head back to your story hub to get started.
             </p>
             <button
-              onClick={() => router.push(`/stories/${storyId}/hub`)}
+              onClick={() => router.push(`/stories/${storyId}/extract`)}
               className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 border border-stone-200 transition-all active:scale-95"
             >
               Back to Hub

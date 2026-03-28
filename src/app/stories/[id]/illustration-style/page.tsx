@@ -13,18 +13,48 @@ import { StepKey } from "@/lib/storySteps";
 type Props = {
   params: Promise<{ id: string }>;
 };
-
 export default async function IllustrationStylePage({ params }: Props) {
   const { id: storyId } = await params;
 
-  /* ── Story ── */
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),
   });
 
-  console.log("STORY from DB:", story);
-
   if (!story) notFound();
+
+  // For Book 2+ in a world, the style guide is inherited.
+  // Auto-lock it and skip straight to characters.
+  if (story.worldId && story.bookNumber && story.bookNumber > 1) {
+    const sg = await db.query.storyStyleGuide.findFirst({
+      where: eq(storyStyleGuide.storyId, storyId),
+    });
+
+    // If style exists but isn't approved yet, auto-approve it
+    if (sg && !sg.approved) {
+      await db
+        .update(storyStyleGuide)
+        .set({ approved: true, updatedAt: new Date() })
+        .where(eq(storyStyleGuide.id, sg.id));
+
+      // Also mark the design step as complete
+      const completedSteps = Array.isArray(story.completedSteps) 
+        ? story.completedSteps as string[]
+        : [];
+      if (!completedSteps.includes("design")) {
+        await db
+          .update(stories)
+          .set({ 
+            completedSteps: [...completedSteps, "design"],
+            updatedAt: new Date(),
+          })
+          .where(eq(stories.id, storyId));
+      }
+    }
+
+    // Skip to characters
+    const { redirect } = await import("next/navigation");
+    redirect(`/stories/${storyId}/characters`);
+  }
 
   /* ── Style guide ── */
   const sg = await db.query.storyStyleGuide.findFirst({

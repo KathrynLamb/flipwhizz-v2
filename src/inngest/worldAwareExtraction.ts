@@ -179,6 +179,7 @@ Return ONLY this JSON:
     {
       "existingId": "uuid-or-null",
       "name": "Character Name",
+      "nameIsUpgrade": false,
       "description": "personality, traits, behavior",
       "appearance": "detailed physical description for illustration",
       "role": "main/supporting/minor",
@@ -190,6 +191,8 @@ Return ONLY this JSON:
 
 MATCHING RULES:
 - If a character matches a KNOWN CHARACTER by name (even with slight variations like "Bodi" vs "Bodi the dog"), set existingId to their ID and isNew to false
+- If a known character had a generic or incomplete name (like "Smaller Dog", "Aunt", "The Fox") but this story uses a proper name (like "Bodi", "Aunt Katy", "Milo"), set nameIsUpgrade to true. The system will update their name.
+- If the existing name is already a proper name and the new story uses the same or a less specific name, set nameIsUpgrade to false.
 - For genuinely NEW characters not in the roster, set existingId to null and isNew to true
 - For new characters that seem important/recurring (not one-off minor characters), set shouldPromoteToWorld to true
 - ALWAYS include appearance details even for existing characters (for consistency checking)
@@ -211,22 +214,34 @@ MATCHING RULES:
       let characterId: string;
 
       if (c.existingId && !c.isNew) {
-        // MATCHED — reuse existing character
         characterId = c.existingId;
         console.log(`  ✓ Matched existing: ${c.name} (${characterId})`);
-
-        // Optionally update description/appearance if the existing record is sparse
+      
         const existing = existingRoster.find(
           (e) => e.characterId === characterId
         );
-        if (existing && !existing.appearance && c.appearance) {
-          await tx
-            .update(characters)
-            .set({
-              appearance: cap(c.appearance, 500),
-              updatedAt: new Date(),
-            })
-            .where(eq(characters.id, characterId));
+        if (existing) {
+          const updates: Record<string, any> = {};
+      
+          if (c.nameIsUpgrade && c.name) {
+            updates.name = cap(c.name, 80);
+            console.log(`  📝 Name upgraded: "${existing.name}" → "${c.name}"`);
+          }
+      
+          if (!existing.appearance && c.appearance) {
+            updates.appearance = cap(c.appearance, 500);
+          }
+          if (!existing.description && c.description) {
+            updates.description = cap(c.description, 500);
+          }
+      
+          if (Object.keys(updates).length > 0) {
+            updates.updatedAt = new Date();
+            await tx
+              .update(characters)
+              .set(updates)
+              .where(eq(characters.id, characterId));
+          }
         }
       } else {
         // NEW — create fresh character
