@@ -63,12 +63,14 @@ const GenerateSingleSpreadEventSchema = z.object({
   feedback: z.string().optional(),
   existingSpreadImageUrl: z.string().nullable().optional(),
   referenceOverrides: z
-    .object({
-      includedCharacterIds: z.array(z.string()),
-      outfitOverrides: z.record(z.string(), z.string()),
-      locationId: z.string().nullable(),
-    })
-    .optional(),
+  .object({
+    includedCharacterIds: z.array(z.string()),
+    outfitOverrides: z.record(z.string(), z.string()),
+    locationId: z.string().nullable().optional(),
+    primaryLocationId: z.string().nullable().optional(),
+    includedLocationIds: z.array(z.string()).optional(),
+  })
+  .optional(),
 });
 
 /* -------------------------------------------------------------------------- */
