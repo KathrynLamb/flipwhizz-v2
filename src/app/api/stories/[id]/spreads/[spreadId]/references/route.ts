@@ -9,7 +9,9 @@ import {
   storyStyleGuide,
   characterStoryOutfits,
   spreadCharacterOutfits,
-  storySpreadPresence,
+  storyPageCharacters,    // ADD
+  storyPageLocations, 
+
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -69,30 +71,43 @@ export async function GET(
 
     /* ───────── 3. Spread-level presence (NEW source of truth) ───────── */
 
-    const spreadPresence = await db.query.storySpreadPresence.findFirst({
-      where: eq(storySpreadPresence.spreadId, spreadId),
-    });
+/* ───────── 3. Characters & locations from per-page tables (source of truth) ───────── */
 
-    const assignedCharacterPresence: SpreadPresenceCharacter[] = Array.isArray(
-      spreadPresence?.characters
-    )
-      ? (spreadPresence!.characters as SpreadPresenceCharacter[])
-      : [];
 
-    const assignedLocationPresence: SpreadPresenceLocation[] = Array.isArray(
-      spreadPresence?.locations
-    )
-      ? (spreadPresence!.locations as SpreadPresenceLocation[])
-      : [];
 
-    const assignedCharacterIds = [
-      ...new Set(assignedCharacterPresence.map((c) => c.characterId)),
-    ];
+// Get characters assigned to pages in this spread
+const pageCharacterRows = spreadPageIds.length
+  ? await db
+      .select({ characterId: storyPageCharacters.characterId })
+      .from(storyPageCharacters)
+      .where(
+        and(
+          eq(storyPageCharacters.storyId, storyId),
+          inArray(storyPageCharacters.pageId, spreadPageIds)
+        )
+      )
+  : [];
 
-    const assignedLocationIds = [
-      ...new Set(assignedLocationPresence.map((l) => l.locationId)),
-    ];
+const assignedCharacterIds = [
+  ...new Set(pageCharacterRows.map((r) => r.characterId)),
+];
 
+// Get locations assigned to pages in this spread
+const pageLocationRows = spreadPageIds.length
+  ? await db
+      .select({ locationId: storyPageLocations.locationId })
+      .from(storyPageLocations)
+      .where(
+        and(
+          eq(storyPageLocations.storyId, storyId),
+          inArray(storyPageLocations.pageId, spreadPageIds)
+        )
+      )
+  : [];
+
+const assignedLocationIds = [
+  ...new Set(pageLocationRows.map((r) => r.locationId)),
+];
     /* ───────── 4. All story characters ───────── */
 
     const storyCharacterRows = await db
@@ -219,23 +234,18 @@ export async function GET(
             }
           : null);
 
-      const spreadPresenceForCharacter =
-        assignedCharacterPresence.find((c) => c.characterId === characterId) ??
-        null;
 
-      return {
-        characterId,
-        name: char?.name ?? "Unknown",
-        portraitImageUrl: char?.portraitImageUrl ?? null,
-        fullBodyImageUrl: char?.fullBodyImageUrl ?? null,
-        referenceImageUrl: char?.referenceImageUrl ?? null,
-        role: storyRole,
-        presenceRole: spreadPresenceForCharacter?.role ?? null,
-        currentOutfitKey: resolvedCurrentOutfit?.outfitKey ?? null,
-        currentOutfitDescription:
-          resolvedCurrentOutfit?.outfitDescription ?? null,
-        availableOutfits,
-      };
+          return {
+            characterId,
+            name: char?.name ?? "Unknown",
+            portraitImageUrl: char?.portraitImageUrl ?? null,
+            fullBodyImageUrl: char?.fullBodyImageUrl ?? null,
+            referenceImageUrl: char?.referenceImageUrl ?? null,
+            role: storyRole,
+            currentOutfitKey: resolvedCurrentOutfit?.outfitKey ?? null,
+            currentOutfitDescription: resolvedCurrentOutfit?.outfitDescription ?? null,
+            availableOutfits,
+          };
     });
 
     const availableCharacters = allCharacterData
@@ -257,47 +267,43 @@ export async function GET(
 
     /* ───────── 9. Build locations response (NEW multi-location) ───────── */
 
-    const assignedLocationIdSet = new Set(assignedLocationIds);
+   /* ───────── 9. Build locations response ───────── */
 
-    const assignedLocations = assignedLocationPresence
-      .map((presence) => {
-        const loc = allLocationData.find((l) => l.id === presence.locationId);
-        if (!loc) return null;
+   const assignedLocationIdSet = new Set(assignedLocationIds);
 
-        return {
-          id: loc.id,
-          name: loc.name,
-          portraitImageUrl: loc.portraitImageUrl,
-          referenceImageUrl: loc.referenceImageUrl,
-          description: loc.description,
-          significance:
-            storyLocationRows.find((sl) => sl.locationId === loc.id)
-              ?.significance ?? null,
-          role: presence.role,
-          confidence: presence.confidence,
-          reason: presence.reason,
-        };
-      })
-      .filter(Boolean);
+   const assignedLocations = assignedLocationIds
+     .map((locationId) => {
+       const loc = allLocationData.find((l) => l.id === locationId);
+       if (!loc) return null;
 
-    const primaryLocation =
-      assignedLocations.find((loc) => loc?.role === "primary") ??
-      assignedLocations[0] ??
-      null;
+       return {
+         id: loc.id,
+         name: loc.name,
+         portraitImageUrl: loc.portraitImageUrl,
+         referenceImageUrl: loc.referenceImageUrl,
+         description: loc.description,
+         significance:
+           storyLocationRows.find((sl) => sl.locationId === loc.id)
+             ?.significance ?? null,
+         role: "primary" as const, // first one is primary, rest secondary
+       };
+     })
+     .filter(Boolean);
 
-    const availableLocations = allLocationData
-      .filter((l) => !assignedLocationIdSet.has(l.id))
-      .map((l) => ({
-        id: l.id,
-        name: l.name,
-        portraitImageUrl: l.portraitImageUrl,
-        referenceImageUrl: l.referenceImageUrl,
-        description: l.description,
-        significance:
-          storyLocationRows.find((sl) => sl.locationId === l.id)?.significance ??
-          null,
-      }));
+   const primaryLocation = assignedLocations[0] ?? null;
 
+   const availableLocations = allLocationData
+     .filter((l) => !assignedLocationIdSet.has(l.id))
+     .map((l) => ({
+       id: l.id,
+       name: l.name,
+       portraitImageUrl: l.portraitImageUrl,
+       referenceImageUrl: l.referenceImageUrl,
+       description: l.description,
+       significance:
+         storyLocationRows.find((sl) => sl.locationId === l.id)?.significance ??
+         null,
+     }));
     /* ───────── 10. Response ───────── */
 
     return NextResponse.json({
