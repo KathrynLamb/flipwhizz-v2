@@ -491,7 +491,8 @@ export const generateSingleSpread = inngest.createFunction(
         description: string | null;
       } = null;
 
-      if (hasOverrides && referenceOverrides!.locationId) {
+      const overrideLocationId = referenceOverrides?.primaryLocationId ?? referenceOverrides?.locationId ?? null;
+      if (hasOverrides && overrideLocationId) {
         const loc = await db
           .select({
             name: locations.name,
@@ -499,7 +500,7 @@ export const generateSingleSpread = inngest.createFunction(
             description: locations.description,
           })
           .from(locations)
-          .where(eq(locations.id, referenceOverrides!.locationId))
+          .where(eq(locations.id, overrideLocationId))
           .limit(1)
           .then((r) => r[0]);
 
