@@ -445,7 +445,7 @@ export default function CharacterCard({
               )}
 
               {/* Personality traits */}
-              {editing && (
+              {/* {editing && (
                 <DetailSection label="Personality traits" icon={<Sparkles className="w-3 h-3" />}>
                   <input type="text" value={editTraits}
                     onChange={(e) => setEditTraits(e.target.value)}
@@ -453,7 +453,7 @@ export default function CharacterCard({
                     style={{ borderColor: 'rgba(180,150,210,0.15)', background: '#FDFBFF', color: '#2D2235' }}
                     placeholder="brave, funny, kind, curious" />
                 </DetailSection>
-              )}
+              )} */}
 
               {/* Outfits */}
               {outfits.length > 0 && (
