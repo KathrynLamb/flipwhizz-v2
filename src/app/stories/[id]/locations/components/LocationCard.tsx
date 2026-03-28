@@ -82,17 +82,47 @@ export default function LocationCard({
     if (locked) return;
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("locationId", location.id);
+      let uploadFile = file;
+      if (
+        file.name.toLowerCase().endsWith('.heic') ||
+        file.name.toLowerCase().endsWith('.heif') ||
+        file.type === 'image/heic' ||
+        file.type === 'image/heif'
+      ) {
+        const heic2any = (await import('heic2any')).default;
+        const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+        uploadFile = new File(
+          [blob as Blob],
+          file.name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg'),
+          { type: 'image/jpeg' }
+        );
+      }
+  
+      // Upload to Firebase first
+      const { ref: storageRefFn, uploadBytes: uploadBytesFn, getDownloadURL: getUrlFn } = await import('firebase/storage');
+      const { storage } = await import('@/lib/firebaseClient');
+      const path = `story-references/${storyId}/locations/${crypto.randomUUID()}-${uploadFile.name}`;
+      const storageRef = storageRefFn(storage, path);
+      await uploadBytesFn(storageRef, uploadFile, { contentType: uploadFile.type });
+      const publicUrl = await getUrlFn(storageRef);
+  
+      // Then save URL via JSON API
       const res = await fetch("/api/locations/upload-reference", {
         method: "POST",
-        body: fd,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          locationId: location.id,
+          imageUrl: publicUrl,
+          storagePath: path,
+        }),
       });
+  
       if (res.ok) {
         onUpdate?.();
         router.refresh();
       }
+    } catch (err) {
+      console.error("Location upload failed:", err);
     } finally {
       setUploading(false);
     }
