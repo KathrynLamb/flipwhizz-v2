@@ -44,22 +44,8 @@ function buildWorldContext(
     lines.push("AVAILABLE CHARACTERS:");
     for (const c of chars) {
       lines.push(`- ${c.name} (${c.role ?? "character"}) [ID: ${c.id}]`);
-      if (c.appearance) lines.push(`  Appearance: ${c.appearance}`);
+      // Only include description for context, NOT appearance
       if (c.description) lines.push(`  Description: ${c.description}`);
-      if (c.outfits?.length) {
-        const defaultOutfit = c.outfits.find((o) => o.isDefault);
-        if (defaultOutfit) {
-          lines.push(
-            `  Default outfit: ${defaultOutfit.outfitKey} — ${defaultOutfit.outfitDescription}`
-          );
-        }
-        const otherOutfits = c.outfits.filter((o) => !o.isDefault);
-        if (otherOutfits.length) {
-          lines.push(
-            `  Other outfits: ${otherOutfits.map((o) => o.outfitKey).join(", ")}`
-          );
-        }
-      }
     }
     lines.push("");
   }
@@ -96,6 +82,7 @@ This plan will be consumed by a separate image model that:
 - Renders text directly into the image
 - Obeys a strict wrap-around cover layout template
 - Produces ONE image containing BACK + SPINE + FRONT
+- Has VISUAL REFERENCE IMAGES for every character — it can see what they look like
 
 STORY CONTEXT:
 Title: ${story.title}
@@ -107,8 +94,7 @@ YOUR TASK:
 From the conversation history, extract a SINGLE, FINAL cover plan.
 
 When the user refers to characters or locations by name, use the AVAILABLE CHARACTERS
-and AVAILABLE LOCATIONS above to understand who/what they mean. The visualIntent
-fields should describe these characters/locations accurately based on the data above.
+and AVAILABLE LOCATIONS above to understand who/what they mean.
 
 IMPORTANT: Include coverCharacterIds and coverLocationIds arrays with the EXACT IDs
 of the characters and locations that should appear on the cover. These IDs are shown
@@ -125,7 +111,7 @@ STRICT FORMAT:
   "front": {
     "titleText": "exact title text to render",
     "authorText": "exact author credit text (optional)",
-    "visualIntent": "short, concrete description of what should appear visually on the FRONT cover — reference specific characters by name and describe their appearance"
+    "visualIntent": "SHORT scene description — who is doing what and where. Characters by NAME ONLY."
   },
 
   "spine": {
@@ -135,7 +121,7 @@ STRICT FORMAT:
   "back": {
     "blurbText": "short back cover blurb (optional)",
     "dedicationText": "dedication text if requested (optional)",
-    "visualIntent": "short description of visual treatment on the BACK cover"
+    "visualIntent": "SHORT description of visual treatment on the BACK cover"
   },
 
   "coverCharacterIds": ["id-of-character-1", "id-of-character-2"],
@@ -148,13 +134,21 @@ STRICT FORMAT:
   "reasoning": "brief explanation of choices (optional)"
 }
 
-RULES:
+CRITICAL RULES FOR visualIntent:
+- Reference characters BY NAME ONLY — e.g. "Sophia and Katy standing by the river with Georgie and Bodi"
+- DO NOT describe character appearances (hair colour, eye colour, skin tone, breed, fur colour, etc.)
+- The image model has REFERENCE IMAGES for every character — it does not need text descriptions
+- Text descriptions of appearance COMPETE with and OVERRIDE the visual references, causing wrong results
+- Describe the SCENE, the ACTION, the MOOD — not what people look like
+- Keep visualIntent under 40 words
+- GOOD: "Sophia and Katy exploring the magical woods with Georgie and Bodi. River sprites dance above the water."
+- BAD: "Sophia, a young girl with fair skin, dark blue-grey eyes, long light brown hair in pigtails..." (NEVER DO THIS)
+
+OTHER RULES:
 - Use ONLY information explicitly stated or clearly implied by the user
 - Never invent names or text
 - If author text is not specified, OMIT authorText
 - If no back text was requested, OMIT blurbText and dedicationText
-- visualIntent describes imagery ONLY — not layout, typography, or positioning
-- When describing characters in visualIntent, include their appearance details from the character data above
 - coverCharacterIds MUST contain the IDs of ONLY the characters that should appear on the cover
 - coverLocationIds MUST contain the IDs of ONLY the locations that should appear on the cover
 - If no specific location was discussed, use an empty array for coverLocationIds
