@@ -2,7 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { stories, storyPages, storyProducts } from "@/db/schema";
+import { stories, storyPages, storyProducts, readers } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { uploadPdfToR2 } from "@/lib/uploadPdfToR2";
 import { postProcessPdf } from "@/lib/postProcessPdf";
@@ -37,11 +37,28 @@ export async function POST(
       found: !!story,
       title: story?.title,
       hasCover: !!story?.coverSpreadUrl,
+      readerId: story?.readerId ?? null,
     });
 
     if (!story) {
       return NextResponse.json({ error: "Story not found" }, { status: 404 });
     }
+
+    stage = "load-reader";
+    const reader = story.readerId
+      ? await db.query.readers.findFirst({
+          where: eq(readers.id, story.readerId),
+          columns: {
+            id: true,
+            name: true,
+          },
+        })
+      : null;
+
+    console.log("🟡 export-complete: reader loaded", {
+      found: !!reader,
+      readerName: reader?.name ?? null,
+    });
 
     stage = "load-product";
     const [storyProduct] = await db
@@ -158,14 +175,17 @@ export async function POST(
     }
 
     stage = "export-pdf";
-    console.log("🟡 export-complete: calling exportCompletePDF");
+    console.log("🟡 export-complete: calling exportCompletePDF", {
+      storyTitle: story.title ?? null,
+      readerName: reader?.name ?? null,
+    });
 
     const rawPdfBuffer = await exportCompletePDF(
       {
         coverSpreadUrl: story.coverSpreadUrl,
         interiorPages,
         storyTitle: story.title ?? undefined,
-        childName: story.childName ?? "child",
+        readerName: reader?.name ?? undefined,
       },
       printSpec.gelatoProductUid,
       process.env.GELATO_API_KEY,
@@ -203,6 +223,7 @@ export async function POST(
       url: pdfUrl,
       productType: printSpec.productType,
       coverType: printSpec.coverType,
+      readerName: reader?.name ?? null,
     });
   } catch (err) {
     console.error("❌ Export complete PDF failed", {

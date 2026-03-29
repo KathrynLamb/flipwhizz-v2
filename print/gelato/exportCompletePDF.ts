@@ -8,7 +8,7 @@ export type ExportData = {
     side: "left" | "right";
   }[];
   storyTitle?: string;
-  childName?: string;
+  readerName?: string;
 };
 
 export type PrintSpec = {
@@ -160,8 +160,7 @@ export async function exportCompletePDF(
 <div class="page dedication">
   <div class="dedication-content">
     ${data.storyTitle ? `<p class="dedication-title">${data.storyTitle}</p>` : ""}
-    ${data.childName ? `<p class="dedication-sub">A story for ${data.childName}</p>` : ""}
-  </div>
+    ${data.readerName ? `<p class="dedication-sub">Made especially for ${data.readerName}</p>` : ""}  </div>
 </div>`;
 
     const endPageHtml = `

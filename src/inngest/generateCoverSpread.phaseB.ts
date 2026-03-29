@@ -330,8 +330,8 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
     parts.push({
       text: `↑ LAYOUT GUIDE — DO NOT RENDER. Shows safe zones only.
 COVER LAYOUT: Back cover = left third. Spine = centre. Front cover = right third.
-Front title: 70-90% from left, 15-45% from top. Back text: 8-30% from left.
-ALL text min 10% from edges. NO text in outer 10%. NO guide lines in output. ↑`,
+Front title: 70-90% from left, 20-45% from top. Back text: 8-20% from left.
+ALL text min 20% from edges. NO text in outer 10%. NO guide lines in output. ↑`,
     });
 
     // ━━━ BLOCK 6: SINGLE INSTRUCTION BLOCK (everything Gemini needs) ━━━
