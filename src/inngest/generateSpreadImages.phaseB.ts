@@ -77,6 +77,33 @@ const GenerateSingleSpreadEventSchema = z.object({
 /*                                   HELPERS                                  */
 /* -------------------------------------------------------------------------- */
 
+function serializePartsForLogging(parts: any[]) {
+  return parts.map((p, i) => {
+    if (p.text) {
+      return {
+        index: i,
+        type: "text",
+        text: p.text, // FULL text (important)
+      };
+    }
+
+    if (p.inlineData) {
+      return {
+        index: i,
+        type: "image",
+        mimeType: p.inlineData.mimeType,
+        sizeBytes: Buffer.from(p.inlineData.data, "base64").length,
+        previewBase64: p.inlineData.data.substring(0, 100) + "...", // optional
+      };
+    }
+
+    return {
+      index: i,
+      type: "unknown",
+    };
+  });
+}
+
 function assertNonEmpty(v: unknown, label: string): asserts v is string {
   if (typeof v !== "string" || v.trim().length === 0) {
     throw new Error(`${label} missing or invalid`);
@@ -946,6 +973,26 @@ Create a clean, professional illustration with seamlessly integrated text.
             ? p.text.substring(0, 100).replace(/\n/g, " ")
             : `image/${p.inlineData?.mimeType}`,
         }))
+      );
+
+
+      const debugPayload = {
+        model: GEMINI_IMAGE_MODEL,
+        contents: [
+          {
+            role: "user",
+            parts: serializePartsForLogging(parts),
+          },
+        ],
+        config: {
+          aspectRatio: IMAGE_ASPECT_RATIO,
+          imageSize: IMAGE_SIZE,
+        },
+      };
+      
+      console.log(
+        "🧠 GEMINI FULL PAYLOAD:\n",
+        JSON.stringify(debugPayload, null, 2)
       );
 
       // ========================================
