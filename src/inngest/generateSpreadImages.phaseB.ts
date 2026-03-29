@@ -709,36 +709,36 @@ export const generateSingleSpread = inngest.createFunction(
       parts.push(await getImagePart(SPREAD_TEMPLATE_PATH));
       parts.push({
         text: `
-↑ LAYOUT GUIDE ONLY - DO NOT RENDER ↑
+              ↑ LAYOUT GUIDE ONLY - DO NOT RENDER ↑
 
-The image above shows SAFE ZONES for text placement.
-This is a REFERENCE GUIDE ONLY — do NOT draw any guides in the final illustration.
+              The image above shows SAFE ZONES for text placement.
+              This is a REFERENCE GUIDE ONLY — do NOT draw any guides in the final illustration.
 
-⚠️ CRITICAL PRINT SAFETY RULES — TEXT WILL BE PHYSICALLY CUT OFF IF THESE ARE VIOLATED:
+              ⚠️ CRITICAL PRINT SAFETY RULES — TEXT WILL BE PHYSICALLY CUT OFF IF THESE ARE VIOLATED:
 
-This illustration will be PRINTED and TRIMMED. The printer cuts 8% from EVERY edge.
-Any text or important content in the outer 8% WILL BE DESTROYED.
+              This illustration will be PRINTED and TRIMMED. The printer cuts 8% from EVERY edge.
+              Any text or important content in the outer 8% WILL BE DESTROYED.
 
-ABSOLUTE TEXT BOUNDARIES (percentage of total image):
-- LEFT EDGE:   Text must not start before 10% from the left
-- RIGHT EDGE:  Text must not extend past 90% from the left
-- TOP EDGE:    Text must not start before 12% from the top
-- BOTTOM EDGE: Text must not extend past 88% from the top
-- CENTER GUTTER: NO text between 44% and 56% from the left (this is the book spine)
+              ABSOLUTE TEXT BOUNDARIES (percentage of total image):
+              - LEFT EDGE:   Text must not start before 10% from the left
+              - RIGHT EDGE:  Text must not extend past 90% from the left
+              - TOP EDGE:    Text must not start before 12% from the top
+              - BOTTOM EDGE: Text must not extend past 88% from the top
+              - CENTER GUTTER: NO text between 44% and 56% from the left (this is the book spine)
 
-WHERE TO PLACE TEXT:
-- LEFT page text:  Between 10%-42% horizontally, 15%-50% vertically (upper-left area)
-- RIGHT page text: Between 58%-88% horizontally, 15%-50% vertically (upper-right area)
+              WHERE TO PLACE TEXT:
+              - LEFT page text:  Between 10%-42% horizontally, 15%-50% vertically (upper-left area)
+              - RIGHT page text: Between 58%-88% horizontally, 15%-50% vertically (upper-right area)
 
-TEXT MUST BE GENEROUSLY INSET from all edges. When in doubt, move text FURTHER from edges.
-The green zones in the guide are the ONLY safe areas. The red/pink areas WILL BE CUT.
+              TEXT MUST BE GENEROUSLY INSET from all edges. When in doubt, move text FURTHER from edges.
+              The green zones in the guide are the ONLY safe areas. The red/pink areas WILL BE CUT.
 
-DO NOT:
-- Place text within 10% of any outer edge
-- Place text within 6% of the center spine
-- Show any guide lines, boxes, labels, or template markers
-- Use "TEXT SAFE ZONE" labels or any reference to this guide
-`.trim(),
+              DO NOT:
+              - Place text within 10% of any outer edge
+              - Place text within 6% of the center spine
+              - Show any guide lines, boxes, labels, or template markers
+              - Use "TEXT SAFE ZONE" labels or any reference to this guide
+              `.trim(),
       });
 
       // ── 2️⃣ STYLE REFERENCE IMAGE (if available) ─────────────────────────
@@ -750,20 +750,20 @@ DO NOT:
           parts.push(await getImagePart(style.sampleIllustrationUrl));
           parts.push({
             text: `
-↑ ILLUSTRATION STYLE REFERENCE ↑
+                ↑ ILLUSTRATION STYLE REFERENCE ↑
 
-This image defines the EXACT visual style for the entire book.
-Study it carefully and match:
-- Pencil/brush technique and stroke character
-- Line weight and ink outline style
-- Colour palette, saturation, and paper texture
-- How characters are rendered (face shape, proportions, expressiveness)
-- Background treatment and foliage/environment style
-- Overall warmth, charm, and hand-crafted quality
+                This image defines the EXACT visual style for the entire book.
+                Study it carefully and match:
+                - Pencil/brush technique and stroke character
+                - Line weight and ink outline style
+                - Colour palette, saturation, and paper texture
+                - How characters are rendered (face shape, proportions, expressiveness)
+                - Background treatment and foliage/environment style
+                - Overall warmth, charm, and hand-crafted quality
 
-Every spread in this book must feel like it was drawn by the same artist who created this image.
-Do NOT import a different style — stay true to this reference above all else.
-`.trim(),
+                Every spread in this book must feel like it was drawn by the same artist who created this image.
+                Do NOT import a different style — stay true to this reference above all else.
+                `.trim(),
           });
           console.log("🖼️ Style reference image included in prompt");
         } catch (err) {
@@ -779,13 +779,13 @@ Do NOT import a different style — stay true to this reference above all else.
           parts.push(await getImagePart(existingSpreadImageUrl));
           parts.push({
             text: `
-↑ CURRENT ILLUSTRATION (BEING REVISED) ↑
+                ↑ CURRENT ILLUSTRATION (BEING REVISED) ↑
 
-This is the EXISTING spread that the user wants to improve.
-Study it so you understand what the user's feedback refers to.
-Use it as context for the revision — keep what works, fix what's requested.
-Do NOT simply copy this image — create a fresh illustration that addresses the feedback.
-`.trim(),
+                This is the EXISTING spread that the user wants to improve.
+                Study it so you understand what the user's feedback refers to.
+                Use it as context for the revision — keep what works, fix what's requested.
+                Do NOT simply copy this image — create a fresh illustration that addresses the feedback.
+                `.trim(),
           });
           console.log("🔄 Existing spread image included for revision context");
         } catch (err) {
@@ -799,10 +799,10 @@ Do NOT simply copy this image — create a fresh illustration that addresses the
           parts.push(await getImagePart(locationRef.imageUrl));
           parts.push({
             text: `
-↑ THIS IS THE LOCATION REFERENCE (${locationRef.name.toUpperCase()}) ↑
-Match this environment, setting, and spatial layout exactly.
-Use it as the backdrop across the full spread.
-`.trim(),
+                ↑ THIS IS THE LOCATION REFERENCE (${locationRef.name.toUpperCase()}) ↑
+                Match this environment, setting, and spatial layout exactly.
+                Use it as the backdrop across the full spread.
+                `.trim(),
           });
         } catch (err) {
           console.warn("⚠️ Could not load location reference image:", err);

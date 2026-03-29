@@ -311,6 +311,8 @@ export default function CoverDesignChat({
       });
       if (!res.ok) throw new Error();
 
+      console.log('res for cover prompt', res)
+
       const updated = await fetch(`/api/stories/${storyId}`).then((r) => r.json());
       setLocalStory(updated.story);
 
