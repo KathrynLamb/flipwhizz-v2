@@ -40,6 +40,8 @@ export default async function PrintRoute({
     where: eq(storyProducts.storyId, id),
   });
 
+  console.log('product ==>', product)
+
   return (
     <main className="min-h-screen" style={{ background: "#FDFBFF" }}>
 <PrintPage

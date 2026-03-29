@@ -5,12 +5,29 @@ import { db } from "@/db";
 import { storyProducts } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-const PRICES: Record<string, string> = {
+const PRICES = {
   digital: "14.00",
   print: "29.00",
   gift: "39.00",
-  undecided: "29.00",
-};
+} as const;
+
+const ALLOWED_PRODUCT_TYPES = ["digital", "print", "gift"] as const;
+type ProductType = (typeof ALLOWED_PRODUCT_TYPES)[number];
+
+function isValidProductType(value: unknown): value is ProductType {
+  return (
+    typeof value === "string" &&
+    ALLOWED_PRODUCT_TYPES.includes(value as ProductType)
+  );
+}
+
+function getPrice(productType: ProductType): string {
+  return PRICES[productType];
+}
+
+function requiresShipping(productType: ProductType): boolean {
+  return productType !== "digital";
+}
 
 export async function GET(
   _req: NextRequest,
@@ -24,13 +41,22 @@ export async function GET(
     .where(eq(storyProducts.storyId, id))
     .limit(1);
 
-  const productType = product?.productType || "undecided";
-  const price = PRICES[productType] || "29.00";
+  if (!product || !isValidProductType(product.productType)) {
+    return NextResponse.json({
+      productType: null,
+      price: null,
+      requiresShipping: null,
+      productSelected: false,
+    });
+  }
+
+  const productType = product.productType;
 
   return NextResponse.json({
     productType,
-    price,
-    requiresShipping: product?.requiresShipping ?? false,
+    price: getPrice(productType),
+    requiresShipping: requiresShipping(productType),
+    productSelected: true,
   });
 }
 
@@ -39,15 +65,17 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const { productType } = await req.json();
+  const body = await req.json();
+  const rawProductType = body?.productType;
 
-  const ALLOWED = ["digital", "print", "gift"];
-  if (!productType || !ALLOWED.includes(productType)) {
+  if (!isValidProductType(rawProductType)) {
     return NextResponse.json(
       { error: "Invalid product type" },
       { status: 400 }
     );
   }
+
+  const productType = rawProductType;
 
   const [existing] = await db
     .select()
@@ -60,7 +88,8 @@ export async function PUT(
       .update(storyProducts)
       .set({
         productType,
-        requiresShipping: productType !== "digital",
+        requiresShipping: requiresShipping(productType),
+        requiresPdf: true,
         updatedAt: new Date(),
       })
       .where(eq(storyProducts.id, existing.id));
@@ -68,16 +97,15 @@ export async function PUT(
     await db.insert(storyProducts).values({
       storyId: id,
       productType,
-      requiresShipping: productType !== "digital",
+      requiresShipping: requiresShipping(productType),
       requiresPdf: true,
     });
   }
 
-  const price = PRICES[productType] || "29.00";
-
   return NextResponse.json({
     productType,
-    price,
-    requiresShipping: productType !== "digital",
+    price: getPrice(productType),
+    requiresShipping: requiresShipping(productType),
+    productSelected: true,
   });
 }

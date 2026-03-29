@@ -1,7 +1,7 @@
 // src/app/stories/[id]/checkout/page.tsx
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,9 +9,7 @@ import {
   ShieldCheck,
   Sparkles,
   CheckCircle,
-  Wand2,
   BookOpen,
-  Palette,
   Loader2,
   Lock,
   ChevronRight,
@@ -23,10 +21,6 @@ import {
 } from 'lucide-react';
 import type { StepKey } from '@/lib/storySteps';
 import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
-
-/* -------------------------------------------------------------------------- */
-/*  TIER CONFIG                                                                */
-/* -------------------------------------------------------------------------- */
 
 type TierKey = 'digital' | 'print' | 'gift';
 
@@ -44,9 +38,6 @@ type TierDef = {
 const TIERS: TierDef[] = [
   {
     key: 'digital',
-    // label: 'Digital Keepsake',
-    // price: '14.00',
-    // priceCents: 1400,
     label: 'Print at home PDF',
     price: '2.00',
     priceCents: 200,
@@ -94,23 +85,14 @@ function getTier(key: string): TierDef {
   return TIERS.find((t) => t.key === key) || TIERS[1];
 }
 
-/* -------------------------------------------------------------------------- */
-/*  FONT LOADER                                                                */
-/* -------------------------------------------------------------------------- */
-
 function FontLoader() {
   return (
-    // eslint-disable-next-line @next/next/no-page-custom-font
     <link
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,600;12..96,700;12..96,800&family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap"
       rel="stylesheet"
     />
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/*  MAIN COMPONENT                                                             */
-/* -------------------------------------------------------------------------- */
 
 export default function CheckoutPage() {
   const params = useParams();
@@ -125,64 +107,102 @@ export default function CheckoutPage() {
   const [processing, setProcessing] = useState(false);
   const [generationStarted, setGenerationStarted] = useState(false);
   const [selectedTier, setSelectedTier] = useState<TierKey>('print');
+  const [savingProduct, setSavingProduct] = useState(false);
+  const [productReady, setProductReady] = useState(false);
 
   const tier = getTier(selectedTier);
+
+  const saveProductSelection = useCallback(
+    async (productType: TierKey) => {
+      setSavingProduct(true);
+      try {
+        const res = await fetch(`/api/stories/${storyId}/product`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productType }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data?.error || 'Failed to save product selection');
+        }
+
+        setSelectedTier(productType);
+        setProductReady(true);
+        return data;
+      } finally {
+        setSavingProduct(false);
+      }
+    },
+    [storyId]
+  );
 
   useEffect(() => {
     if (!storyId) return;
     let cancelled = false;
 
-    fetch(`/api/stories/${storyId}/product`)
-      .then((r) => r.json())
-      .then((p) => {
-        if (!cancelled && p?.productType && p.productType !== 'undecided') {
-          setSelectedTier(p.productType as TierKey);
-        }
-      })
-      .catch(() => {});
+    async function load() {
+      try {
+        const [productRes, storyRes] = await Promise.all([
+          fetch(`/api/stories/${storyId}/product`),
+          fetch(`/api/stories/${storyId}`),
+        ]);
 
-    fetch(`/api/stories/${storyId}`)
-      .then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error || 'Failed to load story');
-        return data;
-      })
-      .then((data) => {
+        const productData = await productRes.json();
+        const storyData = await storyRes.json();
+
+        if (!storyRes.ok) {
+          throw new Error(storyData?.error || 'Failed to load story');
+        }
+
         if (cancelled) return;
-        const s = data.story;
+
+        const s = storyData.story;
         setStory(s);
         setCompletedSteps((s.completedSteps as StepKey[]) || []);
 
-        // Already paid on a previous visit — redirect straight to studio
         if (s.paymentStatus === 'paid') {
           router.replace(`/stories/${storyId}/studio`);
           return;
         }
 
-        setLoading(false);
-      })
-      .catch((e) => {
+        if (productRes.ok && productData?.productSelected && productData?.productType) {
+          setSelectedTier(productData.productType as TierKey);
+          setProductReady(true);
+        } else {
+          // Ensure a canonical row exists for the default selected tier.
+          await saveProductSelection('print');
+        }
+
+        if (!cancelled) {
+          setLoading(false);
+        }
+      } catch (e: any) {
         if (cancelled) return;
         setError(e?.message || 'Failed to load checkout');
         setLoading(false);
-      });
+      }
+    }
 
-    return () => { cancelled = true; };
-  }, [storyId, router]);
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [storyId, router, saveProductSelection]);
 
   async function handleTierChange(newTier: TierKey) {
-    if (newTier === selectedTier) return;
-    setSelectedTier(newTier);
+    if (newTier === selectedTier || savingProduct || processing) return;
+
     try {
-      await fetch(`/api/stories/${storyId}/product`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productType: newTier }),
-      });
-    } catch {}
+      await saveProductSelection(newTier);
+    } catch (e: any) {
+      console.error('Failed to save tier change:', e);
+      alert(e?.message || 'Could not save your book format. Please try again.');
+    }
   }
 
-  /* ── Trigger generation after successful payment ── */
   async function startGeneration() {
     if (generationStarted) return;
     setGenerationStarted(true);
@@ -190,20 +210,24 @@ export default function CheckoutPage() {
       await fetch(`/api/stories/${storyId}/generate-all`, { method: 'POST' });
     } catch (err) {
       console.error('Failed to start generation:', err);
-      // Don't block the user — they can still go to studio and generate manually
     }
   }
 
-  /* ── MISSING STORY ID ── */
   if (!storyId) {
     return (
       <Shell>
         <div className="max-w-md mx-auto">
           <Card>
             <div className="p-8 text-center">
-              <IconBox color="amber"><BookOpen className="w-7 h-7" style={{ color: '#E8940A' }} /></IconBox>
-              <h2 className="text-xl font-extrabold mb-2" style={{ color: '#2D2235' }}>Missing Story</h2>
-              <p className="text-sm mb-6" style={{ color: '#7B6E90' }}>Please return to your story and try checkout again.</p>
+              <IconBox color="amber">
+                <BookOpen className="w-7 h-7" style={{ color: '#E8940A' }} />
+              </IconBox>
+              <h2 className="text-xl font-extrabold mb-2" style={{ color: '#2D2235' }}>
+                Missing Story
+              </h2>
+              <p className="text-sm mb-6" style={{ color: '#7B6E90' }}>
+                Please return to your story and try checkout again.
+              </p>
               <Btn onClick={() => router.push('/projects')}>Go to Library</Btn>
             </div>
           </Card>
@@ -212,24 +236,63 @@ export default function CheckoutPage() {
     );
   }
 
-  /* ── LOADING ── */
   if (loading) {
     return (
       <Shell>
         <div className="max-w-md mx-auto pt-12">
           <div className="flex flex-col items-center text-center">
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="relative mb-8">
-              <motion.div animate={{ rotateY: [0, 15, -15, 0], scale: [1, 1.05, 1.05, 1] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }} className="w-20 h-20 rounded-2xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #E8D5FF, #FFD5E5)', boxShadow: '0 8px 32px rgba(176,92,230,0.2)' }}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="relative mb-8"
+            >
+              <motion.div
+                animate={{ rotateY: [0, 15, -15, 0], scale: [1, 1.05, 1.05, 1] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                className="w-20 h-20 rounded-2xl flex items-center justify-center"
+                style={{
+                  background: 'linear-gradient(135deg, #E8D5FF, #FFD5E5)',
+                  boxShadow: '0 8px 32px rgba(176,92,230,0.2)',
+                }}
+              >
                 <BookOpen className="w-9 h-9" style={{ color: '#B05CE6' }} />
               </motion.div>
-              <motion.div animate={{ y: [-4, 4, -4], opacity: [0.4, 1, 0.4] }} transition={{ duration: 2, repeat: Infinity }} className="absolute -top-2 -right-2">
+              <motion.div
+                animate={{ y: [-4, 4, -4], opacity: [0.4, 1, 0.4] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="absolute -top-2 -right-2"
+              >
                 <Sparkles className="w-4 h-4" style={{ color: '#C77DFF' }} />
               </motion.div>
             </motion.div>
-            <motion.h3 initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-xl font-extrabold mb-2" style={{ color: '#2D2235' }}>Preparing your checkout</motion.h3>
-            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="text-sm max-w-xs" style={{ color: '#7B6E90' }}>Loading your story details and pricing…</motion.p>
+            <motion.h3
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="text-xl font-extrabold mb-2"
+              style={{ color: '#2D2235' }}
+            >
+              Preparing your checkout
+            </motion.h3>
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className="text-sm max-w-xs"
+              style={{ color: '#7B6E90' }}
+            >
+              Loading your story details and pricing…
+            </motion.p>
             <div className="flex gap-1.5 mt-6">
-              {[0, 1, 2].map((i) => (<motion.div key={i} animate={{ scale: [1, 1.4, 1], opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }} className="w-2 h-2 rounded-full" style={{ background: '#B05CE6' }} />))}
+              {[0, 1, 2].map((i) => (
+                <motion.div
+                  key={i}
+                  animate={{ scale: [1, 1.4, 1], opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: '#B05CE6' }}
+                />
+              ))}
             </div>
           </div>
         </div>
@@ -237,16 +300,21 @@ export default function CheckoutPage() {
     );
   }
 
-  /* ── ERROR ── */
   if (error || !story) {
     return (
       <Shell>
         <div className="max-w-md mx-auto">
           <Card>
             <div className="p-8 text-center">
-              <IconBox color="red"><ShieldCheck className="w-7 h-7" style={{ color: '#EF4444' }} /></IconBox>
-              <h2 className="text-xl font-extrabold mb-2" style={{ color: '#2D2235' }}>Checkout Failed</h2>
-              <p className="text-sm mb-6" style={{ color: '#7B6E90' }}>{error || 'Something went wrong.'}</p>
+              <IconBox color="red">
+                <ShieldCheck className="w-7 h-7" style={{ color: '#EF4444' }} />
+              </IconBox>
+              <h2 className="text-xl font-extrabold mb-2" style={{ color: '#2D2235' }}>
+                Checkout Failed
+              </h2>
+              <p className="text-sm mb-6" style={{ color: '#7B6E90' }}>
+                {error || 'Something went wrong.'}
+              </p>
               <BtnSecondary onClick={() => router.back()}>Go Back</BtnSecondary>
             </div>
           </Card>
@@ -255,23 +323,53 @@ export default function CheckoutPage() {
     );
   }
 
-  /* ── JUST PAID — show success + generation started ── */
   if (justPaid) {
     return (
-      <Shell storyId={storyId} storyTitle={story.title} currentStep="pay" completedSteps={completedSteps} paymentStatus="paid">
+      <Shell
+        storyId={storyId}
+        storyTitle={story.title}
+        currentStep="pay"
+        completedSteps={completedSteps}
+        paymentStatus="paid"
+      >
         <div className="max-w-lg mx-auto">
-          <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: 'spring', stiffness: 200 }}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 200 }}
+          >
             <Card border="green">
               <div className="p-8 sm:p-12 text-center">
-                <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring', stiffness: 200, delay: 0.2 }} className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6" style={{ background: 'linear-gradient(135deg, #43B89C, #2FA482)', boxShadow: '0 6px 20px rgba(67,184,156,0.3)' }}>
+                <motion.div
+                  initial={{ scale: 0, rotate: -180 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ type: 'spring', stiffness: 200, delay: 0.2 }}
+                  className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"
+                  style={{
+                    background: 'linear-gradient(135deg, #43B89C, #2FA482)',
+                    boxShadow: '0 6px 20px rgba(67,184,156,0.3)',
+                  }}
+                >
                   <CheckCircle className="w-8 h-8 text-white" />
                 </motion.div>
-                <h2 className="text-2xl font-extrabold mb-2" style={{ color: '#2D2235' }}>Payment Complete!</h2>
-                <p className="text-sm mb-2 max-w-sm mx-auto" style={{ color: '#7B6E90' }}>
-                  Your book is unlocked and we&apos;re generating illustrations for every page now. This usually takes a few minutes.
+                <h2 className="text-2xl font-extrabold mb-2" style={{ color: '#2D2235' }}>
+                  Payment Complete!
+                </h2>
+                <p
+                  className="text-sm mb-2 max-w-sm mx-auto"
+                  style={{ color: '#7B6E90' }}
+                >
+                  Your book is unlocked and we&apos;re generating illustrations for every
+                  page now. This usually takes a few minutes.
                 </p>
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold mb-8 mt-4" style={{ background: 'rgba(67,184,156,0.08)', color: '#2FA482' }}>
-                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}>
+                <div
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold mb-8 mt-4"
+                  style={{ background: 'rgba(67,184,156,0.08)', color: '#2FA482' }}
+                >
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                  >
                     <Loader2 className="w-3.5 h-3.5" />
                   </motion.div>
                   Generating illustrations…
@@ -289,52 +387,119 @@ export default function CheckoutPage() {
     );
   }
 
-  /* ── MAIN CHECKOUT ── */
   return (
-    <Shell storyId={storyId} storyTitle={story.title} currentStep="pay" completedSteps={completedSteps} paymentStatus={story.paymentStatus}>
+    <Shell
+      storyId={storyId}
+      storyTitle={story.title}
+      currentStep="pay"
+      completedSteps={completedSteps}
+      paymentStatus={story.paymentStatus}
+    >
       <div className="max-w-[960px] mx-auto">
-        {/* Title */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8 sm:mb-10">
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold mb-3" style={{ background: 'rgba(199,125,255,0.1)', color: '#9B59D0' }}>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center mb-8 sm:mb-10"
+        >
+          <div
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold mb-3"
+            style={{ background: 'rgba(199,125,255,0.1)', color: '#9B59D0' }}
+          >
             <Sparkles className="w-3 h-3" /> Unlock Your Book
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold mb-2" style={{ color: '#2D2235', letterSpacing: '-0.03em' }}>Bring Your Story to Life</h2>
-          <p className="text-sm sm:text-base max-w-lg mx-auto leading-relaxed" style={{ color: '#7B6E90' }}>
-            Choose your format, then pay to unlock full AI illustration for <strong style={{ color: '#2D2235' }}>{story.title}</strong>.
+          <h2
+            className="text-2xl sm:text-3xl font-extrabold mb-2"
+            style={{ color: '#2D2235', letterSpacing: '-0.03em' }}
+          >
+            Bring Your Story to Life
+          </h2>
+          <p
+            className="text-sm sm:text-base max-w-lg mx-auto leading-relaxed"
+            style={{ color: '#7B6E90' }}
+          >
+            Choose your format, then pay to unlock full AI illustration for{' '}
+            <strong style={{ color: '#2D2235' }}>{story.title}</strong>.
           </p>
         </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          {/* LEFT: Order Summary with tier dropdown */}
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
             <Card>
-              <CardHeader icon={<BookOpen className="w-4 h-4" style={{ color: '#B05CE6' }} />} title="Order Summary" subtitle={story.title} />
+              <CardHeader
+                icon={<BookOpen className="w-4 h-4" style={{ color: '#B05CE6' }} />}
+                title="Order Summary"
+                subtitle={story.title}
+              />
 
               {story.coverSpreadUrl && (
                 <div className="px-6 pt-5 pb-3">
-                  <div className="rounded-xl overflow-hidden" style={{ border: '1.5px solid rgba(180,150,210,0.12)', boxShadow: '0 4px 16px rgba(100,60,140,0.08)' }}>
-                    <img src={story.coverSpreadUrl} alt="Cover preview" className="w-full h-auto object-cover" loading="lazy" />
+                  <div
+                    className="rounded-xl overflow-hidden"
+                    style={{
+                      border: '1.5px solid rgba(180,150,210,0.12)',
+                      boxShadow: '0 4px 16px rgba(100,60,140,0.08)',
+                    }}
+                  >
+                    <img
+                      src={story.coverSpreadUrl}
+                      alt="Cover preview"
+                      className="w-full h-auto object-cover"
+                      loading="lazy"
+                    />
                   </div>
                 </div>
               )}
 
               <div className="px-6 pt-4 pb-2">
-                <h4 className="text-lg font-extrabold" style={{ color: '#2D2235', fontFamily: "'Lora', serif", fontStyle: 'italic' }}>
+                <h4
+                  className="text-lg font-extrabold"
+                  style={{
+                    color: '#2D2235',
+                    fontFamily: "'Lora', serif",
+                    fontStyle: 'italic',
+                  }}
+                >
                   {story.title}
                 </h4>
               </div>
 
               <div className="px-6 py-4">
-                <TierDropdown selected={selectedTier} onChange={handleTierChange} />
+                <TierDropdown
+                  selected={selectedTier}
+                  onChange={handleTierChange}
+                  disabled={savingProduct || processing}
+                />
+                {savingProduct && (
+                  <div className="mt-2 flex items-center gap-2 text-xs" style={{ color: '#7B6E90' }}>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Saving book format…
+                  </div>
+                )}
               </div>
 
               <div className="px-6 pb-5">
                 <AnimatePresence mode="wait">
-                  <motion.div key={selectedTier} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }} className="space-y-2">
+                  <motion.div
+                    key={selectedTier}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.2 }}
+                    className="space-y-2"
+                  >
                     {tier.features.map((f) => (
                       <div key={f} className="flex items-center gap-2.5">
-                        <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#43B89C' }} />
-                        <span className="text-[13px]" style={{ color: '#5A4D6B' }}>{f}</span>
+                        <Check
+                          className="w-3.5 h-3.5 flex-shrink-0"
+                          style={{ color: '#43B89C' }}
+                        />
+                        <span className="text-[13px]" style={{ color: '#5A4D6B' }}>
+                          {f}
+                        </span>
                       </div>
                     ))}
                   </motion.div>
@@ -345,46 +510,91 @@ export default function CheckoutPage() {
             </Card>
           </motion.div>
 
-          {/* RIGHT: Payment */}
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+          >
             <div className="lg:sticky lg:top-28">
               <Card>
-                <CardHeader icon={<Lock className="w-4 h-4" style={{ color: '#B05CE6' }} />} title="Secure Payment" subtitle="Card or PayPal balance" />
+                <CardHeader
+                  icon={<Lock className="w-4 h-4" style={{ color: '#B05CE6' }} />}
+                  title="Secure Payment"
+                  subtitle="Card or PayPal balance"
+                />
 
                 <div className="px-6 py-6">
-                  <div className="flex items-center justify-between mb-5 pb-4" style={{ borderBottom: '1px solid rgba(180,150,210,0.1)' }}>
+                  <div
+                    className="flex items-center justify-between mb-5 pb-4"
+                    style={{ borderBottom: '1px solid rgba(180,150,210,0.1)' }}
+                  >
                     <div>
-                      <p className="text-sm font-bold" style={{ color: '#2D2235' }}>{tier.label}</p>
-                      <p className="text-[11px] mt-0.5" style={{ color: '#A897BD' }}>{tier.description}</p>
+                      <p className="text-sm font-bold" style={{ color: '#2D2235' }}>
+                        {tier.label}
+                      </p>
+                      <p className="text-[11px] mt-0.5" style={{ color: '#A897BD' }}>
+                        {tier.description}
+                      </p>
                     </div>
-                    <p className="text-xl font-extrabold" style={{ color: '#2FA482' }}>£{tier.price}</p>
+                    <p className="text-xl font-extrabold" style={{ color: '#2FA482' }}>
+                      £{tier.price}
+                    </p>
                   </div>
 
-                  {processing && (
+                  {(processing || savingProduct || !productReady) && (
                     <div className="flex items-center justify-center gap-2 py-8">
                       <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#B05CE6' }} />
-                      <span className="text-sm font-semibold" style={{ color: '#6B5C80' }}>Processing payment…</span>
+                      <span className="text-sm font-semibold" style={{ color: '#6B5C80' }}>
+                        {savingProduct || !productReady
+                          ? 'Saving your selected format…'
+                          : 'Processing payment…'}
+                      </span>
                     </div>
                   )}
 
-                  <div style={{ display: processing ? 'none' : 'block' }}>
-                    <PayPalScriptProvider options={{ clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!, currency: 'GBP', intent: 'capture' }}>
+                  <div
+                    style={{
+                      display: processing || savingProduct || !productReady ? 'none' : 'block',
+                    }}
+                  >
+                    <PayPalScriptProvider
+                      options={{
+                        clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!,
+                        currency: 'GBP',
+                        intent: 'capture',
+                      }}
+                    >
                       <PayPalButtons
                         key={selectedTier}
-                        style={{ layout: 'vertical', color: 'gold', shape: 'rect', label: 'pay', height: 48 }}
+                        style={{
+                          layout: 'vertical',
+                          color: 'gold',
+                          shape: 'rect',
+                          label: 'pay',
+                          height: 48,
+                        }}
                         createOrder={async () => {
+                          // Defensive: ensure current selected tier is persisted right before order creation.
+                          await saveProductSelection(selectedTier);
+
+                          const freshTier = getTier(selectedTier);
+
                           const res = await fetch('/api/paypal/order', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                               storyId,
-                              product: `FlipWhizz ${tier.label}: ${story.title}`,
-                              price: tier.price,
+                              price: freshTier.price,
                               currency: 'GBP',
                             }),
                           });
+
                           const data = await res.json();
-                          if (!data.orderID) throw new Error('Failed to create order');
+
+                          if (!res.ok || !data.orderID) {
+                            throw new Error(data?.error || 'Failed to create order');
+                          }
+
                           return data.orderID;
                         }}
                         onApprove={async (data) => {
@@ -395,44 +605,75 @@ export default function CheckoutPage() {
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ orderID: data.orderID }),
                             });
-                            const result = await res.json();
-                            if (result.success) {
-                              // Mark pay step complete
-                              await fetch(`/api/stories/${storyId}/complete-step`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ step: 'pay' }),
-                              });
-                              setCompletedSteps((prev) => [...prev, 'pay']);
 
-                              // Start generation immediately
-                              setJustPaid(true);
-                              startGeneration();
-                            } else {
-                              alert(result.error || 'Payment capture failed.');
+                            const result = await res.json();
+
+                            if (!res.ok || !result.success) {
+                              throw new Error(result?.error || 'Payment capture failed.');
                             }
-                          } catch (err) {
+
+                            await fetch(`/api/stories/${storyId}/complete-step`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ step: 'pay' }),
+                            });
+
+                            setCompletedSteps((prev) =>
+                              prev.includes('pay') ? prev : [...prev, 'pay']
+                            );
+
+                            setJustPaid(true);
+                            startGeneration();
+                          } catch (err: any) {
                             console.error('Capture error:', err);
-                            alert('Payment processed but something went wrong. Please contact support.');
+                            alert(
+                              err?.message ||
+                                'Payment processed but something went wrong. Please contact support.'
+                            );
                           } finally {
                             setProcessing(false);
                           }
                         }}
-                        onError={(err) => { console.error('PayPal error:', err); setProcessing(false); alert('Payment failed. Please try again.'); }}
+                        onError={(err) => {
+                          console.error('PayPal error:', err);
+                          setProcessing(false);
+                          alert('Payment failed. Please try again.');
+                        }}
                         onCancel={() => setProcessing(false)}
                       />
                     </PayPalScriptProvider>
                   </div>
                 </div>
 
-                <div className="px-6 pb-5 flex flex-wrap gap-2" style={{ borderTop: '1px solid rgba(180,150,210,0.08)', paddingTop: 16 }}>
+                <div
+                  className="px-6 pb-5 flex flex-wrap gap-2"
+                  style={{
+                    borderTop: '1px solid rgba(180,150,210,0.08)',
+                    paddingTop: 16,
+                  }}
+                >
                   <TrustBadge icon={<Lock className="w-3 h-3" />}>Encrypted</TrustBadge>
-                  <TrustBadge icon={<ShieldCheck className="w-3 h-3" />}>Buyer protection</TrustBadge>
-                  <TrustBadge icon={<Sparkles className="w-3 h-3" />}>Instant unlock</TrustBadge>
+                  <TrustBadge icon={<ShieldCheck className="w-3 h-3" />}>
+                    Buyer protection
+                  </TrustBadge>
+                  <TrustBadge icon={<Sparkles className="w-3 h-3" />}>
+                    Instant unlock
+                  </TrustBadge>
                 </div>
 
                 <div className="px-6 pb-6 text-center">
-                  <button onClick={() => router.back()} className="text-[12px] font-medium underline" style={{ color: '#A897BD', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textUnderlineOffset: '3px' }}>
+                  <button
+                    onClick={() => router.back()}
+                    className="text-[12px] font-medium underline"
+                    style={{
+                      color: '#A897BD',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      textUnderlineOffset: '3px',
+                    }}
+                  >
                     Cancel and go back
                   </button>
                 </div>
@@ -445,11 +686,15 @@ export default function CheckoutPage() {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  TIER DROPDOWN                                                              */
-/* -------------------------------------------------------------------------- */
-
-function TierDropdown({ selected, onChange }: { selected: TierKey; onChange: (t: TierKey) => void }) {
+function TierDropdown({
+  selected,
+  onChange,
+  disabled = false,
+}: {
+  selected: TierKey;
+  onChange: (t: TierKey) => void;
+  disabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const tier = getTier(selected);
@@ -464,69 +709,143 @@ function TierDropdown({ selected, onChange }: { selected: TierKey; onChange: (t:
 
   return (
     <div ref={ref} className="relative">
-      <label className="block text-[11px] font-bold uppercase mb-2" style={{ color: '#6B5C80', letterSpacing: '0.08em' }}>
+      <label
+        className="block text-[11px] font-bold uppercase mb-2"
+        style={{ color: '#6B5C80', letterSpacing: '0.08em' }}
+      >
         Book format
       </label>
 
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => !disabled && setOpen(!open)}
+        disabled={disabled}
         className="w-full flex items-center gap-3 rounded-2xl px-4 py-3.5 transition-all"
         style={{
           background: 'white',
           border: open ? '2px solid #B05CE6' : '2px solid rgba(180,150,210,0.18)',
           boxShadow: open ? '0 2px 12px rgba(176,92,230,0.1)' : 'none',
-          cursor: 'pointer',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.7 : 1,
           fontFamily: 'inherit',
         }}
       >
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #B05CE6, #D45DA0)', color: 'white' }}>
+        <div
+          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{
+            background: 'linear-gradient(135deg, #B05CE6, #D45DA0)',
+            color: 'white',
+          }}
+        >
           {tier.icon}
         </div>
         <div className="flex-1 text-left min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-[14px] font-bold" style={{ color: '#2D2235' }}>{tier.label}</span>
-            {tier.badge && (<span className="text-[9px] font-bold text-white px-2 py-0.5 rounded-full" style={{ background: '#D94590' }}>{tier.badge}</span>)}
+            <span className="text-[14px] font-bold" style={{ color: '#2D2235' }}>
+              {tier.label}
+            </span>
+            {tier.badge && (
+              <span
+                className="text-[9px] font-bold text-white px-2 py-0.5 rounded-full"
+                style={{ background: '#D94590' }}
+              >
+                {tier.badge}
+              </span>
+            )}
           </div>
-          <span className="text-[12px]" style={{ color: '#7B6E90' }}>{tier.description}</span>
+          <span className="text-[12px]" style={{ color: '#7B6E90' }}>
+            {tier.description}
+          </span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-lg font-extrabold" style={{ color: '#2D2235' }}>£{tier.price}</span>
-          <ChevronDown className="w-4 h-4 transition-transform" style={{ color: '#A897BD', transform: open ? 'rotate(180deg)' : 'none' }} />
+          <span className="text-lg font-extrabold" style={{ color: '#2D2235' }}>
+            £{tier.price}
+          </span>
+          <ChevronDown
+            className="w-4 h-4 transition-transform"
+            style={{ color: '#A897BD', transform: open ? 'rotate(180deg)' : 'none' }}
+          />
         </div>
       </button>
 
       <AnimatePresence>
-        {open && (
+        {open && !disabled && (
           <motion.div
             initial={{ opacity: 0, y: -8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ duration: 0.15 }}
             className="absolute z-50 left-0 right-0 mt-2 rounded-2xl overflow-hidden"
-            style={{ background: 'white', border: '1.5px solid rgba(180,150,210,0.15)', boxShadow: '0 8px 32px rgba(100,60,140,0.12), 0 2px 8px rgba(100,60,140,0.06)' }}
+            style={{
+              background: 'white',
+              border: '1.5px solid rgba(180,150,210,0.15)',
+              boxShadow:
+                '0 8px 32px rgba(100,60,140,0.12), 0 2px 8px rgba(100,60,140,0.06)',
+            }}
           >
             {TIERS.map((t, i) => {
               const isSelected = t.key === selected;
               return (
                 <button
                   key={t.key}
-                  onClick={() => { onChange(t.key); setOpen(false); }}
+                  onClick={() => {
+                    onChange(t.key);
+                    setOpen(false);
+                  }}
                   className="w-full flex items-center gap-3 px-4 py-3.5 transition-colors text-left"
-                  style={{ background: isSelected ? 'rgba(176,92,230,0.04)' : 'transparent', borderTop: i > 0 ? '1px solid rgba(180,150,210,0.08)' : 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                  style={{
+                    background: isSelected ? 'rgba(176,92,230,0.04)' : 'transparent',
+                    borderTop: i > 0 ? '1px solid rgba(180,150,210,0.08)' : 'none',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
                 >
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: isSelected ? 'linear-gradient(135deg, #B05CE6, #D45DA0)' : 'rgba(199,125,255,0.08)', color: isSelected ? 'white' : '#9B59D0' }}>
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{
+                      background: isSelected
+                        ? 'linear-gradient(135deg, #B05CE6, #D45DA0)'
+                        : 'rgba(199,125,255,0.08)',
+                      color: isSelected ? 'white' : '#9B59D0',
+                    }}
+                  >
                     {t.icon}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-bold" style={{ color: isSelected ? '#2D2235' : '#5A4D6B' }}>{t.label}</span>
-                      {t.badge && (<span className="text-[9px] font-bold text-white px-2 py-0.5 rounded-full" style={{ background: '#D94590' }}>{t.badge}</span>)}
+                      <span
+                        className="text-[13px] font-bold"
+                        style={{ color: isSelected ? '#2D2235' : '#5A4D6B' }}
+                      >
+                        {t.label}
+                      </span>
+                      {t.badge && (
+                        <span
+                          className="text-[9px] font-bold text-white px-2 py-0.5 rounded-full"
+                          style={{ background: '#D94590' }}
+                        >
+                          {t.badge}
+                        </span>
+                      )}
                     </div>
-                    <span className="text-[11px]" style={{ color: '#A897BD' }}>{t.description}</span>
+                    <span className="text-[11px]" style={{ color: '#A897BD' }}>
+                      {t.description}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2.5 flex-shrink-0">
-                    <span className="text-[15px] font-extrabold" style={{ color: isSelected ? '#2D2235' : '#7B6E90' }}>£{t.price}</span>
-                    {isSelected && (<div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: '#B05CE6' }}><Check className="w-3 h-3 text-white" /></div>)}
+                    <span
+                      className="text-[15px] font-extrabold"
+                      style={{ color: isSelected ? '#2D2235' : '#7B6E90' }}
+                    >
+                      £{t.price}
+                    </span>
+                    {isSelected && (
+                      <div
+                        className="w-5 h-5 rounded-full flex items-center justify-center"
+                        style={{ background: '#B05CE6' }}
+                      >
+                        <Check className="w-3 h-3 text-white" />
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -538,20 +857,50 @@ function TierDropdown({ selected, onChange }: { selected: TierKey; onChange: (t:
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  LAYOUT SHELL                                                               */
-/* -------------------------------------------------------------------------- */
-
-function Shell({ children, storyId, storyTitle, currentStep, completedSteps = [], paymentStatus }: { children: React.ReactNode; storyId?: string; storyTitle?: string; currentStep?: StepKey; completedSteps?: StepKey[]; paymentStatus?: string | null }) {
+function Shell({
+  children,
+  storyId,
+  storyTitle,
+  currentStep,
+  completedSteps = [],
+  paymentStatus,
+}: {
+  children: React.ReactNode;
+  storyId?: string;
+  storyTitle?: string;
+  currentStep?: StepKey;
+  completedSteps?: StepKey[];
+  paymentStatus?: string | null;
+}) {
   return (
     <>
       <FontLoader />
-      <div className="min-h-screen relative" style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}>
-        <div className="fixed inset-0 -z-10" style={{ background: `radial-gradient(ellipse 80% 60% at 20% 10%, rgba(232,190,255,0.3) 0%, transparent 60%), radial-gradient(ellipse 70% 50% at 85% 80%, rgba(255,182,210,0.25) 0%, transparent 55%), radial-gradient(ellipse 50% 40% at 50% 50%, rgba(200,210,255,0.15) 0%, transparent 50%), #F9F5FF` }}>
-          <div className="absolute inset-0 opacity-50" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c4b5d4' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }} />
+      <div
+        className="min-h-screen relative"
+        style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}
+      >
+        <div
+          className="fixed inset-0 -z-10"
+          style={{
+            background: `radial-gradient(ellipse 80% 60% at 20% 10%, rgba(232,190,255,0.3) 0%, transparent 60%), radial-gradient(ellipse 70% 50% at 85% 80%, rgba(255,182,210,0.25) 0%, transparent 55%), radial-gradient(ellipse 50% 40% at 50% 50%, rgba(200,210,255,0.15) 0%, transparent 50%), #F9F5FF`,
+          }}
+        >
+          <div
+            className="absolute inset-0 opacity-50"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c4b5d4' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+            }}
+          />
         </div>
         {storyId && storyTitle && currentStep && (
-          <UnifiedStoryHeader storyId={storyId} title={storyTitle} currentStep={currentStep} completedSteps={completedSteps} paymentStatus={paymentStatus} hasPages={true} />
+          <UnifiedStoryHeader
+            storyId={storyId}
+            title={storyTitle}
+            currentStep={currentStep}
+            completedSteps={completedSteps}
+            paymentStatus={paymentStatus}
+            hasPages={true}
+          />
         )}
         <main className="px-4 sm:px-6 lg:px-8 py-6 sm:py-10">{children}</main>
       </div>
@@ -559,33 +908,78 @@ function Shell({ children, storyId, storyTitle, currentStep, completedSteps = []
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  UI PRIMITIVES                                                              */
-/* -------------------------------------------------------------------------- */
-
-function Card({ children, border = 'default' }: { children: React.ReactNode; border?: 'default' | 'green' }) {
+function Card({
+  children,
+  border = 'default',
+}: {
+  children: React.ReactNode;
+  border?: 'default' | 'green';
+}) {
   return (
-    <div className="rounded-[22px] border" style={{ background: 'white', borderColor: border === 'green' ? 'rgba(67,184,156,0.3)' : 'rgba(180,150,210,0.12)', boxShadow: border === 'green' ? '0 4px 24px rgba(67,184,156,0.1)' : '0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)' }}>
+    <div
+      className="rounded-[22px] border"
+      style={{
+        background: 'white',
+        borderColor:
+          border === 'green' ? 'rgba(67,184,156,0.3)' : 'rgba(180,150,210,0.12)',
+        boxShadow:
+          border === 'green'
+            ? '0 4px 24px rgba(67,184,156,0.1)'
+            : '0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)',
+      }}
+    >
       {children}
     </div>
   );
 }
 
-function CardHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
+function CardHeader({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+}) {
   return (
-    <div className="px-6 py-4 flex items-center gap-3 border-b" style={{ borderColor: 'rgba(180,150,210,0.1)' }}>
-      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #E8D5FF, #FFD5E5)' }}>{icon}</div>
+    <div
+      className="px-6 py-4 flex items-center gap-3 border-b"
+      style={{ borderColor: 'rgba(180,150,210,0.1)' }}
+    >
+      <div
+        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+        style={{ background: 'linear-gradient(135deg, #E8D5FF, #FFD5E5)' }}
+      >
+        {icon}
+      </div>
       <div>
-        <h3 className="text-[15px] font-bold" style={{ color: '#2D2235' }}>{title}</h3>
-        <p className="text-[11px] mt-px" style={{ color: '#A897BD' }}>{subtitle}</p>
+        <h3 className="text-[15px] font-bold" style={{ color: '#2D2235' }}>
+          {title}
+        </h3>
+        <p className="text-[11px] mt-px" style={{ color: '#A897BD' }}>
+          {subtitle}
+        </p>
       </div>
     </div>
   );
 }
 
-function IconBox({ children, color }: { children: React.ReactNode; color: 'amber' | 'red' }) {
+function IconBox({
+  children,
+  color,
+}: {
+  children: React.ReactNode;
+  color: 'amber' | 'red';
+}) {
   return (
-    <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ background: color === 'amber' ? 'rgba(255,179,71,0.1)' : 'rgba(239,68,68,0.08)' }}>
+    <div
+      className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5"
+      style={{
+        background:
+          color === 'amber' ? 'rgba(255,179,71,0.1)' : 'rgba(239,68,68,0.08)',
+      }}
+    >
       {children}
     </div>
   );
@@ -593,32 +987,83 @@ function IconBox({ children, color }: { children: React.ReactNode; color: 'amber
 
 function TotalRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="px-6 py-4 flex items-center justify-between" style={{ borderTop: '1px solid rgba(180,150,210,0.1)' }}>
-      <span className="text-base font-extrabold" style={{ color: '#2D2235' }}>{label}</span>
-      <span className="text-xl font-extrabold" style={{ color: '#2FA482' }}>{value}</span>
+    <div
+      className="px-6 py-4 flex items-center justify-between"
+      style={{ borderTop: '1px solid rgba(180,150,210,0.1)' }}
+    >
+      <span className="text-base font-extrabold" style={{ color: '#2D2235' }}>
+        {label}
+      </span>
+      <span className="text-xl font-extrabold" style={{ color: '#2FA482' }}>
+        {value}
+      </span>
     </div>
   );
 }
 
-function TrustBadge({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+function TrustBadge({
+  icon,
+  children,
+}: {
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold" style={{ background: 'rgba(180,150,210,0.06)', color: '#8B7BA0', border: '1px solid rgba(180,150,210,0.1)' }}>
-      {icon}{children}
+    <span
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold"
+      style={{
+        background: 'rgba(180,150,210,0.06)',
+        color: '#8B7BA0',
+        border: '1px solid rgba(180,150,210,0.1)',
+      }}
+    >
+      {icon}
+      {children}
     </span>
   );
 }
 
-function Btn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function Btn({
+  onClick,
+  children,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <button onClick={onClick} className="inline-flex items-center gap-2 px-7 py-3.5 rounded-2xl text-sm font-bold text-white transition-all active:scale-[0.98]" style={{ background: 'linear-gradient(135deg, #B05CE6, #D45DA0)', boxShadow: '0 4px 16px rgba(176,92,230,0.25)', border: 'none', fontFamily: 'inherit' }}>
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-2 px-7 py-3.5 rounded-2xl text-sm font-bold text-white transition-all active:scale-[0.98]"
+      style={{
+        background: 'linear-gradient(135deg, #B05CE6, #D45DA0)',
+        boxShadow: '0 4px 16px rgba(176,92,230,0.25)',
+        border: 'none',
+        fontFamily: 'inherit',
+      }}
+    >
       {children}
     </button>
   );
 }
 
-function BtnSecondary({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function BtnSecondary({
+  onClick,
+  children,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <button onClick={onClick} className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all active:scale-95" style={{ color: '#6B5C80', background: 'white', border: '1.5px solid rgba(180,150,210,0.2)', fontFamily: 'inherit' }}>
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all active:scale-95"
+      style={{
+        color: '#6B5C80',
+        background: 'white',
+        border: '1.5px solid rgba(180,150,210,0.2)',
+        fontFamily: 'inherit',
+      }}
+    >
       {children}
     </button>
   );

@@ -22,11 +22,13 @@ type ShippingAddress = {
 
 function splitFullName(fullName?: string | null) {
   const clean = (fullName ?? "").trim();
+
   if (!clean) {
     return { firstName: "", lastName: "" };
   }
 
   const parts = clean.split(/\s+/);
+
   if (parts.length === 1) {
     return { firstName: parts[0], lastName: "" };
   }
@@ -47,7 +49,6 @@ function extractPaypalShippingAddress(receipt: any): ShippingAddress | null {
   }
 
   const shippingName = splitFullName(shipping?.name?.full_name);
-
   const addr = shipping?.address ?? payer?.address ?? {};
 
   return {
@@ -92,7 +93,7 @@ export async function POST(req: Request) {
     /* --------------------------------------------------
        RESOLVE STORY ID
     -------------------------------------------------- */
-    const pu = receipt.purchase_units?.[0];
+    const pu = receipt?.purchase_units?.[0];
     const storyId: string | undefined = pu?.custom_id || pu?.reference_id;
 
     if (!storyId) {
@@ -106,13 +107,37 @@ export async function POST(req: Request) {
     }
 
     /* --------------------------------------------------
-       LOOK UP PRODUCT TYPE
+       REQUIRE CANONICAL story_products ROW
     -------------------------------------------------- */
     const storyProduct = await db.query.storyProducts.findFirst({
       where: eq(storyProducts.storyId, storyId),
     });
 
-    const productType = storyProduct?.productType ?? "print";
+    if (!storyProduct) {
+      return NextResponse.json(
+        {
+          error:
+            "Missing story_products row for this story. Refusing to complete capture because product state was never saved before checkout.",
+          storyId,
+          orderID,
+        },
+        { status: 400 }
+      );
+    }
+
+    const productType = storyProduct.productType;
+
+    if (!productType || !["digital", "print", "gift"].includes(productType)) {
+      return NextResponse.json(
+        {
+          error: `Invalid or missing productType on story_products for story ${storyId}`,
+          storyId,
+          orderID,
+        },
+        { status: 400 }
+      );
+    }
+
     const isPhysical = productType === "print" || productType === "gift";
 
     /* --------------------------------------------------
@@ -121,14 +146,26 @@ export async function POST(req: Request) {
     if (isPhysical) {
       const checkoutAddress = extractPaypalShippingAddress(receipt);
 
-      if (checkoutAddress) {
-        await db
-          .update(storyProducts)
-          .set({
-            checkoutAddress,
-          })
-          .where(eq(storyProducts.storyId, storyId));
+      if (!checkoutAddress) {
+        return NextResponse.json(
+          {
+            error:
+              "Missing shipping address from PayPal for a physical product order.",
+            storyId,
+            orderID,
+            productType,
+          },
+          { status: 400 }
+        );
       }
+
+      await db
+        .update(storyProducts)
+        .set({
+          checkoutAddress,
+          updatedAt: new Date(),
+        })
+        .where(eq(storyProducts.storyId, storyId));
     }
 
     /* --------------------------------------------------
@@ -164,7 +201,7 @@ export async function POST(req: Request) {
   } catch (err: any) {
     console.error("[PayPal capture] error:", err);
     return NextResponse.json(
-      { error: err.message ?? "Failed to capture PayPal order" },
+      { error: err?.message ?? "Failed to capture PayPal order" },
       { status: 500 }
     );
   }

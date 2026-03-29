@@ -123,6 +123,9 @@ export default function PrintPage({ story, order, productType, initialShippingAd
   const isDigitalOnly = productType === "digital";
   const ProductIcon = getProductIcon(productType);
 
+
+  console.log("Product type", productType)
+
   /* ----------------------------- ORDER FLOW ------------------------------ */
 
   async function handleOrder(address: ShippingAddress) {
