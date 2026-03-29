@@ -177,6 +177,9 @@ type CharacterRef = {
   referenceUrl: string | null;
   description: string | null;
   appearance: string | null;
+  species: string | null;
+  breed: string | null;
+  visualDetails: any;
 };
 
 function buildCharacterImageList(character: CharacterRef) {
@@ -465,23 +468,24 @@ export const generateSingleSpread = inngest.createFunction(
           "characters"
         );
       }
-
       const charRefs: CharacterRef[] =
-        charIds.length === 0
-          ? []
-          : await db
-              .select({
-                id: characters.id,
-                name: characters.name,
-                portraitUrl: characters.portraitImageUrl,
-                fullBodyUrl: characters.fullBodyImageUrl,
-                referenceUrl: characters.referenceImageUrl,
-                description: characters.description,
-                appearance: characters.appearance,
-              })
-              .from(characters)
-              .where(inArray(characters.id, charIds));
-
+      charIds.length === 0
+        ? []
+        : await db
+            .select({
+              id: characters.id,
+              name: characters.name,
+              portraitUrl: characters.portraitImageUrl,
+              fullBodyUrl: characters.fullBodyImageUrl,
+              referenceUrl: characters.referenceImageUrl,
+              description: characters.description,
+              appearance: characters.appearance,
+              species: characters.species,
+              breed: characters.breed,
+              visualDetails: characters.visualDetails,
+            })
+            .from(characters)
+            .where(inArray(characters.id, charIds));
       // ========================================
       // RESOLVE LOCATION
       // ========================================
@@ -782,13 +786,27 @@ Use it as the backdrop across the full spread.
       for (const c of charRefs) {
         const imageRefs = buildCharacterImageList(c);
         const outfit = outfitByCharacterId.get(c.id);
+        const isAnimal = c.species && c.species !== "human";
+        const animalProfile = (c.visualDetails as any)?.animalProfile;
 
         if (imageRefs.length === 0) {
-          const desc = c.appearance || c.description;
-          if (desc) {
+          if (isAnimal && animalProfile) {
             parts.push({
-              text: `CHARACTER: ${c.name.toUpperCase()}\nAppearance: ${desc}`,
+              text: `CHARACTER: ${c.name.toUpperCase()} (${c.species?.toUpperCase()})
+Breed: ${animalProfile.breed || c.breed || "unknown"}
+Coat: ${animalProfile.coatColour || "unknown"} — THIS COLOUR IS NON-NEGOTIABLE
+Pattern: ${animalProfile.coatPattern || "unknown"}
+Size: ${animalProfile.size || "unknown"}
+Build: ${animalProfile.bodyShape || "unknown"}
+This is a SPECIFIC real ${c.species}, not a generic one.`,
             });
+          } else {
+            const desc = c.appearance || c.description;
+            if (desc) {
+              parts.push({
+                text: `CHARACTER: ${c.name.toUpperCase()}\nAppearance: ${desc}`,
+              });
+            }
           }
           console.warn(`⚠️ ${c.name}: no image refs, using text description only`);
           continue;
@@ -797,17 +815,45 @@ Use it as the backdrop across the full spread.
         for (const [index, imageRef] of imageRefs.entries()) {
           try {
             parts.push(await getImagePart(imageRef.url));
-            parts.push({
-              text:
-                index === 0
-                  ? `↑ THIS IS ${c.name.toUpperCase()} — primary ${imageRef.label}; match this character's face, body, and proportions exactly ↑`
-                  : `↑ ADDITIONAL ${c.name.toUpperCase()} ${imageRef.label.toUpperCase()} — use this to reinforce consistency ↑`,
-            });
+
+            if (isAnimal) {
+              if (index === 0) {
+                const coatLine = animalProfile?.coatColour
+                  ? `Coat: ${animalProfile.coatColour}. THIS COLOUR IS NON-NEGOTIABLE.`
+                  : c.breed ? `Breed: ${c.breed}` : "";
+                const markingsLine = animalProfile?.coatPattern
+                  ? `Pattern: ${animalProfile.coatPattern}` : "";
+                const sizeLine = animalProfile?.size
+                  ? `Size: ${animalProfile.size}` : "";
+                const earLine = animalProfile?.earType
+                  ? `Ears: ${animalProfile.earType}` : "";
+
+                parts.push({
+                  text: `↑ REFERENCE PHOTO: THE ${c.species?.toUpperCase()} "${c.name.toUpperCase()}" ↑
+Reproduce this EXACT ${c.species} with HIGH OBJECT FIDELITY.
+${c.breed ? `Breed: ${c.breed}` : ""}
+${coatLine}
+${markingsLine}
+${sizeLine}
+${earLine}
+Do NOT substitute a generic or different-coloured ${c.species}. Match this specific animal precisely.
+If the reference shows a ${animalProfile?.coatColour || "specific colour"} ${c.species}, the illustration MUST show that exact colour.`.trim(),
+                });
+              } else {
+                parts.push({
+                  text: `↑ ADDITIONAL REFERENCE for ${c.name.toUpperCase()} (${c.species}) — reinforce the exact appearance, coat colour, and markings ↑`,
+                });
+              }
+            } else {
+              parts.push({
+                text:
+                  index === 0
+                    ? `↑ THIS IS ${c.name.toUpperCase()} — primary ${imageRef.label}; match this character's face, body, and proportions exactly ↑`
+                    : `↑ ADDITIONAL ${c.name.toUpperCase()} ${imageRef.label.toUpperCase()} — use this to reinforce consistency ↑`,
+              });
+            }
           } catch (err) {
-            console.warn(
-              `⚠️ Could not load ${imageRef.label} for ${c.name}:`,
-              err
-            );
+            console.warn(`⚠️ Could not load ${imageRef.label} for ${c.name}:`, err);
           }
         }
 
