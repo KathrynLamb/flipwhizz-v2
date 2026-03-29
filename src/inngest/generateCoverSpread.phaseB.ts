@@ -1,4 +1,8 @@
 // src/inngest/generateCoverSpread.phaseB.ts
+//
+// v3: VISUAL-FIRST prompt structure.
+// Images are front-loaded, text instructions are minimal and imperative.
+// Species-aware character prompting. Style reference fallback from spreads.
 
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
@@ -10,9 +14,10 @@ import {
   storyCharacters,
   locations,
   storyLocations,
+  storyPages,
   bookCovers,
 } from "@/db/schema";
-import { eq, sql, inArray } from "drizzle-orm";
+import { eq, sql, inArray, asc } from "drizzle-orm";
 import { v2 as cloudinary } from "cloudinary";
 import { Readable } from "node:stream";
 import { v4 as uuid } from "uuid";
@@ -21,30 +26,20 @@ import path from "path";
 
 type CoverPlan = {
   format: "wrap-spread";
-
   front: {
     titleText: string;
     authorText?: string;
     visualIntent: string;
   };
-
-  spine: {
-    spineText: string;
-  };
-
+  spine: { spineText: string };
   back: {
     blurbText?: string;
     dedicationText?: string;
     visualIntent: string;
   };
-
   coverCharacterIds?: string[];
   coverLocationIds?: string[];
-
-  constraints?: {
-    noTextOutsideSafeZones?: boolean;
-  };
-
+  constraints?: { noTextOutsideSafeZones?: boolean };
   reasoning?: string;
 };
 
@@ -68,25 +63,17 @@ const ASPECT_RATIO = "16:9";
 const IMAGE_SIZE = "2K";
 
 const COVER_TEMPLATE_PATH = path.resolve(
-  process.cwd(),
-  "public",
-  "templates",
-  "spread-text-safe-template.png"
+  process.cwd(), "public", "templates", "spread-text-safe-template.png"
 );
-
 const LOGO_PATH = path.resolve(
-  process.cwd(),
-  "public",
-  "Flipwhizz_logo_NEW.png"
+  process.cwd(), "public", "Flipwhizz_logo_NEW.png"
 );
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                     */
 /* -------------------------------------------------------------------------- */
 
-function assertCoverPlan(
-  plan: CoverPlan | null | undefined
-): asserts plan is CoverPlan {
+function assertCoverPlan(plan: CoverPlan | null | undefined): asserts plan is CoverPlan {
   if (!plan) throw new Error("Missing coverPlan");
   if (plan.format !== "wrap-spread") throw new Error("coverPlan.format must be 'wrap-spread'");
   if (!plan.front?.titleText || !plan.front?.visualIntent) throw new Error("Invalid coverPlan.front");
@@ -94,38 +81,26 @@ function assertCoverPlan(
   if (!plan.back?.visualIntent) throw new Error("Invalid coverPlan.back");
 }
 
-function isDataUrl(value: string) {
-  return value.startsWith("data:image/");
-}
+function isDataUrl(v: string) { return v.startsWith("data:image/"); }
 
-function guessMimeType(file: string) {
-  const s = file.toLowerCase();
+function guessMimeType(f: string) {
+  const s = f.toLowerCase();
   if (s.endsWith(".png")) return "image/png";
   if (s.endsWith(".webp")) return "image/webp";
   return "image/jpeg";
 }
 
 async function getImagePart(source: string) {
-  console.log(`📥 getImagePart fetching: ${source}`);
-  
+  if (isDataUrl(source)) throw new Error("BUG: data URL in getImagePart");
   const buffer = source.startsWith("http")
     ? Buffer.from(await (await fetch(source)).arrayBuffer())
     : await fs.readFile(source);
-
-  console.log(`📥 getImagePart got ${buffer.length} bytes from: ${source}`);
-  
-  return {
-    inlineData: {
-      data: buffer.toString("base64"),
-      mimeType: guessMimeType(source),
-    },
-  };
+  return { inlineData: { data: buffer.toString("base64"), mimeType: guessMimeType(source) } };
 }
 
 function extractInlineImage(result: any) {
   const parts = result?.candidates?.[0]?.content?.parts ?? [];
-  const img = parts.find((p: any) => p.inlineData?.data)?.inlineData;
-  return img ?? null;
+  return parts.find((p: any) => p.inlineData?.data)?.inlineData ?? null;
 }
 
 async function uploadToCloudinary(base64: string, storyId: string) {
@@ -144,49 +119,55 @@ async function uploadToCloudinary(base64: string, storyId: string) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                          STYLE GUIDE RESOLUTION                            */
+/* CHARACTER REFS                                                              */
 /* -------------------------------------------------------------------------- */
 
-type ColorPalette = { primary?: string; secondary?: string; accent?: string; mood?: string; hex?: string[] };
-type ResolvedStyleGuide = { geminiStyleBlock: string; geminiAvoidBlock: string; typographyBlock: string };
+type CoverCharRef = {
+  id: string;
+  name: string;
+  portraitUrl: string | null;
+  fullBodyUrl: string | null;
+  referenceUrl: string | null;
+  appearance: string | null;
+  species: string | null;
+  breed: string | null;
+  visualDetails: any;
+};
 
-function resolveStyleGuide(style: typeof storyStyleGuide.$inferSelect | null | undefined): ResolvedStyleGuide {
-  if (!style) {
-    return {
-      geminiStyleBlock: "Whimsical, warm children's book illustration, storybook quality",
-      geminiAvoidBlock: "Photorealism, CGI, harsh shadows, watermarks, guide lines, template markers, barcodes, ISBN numbers",
-      typographyBlock: "Large, child-friendly hand-lettered text with excellent contrast",
-    };
+function buildCharacterImageList(c: CoverCharRef) {
+  // Portrait is best — it's already in the book's illustration style
+  if (c.portraitUrl && !isDataUrl(c.portraitUrl)) {
+    return [{ label: "portrait", url: c.portraitUrl }];
   }
-
-  const promptBase = style.userNotes?.trim();
-  const negativePrompt = style.negativePrompt?.trim();
-  const artStyle = style.artStyle?.trim();
-  const colorPalette = style.colorPalette as ColorPalette | null;
-
-  const styleLines: string[] = [];
-  if (promptBase) {
-    styleLines.push(promptBase);
-  } else {
-    styleLines.push(artStyle ? `${artStyle}, children's book illustration, storybook quality` : "Whimsical, warm children's book illustration, storybook quality");
+  // Full-body next
+  if (c.fullBodyUrl && !isDataUrl(c.fullBodyUrl)) {
+    return [{ label: "full-body", url: c.fullBodyUrl }];
   }
-  if (artStyle) styleLines.push(`Art style: ${artStyle}`);
-  if (colorPalette?.primary) {
-    const paletteNames = [colorPalette.primary, colorPalette.secondary, colorPalette.accent].filter(Boolean).join(", ");
-    styleLines.push(`Colour palette: ${paletteNames}`);
-    if (colorPalette.hex?.length) styleLines.push(`Exact palette hex values: ${colorPalette.hex.join(", ")}`);
-    if (colorPalette.mood) styleLines.push(`Palette mood: ${colorPalette.mood}`);
+  // Raw reference photo as last resort
+  if (c.referenceUrl && !isDataUrl(c.referenceUrl)) {
+    return [{ label: "reference photo", url: c.referenceUrl }];
   }
+  return [];
+}
 
-  const avoidParts: string[] = [];
-  if (negativePrompt) avoidParts.push(negativePrompt);
-  avoidParts.push("Watermarks, guide lines, template markers, text boxes, UI elements, borders, barcodes, ISBN numbers, barcode-like patterns");
+/* -------------------------------------------------------------------------- */
+/* STYLE GUIDE                                                                 */
+/* -------------------------------------------------------------------------- */
 
-  return {
-    geminiStyleBlock: styleLines.join("\n"),
-    geminiAvoidBlock: avoidParts.join(", "),
-    typographyBlock: style.typography?.trim() ?? "Large, child-friendly hand-lettered text with excellent contrast",
-  };
+function resolveStyleBlock(style: typeof storyStyleGuide.$inferSelect | null | undefined): string {
+  if (!style) return "Whimsical watercolor children's book illustration";
+  const parts: string[] = [];
+  if (style.artStyle) parts.push(style.artStyle);
+  else parts.push("Whimsical children's book illustration");
+  const palette = style.colorPalette as any;
+  if (palette?.primary) parts.push(`Palette: ${[palette.primary, palette.secondary, palette.accent].filter(Boolean).join(", ")}`);
+  return parts.join(". ");
+}
+
+function resolveAvoidBlock(style: typeof storyStyleGuide.$inferSelect | null | undefined): string {
+  const base = "Photorealism, CGI, barcodes, ISBN, watermarks, guide lines, template markers";
+  if (style?.negativePrompt) return `${style.negativePrompt}, ${base}`;
+  return base;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -200,9 +181,7 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
     const { storyId } = event.data;
     if (!storyId) throw new Error("storyId required");
 
-    /* --------------------------------------------------
-       1. LOAD STORY + LOCKED PLAN
-    -------------------------------------------------- */
+    /* ── 1. Load story + plan ── */
 
     const story = await step.run("load-story", async () =>
       db.query.stories.findFirst({ where: eq(stories.id, storyId) })
@@ -212,343 +191,180 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
     const coverPlan = story.coverPlan as CoverPlan | null;
     assertCoverPlan(coverPlan);
 
-    // Extract cover-specific character/location IDs from the plan
     const planCharIds = Array.isArray(coverPlan.coverCharacterIds) ? coverPlan.coverCharacterIds : [];
     const planLocIds = Array.isArray(coverPlan.coverLocationIds) ? coverPlan.coverLocationIds : [];
 
-    console.log("📋 Cover plan character IDs:", planCharIds);
-    console.log("📋 Cover plan location IDs:", planLocIds);
-
-    /* --------------------------------------------------
-       2. STYLE GUIDE + RESOLVE
-    -------------------------------------------------- */
+    /* ── 2. Load style + references ── */
 
     const style = await db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),
     });
-    const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } = resolveStyleGuide(style);
 
-    console.log("🎨 Style guide resolved:", {
-      hasPromptBase: !!style?.userNotes,
-      hasNegativePrompt: !!style?.negativePrompt,
-      hasArtStyle: !!style?.artStyle,
-      hasColorPalette: !!style?.colorPalette,
-      hasTypography: !!style?.typography,
-      hasSampleImage: !!style?.sampleIllustrationUrl,
-    });
+    // Style reference: uploaded sample > first generated spread > nothing
+    let styleRefUrl: string | null = style?.sampleIllustrationUrl ?? null;
+    if (!styleRefUrl || isDataUrl(styleRefUrl)) {
+      const spreadPage = await db
+        .select({ imageUrl: storyPages.imageUrl })
+        .from(storyPages)
+        .where(eq(storyPages.storyId, storyId))
+        .orderBy(asc(storyPages.pageNumber))
+        .limit(10)
+        .then((pp) => pp.find((p) => p.imageUrl && !isDataUrl(p.imageUrl)));
+      styleRefUrl = spreadPage?.imageUrl ?? null;
+    }
 
-    /* --------------------------------------------------
-       3. CHARACTER + LOCATION REFERENCES
-       
-       If coverCharacterIds are specified in the plan,
-       ONLY load those characters. Otherwise load all.
-    -------------------------------------------------- */
-
-    let chars: { id: string; name: string; imageUrl: string | null; appearance: string | null }[];
-
-    if (planCharIds.length > 0) {
-      // Load ONLY the characters specified in the cover plan
-      chars = await db
-        .select({
-          id: characters.id,
-          name: characters.name,
-          imageUrl: sql<string>`COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})`,
+    // Characters
+    const charRefs: CoverCharRef[] = planCharIds.length > 0
+      ? await db.select({
+          id: characters.id, name: characters.name,
+          portraitUrl: characters.portraitImageUrl,
+          fullBodyUrl: characters.fullBodyImageUrl,
+          referenceUrl: characters.referenceImageUrl,
           appearance: characters.appearance,
-        })
-        .from(characters)
-        .where(inArray(characters.id, planCharIds));
-
-      console.log(`🎭 Loading ${planCharIds.length} specific cover characters (from plan)`);
-    } else {
-      // Fallback: load all characters linked to the story
-      chars = await db
-        .select({
-          id: characters.id,
-          name: characters.name,
-          imageUrl: sql<string>`COALESCE(${characters.portraitImageUrl}, ${characters.referenceImageUrl})`,
+          species: characters.species, breed: characters.breed,
+          visualDetails: characters.visualDetails,
+        }).from(characters).where(inArray(characters.id, planCharIds))
+      : await db.select({
+          id: characters.id, name: characters.name,
+          portraitUrl: characters.portraitImageUrl,
+          fullBodyUrl: characters.fullBodyImageUrl,
+          referenceUrl: characters.referenceImageUrl,
           appearance: characters.appearance,
-        })
-        .from(storyCharacters)
+          species: characters.species, breed: characters.breed,
+          visualDetails: characters.visualDetails,
+        }).from(storyCharacters)
         .innerJoin(characters, eq(storyCharacters.characterId, characters.id))
         .where(eq(storyCharacters.storyId, storyId));
 
-      console.log(`🎭 Loading ALL ${chars.length} story characters (no plan filter)`);
-    }
+    // Location
+    let locRef: { name: string; imageUrl: string | null; description: string | null } | null = null;
+    const locQuery = planLocIds.length > 0
+      ? db.select({ name: locations.name, imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`, description: locations.description }).from(locations).where(inArray(locations.id, planLocIds)).limit(1)
+      : db.select({ name: locations.name, imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`, description: locations.description }).from(storyLocations).innerJoin(locations, eq(storyLocations.locationId, locations.id)).where(eq(storyLocations.storyId, storyId)).limit(1);
+    locRef = await locQuery.then((r) => r[0] ?? null);
 
-    // Load location — filtered if plan specifies, otherwise first story location
-    let locationRef: { name: string; imageUrl: string | null; description: string | null } | null = null;
+    console.log("📋 Cover refs:", {
+      styleRef: styleRefUrl ? "yes" : "NONE",
+      characters: charRefs.map((c) => ({ name: c.name, species: c.species, images: buildCharacterImageList(c).length })),
+      location: locRef?.name ?? "none",
+    });
 
-    if (planLocIds.length > 0) {
-      const loc = await db
-        .select({
-          name: locations.name,
-          imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
-          description: locations.description,
-        })
-        .from(locations)
-        .where(inArray(locations.id, planLocIds))
-        .limit(1)
-        .then((r) => r[0]);
-
-      if (loc) locationRef = loc;
-      console.log("🗺️ Loading specific cover location:", loc?.name ?? "NOT FOUND");
-    } else {
-      const loc = await db
-        .select({
-          name: locations.name,
-          imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
-          description: locations.description,
-        })
-        .from(storyLocations)
-        .innerJoin(locations, eq(storyLocations.locationId, locations.id))
-        .where(eq(storyLocations.storyId, storyId))
-        .limit(1)
-        .then((r) => r[0]);
-
-      if (loc) locationRef = loc;
-      console.log("🗺️ Loading first story location (no plan filter):", loc?.name ?? "NONE");
-    }
-
-    console.log("🎭 Characters for cover:", chars.map((c) => ({
-      id: c.id,
-      name: c.name,
-      hasImage: !!c.imageUrl && !isDataUrl(c.imageUrl),
-      imageAddress: c.imageUrl,
-    })));
-
-    console.log("🗺️ Location for cover:",
-      locationRef ? { name: locationRef.name, hasImage: !!locationRef.imageUrl && !isDataUrl(locationRef.imageUrl!) } : "NONE"
-    );
-
-    /* --------------------------------------------------
-       4. BUILD GEMINI INPUT
-    -------------------------------------------------- */
+    /* ── 3. BUILD VISUAL-FIRST PROMPT ── */
 
     const parts: any[] = [];
 
-    // ── 1️⃣ LAYOUT TEMPLATE ─────────────────────────────────────────────
-    parts.push(await getImagePart(COVER_TEMPLATE_PATH));
-    parts.push({
-      text: `
-↑ LAYOUT GUIDE ONLY - DO NOT RENDER ↑
-
-The image above shows SAFE ZONES for text placement on a wrap-around book cover.
-This is a REFERENCE GUIDE ONLY — do NOT draw any guides in the final cover.
-
-⚠️ CRITICAL PRINT SAFETY RULES — TEXT WILL BE PHYSICALLY CUT OFF IF THESE ARE VIOLATED:
-
-This cover will be PRINTED and TRIMMED. The printer cuts from EVERY edge.
-Any text in the outer margins WILL BE DESTROYED.
-
-COVER LAYOUT (left to right):
-- 0%-33%:   BACK COVER (left third)
-- 33%-40%:  LEFT TRIM ZONE — no text here
-- 40%-60%:  SPINE (center — very narrow, vertical text only)
-- 60%-67%:  RIGHT TRIM ZONE — no text here
-- 67%-100%: FRONT COVER (right third)
-
-FRONT COVER TEXT PLACEMENT:
-- Title: Place between 70%-90% horizontally, 15%-45% vertically
-- Author: Place between 70%-90% horizontally, below the title
-- Keep ALL front cover text at least 10% from the right edge and top edge
-
-BACK COVER TEXT PLACEMENT:
-- Blurb/dedication: Place between 8%-30% horizontally, centered vertically
-- Keep ALL back cover text at least 8% from the left edge
-
-SPINE TEXT:
-- Must be perfectly centered at 50% horizontally
-- Vertical orientation, reading top-to-bottom
-
-ALL text must be GENEROUSLY INSET from edges. When in doubt, move text FURTHER inward.
-
-DO NOT:
-- Place text within 10% of any outer edge
-- Show any guide lines, boxes, labels, or template markers
-`.trim(),
-    });
-
-    // ── 2️⃣ STYLE REFERENCE IMAGE (if available) ────────────────────────
-    if (style?.sampleIllustrationUrl && !isDataUrl(style.sampleIllustrationUrl)) {
+    // ━━━ BLOCK 1: STYLE ANCHOR (most important — goes first) ━━━
+    if (styleRefUrl) {
       try {
-        parts.push(await getImagePart(style.sampleIllustrationUrl));
-        parts.push({
-          text: `
-↑ ILLUSTRATION STYLE REFERENCE ↑
-
-This image defines the EXACT visual style for the entire book, including this cover.
-Study it carefully and match:
-- Pencil/brush technique and stroke character
-- Line weight and ink outline style
-- Colour palette, saturation, and paper texture
-- How characters are rendered (face shape, proportions, expressiveness)
-- Background treatment and foliage/environment style
-- Overall warmth, charm, and hand-crafted quality
-
-This cover must feel like it was drawn by the same artist who created this image.
-Do NOT import a different style — stay true to this reference above all else.
-`.trim(),
-        });
-        console.log("🖼️ Style reference image included in cover prompt");
+        parts.push(await getImagePart(styleRefUrl));
+        parts.push({ text: `↑ MATCH THIS EXACT ILLUSTRATION STYLE. Same artist, same technique, same palette. ↑` });
       } catch (err) {
-        console.warn("⚠️ Could not load style reference image:", err);
-      }
-    } else {
-      console.log("🖼️ No style reference image — using keywords only");
-    }
-
-    // ── 3️⃣ LOCATION REFERENCE (if available) ───────────────────────────
-    if (locationRef?.imageUrl && !isDataUrl(locationRef.imageUrl)) {
-      try {
-        parts.push(await getImagePart(locationRef.imageUrl));
-        parts.push({
-          text: `
-↑ THIS IS THE SETTING REFERENCE (${locationRef.name.toUpperCase()}) ↑
-Use this environment as inspiration for the cover's background and atmosphere.
-Match the visual tone and setting details.
-`.trim(),
-        });
-      } catch (err) {
-        console.warn("⚠️ Could not load location reference image:", err);
+        console.warn("⚠️ Could not load style reference:", err);
       }
     }
 
-    // ── 4️⃣ CHARACTER REFERENCES ────────────────────────────────────────
-    for (const c of chars) {
-      console.log(`🔍 ${c.name} imageUrl value: "${c.imageUrl}"`);
-      if (!c.imageUrl || isDataUrl(c.imageUrl)) {
-        // No image — include text description as fallback
-        if (c.appearance) {
+    // ━━━ BLOCK 2: CHARACTER REFERENCES (visual-first, minimal text) ━━━
+    for (const c of charRefs) {
+      const imageRefs = buildCharacterImageList(c);
+      const isAnimal = c.species && c.species !== "human";
+      const profile = (c.visualDetails as any)?.animalProfile;
+
+      if (imageRefs.length === 0) {
+        // Text-only fallback
+        if (isAnimal) {
           parts.push({
-            text: `CHARACTER: ${c.name.toUpperCase()}\nAppearance: ${c.appearance}\n(No reference image available — use this description to draw the character)`,
+            text: `CHARACTER "${c.name.toUpperCase()}" (${c.species}): ${c.breed || ""}. ${c.appearance || ""}. Reproduce this EXACT animal.`,
           });
-          console.log(`⚠️ ${c.name}: no image, using text description`);
+        } else if (c.appearance) {
+          parts.push({ text: `CHARACTER "${c.name.toUpperCase()}": ${c.appearance}` });
         }
         continue;
       }
 
-      try {
-        parts.push(await getImagePart(c.imageUrl));
-        parts.push({
-          text: `
-↑ THIS IS ${c.name.toUpperCase()} ↑
-Match this character's face, hair colour, eye colour, skin tone, and body type EXACTLY.
-Use appropriate clothing for a book cover — the character should look their best.
-`.trim(),
-        });
-        console.log(`✅ ${c.name}: reference image included`);
-      } catch (err) {
-        console.warn(`⚠️ Could not load character image for ${c.name}:`, err);
+      for (const [i, ref] of imageRefs.entries()) {
+        try {
+          parts.push(await getImagePart(ref.url));
+
+          if (i === 0) {
+            if (isAnimal) {
+              const coatNote = profile?.coatColour || "";
+              parts.push({
+                text: `↑ THIS IS "${c.name.toUpperCase()}" — a ${c.breed || c.species}. ${coatNote ? `Coat: ${coatNote}. NON-NEGOTIABLE COLOUR.` : ""} Reproduce this EXACT ${c.species}. ↑`,
+              });
+            } else {
+              parts.push({
+                text: `↑ THIS IS "${c.name.toUpperCase()}". Match this face, hair, and body EXACTLY. ↑`,
+              });
+            }
+          } else {
+            parts.push({
+              text: `↑ ADDITIONAL "${c.name.toUpperCase()}" reference — reinforce consistency. ↑`,
+            });
+          }
+        } catch (err) {
+          console.warn(`⚠️ Could not load ${ref.label} for ${c.name}:`, err);
+        }
       }
     }
 
-    // ── 4.5️⃣ FLIPWHIZZ LOGO REFERENCE ─────────────────────────────────
-    try {
-      parts.push(await getImagePart(LOGO_PATH));
-      parts.push({
-        text: `
-↑ THIS IS THE FLIPWHIZZ LOGO — REPRODUCE IT ON THE BACK COVER ↑
-
-Place this logo in the BOTTOM-LEFT area of the back cover (approximately 5%-25% from left, 85%-95% from top).
-Reproduce the logo as closely as possible — it's a playful, colourful handwritten "FlipWhizz" with a rainbow swirl.
-Below the logo, add small clean text: "flipwhizz.com"
-Keep it small and subtle — a publisher's mark, not a dominant element.
-Do NOT alter the logo's colours or style. Match it exactly from the reference image above.
-`.trim(),
-      });
-      console.log("🏷️ FlipWhizz logo reference included in cover prompt");
-    } catch (err) {
-      console.warn("⚠️ Could not load FlipWhizz logo:", err);
+    // ━━━ BLOCK 3: LOCATION REFERENCE ━━━
+    if (locRef?.imageUrl && !isDataUrl(locRef.imageUrl)) {
+      try {
+        parts.push(await getImagePart(locRef.imageUrl));
+        parts.push({ text: `↑ SETTING: "${locRef.name.toUpperCase()}". Use as background atmosphere. ↑` });
+      } catch (err) {
+        console.warn("⚠️ Could not load location ref:", err);
+      }
     }
 
-    // ── 5️⃣ COVER INSTRUCTIONS ──────────────────────────────────────────
+    // ━━━ BLOCK 4: LOGO ━━━
+    try {
+      parts.push(await getImagePart(LOGO_PATH));
+      parts.push({ text: `↑ FLIPWHIZZ LOGO. Place small, bottom-left of back cover. Add "flipwhizz.com" below it. ↑` });
+    } catch (err) {
+      console.warn("⚠️ Could not load logo:", err);
+    }
+
+    // ━━━ BLOCK 5: LAYOUT TEMPLATE (compact) ━━━
+    parts.push(await getImagePart(COVER_TEMPLATE_PATH));
     parts.push({
-      text: `
-COVER ILLUSTRATION TASK:
-
-CREATE A SEAMLESS WRAP-AROUND BOOK COVER:
-- ONE continuous landscape illustration
-- Aspect ratio: ${ASPECT_RATIO}
-- Will be split into: back cover (left), spine (center), front cover (right)
-- NO visible guides, boxes, or template markers
-- Professional children's book cover quality
-
-TEXT INTEGRATION — CRITICAL FOR PRINT:
-- Embed ALL text DIRECTLY into the illustration as part of the design
-- Typography: ${typographyBlock}
-- The TITLE must be placed in the RIGHT THIRD of the image (front cover area), between 70%-90% horizontally
-- Keep the title at least 12% from the top edge and 10% from the right edge
-- The author name goes below the title, also in the right third
-- Back cover text goes in the LEFT THIRD, at least 8% from the left edge
-- Spine text must be vertical and perfectly centered
-- ALL text must be WELL INSIDE the safe zones — text near edges WILL BE CUT when printed
-- Text should feel natural and designed, like professional book typography
-
-TEXT TO RENDER (EXACT — do not invent or omit):
-
-FRONT COVER (right third, 70%-90% from left):
-TITLE: "${coverPlan.front.titleText}"
-${coverPlan.front.authorText ? `AUTHOR: "${coverPlan.front.authorText}"` : ""}
-
-SPINE (center at 50%, vertical):
-"${coverPlan.spine.spineText}"
-
-BACK COVER (left third, 8%-30% from left):
-${coverPlan.back.blurbText ? `"${coverPlan.back.blurbText}"` : ""}
-${coverPlan.back.dedicationText ? `"${coverPlan.back.dedicationText}"` : ""}
-
-BACK COVER BRANDING (bottom-left of back cover):
-- Reproduce the FlipWhizz logo shown in the reference image above
-- Below it: "flipwhizz.com" in small, clean text
-- Keep it small and subtle — a publisher's mark
-
-⚠️ ABSOLUTELY NO BARCODES:
-This book is printed through a service that adds its own barcode separately.
-DO NOT draw any barcode, ISBN box, white rectangle, or barcode-like pattern anywhere on the cover.
-If you add a barcode, the cover will be REJECTED.
-
-IMPORTANT - DO NOT INCLUDE:
-- Barcodes, ISBN numbers, or any barcode-like elements or white rectangles
-- "TEXT SAFE ZONE" labels
-- Guide boxes or borders
-- Template overlay
-- Any reference markers or division lines
-- The guide is invisible — your cover should be clean and polished
-
-VISUAL INTENT:
-
-FRONT:
-${coverPlan.front.visualIntent}
-
-BACK:
-${coverPlan.back.visualIntent}
-
-STYLE:
-${geminiStyleBlock}
-
-AVOID:
-${geminiAvoidBlock}
-
-FINAL REMINDER: ALL text must be generously inset from every edge. The outer 10% on all sides will be trimmed during printing. Text near edges = text destroyed. NO BARCODES ANYWHERE.
-
-Create a seamless, professional children's book wrap-around cover now.
-`.trim(),
+      text: `↑ LAYOUT GUIDE — DO NOT RENDER. Shows safe zones only.
+COVER LAYOUT: Back cover = left third. Spine = centre. Front cover = right third.
+Front title: 70-90% from left, 15-45% from top. Back text: 8-30% from left.
+ALL text min 10% from edges. NO text in outer 10%. NO guide lines in output. ↑`,
     });
 
-    // ── Debug log ───────────────────────────────────────────────────────
-    console.log(
-      "📦 Parts being sent to Gemini:",
-      parts.map((p, i) => ({
-        p,
-        index: i,
-        type: p.text ? "text" : p.inlineData ? "image" : "unknown",
-        preview: p.text ? p.text.substring(0, 100).replace(/\n/g, " ") : `image/${p.inlineData?.mimeType}`,
-      }))
-    );
+    // ━━━ BLOCK 6: SINGLE INSTRUCTION BLOCK (everything Gemini needs) ━━━
+    parts.push({
+      text: `CREATE A WRAP-AROUND CHILDREN'S BOOK COVER. ${ASPECT_RATIO} aspect ratio.
 
-    /* --------------------------------------------------
-       5. GENERATE IMAGE
-    -------------------------------------------------- */
+SCENE — FRONT COVER (right third):
+${coverPlan.front.visualIntent}
+
+SCENE — BACK COVER (left third):
+${coverPlan.back.visualIntent}
+
+RENDER THIS EXACT TEXT:
+FRONT TITLE: "${coverPlan.front.titleText}"
+${coverPlan.front.authorText ? `FRONT AUTHOR: "${coverPlan.front.authorText}"` : ""}
+SPINE (vertical, centred): "${coverPlan.spine.spineText}"
+${coverPlan.back.blurbText ? `BACK BLURB: "${coverPlan.back.blurbText}"` : ""}
+${coverPlan.back.dedicationText ? `BACK DEDICATION: "${coverPlan.back.dedicationText}"` : ""}
+
+STYLE: ${resolveStyleBlock(style)}
+AVOID: ${resolveAvoidBlock(style)}
+NO BARCODES. NO ISBN. NO WHITE RECTANGLES.
+
+Characters MUST match the reference images above EXACTLY.
+Typography must be large, hand-lettered, child-friendly, high contrast.
+Text must be well inside safe zones — outer 10% is trimmed in printing.`,
+    });
+
+    console.log("📦 Total parts:", parts.length, "(" +
+      parts.filter((p) => p.inlineData).length + " images, " +
+      parts.filter((p) => p.text).length + " text)");
+
+    /* ── 4. GENERATE ── */
 
     const response = await gemini.models.generateContent({
       model: IMAGE_MODEL,
@@ -568,9 +384,7 @@ Create a seamless, professional children's book wrap-around cover now.
     const image = extractInlineImage(response);
     if (!image) throw new Error("Gemini returned no image");
 
-    /* --------------------------------------------------
-       6. SAVE + MARK SELECTED
-    -------------------------------------------------- */
+    /* ── 5. SAVE ── */
 
     const url = await uploadToCloudinary(image.data, storyId);
 
@@ -589,17 +403,16 @@ Create a seamless, professional children's book wrap-around cover now.
       await tx.update(stories).set({ coverSpreadUrl: url, updatedAt: new Date() }).where(eq(stories.id, storyId));
     });
 
-    console.log("✅ Cover generated and saved:", url);
+    console.log("✅ Cover generated:", url);
 
     return {
       success: true,
       coverUrl: url,
       debug: {
-        charsUsed: chars.map(c => ({ name: c.name, hasImage: !!c.imageUrl && !isDataUrl(c.imageUrl) })),
-        locationUsed: locationRef?.name ?? "none",
-        planCharIds,
-        planLocIds,
-        partsCount: parts.length,
+        chars: charRefs.map((c) => ({ name: c.name, species: c.species, images: buildCharacterImageList(c).length })),
+        location: locRef?.name ?? "none",
+        styleRef: styleRefUrl ? (style?.sampleIllustrationUrl ? "uploaded" : "spread-fallback") : "none",
+        totalParts: parts.length,
       },
     };
   }
