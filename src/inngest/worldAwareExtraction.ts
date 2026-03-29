@@ -176,16 +176,18 @@ ${rosterSection}
 Return ONLY this JSON:
 {
   "characters": [
-    {
-      "existingId": "uuid-or-null",
-      "name": "Character Name",
-      "nameIsUpgrade": false,
-      "description": "personality, traits, behavior",
-      "appearance": "detailed physical description for illustration",
-      "role": "main/supporting/minor",
-      "isNew": false,
-      "shouldPromoteToWorld": false
-    }
+     {
+          "existingId": "uuid-or-null",
+          "name": "Character Name",
+           "nameIsUpgrade": false,
+           "species": "human",
+           "breed": null,
+           "description": "personality, traits, behavior",
+           "appearance": "detailed physical description for illustration",
+           "role": "main/supporting/minor",
+           "isNew": false,
+           "shouldPromoteToWorld": false
+         }
   ]
 }
 
@@ -194,6 +196,10 @@ MATCHING RULES:
 - If a known character had a generic or incomplete name (like "Smaller Dog", "Aunt", "The Fox") but this story uses a proper name (like "Bodi", "Aunt Katy", "Milo"), set nameIsUpgrade to true. The system will update their name.
 - If the existing name is already a proper name and the new story uses the same or a less specific name, set nameIsUpgrade to false.
 - For genuinely NEW characters not in the roster, set existingId to null and isNew to true
+- Set "species" to one of: "human", "dog", "cat", "rabbit", "horse", "bird", "fantasy", "other"
+- For animals, set "breed" to the best guess (e.g. "Border Collie mix", "Golden Retriever", "Tabby cat")
+- For animals, the "appearance" field should LEAD with species, breed, and coat colour: "Black Border Collie mix dog, medium-sized, alert posture..." NOT "medium-sized, alert posture, black coat..."
+- For humans, set species to "human" and breed to null
 - For new characters that seem important/recurring (not one-off minor characters), set shouldPromoteToWorld to true
 - ALWAYS include appearance details even for existing characters (for consistency checking)
 - DO NOT include clothing in appearance — that's handled separately`,
@@ -234,7 +240,24 @@ MATCHING RULES:
           if (!existing.description && c.description) {
             updates.description = cap(c.description, 500);
           }
-      
+
+          // Update species/breed if not already set
+          if (c.species && c.species !== 'human') {
+            const charRecord = await tx
+              .select({ species: characters.species, breed: characters.breed })
+              .from(characters)
+              .where(eq(characters.id, characterId))
+              .limit(1)
+              .then((r) => r[0]);
+
+            if (charRecord && (!charRecord.species || charRecord.species === 'human')) {
+              updates.species = c.species;
+            }
+            if (charRecord && !charRecord.breed && c.breed) {
+              updates.breed = cap(c.breed, 100);
+            }
+          }
+
           if (Object.keys(updates).length > 0) {
             updates.updatedAt = new Date();
             await tx
@@ -250,6 +273,8 @@ MATCHING RULES:
           id: characterId,
           userId,
           name: cap(c.name, 80)!,
+          species: c.species || "human",        // ADD
+          breed: cap(c.breed, 100),    
           description: cap(c.description, 500),
           appearance: cap(c.appearance, 500),
           createdAt: new Date(),
@@ -368,6 +393,8 @@ MATCHING RULES:
         locationId = l.existingId;
         console.log(`  ✓ Matched existing: ${l.name} (${locationId})`);
 
+
+
         // Enrich description if sparse
         const existing = existingRoster.find(
           (e) => e.locationId === locationId
@@ -381,6 +408,7 @@ MATCHING RULES:
             })
             .where(eq(locations.id, locationId));
         }
+   
       } else {
         // NEW — create fresh location
         locationId = uuid();

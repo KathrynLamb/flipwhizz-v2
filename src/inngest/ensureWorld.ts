@@ -165,11 +165,17 @@ if (!context.progress.charactersExtracted) {
 {
   "characters": [
     {
+      "existingId": "uuid-or-null",
       "name": "Character Name",
-      "description": "personality, traits, behavior",
-      "appearance": "detailed physical description for illustration",
-      "role": "main/supporting/minor"
-    }
+       "nameIsUpgrade": false,
+       "species": "human",
+       "breed": null,
+       "description": "personality, traits, behavior",
+       "appearance": "detailed physical description for illustration",
+       "role": "main/supporting/minor",
+       "isNew": false,
+       "shouldPromoteToWorld": false
+     }
   ]
 }
 
@@ -177,6 +183,12 @@ Include:
 - Main characters (protagonists, important figures)
 - Supporting characters (friends, family, helpers)
 - Minor characters (briefly mentioned)
+
+   - Set "species" to one of: "human", "dog", "cat", "rabbit", "horse", "bird", "fantasy", "other"
+   - For animals, set "breed" to the best guess (e.g. "Border Collie mix", "Golden Retriever", "Tabby cat")
+   - For animals, the "appearance" field should LEAD with species, breed, and coat colour: "Black Border Collie mix dog, medium-sized, alert posture..." NOT "medium-sized, alert posture, black coat..."
+   - For humans, set species to "human" and breed to null
+
 
 For appearance, be specific: age, hair color/style, eye color, skin tone, body type, distinctive features.
 DO NOT include clothing in appearance - that will be handled separately per scene.`,
@@ -201,6 +213,8 @@ DO NOT include clothing in appearance - that will be handled separately per scen
             id: characterId,
             userId: context.project.userId!,
             name: cap(c.name, 80)!,
+            species: c.species || "human",        // ADD
+            breed: cap(c.breed, 100),   
             description: cap(c.description, 500),
             appearance: cap(c.appearance, 500),
             createdAt: new Date(),

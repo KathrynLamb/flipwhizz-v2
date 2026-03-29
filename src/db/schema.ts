@@ -204,6 +204,11 @@ export const characters = pgTable("characters", {
   fullBodyImageUrl: text("full_body_image_url"),
   referenceImageUrl: text("reference_image_url"),
 
+  species: varchar("species", { length: 40 }).default("human"),
+  // Values: "human", "dog", "cat", "rabbit", "horse", "bird", "fantasy", "other"
+ 
+  breed: varchar("breed", { length: 100 }),
+
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
