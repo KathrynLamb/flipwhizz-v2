@@ -1,26 +1,18 @@
+// src/app/stories/[id]/extract/ExtractWorldPage.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, XCircle, ArrowLeft } from "lucide-react";
+import { Loader2, XCircle, ArrowLeft, User, MapPin, Palette, Scissors, BookOpen } from "lucide-react";
 import { getNextStepHref, type StepKey } from "@/lib/storySteps";
 
-/* ─────────────────────────────────────────────────────
-   TYPES
-───────────────────────────────────────────────────── */
+/* ─────────────── TYPES ─────────────── */
 
 type Phase =
-  | "checking"
-  | "extracting_characters"
-  | "extracting_locations"
-  | "extracting_style"
-  | "building_spreads"
-  | "assigning_characters"
-  | "assigning_locations"
-  | "extracting_outfits"
-  | "assigning_outfits"
-  | "ready";
+  | "checking" | "extracting_characters" | "extracting_locations"
+  | "extracting_style" | "building_spreads" | "assigning_characters"
+  | "assigning_locations" | "extracting_outfits" | "assigning_outfits" | "ready";
 
 type ProgressData = {
   phase: Phase;
@@ -35,96 +27,42 @@ type ProgressData = {
   worldComplete: boolean;
 };
 
-/* ─────────────────────────────────────────────────────
-   STORY-WORLD FLAVOUR MESSAGES
-   
-   These rotate to make the wait feel alive.
-   Grouped by phase so they feel contextual.
-───────────────────────────────────────────────────── */
+type ExtractedCharacter = { id: string; name: string; portraitImageUrl: string | null; species: string | null };
+type ExtractedLocation = { id: string; name: string; portraitImageUrl: string | null };
+type ExtractedStyle = { artStyle: string | null; colorPalette: any };
+
+/* ─────────────── FLAVOUR MESSAGES ─────────────── */
 
 const FLAVOUR: Record<Phase, string[]> = {
-  checking: [
-    "Peeking into your story world…",
-    "Seeing what's already here…",
-  ],
-  extracting_characters: [
-    "Meeting the characters in your story…",
-    "Learning who lives in this world…",
-    "Figuring out who the hero is…",
-    "Getting to know everyone…",
-  ],
-  extracting_locations: [
-    "Exploring the places in your story…",
-    "Mapping out the world…",
-    "Discovering hidden corners…",
-    "Finding where the adventure happens…",
-  ],
-  extracting_style: [
-    "Choosing the colours for your world…",
-    "Deciding how the illustrations should feel…",
-    "Picking the perfect style…",
-    "Making it look just right…",
-  ],
-  building_spreads: [
-    "Laying out the pages of your book…",
-    "Figuring out the best page turns…",
-    "Building the rhythm of the story…",
-    "Shaping each scene…",
-  ],
-  assigning_characters: [
-    "Deciding who appears on each page…",
-    "Putting everyone in their places…",
-    "Making sure nobody gets left out…",
-  ],
-  assigning_locations: [
-    "Setting each scene in the right place…",
-    "Painting in the backgrounds…",
-    "Building the world around each moment…",
-  ],
-  extracting_outfits: [
-    "Choosing outfits for your characters…",
-    "Making sure everyone looks their best…",
-    "Picking the perfect look…",
-  ],
-  assigning_outfits: [
-    "Dressing everyone for each scene…",
-    "Almost there — final touches…",
-    "Checking every detail…",
-  ],
-  ready: [
-    "Your story world is ready!",
-  ],
+  checking: ["Opening the book…"],
+  extracting_characters: ["Meeting the characters…", "Who's in this story?", "Getting to know everyone…"],
+  extracting_locations: ["Exploring the world…", "Mapping the adventure…", "Finding every corner…"],
+  extracting_style: ["Choosing the palette…", "Setting the mood…", "Picking the perfect look…"],
+  building_spreads: ["Laying out the pages…", "Shaping each scene…"],
+  assigning_characters: ["Placing everyone on stage…", "Who goes where?"],
+  assigning_locations: ["Painting the backdrops…", "Setting every scene…"],
+  extracting_outfits: ["Choosing outfits…", "Making sure everyone looks great…"],
+  assigning_outfits: ["Final touches…", "Dressing for each scene…", "Nearly there…"],
+  ready: ["Your story world is ready!"],
 };
 
-/* ─────────────────────────────────────────────────────
-   PROGRESS HELPERS (unchanged logic)
-───────────────────────────────────────────────────── */
+/* ─────────────── PROGRESS HELPERS ─────────────── */
 
-function getCurrentPhase(prog: ProgressData): Phase {
-  if (prog.worldComplete) return "ready";
-  if (!prog.charactersExtracted) return "extracting_characters";
-  if (!prog.locationsExtracted) return "extracting_locations";
-  if (!prog.styleExtracted) return "extracting_style";
-  if (!prog.spreadsBuilt) return "building_spreads";
-  if (!prog.charactersAssigned) return "assigning_characters";
-  if (!prog.locationsAssigned) return "assigning_locations";
-  if (!prog.outfitsExtracted) return "extracting_outfits";
-  if (!prog.outfitsAssigned) return "assigning_outfits";
+function getCurrentPhase(p: ProgressData): Phase {
+  if (p.worldComplete) return "ready";
+  if (!p.charactersExtracted) return "extracting_characters";
+  if (!p.locationsExtracted) return "extracting_locations";
+  if (!p.styleExtracted) return "extracting_style";
+  if (!p.spreadsBuilt) return "building_spreads";
+  if (!p.charactersAssigned) return "assigning_characters";
+  if (!p.locationsAssigned) return "assigning_locations";
+  if (!p.outfitsExtracted) return "extracting_outfits";
+  if (!p.outfitsAssigned) return "assigning_outfits";
   return "ready";
 }
 
 function needsWork(p: ProgressData) {
-  if (p.worldComplete) return false;
-  return !(
-    p.charactersExtracted &&
-    p.locationsExtracted &&
-    p.styleExtracted &&
-    p.spreadsBuilt &&
-    p.charactersAssigned &&
-    p.locationsAssigned &&
-    p.outfitsExtracted &&
-    p.outfitsAssigned
-  );
+  return !p.worldComplete && !(p.charactersExtracted && p.locationsExtracted && p.styleExtracted && p.spreadsBuilt && p.charactersAssigned && p.locationsAssigned && p.outfitsExtracted && p.outfitsAssigned);
 }
 
 function parseProgress(incoming: any): ProgressData {
@@ -144,20 +82,26 @@ function parseProgress(incoming: any): ProgressData {
   return built;
 }
 
-const PHASE_ORDER: Phase[] = [
-  "extracting_characters",
-  "extracting_locations",
-  "extracting_style",
-  "building_spreads",
-  "assigning_characters",
-  "assigning_locations",
-  "extracting_outfits",
-  "assigning_outfits",
-];
+const STEPS = [
+  { key: "characters", label: "Characters", icon: User, flag: "charactersExtracted" as const },
+  { key: "locations", label: "Locations", icon: MapPin, flag: "locationsExtracted" as const },
+  { key: "style", label: "Art Style", icon: Palette, flag: "styleExtracted" as const },
+  { key: "spreads", label: "Page Layout", icon: BookOpen, flag: "spreadsBuilt" as const },
+  { key: "outfits", label: "Outfits", icon: Scissors, flag: "outfitsExtracted" as const },
+] as const;
 
-/* ─────────────────────────────────────────────────────
-   MAIN COMPONENT
-───────────────────────────────────────────────────── */
+/* ─────────────── FONT ─────────────── */
+
+function FontLoader() {
+  return (
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,600;12..96,700;12..96,800&display=swap"
+      rel="stylesheet"
+    />
+  );
+}
+
+/* ─────────────── MAIN COMPONENT ─────────────── */
 
 export default function ExtractWorldPage() {
   const params = useParams();
@@ -173,20 +117,20 @@ export default function ExtractWorldPage() {
 
   const [phase, setPhase] = useState<Phase>("checking");
   const [progress, setProgress] = useState<ProgressData>({
-    phase: "checking",
-    charactersExtracted: false,
-    locationsExtracted: false,
-    styleExtracted: false,
-    spreadsBuilt: false,
-    charactersAssigned: false,
-    locationsAssigned: false,
-    outfitsExtracted: false,
-    outfitsAssigned: false,
-    worldComplete: false,
+    phase: "checking", charactersExtracted: false, locationsExtracted: false,
+    styleExtracted: false, spreadsBuilt: false, charactersAssigned: false,
+    locationsAssigned: false, outfitsExtracted: false, outfitsAssigned: false, worldComplete: false,
   });
   const [error, setError] = useState<string | null>(null);
-  const [startTime] = useState(Date.now());
   const [flavourIndex, setFlavourIndex] = useState(0);
+  const [startTime] = useState(Date.now());
+  const [elapsed, setElapsed] = useState(0);
+
+  // Extracted data (fetched as steps complete)
+  const [characters, setCharacters] = useState<ExtractedCharacter[]>([]);
+  const [locations, setLocations] = useState<ExtractedLocation[]>([]);
+  const [styleInfo, setStyleInfo] = useState<ExtractedStyle | null>(null);
+  const [storyTitle, setStoryTitle] = useState<string>("");
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const errorCount = useRef(0);
@@ -194,23 +138,52 @@ export default function ExtractWorldPage() {
   const hasBootstrapped = useRef(false);
   const workflowTriggered = useRef(false);
   const pollingStarted = useRef(false);
+  const fetchedCharacters = useRef(false);
+  const fetchedLocations = useRef(false);
+  const fetchedStyle = useRef(false);
 
-  /* ── Flavour text rotation ── */
-
+  /* ── Flavour rotation ── */
   useEffect(() => {
-    const interval = setInterval(() => {
-      setFlavourIndex((i) => i + 1);
-    }, 3500);
-    return () => clearInterval(interval);
+    const t = setInterval(() => setFlavourIndex((i) => i + 1), 3200);
+    return () => clearInterval(t);
   }, []);
 
   const flavourText = useMemo(() => {
-    const messages = FLAVOUR[phase] || FLAVOUR.checking;
-    return messages[flavourIndex % messages.length];
+    const msgs = FLAVOUR[phase] || FLAVOUR.checking;
+    return msgs[flavourIndex % msgs.length];
   }, [phase, flavourIndex]);
 
-  /* ── Progress application ── */
+  /* ── Elapsed timer ── */
+  useEffect(() => {
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [startTime]);
 
+  /* ── Fetch extracted data when steps complete ── */
+  useEffect(() => {
+    if (!storyId) return;
+
+    if (progress.charactersExtracted && !fetchedCharacters.current) {
+      fetchedCharacters.current = true;
+      fetch(`/api/stories/${storyId}/world`).then(r => r.json()).then(data => {
+        if (data.characters) setCharacters(data.characters.map((c: any) => ({
+          id: c.id, name: c.name, portraitImageUrl: c.portraitImageUrl || c.imageUrl, species: c.species,
+        })));
+        if (data.locations) setLocations(data.locations.map((l: any) => ({
+          id: l.id, name: l.name, portraitImageUrl: l.portraitImageUrl || l.imageUrl,
+        })));
+      }).catch(() => {});
+    }
+
+    if (progress.styleExtracted && !fetchedStyle.current) {
+      fetchedStyle.current = true;
+      fetch(`/api/stories/${storyId}`).then(r => r.json()).then(data => {
+        setStoryTitle(data.story?.title || "");
+      }).catch(() => {});
+    }
+  }, [progress, storyId]);
+
+  /* ── Apply progress ── */
   const applyProgressRef = useRef<(p: ProgressData) => void>();
   applyProgressRef.current = (newProgress: ProgressData) => {
     const currentPhase = getCurrentPhase(newProgress);
@@ -227,22 +200,20 @@ export default function ExtractWorldPage() {
   };
 
   /* ── Poll ── */
-
   const checkProgressRef = useRef<() => Promise<void>>();
   checkProgressRef.current = async () => {
     const id = storyIdRef.current;
     if (!id) return;
     try {
       const res = await fetch(`/api/stories/${id}/workflow-progress`, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error();
       const data = await res.json();
-      if (!data?.progress) return;
-      applyProgressRef.current?.(parseProgress(data.progress));
+      if (data?.progress) applyProgressRef.current?.(parseProgress(data.progress));
       errorCount.current = 0;
     } catch {
       errorCount.current++;
       if (errorCount.current > 10) {
-        setError("Unable to check progress. Please refresh the page.");
+        setError("Unable to check progress. Please refresh.");
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       }
     }
@@ -257,7 +228,6 @@ export default function ExtractWorldPage() {
   }, []);
 
   /* ── Bootstrap ── */
-
   useEffect(() => {
     if (!storyId || hasBootstrapped.current) return;
     hasBootstrapped.current = true;
@@ -267,347 +237,264 @@ export default function ExtractWorldPage() {
       try {
         setPhase("checking");
         lastPhaseRef.current = "checking";
-        errorCount.current = 0;
 
         let p: ProgressData | null = null;
         try {
           const res = await fetch(`/api/stories/${storyId}/workflow-progress`, { cache: "no-store" });
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.progress) p = parseProgress(data.progress);
-          }
+          if (res.ok) { const d = await res.json(); if (d?.progress) p = parseProgress(d.progress); }
         } catch {}
 
         if (cancelled) return;
-
-        if (p && !needsWork(p)) {
-          setProgress(p);
-          setPhase("ready");
-          return;
-        }
-
-        if (p) {
-          setProgress(p);
-          const cp = getCurrentPhase(p);
-          setPhase(cp);
-          lastPhaseRef.current = cp;
-        }
+        if (p && !needsWork(p)) { setProgress(p); setPhase("ready"); return; }
+        if (p) { setProgress(p); const cp = getCurrentPhase(p); setPhase(cp); lastPhaseRef.current = cp; }
 
         if (!workflowTriggered.current) {
           workflowTriggered.current = true;
-          try {
-            await fetch(`/api/stories/${storyId}/ensure-world`, { method: "POST" });
-          } catch {}
+          try { await fetch(`/api/stories/${storyId}/ensure-world`, { method: "POST" }); } catch {}
         }
-
         if (!cancelled) doStartPolling();
       } catch {
-        if (!cancelled) setError("Failed to start world building. Please refresh.");
+        if (!cancelled) setError("Failed to start. Please refresh.");
       }
     };
 
     run();
-
-    const safety = setTimeout(() => {
-      if (!pollingStarted.current && !cancelled) doStartPolling();
-    }, 8000);
+    const safety = setTimeout(() => { if (!pollingStarted.current && !cancelled) doStartPolling(); }, 8000);
 
     return () => {
       cancelled = true;
-      hasBootstrapped.current = false;
-      workflowTriggered.current = false;
-      pollingStarted.current = false;
-      lastPhaseRef.current = "checking";
-      errorCount.current = 0;
-      clearTimeout(safety);
+      hasBootstrapped.current = false; workflowTriggered.current = false;
+      pollingStarted.current = false; lastPhaseRef.current = "checking";
+      fetchedCharacters.current = false; fetchedLocations.current = false; fetchedStyle.current = false;
+      errorCount.current = 0; clearTimeout(safety);
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     };
   }, [storyId, doStartPolling]);
 
-  /* ── Auto-redirect on complete ── */
-
+  /* ── Auto-redirect ── */
   useEffect(() => {
     if (phase !== "ready" || !storyId) return;
     let cancelled = false;
-
     const redirect = async () => {
       try {
         const res = await fetch(`/api/stories/${storyId}`, { cache: "no-store" });
-        if (!res.ok) throw new Error();
         const data = await res.json();
         const story = data.story ?? data;
-        if (cancelled) return;
-        const href = getNextStepHref(storyId, story);
-        setTimeout(() => { if (!cancelled) router.push(href); }, 1800);
+        if (!cancelled) { const href = getNextStepHref(storyId, story); setTimeout(() => { if (!cancelled) router.push(href); }, 2200); }
       } catch {
-        if (!cancelled) {
-          setTimeout(() => { if (!cancelled) router.push(`/stories/${storyId}/illustration-style`); }, 1800);
-        }
+        if (!cancelled) setTimeout(() => { if (!cancelled) router.push(`/stories/${storyId}/illustration-style`); }, 2200);
       }
     };
-
     redirect();
     return () => { cancelled = true; };
   }, [phase, storyId, router]);
 
   /* ── Overall progress ── */
-
   const overallProgress = useMemo(() => {
-    const flags = [
-      progress.charactersExtracted,
-      progress.locationsExtracted,
-      progress.styleExtracted,
-      progress.spreadsBuilt,
-      progress.charactersAssigned,
-      progress.locationsAssigned,
-      progress.outfitsExtracted,
-      progress.outfitsAssigned,
-    ];
+    const flags = [progress.charactersExtracted, progress.locationsExtracted, progress.styleExtracted, progress.spreadsBuilt, progress.charactersAssigned, progress.locationsAssigned, progress.outfitsExtracted, progress.outfitsAssigned];
     return (flags.filter(Boolean).length / flags.length) * 100;
   }, [progress]);
 
-  /* ── Elapsed time ── */
+  const isReady = phase === "ready";
 
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
-    return () => clearInterval(t);
-  }, [startTime]);
-
-  /* ── Completed step count for the dots ── */
-
-  const completedSteps = useMemo(() => {
-    const flags = [
-      progress.charactersExtracted,
-      progress.locationsExtracted,
-      progress.styleExtracted,
-      progress.spreadsBuilt,
-      progress.charactersAssigned,
-      progress.locationsAssigned,
-      progress.outfitsExtracted,
-      progress.outfitsAssigned,
-    ];
-    return flags.filter(Boolean).length;
-  }, [progress]);
-
-  /* ─────────────────────────────────────────────────────
-     ERROR STATE
-  ───────────────────────────────────────────────────── */
+  /* ─────────────── ERROR ─────────────── */
 
   if (error) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#FDF8F0] p-4">
-        <div className="w-full max-w-sm rounded-[28px] bg-white p-8 text-center shadow-xl ring-1 ring-slate-200">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-rose-100">
-            <XCircle className="h-7 w-7 text-rose-600" />
+      <>
+        <FontLoader />
+        <div className="flex min-h-screen items-center justify-center p-4" style={{ background: "#F9F5FF", fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}>
+          <div className="w-full max-w-sm rounded-[22px] p-8 text-center" style={{ background: "white", border: "1px solid rgba(180,150,210,0.12)", boxShadow: "0 4px 24px rgba(100,60,140,0.1)" }}>
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: "rgba(233,30,99,0.08)" }}>
+              <XCircle className="h-7 w-7" style={{ color: "#E91E63" }} />
+            </div>
+            <h1 className="mt-5 text-xl font-extrabold" style={{ color: "#2D2235" }}>Something went wrong</h1>
+            <p className="mt-2 text-sm leading-6" style={{ color: "#7B6E90" }}>{error}</p>
+            <button onClick={() => window.location.reload()} className="mt-6 w-full rounded-xl py-3 text-sm font-bold text-white active:scale-[0.98] transition-transform" style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", boxShadow: "0 4px 16px rgba(176,92,230,0.25)", border: "none" }}>
+              Try again
+            </button>
           </div>
-          <h1 className="mt-5 text-xl font-black text-slate-900">Something went wrong</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-6 w-full rounded-full bg-[#D94590] py-3 text-sm font-bold text-white shadow-[0_6px_20px_rgba(217,69,144,0.3)] transition active:scale-[0.98]"
-          >
-            Try again
-          </button>
         </div>
-      </div>
+      </>
     );
   }
 
-  /* ─────────────────────────────────────────────────────
-     RENDER
-  ───────────────────────────────────────────────────── */
-
-  const isReady = phase === "ready";
+  /* ─────────────── RENDER ─────────────── */
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#FDF8F0] text-slate-900">
-      {/* Background orbs */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <motion.div
-          animate={{ x: [0, 30, 0], y: [0, -20, 0] }}
-          transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute -top-20 left-[-40px] h-[300px] w-[300px] rounded-full bg-fuchsia-200/50 blur-3xl"
-        />
-        <motion.div
-          animate={{ x: [0, -25, 0], y: [0, 30, 0] }}
-          transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute right-[-60px] top-[20%] h-[350px] w-[350px] rounded-full bg-sky-200/50 blur-3xl"
-        />
-        <motion.div
-          animate={{ x: [0, 20, 0], y: [0, -15, 0] }}
-          transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute bottom-[-80px] left-[30%] h-[280px] w-[280px] rounded-full bg-amber-200/40 blur-3xl"
-        />
-      </div>
-
-      {/* Header */}
-      <header className="relative z-10">
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-4 sm:px-6">
-          <button
-            onClick={() => router.push(`/stories/${storyId}/extract`)}
-            className="flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-sm font-semibold text-slate-600 ring-1 ring-slate-200 backdrop-blur transition hover:bg-white"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">Back</span>
-          </button>
+    <>
+      <FontLoader />
+      <div className="min-h-screen relative" style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}>
+        {/* Background */}
+        <div className="fixed inset-0 -z-10" style={{ background: `radial-gradient(ellipse 80% 60% at 20% 10%, rgba(232,190,255,0.3) 0%, transparent 60%), radial-gradient(ellipse 70% 50% at 85% 80%, rgba(255,182,210,0.25) 0%, transparent 55%), radial-gradient(ellipse 50% 40% at 50% 50%, rgba(200,210,255,0.15) 0%, transparent 50%), #F9F5FF` }}>
+          <div className="absolute inset-0 opacity-50" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c4b5d4' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }} />
         </div>
-      </header>
 
-      {/* Main content — vertically centered */}
-      <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 pb-20 sm:px-6">
-        <div className="w-full max-w-md text-center">
+        {/* Header */}
+        <header className="relative z-10 px-4 py-4">
+          <div className="max-w-2xl mx-auto flex items-center justify-between">
+            <button onClick={() => router.back()} className="flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition-all active:scale-[0.97]" style={{ background: "white", color: "#6B5C80", border: "1px solid rgba(180,150,210,0.15)", boxShadow: "0 1px 4px rgba(100,60,140,0.06)" }}>
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
+          </div>
+        </header>
 
-          {/* ── Animated icon ── */}
-          <div className="mx-auto mb-8 flex h-28 w-28 items-center justify-center">
-            {isReady ? (
-              <motion.div
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: "spring", stiffness: 200, damping: 15 }}
-                className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-gradient-to-br from-emerald-400 to-green-500 shadow-[0_12px_40px_rgba(16,185,129,0.35)]"
-              >
-                <motion.span
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  className="text-4xl"
-                >
-                  ✨
-                </motion.span>
+        {/* Main */}
+        <main className="relative z-10 flex flex-col items-center px-4 pb-20">
+          <div className="w-full max-w-lg">
+
+            {/* ── Title area ── */}
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
+              <AnimatePresence mode="wait">
+                <motion.h1 key={isReady ? "done" : "building"} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="text-2xl sm:text-3xl font-extrabold" style={{ color: "#2D2235", letterSpacing: "-0.03em" }}>
+                  {isReady ? "Your story world is ready!" : "Building your story world"}
+                </motion.h1>
+              </AnimatePresence>
+              <div className="mt-2 h-6">
+                <AnimatePresence mode="wait">
+                  <motion.p key={flavourText} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="text-sm" style={{ color: "#7B6E90" }}>
+                    {flavourText}
+                  </motion.p>
+                </AnimatePresence>
+              </div>
+            </motion.div>
+
+            {/* ── Progress bar ── */}
+            {!isReady && phase !== "checking" && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-8">
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(180,150,210,0.12)" }}>
+                  <motion.div className="h-full rounded-full" style={{ background: "linear-gradient(90deg, #B05CE6, #D45DA0)" }} initial={{ width: "0%" }} animate={{ width: `${overallProgress}%` }} transition={{ duration: 0.6, ease: "easeOut" }} />
+                </div>
               </motion.div>
-            ) : (
-              <div className="relative flex h-24 w-24 items-center justify-center">
-                {/* Spinning outer ring */}
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                  className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-[#D94590] via-purple-500 to-sky-500 p-[3px]"
-                >
-                  <div className="h-full w-full rounded-[26px] bg-[#FDF8F0]" />
-                </motion.div>
+            )}
 
-                {/* Inner book emoji — gently breathing */}
-                <motion.span
-                  animate={{ scale: [1, 1.08, 1] }}
-                  transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-                  className="relative z-10 text-4xl"
-                >
-                  📖
-                </motion.span>
+            {/* ── Step cards ── */}
+            <div className="space-y-3">
+              {STEPS.map((step, i) => {
+                const isDone = progress[step.flag];
+                const isActive = !isDone && (i === 0 || progress[STEPS[i - 1].flag]);
+                const Icon = step.icon;
+
+                return (
+                  <motion.div
+                    key={step.key}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.08 }}
+                    className="rounded-[18px] overflow-hidden transition-all"
+                    style={{
+                      background: "white",
+                      border: isDone ? "1px solid rgba(67,184,156,0.2)" : isActive ? "1px solid rgba(176,92,230,0.2)" : "1px solid rgba(180,150,210,0.1)",
+                      boxShadow: isActive ? "0 2px 12px rgba(176,92,230,0.08)" : "0 1px 4px rgba(100,60,140,0.04)",
+                      opacity: !isDone && !isActive ? 0.5 : 1,
+                    }}
+                  >
+                    <div className="flex items-center gap-3 px-4 py-3.5">
+                      {/* Status icon */}
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{
+                        background: isDone ? "rgba(67,184,156,0.1)" : isActive ? "linear-gradient(135deg, #B05CE6, #D45DA0)" : "rgba(180,150,210,0.08)",
+                      }}>
+                        {isDone ? (
+                          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300 }}>
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="#2FA482" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          </motion.div>
+                        ) : isActive ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        ) : (
+                          <Icon className="w-4 h-4" style={{ color: "#C4B5D4" }} />
+                        )}
+                      </div>
+
+                      {/* Label */}
+                      <span className="text-sm font-bold flex-1" style={{ color: isDone ? "#2D2235" : isActive ? "#2D2235" : "#A897BD" }}>
+                        {step.label}
+                      </span>
+
+                      {/* Done badge */}
+                      {isDone && (
+                        <motion.span initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(67,184,156,0.1)", color: "#2FA482" }}>
+                          Done
+                        </motion.span>
+                      )}
+                    </div>
+
+                    {/* ── Revealed content: characters ── */}
+                    {step.key === "characters" && isDone && characters.length > 0 && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} transition={{ duration: 0.3 }} className="overflow-hidden">
+                        <div className="px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-hide">
+                          {characters.map((c, ci) => (
+                            <motion.div key={c.id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: ci * 0.1 }} className="flex flex-col items-center gap-1 flex-shrink-0">
+                              {c.portraitImageUrl ? (
+                                <img src={c.portraitImageUrl} alt={c.name} className="w-12 h-12 rounded-xl object-cover" style={{ border: "2px solid rgba(180,150,210,0.15)" }} />
+                              ) : (
+                                <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "rgba(199,125,255,0.1)" }}>
+                                  <User className="w-5 h-5" style={{ color: "#C4A8E0" }} />
+                                </div>
+                              )}
+                              <span className="text-[10px] font-semibold text-center max-w-[60px] truncate" style={{ color: "#5A4D6B" }}>{c.name}</span>
+                            </motion.div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {/* ── Revealed content: locations ── */}
+                    {step.key === "locations" && isDone && locations.length > 0 && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} transition={{ duration: 0.3 }} className="overflow-hidden">
+                        <div className="px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-hide">
+                          {locations.map((l, li) => (
+                            <motion.div key={l.id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: li * 0.1 }} className="flex flex-col items-center gap-1 flex-shrink-0">
+                              {l.portraitImageUrl ? (
+                                <img src={l.portraitImageUrl} alt={l.name} className="w-12 h-12 rounded-xl object-cover" style={{ border: "2px solid rgba(180,150,210,0.15)" }} />
+                              ) : (
+                                <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "rgba(67,184,156,0.08)" }}>
+                                  <MapPin className="w-5 h-5" style={{ color: "#43B89C" }} />
+                                </div>
+                              )}
+                              <span className="text-[10px] font-semibold text-center max-w-[60px] truncate" style={{ color: "#5A4D6B" }}>{l.name}</span>
+                            </motion.div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            {/* ── Ready state ── */}
+            {isReady && (
+              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="mt-6 text-center">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold" style={{ background: "rgba(67,184,156,0.1)", color: "#2FA482" }}>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Taking you to the next step…
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── Checking state ── */}
+            {phase === "checking" && (
+              <div className="mt-8 flex items-center justify-center gap-2 text-sm" style={{ color: "#A897BD" }}>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Checking your story…</span>
               </div>
             )}
+
+            {/* ── Slow warning ── */}
+            {elapsed > 240 && !isReady && phase !== "checking" && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-6 rounded-[18px] px-5 py-4" style={{ background: "rgba(255,179,71,0.08)", border: "1px solid rgba(255,179,71,0.2)" }}>
+                <p className="text-sm font-bold" style={{ color: "#92400E" }}>Taking a little longer than usual</p>
+                <p className="mt-1 text-sm" style={{ color: "#B45309" }}>Complex stories can take a few extra minutes. Hang tight!</p>
+              </motion.div>
+            )}
           </div>
+        </main>
 
-          {/* ── Heading ── */}
-          <AnimatePresence mode="wait">
-            <motion.h1
-              key={isReady ? "done" : "building"}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-              className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl"
-            >
-              {isReady ? "Your story world is ready" : "Building your story world"}
-            </motion.h1>
-          </AnimatePresence>
-
-          {/* ── Flavour text (rotating) ── */}
-          <div className="mt-3 h-7">
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={flavourText}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.25 }}
-                className="text-base text-slate-500"
-              >
-                {flavourText}
-              </motion.p>
-            </AnimatePresence>
-          </div>
-
-          {/* ── Progress bar ── */}
-          {!isReady && phase !== "checking" && (
-            <div className="mx-auto mt-8 max-w-xs">
-              <div className="h-2 overflow-hidden rounded-full bg-slate-200">
-                <motion.div
-                  className="h-full rounded-full bg-gradient-to-r from-[#D94590] to-purple-500"
-                  initial={{ width: "0%" }}
-                  animate={{ width: `${overallProgress}%` }}
-                  transition={{ duration: 0.6, ease: "easeOut" }}
-                />
-              </div>
-
-              {/* Step dots */}
-              <div className="mt-4 flex items-center justify-center gap-2">
-                {PHASE_ORDER.map((_, i) => (
-                  <motion.div
-                    key={i}
-                    initial={false}
-                    animate={{
-                      scale: i === completedSteps ? [1, 1.3, 1] : 1,
-                      backgroundColor:
-                        i < completedSteps
-                          ? "#D94590"
-                          : i === completedSteps
-                            ? "#D94590"
-                            : "#E2E8F0",
-                    }}
-                    transition={{
-                      scale: { duration: 1.5, repeat: i === completedSteps ? Infinity : 0, ease: "easeInOut" },
-                      backgroundColor: { duration: 0.3 },
-                    }}
-                    className="h-2 w-2 rounded-full"
-                    style={{
-                      opacity: i < completedSteps ? 1 : i === completedSteps ? 1 : 0.5,
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Ready state ── */}
-          {isReady && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.4 }}
-              className="mt-6 text-sm text-slate-400"
-            >
-              Taking you to the next step…
-            </motion.p>
-          )}
-
-          {/* ── Slow warning ── */}
-          {elapsed > 240 && !isReady && phase !== "checking" && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mx-auto mt-8 max-w-sm rounded-[18px] bg-amber-50 px-5 py-4 ring-1 ring-amber-200"
-            >
-              <p className="text-sm font-bold text-amber-900">
-                Taking a little longer than usual
-              </p>
-              <p className="mt-1 text-sm text-amber-700">
-                Complex stories with lots of characters can take a few extra
-                minutes. Hang tight — it&apos;ll be worth it.
-              </p>
-            </motion.div>
-          )}
-
-          {/* ── Checking state ── */}
-          {phase === "checking" && (
-            <div className="mt-8 flex items-center justify-center gap-2 text-sm text-slate-400">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Checking your story…</span>
-            </div>
-          )}
-        </div>
-      </main>
-    </div>
+        <style jsx global>{`
+          .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+          .scrollbar-hide::-webkit-scrollbar { display: none; }
+        `}</style>
+      </div>
+    </>
   );
 }

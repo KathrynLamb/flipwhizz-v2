@@ -541,12 +541,24 @@ export default function DesktopStudio({
   /* ------------------------------- Actions -------------------------------- */
 
   // After the existing useEffect hooks, add:
-useEffect(() => {
-  // Auto-start generation if paid but no spreads have images yet
-  if (isPaid && completedCount === 0 && !isGenerating && story.status !== 'generating') {
-    handleGenerateAll();
-  }
-}, [isPaid, completedCount, isGenerating, story.status]);
+  useEffect(() => {
+    if (!isPaid) return;
+    
+    if (completedCount === 0 && !isGenerating) {
+      // No images yet — either generation hasn't started or is in progress
+      // Start polling immediately to pick up incoming images
+      setIsGenerating(true);
+      setIsPolling(true);
+      
+      // Also trigger generation in case it hasn't started
+      // (generate-all is idempotent — if spreads are already queued, this is a no-op)
+      fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" }).catch(() => {});
+    } else if (completedCount > 0 && completedCount < totalCount) {
+      // Some images exist but not all — generation is in progress
+      setIsGenerating(true);
+      setIsPolling(true);
+    }
+  }, [isPaid]); // Only run on mount
 
   async function handleGenerateAll() {
     if (isGenerating) return;

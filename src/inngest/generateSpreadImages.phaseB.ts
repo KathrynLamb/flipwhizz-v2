@@ -181,9 +181,17 @@ async function saveImageToStorage(
 
 function extractInlineImage(result: any) {
   const parts = result.candidates?.[0]?.content?.parts ?? [];
-  const imagePart = parts.find((p: any) => p.inlineData?.data);
-  if (!imagePart) return null;
-
+  // Skip thought images — only take the final non-thought image
+  const imagePart = parts.find((p: any) => p.inlineData?.data && !p.thought);
+  if (!imagePart) {
+    // Fallback: take last image part if all are thoughts
+    const lastImage = [...parts].reverse().find((p: any) => p.inlineData?.data);
+    if (!lastImage) return null;
+    return {
+      data: lastImage.inlineData.data as string,
+      mimeType: lastImage.inlineData.mimeType as string,
+    };
+  }
   return {
     data: imagePart.inlineData.data as string,
     mimeType: imagePart.inlineData.mimeType as string,
@@ -210,18 +218,16 @@ type CharacterRef = {
 };
 
 function buildCharacterImageList(character: CharacterRef) {
-  const candidates = [
-    { label: "portrait reference", url: character.portraitUrl },
-    { label: "full-body reference", url: character.fullBodyUrl },
-    { label: "extra reference", url: character.referenceUrl },
-  ];
-
-  const seen = new Set<string>();
-
-  return candidates.filter(
-    (item): item is { label: string; url: string } =>
-      !!item.url && !isDataUrl(item.url) && !seen.has(item.url) && !!seen.add(item.url)
-  );
+  if (character.portraitUrl && !isDataUrl(character.portraitUrl)) {
+    return [{ label: "portrait", url: character.portraitUrl }];
+  }
+  if (character.fullBodyUrl && !isDataUrl(character.fullBodyUrl)) {
+    return [{ label: "full-body", url: character.fullBodyUrl }];
+  }
+  if (character.referenceUrl && !isDataUrl(character.referenceUrl)) {
+    return [{ label: "reference photo", url: character.referenceUrl }];
+  }
+  return [];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -255,6 +261,8 @@ function resolveStyleGuide(
         "Large, child-friendly hand-lettered text with excellent contrast",
     };
   }
+
+
 
   const promptBase = style.userNotes?.trim();
   const negativePrompt = style.negativePrompt?.trim();
@@ -434,6 +442,19 @@ export const generateSingleSpread = inngest.createFunction(
 
       const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } =
         resolveStyleGuide(style);
+
+         // Style reference fallback: use first generated spread if no sample image
+         let styleRefUrl: string | null = style?.sampleIllustrationUrl ?? null;
+         if (!styleRefUrl || isDataUrl(styleRefUrl)) {
+           const firstSpread = await db
+             .select({ imageUrl: storyPages.imageUrl })
+             .from(storyPages)
+             .where(eq(storyPages.storyId, storyId))
+             .orderBy(asc(storyPages.pageNumber))
+             .limit(10)
+             .then((pp) => pp.find((p) => p.imageUrl && !isDataUrl(p.imageUrl)));
+           styleRefUrl = firstSpread?.imageUrl ?? null;
+         }
 
       console.log("🎨 Style guide resolved:", {
         hasPromptBase: !!style?.userNotes,
@@ -1006,6 +1027,10 @@ Create a clean, professional illustration with seamlessly integrated text.
           imageConfig: {
             aspectRatio: IMAGE_ASPECT_RATIO,
             imageSize: IMAGE_SIZE,
+          },
+          thinkingConfig: {
+            thinkingLevel: "High",
+            includeThoughts: false,
           },
           safetySettings: [
             {
