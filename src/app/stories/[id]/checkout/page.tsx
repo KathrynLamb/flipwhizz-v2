@@ -39,8 +39,8 @@ const TIERS: TierDef[] = [
   {
     key: 'digital',
     label: 'Print at home PDF',
-    price: '2.00',
-    priceCents: 200,
+    price: '14.00',
+    priceCents: 1400,
     icon: <Download className="w-4 h-4" />,
     description: 'Read on any device, print at home',
     features: [

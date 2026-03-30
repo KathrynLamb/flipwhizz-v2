@@ -28,7 +28,7 @@ const TIERS: {
   {
     key: "digital",
     label: "Print at home PDF",
-    price: "£2",
+    price: "£14",
     description: "Read on any device, download the PDF, keep forever.",
     icon: Monitor,
     features: [

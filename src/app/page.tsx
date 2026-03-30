@@ -95,7 +95,7 @@ export default async function Home() {
               See your first illustrated spread for free — no card, no commitment.
             </p>
             <p className="text-xs lg:text-sm" style={{ color: "#A89B8E" }}>
-              The whole thing takes about 5 minutes.
+              The whole thing takes about 15 minutes.
             </p>
           </div>
         </div>
@@ -195,7 +195,7 @@ export default async function Home() {
               <h3 className="font-serif text-2xl font-bold mb-2" style={{ color: "#D94590" }}>Print at home PDF</h3>
               <p className="text-sm mb-6" style={{ color: "#6B5D52" }}>A beautifully illustrated story, ready to read or print.</p>
               <div className="mb-6">
-                <span className="text-4xl font-serif font-bold" style={{ color: "#2D2235" }}>£9</span>
+                <span className="text-4xl font-serif font-bold" style={{ color: "#2D2235" }}>£14</span>
                 <span style={{ color: "#6B5D52" }}> one-off</span>
               </div>
               <ul className="space-y-3 text-sm mb-8" style={{ color: "#4A4038" }}>
