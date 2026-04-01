@@ -443,6 +443,35 @@ export default function MobileStudio({
     }
   }
 
+
+  const isPaid = story.paymentStatus === "paid";
+
+useEffect(() => {
+  if (!isPaid) return;
+
+  if (completedCount === 0 && !isGenerating) {
+    setIsGenerating(true);
+    setIsPolling(true);
+
+    fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" }).catch(() => {
+      setIsGenerating(false);
+      setIsPolling(false);
+    });
+    return;
+  }
+
+  if (completedCount > 0 && completedCount < totalCount) {
+    setIsGenerating(true);
+    setIsPolling(true);
+    return;
+  }
+
+  if (completedCount === totalCount && totalCount > 0) {
+    setIsGenerating(false);
+    setIsPolling(false);
+  }
+}, [isPaid, completedCount, totalCount, isGenerating, story.id]);
+
   /* ── Render ── */
   if (viewportWidth == null) {
     return (
@@ -455,20 +484,6 @@ export default function MobileStudio({
     );
   }
 
-  const isPaid = story.paymentStatus === "paid";
-
-
-  useEffect(() => {
-    if (!isPaid) return;
-    if (completedCount === 0 && !isGenerating) {
-      setIsGenerating(true);
-      setIsPolling(true);
-      fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" }).catch(() => {});
-    } else if (completedCount > 0 && completedCount < totalCount) {
-      setIsGenerating(true);
-      setIsPolling(true);
-    }
-  }, [isPaid]); // Only run on mount
 
   if (!isPaid) {
     const previewSpread = pages.find((p) => p.imageUrl);
