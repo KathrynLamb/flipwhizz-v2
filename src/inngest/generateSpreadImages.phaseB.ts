@@ -724,296 +724,185 @@ export const generateSingleSpread = inngest.createFunction(
       // ========================================
       // BUILD GEMINI PROMPT PARTS
       // ========================================
+      // ============================================================
+// REPLACEMENT FOR: "BUILD GEMINI PROMPT PARTS" section
+// in generateSpreadImages.phaseB.ts
+//
+// Replace everything from:
+//   // ========================================
+//   // BUILD GEMINI PROMPT PARTS
+//   // ========================================
+//
+// Through to (but NOT including):
+//   // ========================================
+//   // GENERATE IMAGE
+//   // ========================================
+//
+// Keep ALL code above (data loading, character resolution,
+// outfit resolution, location resolution) and below (generate
+// image call, save to DB) exactly as-is.
+// ============================================================
+
+      // ========================================
+      // STYLE REFERENCE FALLBACK
+      // ========================================
+      let styleRefUrl: string | null = style?.sampleIllustrationUrl ?? null;
+      if (!styleRefUrl || isDataUrl(styleRefUrl)) {
+        const firstSpread = await db
+          .select({ imageUrl: storyPages.imageUrl })
+          .from(storyPages)
+          .where(eq(storyPages.storyId, storyId))
+          .orderBy(asc(storyPages.pageNumber))
+          .limit(10)
+          .then((pp) => pp.find((p) => p.imageUrl && !isDataUrl(p.imageUrl)));
+        styleRefUrl = firstSpread?.imageUrl ?? null;
+      }
+
+      // ========================================
+      // BUILD GEMINI PROMPT PARTS
+      // ========================================
       const parts: any[] = [];
 
-      // ── 1️⃣ LAYOUT TEMPLATE (filesystem) ────────────────────────────────
-      parts.push(await getImagePart(SPREAD_TEMPLATE_PATH));
-      parts.push({
-        text: `
-              ↑ LAYOUT GUIDE ONLY - DO NOT RENDER ↑
-
-              The image above shows SAFE ZONES for text placement.
-              This is a REFERENCE GUIDE ONLY — do NOT draw any guides in the final illustration.
-
-              ⚠️ CRITICAL PRINT SAFETY RULES — TEXT WILL BE PHYSICALLY CUT OFF IF THESE ARE VIOLATED:
-
-              This illustration will be PRINTED and TRIMMED. The printer cuts 8% from EVERY edge.
-              Any text or important content in the outer 8% WILL BE DESTROYED.
-
-              ABSOLUTE TEXT BOUNDARIES (percentage of total image):
-              - LEFT EDGE:   Text must not start before 10% from the left
-              - RIGHT EDGE:  Text must not extend past 90% from the left
-              - TOP EDGE:    Text must not start before 12% from the top
-              - BOTTOM EDGE: Text must not extend past 88% from the top
-              - CENTER GUTTER: NO text between 44% and 56% from the left (this is the book spine)
-
-              WHERE TO PLACE TEXT:
-              - LEFT page text:  Between 10%-42% horizontally, 15%-50% vertically (upper-left area)
-              - RIGHT page text: Between 58%-88% horizontally, 15%-50% vertically (upper-right area)
-
-              TEXT MUST BE GENEROUSLY INSET from all edges. When in doubt, move text FURTHER from edges.
-              The green zones in the guide are the ONLY safe areas. The red/pink areas WILL BE CUT.
-
-              DO NOT:
-              - Place text within 10% of any outer edge
-              - Place text within 6% of the center spine
-              - Show any guide lines, boxes, labels, or template markers
-              - Use "TEXT SAFE ZONE" labels or any reference to this guide
-              `.trim(),
-      });
-
-      // ── 2️⃣ STYLE REFERENCE IMAGE (if available) ─────────────────────────
-      if (
-        style?.sampleIllustrationUrl &&
-        !isDataUrl(style.sampleIllustrationUrl)
-      ) {
+      // ── 1. STYLE REFERENCE ──────────────────────────────────────────
+      if (styleRefUrl && !isDataUrl(styleRefUrl)) {
         try {
-          parts.push(await getImagePart(style.sampleIllustrationUrl));
-          parts.push({
-            text: `
-                ↑ ILLUSTRATION STYLE REFERENCE ↑
-
-                This image defines the EXACT visual style for the entire book.
-                Study it carefully and match:
-                - Pencil/brush technique and stroke character
-                - Line weight and ink outline style
-                - Colour palette, saturation, and paper texture
-                - How characters are rendered (face shape, proportions, expressiveness)
-                - Background treatment and foliage/environment style
-                - Overall warmth, charm, and hand-crafted quality
-
-                Every spread in this book must feel like it was drawn by the same artist who created this image.
-                Do NOT import a different style — stay true to this reference above all else.
-                `.trim(),
-          });
-          console.log("🖼️ Style reference image included in prompt");
+          parts.push(await getImagePart(styleRefUrl));
+          parts.push({ text: `↑ STYLE REFERENCE — match this illustration style exactly. Same technique, line weight, colours, warmth. ↑` });
+          console.log("🖼️ Style reference included");
         } catch (err) {
-          console.warn("⚠️ Could not load style reference image:", err);
-        }
-      } else {
-        console.log("🖼️ No style reference image — using keywords only");
-      }
-
-      // ── 2.5️⃣ EXISTING SPREAD IMAGE (for redraw context) ────────────────
-      if (existingSpreadImageUrl && !isDataUrl(existingSpreadImageUrl)) {
-        try {
-          parts.push(await getImagePart(existingSpreadImageUrl));
-          parts.push({
-            text: `
-                ↑ CURRENT ILLUSTRATION (BEING REVISED) ↑
-
-                This is the EXISTING spread that the user wants to improve.
-                Study it so you understand what the user's feedback refers to.
-                Use it as context for the revision — keep what works, fix what's requested.
-                Do NOT simply copy this image — create a fresh illustration that addresses the feedback.
-                `.trim(),
-          });
-          console.log("🔄 Existing spread image included for revision context");
-        } catch (err) {
-          console.warn("⚠️ Could not load existing spread image:", err);
+          console.warn("⚠️ Could not load style reference:", err);
         }
       }
 
-      // ── 3️⃣ LOCATION REFERENCE (if available) ───────────────────────────
+      // ── 2. LAYOUT TEMPLATE ──────────────────────────────────────────
+      try {
+        parts.push(await getImagePart(SPREAD_TEMPLATE_PATH));
+        parts.push({ text: `↑ LAYOUT GUIDE — place LEFT page text in upper-left zone, RIGHT page text in upper-right zone. Keep text away from all edges and the centre spine. Do NOT draw any guides or template markers. ↑` });
+      } catch (err) {
+        console.warn("⚠️ Could not load layout template:", err);
+      }
+
+      // ── 3. LOCATION REFERENCE ───────────────────────────────────────
       if (locationRef) {
         try {
           parts.push(await getImagePart(locationRef.imageUrl));
-          parts.push({
-            text: `
-                ↑ THIS IS THE LOCATION REFERENCE (${locationRef.name.toUpperCase()}) ↑
-                Match this environment, setting, and spatial layout exactly.
-                Use it as the backdrop across the full spread.
-                `.trim(),
-          });
+          parts.push({ text: `↑ LOCATION: ${locationRef.name.toUpperCase()} — use this as the setting. ↑` });
+          console.log("🗺️ Location reference included:", locationRef.name);
         } catch (err) {
-          console.warn("⚠️ Could not load location reference image:", err);
+          console.warn("⚠️ Could not load location reference:", err);
         }
       }
 
-      // ── 4️⃣ CHARACTERS — MULTI-REFERENCE WHEN AVAILABLE ─────────────────
+      // ── 4. EXISTING SPREAD (for redraw context) ─────────────────────
+      if (existingSpreadImageUrl && !isDataUrl(existingSpreadImageUrl)) {
+        try {
+          parts.push(await getImagePart(existingSpreadImageUrl));
+          parts.push({ text: `↑ CURRENT VERSION — keep what works, fix what the feedback requests. Do not simply copy this. ↑` });
+          console.log("🔄 Existing spread included for revision");
+        } catch (err) {
+          console.warn("⚠️ Could not load existing spread:", err);
+        }
+      }
+
+      // ── 5. CHARACTER REFERENCES (images + name only) ────────────────
       for (const c of charRefs) {
         const imageRefs = buildCharacterImageList(c);
-        const outfit = outfitByCharacterId.get(c.id);
         const isAnimal = c.species && c.species !== "human";
         const animalProfile = (c.visualDetails as any)?.animalProfile;
 
         if (imageRefs.length === 0) {
+          // No image — use minimal text fallback
           if (isAnimal && animalProfile) {
             parts.push({
-              text: `CHARACTER: ${c.name.toUpperCase()} (${c.species?.toUpperCase()})
-Breed: ${animalProfile.breed || c.breed || "unknown"}
-Coat: ${animalProfile.coatColour || "unknown"} — THIS COLOUR IS NON-NEGOTIABLE
-Pattern: ${animalProfile.coatPattern || "unknown"}
-Size: ${animalProfile.size || "unknown"}
-Build: ${animalProfile.bodyShape || "unknown"}
-This is a SPECIFIC real ${c.species}, not a generic one.`,
+              text: `CHARACTER: ${c.name.toUpperCase()} — a ${animalProfile.coatColour || ""} ${c.breed || c.species}. Match this exact animal.`,
             });
           } else {
             const desc = c.appearance || c.description;
             if (desc) {
-              parts.push({
-                text: `CHARACTER: ${c.name.toUpperCase()}\nAppearance: ${desc}`,
-              });
+              parts.push({ text: `CHARACTER: ${c.name.toUpperCase()} — ${desc.slice(0, 100)}` });
             }
           }
-          console.warn(`⚠️ ${c.name}: no image refs, using text description only`);
+          console.warn(`⚠️ ${c.name}: no image refs, text-only fallback`);
           continue;
         }
 
-        for (const [index, imageRef] of imageRefs.entries()) {
+        // Send the portrait image
+        for (const imageRef of imageRefs) {
           try {
             parts.push(await getImagePart(imageRef.url));
 
             if (isAnimal) {
-              if (index === 0) {
-                const coatLine = animalProfile?.coatColour
-                  ? `Coat: ${animalProfile.coatColour}. THIS COLOUR IS NON-NEGOTIABLE.`
-                  : c.breed ? `Breed: ${c.breed}` : "";
-                const markingsLine = animalProfile?.coatPattern
-                  ? `Pattern: ${animalProfile.coatPattern}` : "";
-                const sizeLine = animalProfile?.size
-                  ? `Size: ${animalProfile.size}` : "";
-                const earLine = animalProfile?.earType
-                  ? `Ears: ${animalProfile.earType}` : "";
-
-                parts.push({
-                  text: `↑ REFERENCE PHOTO: THE ${c.species?.toUpperCase()} "${c.name.toUpperCase()}" ↑
-Reproduce this EXACT ${c.species} with HIGH OBJECT FIDELITY.
-${c.breed ? `Breed: ${c.breed}` : ""}
-${coatLine}
-${markingsLine}
-${sizeLine}
-${earLine}
-Do NOT substitute a generic or different-coloured ${c.species}. Match this specific animal precisely.
-If the reference shows a ${animalProfile?.coatColour || "specific colour"} ${c.species}, the illustration MUST show that exact colour.`.trim(),
-                });
-              } else {
-                parts.push({
-                  text: `↑ ADDITIONAL REFERENCE for ${c.name.toUpperCase()} (${c.species}) — reinforce the exact appearance, coat colour, and markings ↑`,
-                });
-              }
-            } else {
+              // Animals: name + species + coat colour (non-negotiable)
+              const coatNote = animalProfile?.coatColour
+                ? ` — ${animalProfile.coatColour} coat, do NOT change this colour`
+                : "";
               parts.push({
-                text:
-                  index === 0
-                    ? `↑ THIS IS ${c.name.toUpperCase()} — primary ${imageRef.label}; match this character's face, body, and proportions exactly ↑`
-                    : `↑ ADDITIONAL ${c.name.toUpperCase()} ${imageRef.label.toUpperCase()} — use this to reinforce consistency ↑`,
+                text: `↑ THIS IS ${c.name.toUpperCase()} (${c.breed || c.species}${coatNote}) — reproduce this exact animal with HIGH OBJECT FIDELITY ↑`,
+              });
+            } else {
+              // Humans: just name
+              parts.push({
+                text: `↑ THIS IS ${c.name.toUpperCase()} — match this face and appearance exactly ↑`,
               });
             }
           } catch (err) {
-            console.warn(`⚠️ Could not load ${imageRef.label} for ${c.name}:`, err);
+            console.warn(`⚠️ Could not load image for ${c.name}:`, err);
           }
         }
 
+        // Outfit override (only if explicitly set)
+        const outfit = outfitByCharacterId.get(c.id);
         if (outfit) {
           parts.push({
-            text: `🎽 ${c.name.toUpperCase()} OUTFIT (${outfit.outfitKey}): ${outfit.outfitDescription}
-Do NOT copy clothing from the reference image — use the outfit above.`,
+            text: `${c.name.toUpperCase()} wears: ${outfit.outfitDescription}. Ignore clothing in the reference image.`,
           });
-          console.log(`✅ ${c.name}: outfit "${outfit.outfitKey}"`);
-        } else {
-          console.log(`⚠️ ${c.name}: no outfit assigned, using reference fallback`);
         }
       }
 
-      // ── 5️⃣ SCENE INSTRUCTIONS ────────────────────────────────────────────
+      // ── 6. SCENE INSTRUCTIONS (minimal) ─────────────────────────────
       const outfitEntries = [...outfitByCharacterId.values()];
 
       parts.push({
         text: `
-ILLUSTRATION TASK:
+CREATE A DOUBLE-PAGE SPREAD ILLUSTRATION.
 
-CREATE A SEAMLESS DOUBLE-PAGE SPREAD:
-- ONE continuous landscape illustration
-- Aspect ratio: ${IMAGE_ASPECT_RATIO}
-- Will be split into two square pages (left half, right half)
-- NO visible guides, boxes, or template markers
-- Natural, professional children's book illustration
+One continuous 16:9 landscape image. Left half is one page, right half is the next.
+Children's book illustration. ${geminiStyleBlock}
 
-TEXT INTEGRATION — CRITICAL FOR PRINT:
-- Embed the story text DIRECTLY into the illustration as hand-lettered typography
-- LEFT page text: Place in the UPPER-LEFT area, starting at ~12% from left edge and ~15% from top
-- RIGHT page text: Place in the UPPER-RIGHT area, starting at ~60% from left edge and ~15% from top
-- Keep ALL text at least 10% away from any outer edge of the image
-- Keep ALL text at least 6% away from the center vertical line (the book spine)
-- Text should occupy roughly the top third of each page, leaving the bottom two-thirds for illustration
-- Use LARGE, high-contrast, child-friendly typography
-- Typography: ${typographyBlock}
-- Text must feel natural and integrated, NOT overlaid on top of the art
-- ⚠️ If text is placed too close to edges, IT WILL BE CUT OFF when the book is printed and trimmed
+SCENE: ${spread.sceneSummary ?? "Illustrate the story text below."}
 
-IMPORTANT - DO NOT INCLUDE:
-- "TEXT SAFE ZONE" labels
-- Guide boxes or borders
-- Template overlay
-- Any reference markers
-- The guide is invisible — your illustration should be clean and polished
-
-STYLE:
-${geminiStyleBlock}
-
-AVOID:
-${geminiAvoidBlock}
-
-SCENE:
-${spread.sceneSummary ?? ""}
-
-LEFT PAGE TEXT (place in upper-left safe zone, 12%-42% from left, 15%-45% from top):
+LEFT PAGE TEXT (embed in upper-left area):
 ${left?.text ?? ""}
 
-RIGHT PAGE TEXT (place in upper-right safe zone, 58%-88% from left, 15%-45% from top):
+RIGHT PAGE TEXT (embed in upper-right area):
 ${right?.text ?? ""}
 
-${feedback ? `REVISION REQUEST:\n${feedback}\n` : ""}
+Hand-letter the text directly into the illustration. Large, child-friendly, high-contrast.
+Keep ALL text well inside safe zones — the outer edges will be trimmed in printing.
+${typographyBlock}
 
-OUTFIT REMINDER:
-${
-  outfitEntries.length > 0
-    ? outfitEntries
-        .map((o) => {
-          const char = charRefs.find((c) => c.id === o.characterId);
-          return `- ${char?.name ?? "Character"}: ${o.outfitDescription}`;
-        })
-        .join("\n")
-    : "Use contextually appropriate clothing for each character."
-}
-
-FINAL REMINDER: Keep ALL text well inside the safe zones. The outer 10% of this image on every side will be trimmed off during printing. Text near edges = text destroyed.
-
-Create a clean, professional illustration with seamlessly integrated text.
+AVOID: ${geminiAvoidBlock}
+${feedback ? `\nFEEDBACK TO ADDRESS: ${feedback}` : ""}
 `.trim(),
       });
 
-      // ── Debug log ─────────────────────────────────────────────────────────
+      // ── Debug log ─────────────────────────────────────────────────────
+      const imageCount = parts.filter((p: any) => p.inlineData).length;
+      const textCount = parts.filter((p: any) => p.text).length;
+      const totalTextLength = parts
+        .filter((p: any) => p.text)
+        .reduce((sum: number, p: any) => sum + p.text.length, 0);
+
+      console.log(`📦 Prompt summary: ${imageCount} images, ${textCount} text blocks, ${totalTextLength} chars total`);
       console.log(
-        "📦 Parts being sent to Gemini:",
-        parts.map((p, i) => ({
+        "📦 Parts:",
+        parts.map((p: any, i: number) => ({
           index: i,
-          type: p.text ? "text" : p.inlineData ? "image" : "unknown",
+          type: p.text ? "text" : "image",
           preview: p.text
-            ? p.text.substring(0, 100).replace(/\n/g, " ")
-            : `image/${p.inlineData?.mimeType}`,
+            ? p.text.substring(0, 80).replace(/\n/g, " ")
+            : `image/${p.inlineData?.mimeType} (${Math.round(Buffer.from(p.inlineData?.data || "", "base64").length / 1024)}KB)`,
         }))
-      );
-
-
-      const debugPayload = {
-        model: GEMINI_IMAGE_MODEL,
-        contents: [
-          {
-            role: "user",
-            parts: serializePartsForLogging(parts),
-          },
-        ],
-        config: {
-          aspectRatio: IMAGE_ASPECT_RATIO,
-          imageSize: IMAGE_SIZE,
-        },
-      };
-      
-      console.log(
-        "🧠 GEMINI FULL PAYLOAD:\n",
-        JSON.stringify(debugPayload, null, 2)
       );
 
       // ========================================

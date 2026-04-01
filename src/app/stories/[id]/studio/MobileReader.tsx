@@ -335,6 +335,18 @@ export default function MobileStudio({
     return () => clearInterval(interval);
   }, [isPolling, story.id, regeneratingSpreads, dbSpreads]);
 
+  useEffect(() => {
+    if (!isPaid) return;
+    if (completedCount === 0 && !isGenerating) {
+      setIsGenerating(true);
+      setIsPolling(true);
+      fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" }).catch(() => {});
+    } else if (completedCount > 0 && completedCount < totalCount) {
+      setIsGenerating(true);
+      setIsPolling(true);
+    }
+  }, [isPaid]); // Only run on mount
+
   /* ── Navigation ── */
   function clamp(i: number) {
     return Math.max(0, Math.min(i, slides.length - 1));
@@ -552,44 +564,42 @@ export default function MobileStudio({
 
       {/* ── Generate All button (when not complete) ── */}
       {!allGenerated && (
-        <div className="px-4 pt-3 pb-1">
-          <button
-            onClick={handleGenerateAll}
-            disabled={isGenerating}
-            className="w-full py-3.5 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
-            style={{
-              background: "linear-gradient(135deg, #B05CE6, #E91E8C)",
-              boxShadow: "0 4px 20px rgba(176,92,230,0.3)",
-              border: "none",
-            }}
-          >
-            {isGenerating ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Illustrating your story…</>
-            ) : (
-              <><Sparkles className="w-4 h-4" /> Generate All Illustrations</>
-            )}
-          </button>
-        </div>
-      )}
+          <div className="px-4 pt-3 pb-1">
+            <button
+              onClick={handleGenerateAll}
+              disabled={isGenerating}
+              className="w-full py-3.5 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-70 active:scale-[0.98] transition-transform"
+              style={{
+                background: isGenerating
+                  ? "rgba(176,92,230,0.5)"
+                  : "linear-gradient(135deg, #B05CE6, #E91E8C)",
+                boxShadow: isGenerating ? "none" : "0 4px 20px rgba(176,92,230,0.3)",
+                border: "none",
+              }}
+            >
+              {isGenerating ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Illustrating your story…</>
+              ) : (
+                <><Sparkles className="w-4 h-4" /> Generate All Illustrations</>
+              )}
+            </button>
+          </div>
+        )}
 
       {/* ── All done banner ── */}
-      {allGenerated && (
-        <div
-          className="mx-4 mt-4 mb-1 px-4 py-3 rounded-2xl flex items-center gap-2.5"
-          style={{ background: "rgba(67,184,156,0.08)", border: "1px solid rgba(67,184,156,0.2)" }}
-        >
-          <div
-            className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-            style={{ background: "rgba(67,184,156,0.15)" }}
-          >
+      {allGenerated && !story.coverSpreadUrl && (
+        <div className="mx-4 mt-4 mb-1 px-4 py-3 rounded-2xl flex items-center gap-2.5"
+          style={{ background: "rgba(67,184,156,0.08)", border: "1px solid rgba(67,184,156,0.2)" }}>
+          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+            style={{ background: "rgba(67,184,156,0.15)" }}>
             <Check className="w-3.5 h-3.5" style={{ color: "#2FA482" }} />
           </div>
           <p className="text-sm font-semibold" style={{ color: "#2FA482" }}>
-            All illustrations complete!
+            All illustrations complete — now design your cover!
           </p>
         </div>
       )}
-
+      
       {/* ── Swipe viewer ── */}
       <div ref={containerRef} className="w-full overflow-hidden mt-4">
         <motion.div
@@ -689,9 +699,10 @@ export default function MobileStudio({
         </button>
       </div>
 
-      {/* ── Bottom actions ── */}
+
+{/* Bottom actions */}
       <div className="px-4 pb-8 flex flex-col gap-3">
-        {!story.coverSpreadUrl && (
+        {allGenerated && !story.coverSpreadUrl && (
           <button
             onClick={() => router.push(`/stories/${story.id}/cover`)}
             className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
