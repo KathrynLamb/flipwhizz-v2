@@ -379,8 +379,6 @@ export const generateSingleSpread = inngest.createFunction(
         } catch (err) { console.warn("⚠️ Existing spread failed:", err); }
       }
 
-      // 5. CHARACTERS — IMAGE + NAME ONLY, NO DESCRIPTIONS
-
 // 5. CHARACTERS — PORTRAIT ONLY, NO FALLBACKS
 const missingPortraits: string[] = [];
 

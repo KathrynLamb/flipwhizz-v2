@@ -335,17 +335,7 @@ export default function MobileStudio({
     return () => clearInterval(interval);
   }, [isPolling, story.id, regeneratingSpreads, dbSpreads]);
 
-  useEffect(() => {
-    if (!isPaid) return;
-    if (completedCount === 0 && !isGenerating) {
-      setIsGenerating(true);
-      setIsPolling(true);
-      fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" }).catch(() => {});
-    } else if (completedCount > 0 && completedCount < totalCount) {
-      setIsGenerating(true);
-      setIsPolling(true);
-    }
-  }, [isPaid]); // Only run on mount
+
 
   /* ── Navigation ── */
   function clamp(i: number) {
@@ -466,6 +456,19 @@ export default function MobileStudio({
   }
 
   const isPaid = story.paymentStatus === "paid";
+
+
+  useEffect(() => {
+    if (!isPaid) return;
+    if (completedCount === 0 && !isGenerating) {
+      setIsGenerating(true);
+      setIsPolling(true);
+      fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" }).catch(() => {});
+    } else if (completedCount > 0 && completedCount < totalCount) {
+      setIsGenerating(true);
+      setIsPolling(true);
+    }
+  }, [isPaid]); // Only run on mount
 
   if (!isPaid) {
     const previewSpread = pages.find((p) => p.imageUrl);
@@ -599,7 +602,7 @@ export default function MobileStudio({
           </p>
         </div>
       )}
-      
+
       {/* ── Swipe viewer ── */}
       <div ref={containerRef} className="w-full overflow-hidden mt-4">
         <motion.div
