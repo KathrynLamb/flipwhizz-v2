@@ -133,6 +133,8 @@ export function MobileCharacterCard({
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [showOutfitChoice, setShowOutfitChoice] = useState(false);
+  const [pendingLockAfterGenerate, setPendingLockAfterGenerate] = useState(false);
 
   // Smart lock flow
   const [lockPhase, setLockPhase] = useState<LockPhase>("idle");
@@ -212,28 +214,60 @@ export function MobileCharacterCard({
   }
 
   /* ── Generate portrait (standalone button) ── */
-
-  async function generatePortrait() {
+  async function generatePortrait(
+    outfitMode?: "story" | "reference",
+    shouldLockAfter = false
+  ) {
     if (locked) return;
+  
+    const hasReferenceLikeImage = !!char.referenceImageUrl;
+  
+    if (hasReferenceLikeImage && !char.portraitImageUrl && !outfitMode) {
+      setPendingLockAfterGenerate(shouldLockAfter);
+      setShowOutfitChoice(true);
+      return;
+    }
+  
+    setShowOutfitChoice(false);
     setUploading(true);
+  
     try {
       const res = await fetch("/api/characters/use-ai-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ characterId: char.id }),
+        body: JSON.stringify({
+          characterId: char.id,
+          outfitMode,
+        }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (isMounted.current && data.url) {
-          setImageUrl(data.url);
-          setChar(prev => ({ ...prev, portraitImageUrl: data.url }));
-        }
-        onUpdate?.();
+  
+      if (!res.ok) throw new Error();
+  
+      const data = await res.json();
+  
+      if (isMounted.current && data.url) {
+        setImageUrl(data.url);
+        setChar((prev) => ({ ...prev, portraitImageUrl: data.url }));
+      }
+  
+      onUpdate?.();
+  
+      if (shouldLockAfter) {
+        await doLock();
+      }
+    } catch {
+      if (isMounted.current) {
+        setLockError("Portrait generation failed");
+        setLockPhase("idle");
       }
     } finally {
-      if (isMounted.current) setUploading(false);
+      if (isMounted.current) {
+        setUploading(false);
+        setPendingLockAfterGenerate(false);
+      }
     }
   }
+  
 
   /* ── Smart lock flow ── */
 
@@ -327,29 +361,7 @@ export function MobileCharacterCard({
   }
 
   async function doGenerateAndLock() {
-    try {
-      const res = await fetch("/api/characters/use-ai-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ characterId: char.id }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (isMounted.current && data.url) {
-          setImageUrl(data.url);
-          setChar(prev => ({ ...prev, portraitImageUrl: data.url }));
-        }
-        onUpdate?.();
-      }
-    } catch (err) {
-      if (isMounted.current) {
-        setLockError("Portrait generation failed");
-        setLockPhase("idle");
-      }
-      return;
-    }
-
-    await doLock();
+    await generatePortrait(undefined, true);
   }
 
   async function doLock() {
@@ -526,32 +538,90 @@ export function MobileCharacterCard({
           {/* Upload buttons */}
 {/* Upload/change buttons — always visible at bottom of image */}
 {!uploading && !isProcessing && !showConflictUI && !isDragging && (
-  <div className="absolute bottom-14 left-3 flex gap-1.5 z-10">
-    <button onClick={(e) => {
-      e.stopPropagation();
-      if (locked) {
-        // Unlock first, then upload
-        fetch("/api/characters/unlock", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ characterId: char.id }),
-        }).then(() => { setLocked(false); handleUpload(); });
-      } else {
-        handleUpload();
-      }
-    }}
-      className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-semibold active:scale-95 transition-transform"
-      style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)", color: "#2D2235" }}>
-      <Camera className="w-3 h-3" /> {imageUrl ? "Change" : "Photo"}
-    </button>
-    {!locked && (
-      <button onClick={(e) => { e.stopPropagation(); generatePortrait(); }}
-        className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-bold text-white active:scale-95 transition-transform"
-        style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", boxShadow: "0 2px 8px rgba(176,92,230,0.3)" }}>
-        <Sparkles className="w-3 h-3" /> AI Portrait
+  <>
+    <div className="absolute bottom-14 left-3 flex gap-1.5 z-10">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          if (locked) {
+            fetch("/api/characters/unlock", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ characterId: char.id }),
+            }).then(() => {
+              setLocked(false);
+              handleUpload();
+            });
+          } else {
+            handleUpload();
+          }
+        }}
+        className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-semibold active:scale-95 transition-transform"
+        style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)", color: "#2D2235" }}
+      >
+        <Camera className="w-3 h-3" /> {imageUrl ? "Change" : "Photo"}
       </button>
-    )}
-  </div>
+
+      {!locked && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            generatePortrait();
+          }}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-bold text-white active:scale-95 transition-transform"
+          style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", boxShadow: "0 2px 8px rgba(176,92,230,0.3)" }}
+        >
+          <Sparkles className="w-3 h-3" /> AI Portrait
+        </button>
+      )}
+    </div>
+
+    <AnimatePresence>
+      {showOutfitChoice && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="absolute inset-0 z-30 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowOutfitChoice(false);
+          }}
+        >
+          <div
+            className="w-full max-w-[260px] p-4 space-y-2.5 bg-white rounded-2xl shadow-2xl"
+            style={{ fontFamily: FONT }}
+          >
+            <p className="text-xs font-bold text-center" style={{ color: "#2D2235" }}>
+              What should they wear?
+            </p>
+
+            <button
+              onClick={() => generatePortrait("story", pendingLockAfterGenerate)}
+              className="w-full py-2 rounded-xl text-[11px] font-bold text-white"
+              style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)" }}
+            >
+              <Shirt className="w-3 h-3 inline mr-1" style={{ verticalAlign: "-1px" }} />
+              Story outfit
+            </button>
+
+            <button
+              onClick={() => generatePortrait("reference", pendingLockAfterGenerate)}
+              className="w-full py-2 rounded-xl text-[11px] font-semibold"
+              style={{
+                border: "1px solid rgba(180,150,210,0.2)",
+                color: "#6B5C80",
+                background: "white",
+              }}
+            >
+              <Camera className="w-3 h-3 inline mr-1" style={{ verticalAlign: "-1px" }} />
+              Keep photo outfit
+            </button>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  </>
 )}
 
           {/* Uploading overlay */}
