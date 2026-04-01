@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, XCircle, ArrowLeft, User, MapPin, Palette, Scissors, BookOpen } from "lucide-react";
-import { getNextStepHref, type StepKey } from "@/lib/storySteps";
+import type { StepKey } from "@/lib/storySteps";
 
 /* ─────────────── TYPES ─────────────── */
 
@@ -29,20 +29,19 @@ type ProgressData = {
 
 type ExtractedCharacter = { id: string; name: string; portraitImageUrl: string | null; species: string | null };
 type ExtractedLocation = { id: string; name: string; portraitImageUrl: string | null };
-type ExtractedStyle = { artStyle: string | null; colorPalette: any };
 
 /* ─────────────── FLAVOUR MESSAGES ─────────────── */
 
 const FLAVOUR: Record<Phase, string[]> = {
   checking: ["Opening the book…"],
   extracting_characters: ["Meeting the characters…", "Who's in this story?", "Getting to know everyone…"],
-  extracting_locations: ["Exploring the world…", "Mapping the adventure…", "Finding every corner…"],
-  extracting_style: ["Choosing the palette…", "Setting the mood…", "Picking the perfect look…"],
-  building_spreads: ["Laying out the pages…", "Shaping each scene…"],
-  assigning_characters: ["Placing everyone on stage…", "Who goes where?"],
-  assigning_locations: ["Painting the backdrops…", "Setting every scene…"],
-  extracting_outfits: ["Choosing outfits…", "Making sure everyone looks great…"],
-  assigning_outfits: ["Final touches…", "Dressing for each scene…", "Nearly there…"],
+  extracting_locations: ["Nearly there…", "Just a moment more…"],
+  extracting_style: ["Nearly there…"],
+  building_spreads: ["Nearly there…"],
+  assigning_characters: ["Nearly there…"],
+  assigning_locations: ["Nearly there…"],
+  extracting_outfits: ["Nearly there…"],
+  assigning_outfits: ["Nearly there…"],
   ready: ["Your story world is ready!"],
 };
 
@@ -82,14 +81,6 @@ function parseProgress(incoming: any): ProgressData {
   return built;
 }
 
-const STEPS = [
-  { key: "characters", label: "Characters", icon: User, flag: "charactersExtracted" as const },
-  { key: "locations", label: "Locations", icon: MapPin, flag: "locationsExtracted" as const },
-  { key: "style", label: "Art Style", icon: Palette, flag: "styleExtracted" as const },
-  { key: "spreads", label: "Page Layout", icon: BookOpen, flag: "spreadsBuilt" as const },
-  { key: "outfits", label: "Outfits", icon: Scissors, flag: "outfitsExtracted" as const },
-] as const;
-
 /* ─────────────── FONT ─────────────── */
 
 function FontLoader() {
@@ -123,14 +114,9 @@ export default function ExtractWorldPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [flavourIndex, setFlavourIndex] = useState(0);
-  const [startTime] = useState(Date.now());
-  const [elapsed, setElapsed] = useState(0);
 
-  // Extracted data (fetched as steps complete)
+  // Extracted data (fetched when characters complete)
   const [characters, setCharacters] = useState<ExtractedCharacter[]>([]);
-  const [locations, setLocations] = useState<ExtractedLocation[]>([]);
-  const [styleInfo, setStyleInfo] = useState<ExtractedStyle | null>(null);
-  const [storyTitle, setStoryTitle] = useState<string>("");
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const errorCount = useRef(0);
@@ -138,9 +124,7 @@ export default function ExtractWorldPage() {
   const hasBootstrapped = useRef(false);
   const workflowTriggered = useRef(false);
   const pollingStarted = useRef(false);
-  const fetchedCharacters = useRef(false);
-  const fetchedLocations = useRef(false);
-  const fetchedStyle = useRef(false);
+  const hasRedirected = useRef(false);
 
   /* ── Flavour rotation ── */
   useEffect(() => {
@@ -153,36 +137,6 @@ export default function ExtractWorldPage() {
     return msgs[flavourIndex % msgs.length];
   }, [phase, flavourIndex]);
 
-  /* ── Elapsed timer ── */
-  useEffect(() => {
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
-    return () => clearInterval(t);
-  }, [startTime]);
-
-  /* ── Fetch extracted data when steps complete ── */
-  useEffect(() => {
-    if (!storyId) return;
-
-    if (progress.charactersExtracted && !fetchedCharacters.current) {
-      fetchedCharacters.current = true;
-      fetch(`/api/stories/${storyId}/world`).then(r => r.json()).then(data => {
-        if (data.characters) setCharacters(data.characters.map((c: any) => ({
-          id: c.id, name: c.name, portraitImageUrl: c.portraitImageUrl || c.imageUrl, species: c.species,
-        })));
-        if (data.locations) setLocations(data.locations.map((l: any) => ({
-          id: l.id, name: l.name, portraitImageUrl: l.portraitImageUrl || l.imageUrl,
-        })));
-      }).catch(() => {});
-    }
-
-    if (progress.styleExtracted && !fetchedStyle.current) {
-      fetchedStyle.current = true;
-      fetch(`/api/stories/${storyId}`).then(r => r.json()).then(data => {
-        setStoryTitle(data.story?.title || "");
-      }).catch(() => {});
-    }
-  }, [progress, storyId]);
-
   /* ── Apply progress ── */
   const applyProgressRef = useRef<(p: ProgressData) => void>();
   applyProgressRef.current = (newProgress: ProgressData) => {
@@ -193,7 +147,9 @@ export default function ExtractWorldPage() {
     }
     setPhase(currentPhase);
     setProgress(newProgress);
-    if (newProgress.worldComplete && pollRef.current) {
+
+    // Stop polling once characters are extracted — we're about to redirect
+    if (newProgress.charactersExtracted && pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
@@ -245,7 +201,19 @@ export default function ExtractWorldPage() {
         } catch {}
 
         if (cancelled) return;
-        if (p && !needsWork(p)) { setProgress(p); setPhase("ready"); return; }
+
+        // If characters already extracted, skip straight to redirect
+        if (p && p.charactersExtracted) {
+          setProgress(p);
+          setPhase(getCurrentPhase(p));
+          // Redirect immediately
+          if (!hasRedirected.current) {
+            hasRedirected.current = true;
+            router.push(`/stories/${storyId}/characters`);
+          }
+          return;
+        }
+
         if (p) { setProgress(p); const cp = getCurrentPhase(p); setPhase(cp); lastPhaseRef.current = cp; }
 
         if (!workflowTriggered.current) {
@@ -265,37 +233,39 @@ export default function ExtractWorldPage() {
       cancelled = true;
       hasBootstrapped.current = false; workflowTriggered.current = false;
       pollingStarted.current = false; lastPhaseRef.current = "checking";
-      fetchedCharacters.current = false; fetchedLocations.current = false; fetchedStyle.current = false;
+      hasRedirected.current = false;
       errorCount.current = 0; clearTimeout(safety);
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     };
-  }, [storyId, doStartPolling]);
+  }, [storyId, doStartPolling, router]);
 
-  /* ── Auto-redirect ── */
+  /* ── Redirect as soon as characters are extracted ── */
   useEffect(() => {
-    if (phase !== "ready" || !storyId) return;
-    let cancelled = false;
-    const redirect = async () => {
-      try {
-        const res = await fetch(`/api/stories/${storyId}`, { cache: "no-store" });
-        const data = await res.json();
-        const story = data.story ?? data;
-        if (!cancelled) { const href = getNextStepHref(storyId, story); setTimeout(() => { if (!cancelled) router.push(href); }, 2200); }
-      } catch {
-        if (!cancelled) setTimeout(() => { if (!cancelled) router.push(`/stories/${storyId}/illustration-style`); }, 2200);
-      }
-    };
-    redirect();
-    return () => { cancelled = true; };
-  }, [phase, storyId, router]);
+    if (!storyId || hasRedirected.current) return;
+    if (!progress.charactersExtracted) return;
 
-  /* ── Overall progress ── */
-  const overallProgress = useMemo(() => {
-    const flags = [progress.charactersExtracted, progress.locationsExtracted, progress.styleExtracted, progress.spreadsBuilt, progress.charactersAssigned, progress.locationsAssigned, progress.outfitsExtracted, progress.outfitsAssigned];
-    return (flags.filter(Boolean).length / flags.length) * 100;
-  }, [progress]);
+    hasRedirected.current = true;
 
-  const isReady = phase === "ready";
+    // Brief delay so the user sees "Characters — Done" before redirect
+    const timer = setTimeout(() => {
+      router.push(`/stories/${storyId}/characters`);
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [progress.charactersExtracted, storyId, router]);
+
+  /* ── Fetch character names when extracted ── */
+  useEffect(() => {
+    if (!storyId || !progress.charactersExtracted) return;
+    fetch(`/api/stories/${storyId}/world`).then(r => r.json()).then(data => {
+      if (data.characters) setCharacters(data.characters.map((c: any) => ({
+        id: c.id, name: c.name, portraitImageUrl: c.portraitImageUrl || c.imageUrl, species: c.species,
+      })));
+    }).catch(() => {});
+  }, [progress.charactersExtracted, storyId]);
+
+  /* ── Overall progress (only up to characters for this page) ── */
+  const showProgress = phase !== "checking" && !progress.charactersExtracted;
 
   /* ─────────────── ERROR ─────────────── */
 
@@ -321,10 +291,12 @@ export default function ExtractWorldPage() {
 
   /* ─────────────── RENDER ─────────────── */
 
+  const charactersReady = progress.charactersExtracted;
+
   return (
     <>
       <FontLoader />
-      <div className="min-h-screen relative" style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}>
+      <div className="min-h-screen relative flex flex-col" style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}>
         {/* Background */}
         <div className="fixed inset-0 -z-10" style={{ background: `radial-gradient(ellipse 80% 60% at 20% 10%, rgba(232,190,255,0.3) 0%, transparent 60%), radial-gradient(ellipse 70% 50% at 85% 80%, rgba(255,182,210,0.25) 0%, transparent 55%), radial-gradient(ellipse 50% 40% at 50% 50%, rgba(200,210,255,0.15) 0%, transparent 50%), #F9F5FF` }}>
           <div className="absolute inset-0 opacity-50" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c4b5d4' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }} />
@@ -332,24 +304,22 @@ export default function ExtractWorldPage() {
 
         {/* Header */}
         <header className="relative z-10 px-4 py-4">
-          <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <div className="max-w-lg mx-auto flex items-center justify-between">
             <button onClick={() => router.back()} className="flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition-all active:scale-[0.97]" style={{ background: "white", color: "#6B5C80", border: "1px solid rgba(180,150,210,0.15)", boxShadow: "0 1px 4px rgba(100,60,140,0.06)" }}>
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
           </div>
         </header>
 
-        {/* Main */}
-        <main className="relative z-10 flex flex-col items-center px-4 pb-20">
+        {/* Main — centered */}
+        <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 pb-20">
           <div className="w-full max-w-lg">
 
-            {/* ── Title area ── */}
+            {/* Title */}
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
-              <AnimatePresence mode="wait">
-                <motion.h1 key={isReady ? "done" : "building"} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="text-2xl sm:text-3xl font-extrabold" style={{ color: "#2D2235", letterSpacing: "-0.03em" }}>
-                  {isReady ? "Your story world is ready!" : "Building your story world"}
-                </motion.h1>
-              </AnimatePresence>
+              <h1 className="text-2xl sm:text-3xl font-extrabold" style={{ color: "#2D2235", letterSpacing: "-0.03em" }}>
+                Building your story world
+              </h1>
               <div className="mt-2 h-6">
                 <AnimatePresence mode="wait">
                   <motion.p key={flavourText} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="text-sm" style={{ color: "#7B6E90" }}>
@@ -359,141 +329,99 @@ export default function ExtractWorldPage() {
               </div>
             </motion.div>
 
-            {/* ── Progress bar ── */}
-            {!isReady && phase !== "checking" && (
+            {/* Progress bar */}
+            {showProgress && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-8">
                 <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(180,150,210,0.12)" }}>
-                  <motion.div className="h-full rounded-full" style={{ background: "linear-gradient(90deg, #B05CE6, #D45DA0)" }} initial={{ width: "0%" }} animate={{ width: `${overallProgress}%` }} transition={{ duration: 0.6, ease: "easeOut" }} />
+                  <motion.div
+                    className="h-full rounded-full"
+                    style={{ background: "linear-gradient(90deg, #B05CE6, #D45DA0)" }}
+                    initial={{ width: "5%" }}
+                    animate={{ width: charactersReady ? "100%" : "60%" }}
+                    transition={{ duration: 0.6, ease: "easeOut" }}
+                  />
                 </div>
               </motion.div>
             )}
 
-            {/* ── Step cards ── */}
-            <div className="space-y-3">
-              {STEPS.map((step, i) => {
-                const isDone = progress[step.flag];
-                const isActive = !isDone && (i === 0 || progress[STEPS[i - 1].flag]);
-                const Icon = step.icon;
+            {/* Characters step card */}
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-[18px] overflow-hidden transition-all"
+              style={{
+                background: "white",
+                border: charactersReady ? "1px solid rgba(67,184,156,0.2)" : "1px solid rgba(176,92,230,0.2)",
+                boxShadow: charactersReady ? "0 2px 12px rgba(67,184,156,0.08)" : "0 2px 12px rgba(176,92,230,0.08)",
+              }}
+            >
+              <div className="flex items-center gap-3 px-4 py-3.5">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{
+                  background: charactersReady ? "rgba(67,184,156,0.1)" : "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                }}>
+                  {charactersReady ? (
+                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300 }}>
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="#2FA482" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </motion.div>
+                  ) : (
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  )}
+                </div>
 
-                return (
-                  <motion.div
-                    key={step.key}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.08 }}
-                    className="rounded-[18px] overflow-hidden transition-all"
-                    style={{
-                      background: "white",
-                      border: isDone ? "1px solid rgba(67,184,156,0.2)" : isActive ? "1px solid rgba(176,92,230,0.2)" : "1px solid rgba(180,150,210,0.1)",
-                      boxShadow: isActive ? "0 2px 12px rgba(176,92,230,0.08)" : "0 1px 4px rgba(100,60,140,0.04)",
-                      opacity: !isDone && !isActive ? 0.5 : 1,
-                    }}
-                  >
-                    <div className="flex items-center gap-3 px-4 py-3.5">
-                      {/* Status icon */}
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{
-                        background: isDone ? "rgba(67,184,156,0.1)" : isActive ? "linear-gradient(135deg, #B05CE6, #D45DA0)" : "rgba(180,150,210,0.08)",
-                      }}>
-                        {isDone ? (
-                          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300 }}>
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="#2FA482" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                          </motion.div>
-                        ) : isActive ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                <span className="text-sm font-bold flex-1" style={{ color: "#2D2235" }}>
+                  Characters
+                </span>
+
+                {charactersReady && (
+                  <motion.span initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(67,184,156,0.1)", color: "#2FA482" }}>
+                    Done
+                  </motion.span>
+                )}
+              </div>
+
+              {/* Show extracted characters */}
+              {charactersReady && characters.length > 0 && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} transition={{ duration: 0.3 }} className="overflow-hidden">
+                  <div className="px-4 pb-3 flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+                    {characters.map((c, ci) => (
+                      <motion.div key={c.id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: ci * 0.1 }} className="flex flex-col items-center gap-1 flex-shrink-0">
+                        {c.portraitImageUrl ? (
+                          <img src={c.portraitImageUrl} alt={c.name} className="w-12 h-12 rounded-xl object-cover" style={{ border: "2px solid rgba(180,150,210,0.15)" }} />
                         ) : (
-                          <Icon className="w-4 h-4" style={{ color: "#C4B5D4" }} />
+                          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "rgba(199,125,255,0.1)" }}>
+                            <User className="w-5 h-5" style={{ color: "#C4A8E0" }} />
+                          </div>
                         )}
-                      </div>
-
-                      {/* Label */}
-                      <span className="text-sm font-bold flex-1" style={{ color: isDone ? "#2D2235" : isActive ? "#2D2235" : "#A897BD" }}>
-                        {step.label}
-                      </span>
-
-                      {/* Done badge */}
-                      {isDone && (
-                        <motion.span initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(67,184,156,0.1)", color: "#2FA482" }}>
-                          Done
-                        </motion.span>
-                      )}
-                    </div>
-
-                    {/* ── Revealed content: characters ── */}
-                    {step.key === "characters" && isDone && characters.length > 0 && (
-                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} transition={{ duration: 0.3 }} className="overflow-hidden">
-                        <div className="px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-hide">
-                          {characters.map((c, ci) => (
-                            <motion.div key={c.id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: ci * 0.1 }} className="flex flex-col items-center gap-1 flex-shrink-0">
-                              {c.portraitImageUrl ? (
-                                <img src={c.portraitImageUrl} alt={c.name} className="w-12 h-12 rounded-xl object-cover" style={{ border: "2px solid rgba(180,150,210,0.15)" }} />
-                              ) : (
-                                <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "rgba(199,125,255,0.1)" }}>
-                                  <User className="w-5 h-5" style={{ color: "#C4A8E0" }} />
-                                </div>
-                              )}
-                              <span className="text-[10px] font-semibold text-center max-w-[60px] truncate" style={{ color: "#5A4D6B" }}>{c.name}</span>
-                            </motion.div>
-                          ))}
-                        </div>
+                        <span className="text-[10px] font-semibold text-center max-w-[60px] truncate" style={{ color: "#5A4D6B" }}>{c.name}</span>
                       </motion.div>
-                    )}
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </motion.div>
 
-                    {/* ── Revealed content: locations ── */}
-                    {step.key === "locations" && isDone && locations.length > 0 && (
-                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} transition={{ duration: 0.3 }} className="overflow-hidden">
-                        <div className="px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-hide">
-                          {locations.map((l, li) => (
-                            <motion.div key={l.id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: li * 0.1 }} className="flex flex-col items-center gap-1 flex-shrink-0">
-                              {l.portraitImageUrl ? (
-                                <img src={l.portraitImageUrl} alt={l.name} className="w-12 h-12 rounded-xl object-cover" style={{ border: "2px solid rgba(180,150,210,0.15)" }} />
-                              ) : (
-                                <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "rgba(67,184,156,0.08)" }}>
-                                  <MapPin className="w-5 h-5" style={{ color: "#43B89C" }} />
-                                </div>
-                              )}
-                              <span className="text-[10px] font-semibold text-center max-w-[60px] truncate" style={{ color: "#5A4D6B" }}>{l.name}</span>
-                            </motion.div>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </motion.div>
-                );
-              })}
-            </div>
-
-            {/* ── Ready state ── */}
-            {isReady && (
-              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="mt-6 text-center">
+            {/* "Rest continues in background" note after characters done */}
+            {charactersReady && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="mt-6 text-center">
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold" style={{ background: "rgba(67,184,156,0.1)", color: "#2FA482" }}>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Taking you to the next step…
+                  Taking you to set up your characters…
                 </div>
+                <p className="mt-2 text-[11px]" style={{ color: "#A897BD" }}>
+                  Locations, style, and page layout are being prepared in the background.
+                </p>
               </motion.div>
             )}
 
-            {/* ── Checking state ── */}
+            {/* Checking state */}
             {phase === "checking" && (
               <div className="mt-8 flex items-center justify-center gap-2 text-sm" style={{ color: "#A897BD" }}>
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <span>Checking your story…</span>
               </div>
             )}
-
-            {/* ── Slow warning ── */}
-            {elapsed > 240 && !isReady && phase !== "checking" && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-6 rounded-[18px] px-5 py-4" style={{ background: "rgba(255,179,71,0.08)", border: "1px solid rgba(255,179,71,0.2)" }}>
-                <p className="text-sm font-bold" style={{ color: "#92400E" }}>Taking a little longer than usual</p>
-                <p className="mt-1 text-sm" style={{ color: "#B45309" }}>Complex stories can take a few extra minutes. Hang tight!</p>
-              </motion.div>
-            )}
           </div>
         </main>
-
-        <style jsx global>{`
-          .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-          .scrollbar-hide::-webkit-scrollbar { display: none; }
-        `}</style>
       </div>
     </>
   );
