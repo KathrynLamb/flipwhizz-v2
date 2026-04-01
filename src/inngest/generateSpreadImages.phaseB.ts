@@ -443,18 +443,7 @@ export const generateSingleSpread = inngest.createFunction(
       const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } =
         resolveStyleGuide(style);
 
-         // Style reference fallback: use first generated spread if no sample image
-         let styleRefUrl: string | null = style?.sampleIllustrationUrl ?? null;
-         if (!styleRefUrl || isDataUrl(styleRefUrl)) {
-           const firstSpread = await db
-             .select({ imageUrl: storyPages.imageUrl })
-             .from(storyPages)
-             .where(eq(storyPages.storyId, storyId))
-             .orderBy(asc(storyPages.pageNumber))
-             .limit(10)
-             .then((pp) => pp.find((p) => p.imageUrl && !isDataUrl(p.imageUrl)));
-           styleRefUrl = firstSpread?.imageUrl ?? null;
-         }
+
 
       console.log("🎨 Style guide resolved:", {
         hasPromptBase: !!style?.userNotes,
