@@ -462,7 +462,6 @@ AVOID: ${geminiAvoidBlock}${feedback ? `\nFEEDBACK: ${feedback}` : ""}`.trim() }
         config: {
           responseModalities: ["IMAGE"],
           imageConfig: { aspectRatio: IMAGE_ASPECT_RATIO, imageSize: IMAGE_SIZE },
-          thinkingConfig: { thinkingLevel: "High", includeThoughts: false },
           safetySettings: [
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
           ],
