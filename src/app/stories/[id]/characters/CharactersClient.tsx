@@ -10,11 +10,12 @@ import {
   ChevronRight,
   Loader2,
   Zap,
-} from 'lucide-react';
-import { MobileCharacterStack } from '@/app/stories/[id]/characters/components/MobileCharacterCard';
+ } from 'lucide-react';
+// import { MobileCharacterStack } from '@/app/stories/[id]/characters/components/MobileCharacterCard';
 import type { StepKey } from '@/lib/storySteps';
 import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
 import CharactersCard from '@/app/stories/[id]/characters/components/CharacterCard';
+import MobileCharacterStack from '@/app/stories/[id]/characters/components/MobileCharacterStack';
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
@@ -34,10 +35,13 @@ export type Character = {
   appearance: string | null;
   personalityTraits: string | null;
   portraitImageUrl: string | null;
+  fullBodyImageUrl: string | null;   // ADD
   referenceImageUrl: string | null;
   locked: boolean;
   role?: string | null;
   age?: string | null;
+  species?: string | null;           // ADD
+  breed?: string | null;             // ADD
   outfits?: CharacterOutfit[];
   visualDetails?: Record<string, any> | null;
 };
@@ -286,15 +290,10 @@ useEffect(() => {
           <div className="md:hidden">
             {charactersLocal.length > 0 ? (
               <MobileCharacterStack
-                storyId={storyId}
-                characters={charactersLocal}
-                onDelete={handleDelete}
-                onLockToggle={(id, locked) => {
-                  setCharactersLocal((prev) =>
-                    prev.map((c) => (c.id === id ? { ...c, locked } : c))
-                  );
-                }}
-              />
+              storyId={storyId}
+              characters={charactersLocal}
+              onUpdate={() => router.refresh()}
+            />
             ) : (
               <EmptyState storyId={storyId} router={router} />
             )}
