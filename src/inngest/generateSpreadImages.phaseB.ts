@@ -1028,10 +1028,6 @@ Create a clean, professional illustration with seamlessly integrated text.
             aspectRatio: IMAGE_ASPECT_RATIO,
             imageSize: IMAGE_SIZE,
           },
-          thinkingConfig: {
-            thinkingLevel: "High",
-            includeThoughts: false,
-          },
           safetySettings: [
             {
               category: HarmCategory.HARM_CATEGORY_HARASSMENT,
