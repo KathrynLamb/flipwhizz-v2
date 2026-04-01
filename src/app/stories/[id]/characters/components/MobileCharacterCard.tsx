@@ -389,32 +389,48 @@ export function MobileCharacterCard({
   }
 
   /* ── Swipe handling ── */
-
   async function handleDragEnd(_: any, info: PanInfo) {
+    console.log("🎴 Drag end:", { offsetX: info.offset.x, velocityX: info.velocity.x });
+    
     setIsDragging(false);
-    const THRESHOLD = 100;
-    const VELOCITY = 600;
-
+    const THRESHOLD = 70;
+    const VELOCITY = 400;
+  
     const swipedRight = info.offset.x > THRESHOLD || info.velocity.x > VELOCITY;
     const swipedLeft = info.offset.x < -THRESHOLD || info.velocity.x < -VELOCITY;
-
+  
     if (swipedRight) {
-      // Snap back first, then start smart lock
-      await controls.start({ x: 0, rotate: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
-      startSmartLock();
+      const hasPortrait = !!char.portraitImageUrl;
+      
+      if (hasPortrait) {
+        // Case C: already has portrait — fly away immediately
+        await controls.start({
+          x: 650, rotate: 20, opacity: 0,
+          transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] },
+        });
+        // Lock in background, don't wait
+        fetch("/api/characters/lock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ characterId: char.id }),
+        }).then(() => { setLocked(true); });
+        onSwiped?.(char.id);
+      } else {
+        // Cases A & B: snap back, show processing overlay
+        await controls.start({ x: 0, rotate: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
+        startSmartLock();
+      }
       return;
     }
-
+  
     if (swipedLeft) {
-      // Open edit
       await controls.start({ x: -60, rotate: -4, transition: { duration: 0.12 } });
       await controls.start({ x: 0, rotate: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
       setExpanded(true);
       setEditing(true);
       return;
     }
-
-    // Snap back
+  
     await controls.start({ x: 0, rotate: 0, opacity: 1, transition: { type: "spring", stiffness: 400, damping: 30 } });
   }
 
@@ -461,7 +477,7 @@ export function MobileCharacterCard({
       dragMomentum={false}
       onDragStart={() => setIsDragging(true)}
       onDragEnd={handleDragEnd}
-      style={{ x, rotate, fontFamily: FONT }}
+      style={{ x, rotate, fontFamily: FONT,  touchAction: "none" }}
       className="w-full h-full select-none"
     >
       <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white flex flex-col">
