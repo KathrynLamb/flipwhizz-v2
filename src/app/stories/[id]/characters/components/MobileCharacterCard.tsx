@@ -391,7 +391,7 @@ export function MobileCharacterCard({
   /* ── Swipe handling ── */
   async function handleDragEnd(_: any, info: PanInfo) {
     console.log("🎴 Drag end:", { offsetX: info.offset.x, velocityX: info.velocity.x });
-    
+
     setIsDragging(false);
     const THRESHOLD = 70;
     const VELOCITY = 400;
@@ -470,8 +470,7 @@ export function MobileCharacterCard({
     <motion.div
       animate={controls}
       drag={lockPhase === "idle" && !editing ? "x" : false}
-      dragControls={dragControls}
-      dragListener={false}
+      dragConstraints={{ left: 0, right: 0 }}
       dragDirectionLock
       dragElastic={0.12}
       dragMomentum={false}
@@ -483,7 +482,8 @@ export function MobileCharacterCard({
       <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white flex flex-col">
 
         {/* ━━━ IMAGE AREA ━━━ */}
-        <div className="relative w-full" style={{ flex: "0 0 48%" }}>
+        <div className="relative w-full overflow-hidden"
+              style={{ maxHeight: "45%", minHeight: "200px" }}>
           {imageUrl ? (
             <img src={imageUrl} alt={char.name} className="w-full h-full object-cover" draggable={false} />
           ) : (
@@ -524,20 +524,35 @@ export function MobileCharacterCard({
           )}
 
           {/* Upload buttons */}
-          {!locked && !uploading && !isDragging && !isProcessing && !showConflictUI && (
-            <div className="absolute bottom-14 left-3 flex gap-1.5 z-10">
-              <button onClick={(e) => { e.stopPropagation(); handleUpload(); }}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-semibold active:scale-95 transition-transform"
-                style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)", color: "#2D2235" }}>
-                <Camera className="w-3 h-3" /> Photo
-              </button>
-              <button onClick={(e) => { e.stopPropagation(); generatePortrait(); }}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-bold text-white active:scale-95 transition-transform"
-                style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", boxShadow: "0 2px 8px rgba(176,92,230,0.3)" }}>
-                <Sparkles className="w-3 h-3" /> AI Portrait
-              </button>
-            </div>
-          )}
+{/* Upload/change buttons — always visible at bottom of image */}
+{!uploading && !isProcessing && !showConflictUI && !isDragging && (
+  <div className="absolute bottom-14 left-3 flex gap-1.5 z-10">
+    <button onClick={(e) => {
+      e.stopPropagation();
+      if (locked) {
+        // Unlock first, then upload
+        fetch("/api/characters/unlock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ characterId: char.id }),
+        }).then(() => { setLocked(false); handleUpload(); });
+      } else {
+        handleUpload();
+      }
+    }}
+      className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-semibold active:scale-95 transition-transform"
+      style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)", color: "#2D2235" }}>
+      <Camera className="w-3 h-3" /> {imageUrl ? "Change" : "Photo"}
+    </button>
+    {!locked && (
+      <button onClick={(e) => { e.stopPropagation(); generatePortrait(); }}
+        className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-bold text-white active:scale-95 transition-transform"
+        style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", boxShadow: "0 2px 8px rgba(176,92,230,0.3)" }}>
+        <Sparkles className="w-3 h-3" /> AI Portrait
+      </button>
+    )}
+  </div>
+)}
 
           {/* Uploading overlay */}
           {uploading && !isProcessing && (

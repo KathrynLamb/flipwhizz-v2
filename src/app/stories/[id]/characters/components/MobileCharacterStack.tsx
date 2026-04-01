@@ -217,7 +217,7 @@ export default function MobileCharacterStack({
   if (localChars.length === 0) return null;
 
   return (
-    <div className="relative w-full mx-auto max-w-md" style={{ height: "calc(100vh - 240px)", minHeight: "520px" }}>
+    <div className="relative w-full mx-auto max-w-md" style={{ height: "calc(100vh - 200px)", minHeight: "480px" }}>
       <AnimatePresence initial={false}>
         {isAtEnd && (
           <motion.div
