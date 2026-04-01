@@ -140,18 +140,7 @@ type CharacterRef = {
   species: string | null; breed: string | null; visualDetails: any;
 };
 
-function buildCharacterImageList(character: CharacterRef) {
-  if (character.portraitUrl && !isDataUrl(character.portraitUrl)) {
-    return [{ label: "portrait", url: character.portraitUrl }];
-  }
-  if (character.fullBodyUrl && !isDataUrl(character.fullBodyUrl)) {
-    return [{ label: "full-body", url: character.fullBodyUrl }];
-  }
-  if (character.referenceUrl && !isDataUrl(character.referenceUrl)) {
-    return [{ label: "reference photo", url: character.referenceUrl }];
-  }
-  return [];
-}
+
 
 /* -------------------------------------------------------------------------- */
 /*                          STYLE GUIDE EXTRACTION                            */
@@ -330,30 +319,29 @@ export const generateSingleSpread = inngest.createFunction(
       }
 
       // ── RESOLVE OUTFITS ──
-      const outfitByCharacterId = new Map<string, OutfitRef>();
+      // const outfitByCharacterId = new Map<string, OutfitRef>();
 
-      if (hasOverrides && Object.keys(referenceOverrides!.outfitOverrides).length > 0) {
-        const entries = Object.entries(referenceOverrides!.outfitOverrides);
-        const lookups = await db.select({ characterId: characterStoryOutfits.characterId, outfitKey: characterStoryOutfits.outfitKey, outfitDescription: characterStoryOutfits.outfitDescription })
-          .from(characterStoryOutfits).where(and(eq(characterStoryOutfits.storyId, storyId), inArray(characterStoryOutfits.characterId, entries.map(([cid]) => cid))));
-        for (const [characterId, outfitKey] of entries) {
-          const match = lookups.find((o) => o.characterId === characterId && o.outfitKey === outfitKey);
-          if (match) outfitByCharacterId.set(characterId, { characterId, outfitKey: match.outfitKey, outfitDescription: match.outfitDescription });
-        }
-      } else {
-        const assignments = spread.spreadId ? await db.query.spreadCharacterOutfits.findMany({ where: eq(spreadCharacterOutfits.spreadId, spread.spreadId) }) : [];
-        const cids = [...new Set(assignments.map((o) => o.characterId))];
-        const canonical = cids.length > 0 ? await db.select({ characterId: characterStoryOutfits.characterId, outfitKey: characterStoryOutfits.outfitKey, outfitDescription: characterStoryOutfits.outfitDescription })
-          .from(characterStoryOutfits).where(and(eq(characterStoryOutfits.storyId, storyId), inArray(characterStoryOutfits.characterId, cids))) : [];
-        for (const a of assignments) {
-          const match = canonical.find((o) => o.characterId === a.characterId && o.outfitKey === a.outfitKey);
-          if (match) outfitByCharacterId.set(a.characterId, { characterId: a.characterId, outfitKey: match.outfitKey, outfitDescription: match.outfitDescription });
-          else if (a.outfitDescription) outfitByCharacterId.set(a.characterId, { characterId: a.characterId, outfitKey: a.outfitKey, outfitDescription: a.outfitDescription });
-        }
-      }
+      // if (hasOverrides && Object.keys(referenceOverrides!.outfitOverrides).length > 0) {
+      //   const entries = Object.entries(referenceOverrides!.outfitOverrides);
+      //   const lookups = await db.select({ characterId: characterStoryOutfits.characterId, outfitKey: characterStoryOutfits.outfitKey, outfitDescription: characterStoryOutfits.outfitDescription })
+      //     .from(characterStoryOutfits).where(and(eq(characterStoryOutfits.storyId, storyId), inArray(characterStoryOutfits.characterId, entries.map(([cid]) => cid))));
+      //   for (const [characterId, outfitKey] of entries) {
+      //     const match = lookups.find((o) => o.characterId === characterId && o.outfitKey === outfitKey);
+      //     if (match) outfitByCharacterId.set(characterId, { characterId, outfitKey: match.outfitKey, outfitDescription: match.outfitDescription });
+      //   }
+      // } else {
+      //   const assignments = spread.spreadId ? await db.query.spreadCharacterOutfits.findMany({ where: eq(spreadCharacterOutfits.spreadId, spread.spreadId) }) : [];
+      //   const cids = [...new Set(assignments.map((o) => o.characterId))];
+      //   const canonical = cids.length > 0 ? await db.select({ characterId: characterStoryOutfits.characterId, outfitKey: characterStoryOutfits.outfitKey, outfitDescription: characterStoryOutfits.outfitDescription })
+      //     .from(characterStoryOutfits).where(and(eq(characterStoryOutfits.storyId, storyId), inArray(characterStoryOutfits.characterId, cids))) : [];
+      //   for (const a of assignments) {
+      //     const match = canonical.find((o) => o.characterId === a.characterId && o.outfitKey === a.outfitKey);
+      //     if (match) outfitByCharacterId.set(a.characterId, { characterId: a.characterId, outfitKey: match.outfitKey, outfitDescription: match.outfitDescription });
+      //     else if (a.outfitDescription) outfitByCharacterId.set(a.characterId, { characterId: a.characterId, outfitKey: a.outfitKey, outfitDescription: a.outfitDescription });
+      //   }
+      // }
 
       // ── DEBUG: what are we sending? ──
-      console.log("🎭 Characters:", charRefs.map((c) => ({ name: c.name, hasImage: buildCharacterImageList(c).length > 0, outfit: outfitByCharacterId.get(c.id)?.outfitKey ?? "none" })));
       console.log("🗺️ Location:", locationRef ? locationRef.name : "NONE");
 
       // ══════════════════════════════════════════════════════════════════
@@ -392,39 +380,41 @@ export const generateSingleSpread = inngest.createFunction(
       }
 
       // 5. CHARACTERS — IMAGE + NAME ONLY, NO DESCRIPTIONS
-      for (const c of charRefs) {
-        const imageRefs = buildCharacterImageList(c);
-        const isAnimal = c.species && c.species !== "human";
-        const animalProfile = (c.visualDetails as any)?.animalProfile;
 
-        if (imageRefs.length === 0) {
-          // Text-only fallback for characters with no images
-          if (isAnimal && animalProfile) {
-            parts.push({ text: `CHARACTER: ${c.name.toUpperCase()} — a ${animalProfile.coatColour || ""} ${c.breed || c.species}.` });
-          } else {
-            const desc = c.appearance || c.description;
-            if (desc) parts.push({ text: `CHARACTER: ${c.name.toUpperCase()} — ${desc.slice(0, 80)}` });
-          }
-          continue;
-        }
+// 5. CHARACTERS — PORTRAIT ONLY, NO FALLBACKS
+const missingPortraits: string[] = [];
 
-        for (const imageRef of imageRefs) {
-          try {
-            parts.push(await getImagePart(imageRef.url));
-            if (isAnimal) {
-              const coatNote = animalProfile?.coatColour ? ` — ${animalProfile.coatColour} coat` : "";
-              parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()} (${c.breed || c.species}${coatNote}) ↑` });
-            } else {
-              parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()} ↑` });
-            }
-          } catch (err) { console.warn(`⚠️ Image failed for ${c.name}:`, err); }
-        }
+for (const c of charRefs) {
+  if (!c.portraitUrl || isDataUrl(c.portraitUrl)) {
+    missingPortraits.push(c.name);
+    continue;
+  }
 
-        const outfit = outfitByCharacterId.get(c.id);
-        if (outfit) {
-          parts.push({ text: `${c.name.toUpperCase()} wears: ${outfit.outfitDescription}. Ignore clothing in the reference.` });
-        }
-      }
+  try {
+    parts.push(await getImagePart(c.portraitUrl));
+  } catch (err) {
+    missingPortraits.push(`${c.name} (fetch failed)`);
+    continue;
+  }
+
+  const isAnimal = c.species && c.species !== "human";
+  const animalProfile = (c.visualDetails as any)?.animalProfile;
+  const anchors = c.appearance
+    ? c.appearance.split(/[,.]/).map((s: string) => s.trim()).filter(Boolean).slice(0, 4).join(", ")
+    : "";
+  const anchorNote = anchors ? ` Key features: ${anchors}.` : "";
+
+  if (isAnimal) {
+    const coatNote = animalProfile?.coatColour ? ` — ${animalProfile.coatColour} coat` : "";
+    parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()} (${c.breed || c.species}${coatNote}).${anchorNote} Match exactly. ↑` });
+  } else {
+    parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()}.${anchorNote} Match this reference exactly. ↑` });
+  }
+}
+
+if (missingPortraits.length > 0) {
+  throw new Error(`Cannot generate spread ${pageLabel}: no AI portrait for: ${missingPortraits.join(", ")}. Generate portraits before illustrating.`);
+}
 
       // 6. SCENE INSTRUCTIONS — SHORT
       parts.push({ text: `
