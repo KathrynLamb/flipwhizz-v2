@@ -180,8 +180,11 @@ export default function CoverDesignChat({
         const newUrl = data.story?.coverSpreadUrl;
         if (newUrl && newUrl !== knownCoverUrlRef.current) {
           knownCoverUrlRef.current = newUrl;
-          setLocalStory(prev => ({ ...prev, coverSpreadUrl: newUrl, status: data.story?.status ?? prev.status }));
-          addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
+          setLocalStory(prev => ({ 
+            ...prev, 
+            coverSpreadUrl: newUrl, 
+            status: "covers_complete"  // Force out of generating state
+          }));          addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
           clearInterval(interval);
         } else if (data.story?.status && data.story.status !== "generating_covers") {
           setLocalStory(prev => ({ ...prev, status: data.story.status }));
@@ -227,10 +230,10 @@ export default function CoverDesignChat({
   function addAssistantMsg(content: string) {
     const msg: ChatMsg = { role: "assistant", content };
     setMessages(prev => [...prev, msg]);
-    fetch("/api/stories/cover-chat/save-message", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storyId, role: "assistant", content }),
-    }).catch(() => {});
+    // fetch("/api/stories/cover-chat/save-message", {
+    //   method: "POST", headers: { "Content-Type": "application/json" },
+    //   body: JSON.stringify({ storyId, role: "assistant", content }),
+    // }).catch(() => {});
   }
 
   async function sendToBackend(userMessage: string, currentStage: CoverStage) {
@@ -266,12 +269,14 @@ export default function CoverDesignChat({
     const text = input.trim();
     const userMsg: ChatMsg = { role: "user", content: text };
     setMessages(prev => [...prev, userMsg]);
-    fetch("/api/stories/cover-chat/save-message", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storyId, role: "user", content: text }),
-    }).catch(() => {});
+    // fetch("/api/stories/cover-chat/save-message", {
+    //   method: "POST", headers: { "Content-Type": "application/json" },
+    //   body: JSON.stringify({ storyId, role: "user", content: text }),
+    // }).catch(() => {});
     setInput("");
     setIsLoading(true);
+
+
 
     const reply = await sendToBackend(text, stage);
 
@@ -292,6 +297,12 @@ export default function CoverDesignChat({
       if (reply.coverLocationIds) setCoverLocationIds(new Set(reply.coverLocationIds));
       if (reply.backCoverContent) setBackCoverContent(reply.backCoverContent);
       if (reply.authorCredit) setAuthorCredit(reply.authorCredit);
+
+      console.log("DEBUG cover state:", {
+        charIds: reply.coverCharacterIds,
+        worldChars: worldCharacters.map(c => c.id),
+        match: reply.coverCharacterIds?.filter((id: string) => worldCharacters.some(c => c.id === id)),
+      });
     } else {
       addAssistantMsg("Sorry — something went wrong. Please try again.");
     }
@@ -482,8 +493,17 @@ export default function CoverDesignChat({
                   </div>
                   <div className="p-4 space-y-2.5 text-[12px]">
                     <PlanRow label="Title" value={confirmedTitle} done={["image", "backcover", "author", "ready"].includes(stage)} />
-                    <PlanRow label="Front Cover" value={coverCharacterIds.size > 0 ? worldCharacters.filter(c => coverCharacterIds.has(c.id)).map(c => c.name).join(", ") : ""} done={["backcover", "author", "ready"].includes(stage)} />
-                    <PlanRow label="Back Cover" value={backCoverContent ? (backCoverContent.length > 50 ? backCoverContent.slice(0, 50) + "…" : backCoverContent) : ""} done={["author", "ready"].includes(stage)} />
+                    <PlanRow 
+                        label="Front Cover" 
+                        value={
+                          coverCharacterIds.size > 0 
+                            ? worldCharacters.filter(c => coverCharacterIds.has(c.id)).map(c => c.name).join(", ") || `${coverCharacterIds.size} characters selected`
+                            : ["backcover", "author", "ready"].includes(stage) 
+                              ? "Discussed in chat" 
+                              : ""
+                        } 
+                        done={["backcover", "author", "ready"].includes(stage)} 
+                      />                 <PlanRow label="Back Cover" value={backCoverContent ? (backCoverContent.length > 50 ? backCoverContent.slice(0, 50) + "…" : backCoverContent) : ""} done={["author", "ready"].includes(stage)} />
                     <PlanRow label="Author" value={authorCredit} done={stage === "ready"} />
                   </div>
                 </div>

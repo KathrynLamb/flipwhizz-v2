@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { coverConversations, stories, bookCovers } from "@/db/schema";
-import { eq, asc, and } from "drizzle-orm";
+import { coverChatSessions, coverChatMessages, stories } from "@/db/schema";
+import { eq, asc } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import CoverDesignChat from "./CoverDesignChat";
 import type { StepKey } from "@/lib/storySteps";
@@ -18,27 +18,31 @@ export default async function CoverPage({
 
   if (!story) return notFound();
 
-  // Load existing conversation messages
-  const existingMessages = await db.query.coverConversations.findMany({
-    where: eq(coverConversations.storyId, storyId),
-    orderBy: asc(coverConversations.createdAt),
+  // Load existing session + messages
+  const session = await db.query.coverChatSessions.findFirst({
+    where: eq(coverChatSessions.storyId, storyId),
+    orderBy: (s, { desc }) => [desc(s.createdAt)],
   });
 
-  const messages = existingMessages.map((msg) => ({
-    role: msg.role as "user" | "assistant",
-    content: msg.content,
-  }));
+  let messages: { role: "user" | "assistant"; content: string }[] = [];
 
-  const selectedCover = await db.query.bookCovers.findFirst({
-    where: and(
-      eq(bookCovers.storyId, storyId),
-      eq(bookCovers.isSelected, true)
-    ),
-    columns: {
-      charactersShown: true,
-      locationsShown: true,
-    },
-  });
+  if (session) {
+    const dbMessages = await db
+      .select({ role: coverChatMessages.role, content: coverChatMessages.content })
+      .from(coverChatMessages)
+      .where(eq(coverChatMessages.sessionId, session.id))
+      .orderBy(asc(coverChatMessages.createdAt));
+
+    messages = dbMessages.map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
+  }
+
+  // Extract character/location IDs from cover plan if available
+  const plan = session?.coverPlan as any;
+  const initialCharacterIds = plan?.charactersShown ?? [];
+  const initialLocationIds = plan?.locationsShown ?? [];
 
   const completedSteps = (story.completedSteps as StepKey[]) ?? [];
 
@@ -52,8 +56,8 @@ export default async function CoverPage({
       completedSteps={completedSteps}
       paymentStatus={story.paymentStatus}
       coverSpreadUrl={story.coverSpreadUrl}
-      initialCharacterIds={selectedCover?.charactersShown ?? []}
-      initialLocationIds={selectedCover?.locationsShown ?? []}
+      initialCharacterIds={initialCharacterIds}
+      initialLocationIds={initialLocationIds}
     />
   );
 }

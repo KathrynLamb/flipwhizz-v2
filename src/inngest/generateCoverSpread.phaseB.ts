@@ -1,8 +1,7 @@
 // src/inngest/generateCoverSpread.phaseB.ts
 //
-// v3: VISUAL-FIRST prompt structure.
-// Images are front-loaded, text instructions are minimal and imperative.
-// Species-aware character prompting. Style reference fallback from spreads.
+// v4: Portrait-only, image-first, minimal text.
+// No character descriptions. No text fallbacks. Hard fail on missing portraits.
 
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
@@ -100,7 +99,12 @@ async function getImagePart(source: string) {
 
 function extractInlineImage(result: any) {
   const parts = result?.candidates?.[0]?.content?.parts ?? [];
-  return parts.find((p: any) => p.inlineData?.data)?.inlineData ?? null;
+  const imagePart = parts.find((p: any) => p.inlineData?.data && !p.thought);
+  if (!imagePart) {
+    const lastImage = [...parts].reverse().find((p: any) => p.inlineData?.data);
+    return lastImage?.inlineData ?? null;
+  }
+  return imagePart.inlineData;
 }
 
 async function uploadToCloudinary(base64: string, storyId: string) {
@@ -119,46 +123,15 @@ async function uploadToCloudinary(base64: string, storyId: string) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* CHARACTER REFS                                                              */
-/* -------------------------------------------------------------------------- */
-
-type CoverCharRef = {
-  id: string;
-  name: string;
-  portraitUrl: string | null;
-  fullBodyUrl: string | null;
-  referenceUrl: string | null;
-  appearance: string | null;
-  species: string | null;
-  breed: string | null;
-  visualDetails: any;
-};
-
-function buildCharacterImageList(c: CoverCharRef) {
-  // Portrait is best — it's already in the book's illustration style
-  if (c.portraitUrl && !isDataUrl(c.portraitUrl)) {
-    return [{ label: "portrait", url: c.portraitUrl }];
-  }
-  // Full-body next
-  if (c.fullBodyUrl && !isDataUrl(c.fullBodyUrl)) {
-    return [{ label: "full-body", url: c.fullBodyUrl }];
-  }
-  // Raw reference photo as last resort
-  if (c.referenceUrl && !isDataUrl(c.referenceUrl)) {
-    return [{ label: "reference photo", url: c.referenceUrl }];
-  }
-  return [];
-}
-
-/* -------------------------------------------------------------------------- */
 /* STYLE GUIDE                                                                 */
 /* -------------------------------------------------------------------------- */
 
 function resolveStyleBlock(style: typeof storyStyleGuide.$inferSelect | null | undefined): string {
   if (!style) return "Whimsical watercolor children's book illustration";
   const parts: string[] = [];
-  if (style.artStyle) parts.push(style.artStyle);
-  else parts.push("Whimsical children's book illustration");
+  if (style.userNotes?.trim()) { parts.push(style.userNotes.trim()); }
+  else if (style.artStyle) { parts.push(style.artStyle); }
+  else { parts.push("Whimsical children's book illustration"); }
   const palette = style.colorPalette as any;
   if (palette?.primary) parts.push(`Palette: ${[palette.primary, palette.secondary, palette.accent].filter(Boolean).join(", ")}`);
   return parts.join(". ");
@@ -200,7 +173,6 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
       where: eq(storyStyleGuide.storyId, storyId),
     });
 
-    // Style reference: uploaded sample > first generated spread > nothing
     let styleRefUrl: string | null = style?.sampleIllustrationUrl ?? null;
     if (!styleRefUrl || isDataUrl(styleRefUrl)) {
       const spreadPage = await db
@@ -213,13 +185,19 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
       styleRefUrl = spreadPage?.imageUrl ?? null;
     }
 
-    // Characters
-    const charRefs: CoverCharRef[] = planCharIds.length > 0
+    // Characters — only need portrait URL
+    type CharRef = {
+      id: string; name: string;
+      portraitUrl: string | null;
+      appearance: string | null;
+      species: string | null; breed: string | null;
+      visualDetails: any;
+    };
+
+    const charRefs: CharRef[] = planCharIds.length > 0
       ? await db.select({
           id: characters.id, name: characters.name,
           portraitUrl: characters.portraitImageUrl,
-          fullBodyUrl: characters.fullBodyImageUrl,
-          referenceUrl: characters.referenceImageUrl,
           appearance: characters.appearance,
           species: characters.species, breed: characters.breed,
           visualDetails: characters.visualDetails,
@@ -227,8 +205,6 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
       : await db.select({
           id: characters.id, name: characters.name,
           portraitUrl: characters.portraitImageUrl,
-          fullBodyUrl: characters.fullBodyImageUrl,
-          referenceUrl: characters.referenceImageUrl,
           appearance: characters.appearance,
           species: characters.species, breed: characters.breed,
           visualDetails: characters.visualDetails,
@@ -236,133 +212,118 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
         .innerJoin(characters, eq(storyCharacters.characterId, characters.id))
         .where(eq(storyCharacters.storyId, storyId));
 
-    // Location
-    let locRef: { name: string; imageUrl: string | null; description: string | null } | null = null;
+    // Location — image URL only
+    let locRef: { name: string; imageUrl: string | null } | null = null;
     const locQuery = planLocIds.length > 0
-      ? db.select({ name: locations.name, imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`, description: locations.description }).from(locations).where(inArray(locations.id, planLocIds)).limit(1)
-      : db.select({ name: locations.name, imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`, description: locations.description }).from(storyLocations).innerJoin(locations, eq(storyLocations.locationId, locations.id)).where(eq(storyLocations.storyId, storyId)).limit(1);
+      ? db.select({ name: locations.name, imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})` }).from(locations).where(inArray(locations.id, planLocIds)).limit(1)
+      : db.select({ name: locations.name, imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})` }).from(storyLocations).innerJoin(locations, eq(storyLocations.locationId, locations.id)).where(eq(storyLocations.storyId, storyId)).limit(1);
     locRef = await locQuery.then((r) => r[0] ?? null);
 
     console.log("📋 Cover refs:", {
       styleRef: styleRefUrl ? "yes" : "NONE",
-      characters: charRefs.map((c) => ({ name: c.name, species: c.species, images: buildCharacterImageList(c).length })),
+      characters: charRefs.map((c) => ({ name: c.name, hasPortrait: !!c.portraitUrl })),
       location: locRef?.name ?? "none",
+      locationHasImage: !!locRef?.imageUrl,
     });
 
-    /* ── 3. BUILD VISUAL-FIRST PROMPT ── */
+    /* ── 3. BUILD PROMPT — IMAGES FIRST, MINIMAL TEXT ── */
 
     const parts: any[] = [];
 
-    // ━━━ BLOCK 1: STYLE ANCHOR (most important — goes first) ━━━
+    // 1. STYLE REFERENCE
     if (styleRefUrl) {
       try {
         parts.push(await getImagePart(styleRefUrl));
-        parts.push({ text: `↑ MATCH THIS EXACT ILLUSTRATION STYLE. Same artist, same technique, same palette. ↑` });
-      } catch (err) {
-        console.warn("⚠️ Could not load style reference:", err);
-      }
+        parts.push({ text: "↑ STYLE REFERENCE — match this illustration style exactly. Same technique, line weight, colours, warmth. ↑" });
+      } catch (err) { console.warn("⚠️ Style ref failed:", err); }
     }
 
-    // ━━━ BLOCK 2: CHARACTER REFERENCES (visual-first, minimal text) ━━━
-    for (const c of charRefs) {
-      const imageRefs = buildCharacterImageList(c);
-      const isAnimal = c.species && c.species !== "human";
-      const profile = (c.visualDetails as any)?.animalProfile;
+    // 2. CHARACTERS — PORTRAIT ONLY, NO FALLBACKS
+    const missingPortraits: string[] = [];
 
-      if (imageRefs.length === 0) {
-        // Text-only fallback
-        if (isAnimal) {
-          parts.push({
-            text: `CHARACTER "${c.name.toUpperCase()}" (${c.species}): ${c.breed || ""}. ${c.appearance || ""}. Reproduce this EXACT animal.`,
-          });
-        } else if (c.appearance) {
-          parts.push({ text: `CHARACTER "${c.name.toUpperCase()}": ${c.appearance}` });
-        }
+    for (const c of charRefs) {
+      if (!c.portraitUrl || isDataUrl(c.portraitUrl)) {
+        missingPortraits.push(c.name);
         continue;
       }
 
-      for (const [i, ref] of imageRefs.entries()) {
-        try {
-          parts.push(await getImagePart(ref.url));
+      try {
+        parts.push(await getImagePart(c.portraitUrl));
+      } catch (err) {
+        missingPortraits.push(`${c.name} (fetch failed)`);
+        continue;
+      }
 
-          if (i === 0) {
-            if (isAnimal) {
-              const coatNote = profile?.coatColour || "";
-              parts.push({
-                text: `↑ THIS IS "${c.name.toUpperCase()}" — a ${c.breed || c.species}. ${coatNote ? `Coat: ${coatNote}. NON-NEGOTIABLE COLOUR.` : ""} Reproduce this EXACT ${c.species}. ↑`,
-              });
-            } else {
-              parts.push({
-                text: `↑ THIS IS "${c.name.toUpperCase()}". Match this face, hair, and body EXACTLY. ↑`,
-              });
-            }
-          } else {
-            parts.push({
-              text: `↑ ADDITIONAL "${c.name.toUpperCase()}" reference — reinforce consistency. ↑`,
-            });
-          }
-        } catch (err) {
-          console.warn(`⚠️ Could not load ${ref.label} for ${c.name}:`, err);
-        }
+      const isAnimal = c.species && c.species !== "human";
+      const profile = (c.visualDetails as any)?.animalProfile;
+      const anchors = c.appearance
+        ? c.appearance.split(/[,.]/).map((s: string) => s.trim()).filter(Boolean).slice(0, 4).join(", ")
+        : "";
+      const anchorNote = anchors ? ` Key features: ${anchors}.` : "";
+
+      if (isAnimal) {
+        const coatNote = profile?.coatColour ? ` — ${profile.coatColour} coat` : "";
+        parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()} (${c.breed || c.species}${coatNote}).${anchorNote} Match exactly. ↑` });
+      } else {
+        parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()}.${anchorNote} Match this reference exactly. ↑` });
       }
     }
 
-    // ━━━ BLOCK 3: LOCATION REFERENCE ━━━
+    if (missingPortraits.length > 0) {
+      throw new Error(`Cannot generate cover: no AI portrait for: ${missingPortraits.join(", ")}. Generate portraits before creating cover.`);
+    }
+
+    // 3. LOCATION — IMAGE ONLY
     if (locRef?.imageUrl && !isDataUrl(locRef.imageUrl)) {
       try {
         parts.push(await getImagePart(locRef.imageUrl));
-        parts.push({ text: `↑ SETTING: "${locRef.name.toUpperCase()}". Use as background atmosphere. ↑` });
-      } catch (err) {
-        console.warn("⚠️ Could not load location ref:", err);
-      }
+        parts.push({ text: `↑ LOCATION: ${locRef.name.toUpperCase()} — use as the setting. ↑` });
+      } catch (err) { console.warn("⚠️ Location ref failed:", err); }
+    } else {
+      console.warn("⚠️ No location image — scene based on text description only");
     }
 
-    // ━━━ BLOCK 4: LOGO ━━━
+    // 4. LOGO — IMAGE ONLY
     try {
       parts.push(await getImagePart(LOGO_PATH));
-      parts.push({ text: `↑ FLIPWHIZZ LOGO. Place small, bottom-left of back cover. Add "flipwhizz.com" below it. ↑` });
-    } catch (err) {
-      console.warn("⚠️ Could not load logo:", err);
-    }
+      parts.push({ text: "↑ FLIPWHIZZ LOGO. Place small, bottom-left of back cover. Add \"flipwhizz.com\" below it. ↑" });
+    } catch (err) { console.warn("⚠️ Logo not found — skipping"); }
 
-    // ━━━ BLOCK 5: LAYOUT TEMPLATE (compact) ━━━
-    parts.push(await getImagePart(COVER_TEMPLATE_PATH));
+    // 5. LAYOUT TEMPLATE
+    try {
+      parts.push(await getImagePart(COVER_TEMPLATE_PATH));
+      parts.push({ text: "↑ LAYOUT GUIDE — DO NOT RENDER. Shows safe zones only. Back = left third, Spine = centre, Front = right third. ALL text min 20% from edges. NO guide lines in output. ↑" });
+    } catch (err) { console.warn("⚠️ Template failed:", err); }
+
+    // 6. SCENE INSTRUCTIONS — MINIMAL
     parts.push({
-      text: `↑ LAYOUT GUIDE — DO NOT RENDER. Shows safe zones only.
-COVER LAYOUT: Back cover = left third. Spine = centre. Front cover = right third.
-Front title: 70-90% from left, 20-45% from top. Back text: 8-20% from left.
-ALL text min 20% from edges. NO text in outer 10%. NO guide lines in output. ↑`,
-    });
+      text: `CREATE A WRAP-AROUND CHILDREN'S BOOK COVER. ${ASPECT_RATIO} landscape.
 
-    // ━━━ BLOCK 6: SINGLE INSTRUCTION BLOCK (everything Gemini needs) ━━━
-    parts.push({
-      text: `CREATE A WRAP-AROUND CHILDREN'S BOOK COVER. ${ASPECT_RATIO} aspect ratio.
+FRONT COVER (right third): ${coverPlan.front.visualIntent}
+BACK COVER (left third): ${coverPlan.back.visualIntent}
 
-SCENE — FRONT COVER (right third):
-${coverPlan.front.visualIntent}
-
-SCENE — BACK COVER (left third):
-${coverPlan.back.visualIntent}
-
-RENDER THIS EXACT TEXT:
+TEXT TO RENDER:
 FRONT TITLE: "${coverPlan.front.titleText}"
 ${coverPlan.front.authorText ? `FRONT AUTHOR: "${coverPlan.front.authorText}"` : ""}
 SPINE (vertical, centred): "${coverPlan.spine.spineText}"
 ${coverPlan.back.blurbText ? `BACK BLURB: "${coverPlan.back.blurbText}"` : ""}
 ${coverPlan.back.dedicationText ? `BACK DEDICATION: "${coverPlan.back.dedicationText}"` : ""}
 
-STYLE: ${resolveStyleBlock(style)}
-AVOID: ${resolveAvoidBlock(style)}
+${resolveStyleBlock(style)}
+Hand-lettered text, large, child-friendly, high contrast.
+Keep ALL text inside safe zones — outer 10% is trimmed.
 NO BARCODES. NO ISBN. NO WHITE RECTANGLES.
-
-Characters MUST match the reference images above EXACTLY.
-Typography must be large, hand-lettered, child-friendly, high contrast.
-Text must be well inside safe zones — outer 10% is trimmed in printing.`,
+AVOID: ${resolveAvoidBlock(style)}`,
     });
 
-    console.log("📦 Total parts:", parts.length, "(" +
-      parts.filter((p) => p.inlineData).length + " images, " +
-      parts.filter((p) => p.text).length + " text)");
+    // Debug
+    const imgCount = parts.filter((p: any) => p.inlineData).length;
+    const txtLen = parts.filter((p: any) => p.text).reduce((s: number, p: any) => s + p.text.length, 0);
+    console.log(`📦 Cover prompt: ${imgCount} images, ${txtLen} chars of text`);
+    console.log("📦 Parts:", parts.map((p: any, i: number) => ({
+      i, type: p.text ? "T" : "I",
+      preview: p.text ? p.text.substring(0, 60).replace(/\n/g, " ") : `${Math.round(Buffer.from(p.inlineData?.data || "", "base64").length / 1024)}KB`,
+    })));
 
     /* ── 4. GENERATE ── */
 
@@ -409,10 +370,12 @@ Text must be well inside safe zones — outer 10% is trimmed in printing.`,
       success: true,
       coverUrl: url,
       debug: {
-        chars: charRefs.map((c) => ({ name: c.name, species: c.species, images: buildCharacterImageList(c).length })),
+        chars: charRefs.map((c) => ({ name: c.name, hasPortrait: !!c.portraitUrl })),
         location: locRef?.name ?? "none",
         styleRef: styleRefUrl ? (style?.sampleIllustrationUrl ? "uploaded" : "spread-fallback") : "none",
         totalParts: parts.length,
+        imageCount: imgCount,
+        textChars: txtLen,
       },
     };
   }

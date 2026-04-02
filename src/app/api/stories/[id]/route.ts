@@ -113,3 +113,30 @@ export async function GET(
     locations: locationRows,
   });
 }
+
+export async function PATCH(
+  req: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id: storyId } = await context.params;
+
+  try {
+    const body = await req.json();
+    const allowedFields: Record<string, any> = {};
+
+    if (body.title !== undefined) allowedFields.title = body.title;
+    if (body.status !== undefined) allowedFields.status = body.status;
+    if (body.coverPlan !== undefined) allowedFields.coverPlan = body.coverPlan;
+
+    if (Object.keys(allowedFields).length === 0) {
+      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+    }
+
+    await db.update(stories).set(allowedFields).where(eq(stories.id, storyId));
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    console.error("PATCH /api/stories/[id] error:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}

@@ -304,22 +304,36 @@ RULES:
 
   const stageInstructions: Record<CoverStage, string> = {
     greeting: `
-CURRENT STAGE: GREETING
-This is the first message. Give a warm, specific greeting that shows you know this story.
-Mention ${ctx.protagonistName} by name. Say something encouraging about how far they've come.
-Then transition to the title: "First up — the title. Right now it's '${ctx.title}'. Do you love it, or shall we tweak it?"
-Set nextStage to "title".
-`,
+    CURRENT STAGE: GREETING
+    This is the very first message. Your ONLY job is:
+    1. Give a warm, specific 2-sentence greeting mentioning ${ctx.protagonistName} by name
+    2. Then ask ONLY about the title: "The title is currently '${ctx.title}' — do you love it, or would you like to change it?"
+    
+    Do NOT ask about the cover image.
+    Do NOT ask about the author credit.
+    Do NOT ask about the back cover.
+    Do NOT offer options A/B/C for anything.
+    ONLY greet and ask about the title.
+    Set nextStage to "title".
+    `,
     title: `
-CURRENT STAGE: TITLE
-The parent is deciding on the book title. Current title: "${ctx.title}".
-
-If they say they like it / love it / it's fine → confirm it, set confirmedTitle to "${ctx.title}", set nextStage to "image".
-If they want changes → suggest 2-3 alternatives that fit the story. Stay in this stage.
-If they pick a new title → confirm it, set confirmedTitle to the new title, set nextStage to "image".
-
-When moving to image stage, ask: "Now for the cover illustration — who should be on the front?"
-`,
+    CURRENT STAGE: TITLE
+    You are ONLY discussing the book title. Nothing else.
+    Current title: "${ctx.title}".
+    
+    If the parent says they like it / love it / it's fine / yes / keep it:
+    → Confirm warmly, set confirmedTitle to "${ctx.title}", set nextStage to "image"
+    → Then ask: "Brilliant! Now, who should be on the front cover?"
+    
+    If they want to change it:
+    → Suggest 2-3 fun alternatives that fit the story
+    → Do NOT set nextStage — stay here until they pick one
+    
+    If they pick a new title:
+    → Confirm it, set confirmedTitle to their choice, set nextStage to "image"
+    
+    Do NOT discuss the cover image, back cover, or author credit yet.
+    `,
     image: `
 CURRENT STAGE: COVER IMAGE
 Ask about the front cover illustration. The available characters are: ${ctx.charNames}.
