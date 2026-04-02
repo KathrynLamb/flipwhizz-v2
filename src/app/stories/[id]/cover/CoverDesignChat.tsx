@@ -220,6 +220,8 @@ export default function CoverDesignChat({
     }).finally(() => setIsLoading(false));
   }, [storyId, worldLoading]);
 
+  console.log("Messages", messages)
+
   /* ── Helpers ── */
 
   function addAssistantMsg(content: string) {
@@ -248,7 +250,12 @@ export default function CoverDesignChat({
         }),
       });
       if (!res.ok) return null;
-      return await res.json();
+      const data = await res.json();
+      // Handle both old shape (reply) and new shape (message)
+      if (!data.message && data.reply) {
+        data.message = data.reply;
+      }
+      return data;
     } catch { return null; }
   }
 
