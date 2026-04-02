@@ -1,3 +1,5 @@
+//api/cover/refine/route
+
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type { TextBlock } from "@anthropic-ai/sdk/resources/messages";
