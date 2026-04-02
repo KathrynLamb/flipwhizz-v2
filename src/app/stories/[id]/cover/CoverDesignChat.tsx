@@ -325,7 +325,7 @@ export default function CoverDesignChat({
           confirmedTitle, backCoverContent, authorCredit,
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error(); 
 
       addAssistantMsg("Generating your cover now — about 30–60 seconds…");
 
@@ -460,7 +460,7 @@ export default function CoverDesignChat({
                           </div>
                         </div>
                       </div>
-                      <button onClick={() => router.push(`/stories/${storyId}/studio`)}
+                      <button onClick={() => router.push(`/stories/${storyId}/print`)}
                         className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white active:scale-[0.98]"
                         style={{ background: "linear-gradient(135deg, #43B89C, #2FA482)", border: "none", fontFamily: "inherit" }}>
                         <Check className="w-4 h-4" /> Approve & Continue
