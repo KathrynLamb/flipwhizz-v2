@@ -23,6 +23,7 @@ const client = new Anthropic({
 });
 
 const MODEL = "claude-sonnet-4-20250514";
+const MAX_FEATURED_CHARACTERS_PER_SPREAD = 5;
 
 /* -------------------------------------------------------------------------- */
 /*                                   TYPES                                    */
@@ -43,7 +44,8 @@ type ClaudeSpreadLocationDecision = {
 
 type ClaudeSpreadDecision = {
   spreadIndex: number;
-  characterIds: string[];
+  featuredCharacterIds: string[];
+  backgroundCharacterIds: string[];
   locations: ClaudeSpreadLocationDecision[];
 };
 
@@ -58,7 +60,7 @@ type ClaudeToolInput = {
 const decideSpreadScenesTool: Anthropic.Tool = {
   name: "decide_spread_scenes",
   description:
-    "Assign characters and one or more locations to each spread in the story",
+    "Assign featured characters, background characters, and one or more locations to each spread in the story",
   input_schema: {
     type: "object",
     required: ["spreads"],
@@ -67,15 +69,27 @@ const decideSpreadScenesTool: Anthropic.Tool = {
         type: "array",
         items: {
           type: "object",
-          required: ["spreadIndex", "characterIds", "locations"],
+          required: [
+            "spreadIndex",
+            "featuredCharacterIds",
+            "backgroundCharacterIds",
+            "locations",
+          ],
           properties: {
             spreadIndex: {
               type: "number",
               description: "The spread number (1-based index)",
             },
-            characterIds: {
+            featuredCharacterIds: {
               type: "array",
-              description: "Array of character IDs that appear in this spread",
+              description:
+                `Array of character IDs that are visually important and should be illustrated most clearly in this spread. Prefer no more than ${MAX_FEATURED_CHARACTERS_PER_SPREAD}.`,
+              items: { type: "string" },
+            },
+            backgroundCharacterIds: {
+              type: "array",
+              description:
+                "Array of character IDs that may appear as background or less important figures in this spread",
               items: { type: "string" },
             },
             locations: {
@@ -141,6 +155,17 @@ function isValidLocationRole(value: unknown): value is SpreadLocationRole {
   );
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function uniqueStrings(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return Array.from(
+    new Set(values.filter((id): id is string => typeof id === "string" && id.trim().length > 0))
+  );
+}
+
 function isValidClaudeToolInput(value: unknown): value is ClaudeToolInput {
   if (!value || typeof value !== "object") return false;
 
@@ -152,7 +177,8 @@ function isValidClaudeToolInput(value: unknown): value is ClaudeToolInput {
 
     const s = spread as {
       spreadIndex?: unknown;
-      characterIds?: unknown;
+      featuredCharacterIds?: unknown;
+      backgroundCharacterIds?: unknown;
       locations?: unknown;
     };
 
@@ -160,9 +186,8 @@ function isValidClaudeToolInput(value: unknown): value is ClaudeToolInput {
       return false;
     }
 
-    if (!Array.isArray(s.characterIds)) return false;
-    if (!s.characterIds.every((id) => typeof id === "string")) return false;
-
+    if (!isStringArray(s.featuredCharacterIds)) return false;
+    if (!isStringArray(s.backgroundCharacterIds)) return false;
     if (!Array.isArray(s.locations)) return false;
 
     for (const loc of s.locations) {
@@ -186,11 +211,25 @@ function isValidClaudeToolInput(value: unknown): value is ClaudeToolInput {
 function normalizeClaudeToolInput(input: ClaudeToolInput): ClaudeToolInput {
   return {
     spreads: input.spreads.map((spread) => {
-      const uniqueCharacterIds = Array.from(
-        new Set(
-          (spread.characterIds ?? []).filter((id) => typeof id === "string")
-        )
+      const featuredCharacterIds = uniqueStrings(spread.featuredCharacterIds);
+      const backgroundCharacterIds = uniqueStrings(spread.backgroundCharacterIds);
+
+      const dedupedBackground = backgroundCharacterIds.filter(
+        (id) => !featuredCharacterIds.includes(id)
       );
+
+      const normalizedFeatured = featuredCharacterIds.slice(
+        0,
+        MAX_FEATURED_CHARACTERS_PER_SPREAD
+      );
+
+      const overflowFeatured = featuredCharacterIds.slice(
+        MAX_FEATURED_CHARACTERS_PER_SPREAD
+      );
+
+      const normalizedBackground = Array.from(
+        new Set([...dedupedBackground, ...overflowFeatured])
+      ).filter((id) => !normalizedFeatured.includes(id));
 
       const seenLocationIds = new Set<string>();
       let normalizedLocations = (spread.locations ?? [])
@@ -241,7 +280,8 @@ function normalizeClaudeToolInput(input: ClaudeToolInput): ClaudeToolInput {
 
       return {
         spreadIndex: spread.spreadIndex,
-        characterIds: uniqueCharacterIds,
+        featuredCharacterIds: normalizedFeatured,
+        backgroundCharacterIds: normalizedBackground,
         locations: normalizedLocations,
       };
     }),
@@ -254,14 +294,14 @@ function normalizeClaudeToolInput(input: ClaudeToolInput): ClaudeToolInput {
 
 export const decideScenes = inngest.createFunction(
   {
-    id: "decide-scenes-v4",
+    id: "decide-scenes-v5",
     retries: 2,
   },
   { event: "story/decide-spread-scenes" },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
 
-    console.log("🟣 [decide-scenes-v4] Starting:", storyId);
+    console.log("🟣 [decide-scenes-v5] Starting:", storyId);
 
     /* ------------------------------------------------------------------ */
     /* Load spreads                                                        */
@@ -392,13 +432,30 @@ ${right}
     /* ------------------------------------------------------------------ */
 
     const systemPrompt = `
-You are performing a STRUCTURAL planning task.
+You are performing a STRUCTURAL planning task for illustrated storybook spreads.
 
 For each spread, decide:
-1. which characters appear
-2. which locations are relevant to the spread
+1. which characters are FEATURED
+2. which characters are BACKGROUND
+3. which locations are relevant to the spread
 
 You MUST return ONLY via the decide_spread_scenes tool.
+
+A FEATURED character is visually important and should be illustrated clearly.
+A BACKGROUND character may appear, but is less important, smaller, more distant, or less exact.
+
+Illustration constraint:
+- Prefer NO MORE THAN ${MAX_FEATURED_CHARACTERS_PER_SPREAD} featured characters in a single spread
+- If more than ${MAX_FEATURED_CHARACTERS_PER_SPREAD} characters are narratively present, choose the most important ${MAX_FEATURED_CHARACTERS_PER_SPREAD} as featured
+- Put less important, less visible, or more distant characters into backgroundCharacterIds
+- Do not duplicate the same character in both featuredCharacterIds and backgroundCharacterIds
+
+Prioritise as featured:
+- protagonists
+- named characters central to the action
+- speakers
+- characters doing something visually important
+- characters whose identity most needs to be preserved
 
 Use locations carefully:
 - "primary" = the main visible setting of the spread
@@ -410,12 +467,13 @@ Use locations carefully:
 Rules:
 - Use ONLY the character and location IDs provided in the user message
 - Do NOT invent or guess IDs
-- If no characters appear, use empty array []
+- If no featured characters appear, use empty array []
+- If no background characters appear, use empty array []
 - If no locations are relevant, use empty array []
 - Every spreadIndex from the input must be included exactly once
 - "spreads" must always be present
 - "spreads" must always be an array
-- Each spread must include: spreadIndex, characterIds, locations
+- Each spread must include: spreadIndex, featuredCharacterIds, backgroundCharacterIds, locations
 - Prefer exactly one "primary" location when a clear main setting exists
 - Do not mark a merely mentioned past location as "primary" if the visible action is happening somewhere else
 - Do not add commentary outside the tool
@@ -491,7 +549,8 @@ Required shape:
   "spreads": [
     {
       "spreadIndex": 1,
-      "characterIds": ["id1", "id2"],
+      "featuredCharacterIds": ["id1", "id2"],
+      "backgroundCharacterIds": ["id3"],
       "locations": [
         {
           "locationId": "location-id-1",
@@ -508,10 +567,12 @@ Rules:
 - spreads must be an array
 - every spreadIndex from the input must appear exactly once
 - use only IDs already provided
-- every spread must include characterIds and locations
+- every spread must include featuredCharacterIds, backgroundCharacterIds, and locations
 - locations must be an array, not a string
 - do not omit required fields
 - do not add commentary
+- featuredCharacterIds must contain no more than ${MAX_FEATURED_CHARACTERS_PER_SPREAD} IDs
+- do not duplicate a character across featuredCharacterIds and backgroundCharacterIds
 `.trim(),
           messages: [
             {
@@ -572,10 +633,10 @@ ${expectedSpreadIndexes.join(", ")}
 
     await step.run("save-spread-presence", async () => {
       console.log(`📝 Processing ${toolInput.spreads.length} spread decisions`);
-    
+
       for (const decision of toolInput.spreads) {
         const spread = spreadByIndex.get(decision.spreadIndex);
-    
+
         if (!spread) {
           console.error(
             `❌ Invalid spreadIndex ${decision.spreadIndex}. Available:`,
@@ -583,16 +644,34 @@ ${expectedSpreadIndexes.join(", ")}
           );
           throw new Error(`Invalid spreadIndex ${decision.spreadIndex}`);
         }
-    
-        const characterPresence = (decision.characterIds || [])
+
+        const featuredCharacterPresence = (decision.featuredCharacterIds || [])
           .filter((characterId) => validCharacterIds.has(characterId))
           .map((characterId) => ({
             characterId,
             role: "primary" as const,
-            confidence: 0.8,
-            reason: "Derived from spread text",
+            confidence: 0.9,
+            reason: "Featured character selected from spread text",
           }));
-    
+
+        const backgroundCharacterPresence = (decision.backgroundCharacterIds || [])
+          .filter((characterId) => validCharacterIds.has(characterId))
+          .filter(
+            (characterId) =>
+              !featuredCharacterPresence.some((c) => c.characterId === characterId)
+          )
+          .map((characterId) => ({
+            characterId,
+            role: "background" as const,
+            confidence: 0.7,
+            reason: "Background character selected from spread text",
+          }));
+
+        const characterPresence = [
+          ...featuredCharacterPresence,
+          ...backgroundCharacterPresence,
+        ];
+
         const locationPresence = (decision.locations || [])
           .filter((loc) => validLocationIds.has(loc.locationId))
           .map((loc) => ({
@@ -601,11 +680,11 @@ ${expectedSpreadIndexes.join(", ")}
             confidence: loc.role === "primary" ? 0.9 : 0.7,
             reason: loc.reason || "Derived from spread text",
           }));
-    
+
         console.log(
-          `✅ Spread ${decision.spreadIndex}: ${characterPresence.length} characters, ${locationPresence.length} locations`
+          `✅ Spread ${decision.spreadIndex}: ${featuredCharacterPresence.length} featured, ${backgroundCharacterPresence.length} background, ${locationPresence.length} locations`
         );
-    
+
         await db
           .insert(storySpreadPresence)
           .values({
@@ -627,7 +706,7 @@ ${expectedSpreadIndexes.join(", ")}
             },
           });
       }
-    
+
       console.log(
         `✅ Saved ${toolInput.spreads.length} spread presence records`
       );
@@ -653,7 +732,7 @@ ${expectedSpreadIndexes.join(", ")}
       });
     });
 
-    console.log("✅ [decide-scenes-v4] Workflow complete!");
+    console.log("✅ [decide-scenes-v5] Workflow complete!");
 
     return { ok: true, spreadsProcessed: toolInput.spreads.length };
   }

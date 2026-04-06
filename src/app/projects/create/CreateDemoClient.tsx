@@ -153,33 +153,37 @@ export default function CreateDemoClient() {
 
   async function continueToFullProject() {
     if (creatingProject || messages.length === 0) return;
-
+  
     setCreatingProject(true);
     setError(null);
-
+  
     try {
       const res = await fetch("/api/projects/create-from-demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages }),
       });
-
+  
       const data = await res.json().catch(() => null);
-
-      if (!res.ok || !data?.projectId) {
-        throw new Error(
-          data?.error || "We could not create your project just now.",
-        );
+  
+      // If unauthorized, redirect to sign in with return URL
+      if (res.status === 401) {
+        // Save messages so they survive the sign-in redirect
+        sessionStorage.setItem("flipwhizz_create_demo_messages", JSON.stringify(messages));
+        router.push("/auth/signin?callbackUrl=/projects/create");
+        return;
       }
-
+  
+      if (!res.ok || !data?.projectId) {
+        throw new Error(data?.error || "We could not create your project just now.");
+      }
+  
       sessionStorage.removeItem("flipwhizz_create_demo_messages");
       router.push(`/chat?project=${data.projectId}`);
     } catch (err) {
       setCreatingProject(false);
       setError(
-        err instanceof Error
-          ? err.message
-          : "We could not continue into the full project.",
+        err instanceof Error ? err.message : "We could not continue into the full project."
       );
     }
   }

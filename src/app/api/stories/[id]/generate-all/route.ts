@@ -1,4 +1,3 @@
-// src/app/api/stories/[id]/generate-all/route.ts
 import { NextResponse } from "next/server";
 import { inngest } from "@/inngest/client";
 import { db } from "@/db";
@@ -6,7 +5,7 @@ import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export async function POST(
-  req: Request,
+  _req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -14,7 +13,6 @@ export async function POST(
 
     console.log("🚀 Starting illustration generation for story:", storyId);
 
-    // Verify story exists
     const [story] = await db
       .select()
       .from(stories)
@@ -24,7 +22,6 @@ export async function POST(
       return NextResponse.json({ error: "Story not found" }, { status: 404 });
     }
 
-    // Update story status
     await db
       .update(stories)
       .set({
@@ -33,23 +30,24 @@ export async function POST(
       })
       .where(eq(stories.id, storyId));
 
-    // Trigger Inngest function to generate all spreads
     await inngest.send({
       name: "story/generate-spreads",
       data: { storyId },
     });
-    
+
     console.log("✅ Generation job queued successfully");
 
     return NextResponse.json({
       success: true,
-      message: "Generation started",
+      storyId,
+      status: "generating",
+      message: "Generation queued. Overcrowded spreads will be skipped and can be focused in the studio.",
     });
-
   } catch (err: any) {
     console.error("❌ [generate-all]", err);
+
     return NextResponse.json(
-      { error: err.message || "Failed to start generation" },
+      { error: err?.message || "Failed to start generation" },
       { status: 500 }
     );
   }

@@ -24,8 +24,8 @@ export default async function CharactersPage({ params }: Props) {
     where: eq(storyWorkflowProgress.storyId, storyId),
   });
 
-  // ⏳ Extraction still running → show loading state
-  if (!progress || !progress.worldComplete) {
+  // ⏳ Characters not yet extracted → show loading state
+  if (!progress || !progress.charactersExtracted) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-slate-600">Preparing your characters…</p>

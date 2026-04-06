@@ -12,6 +12,7 @@ import {
   storyPageLocations,
   spreadCharacterOutfits,
   characterStoryOutfits,
+  storySpreadPresence,
 } from "@/db/schema";
 import { db } from "@/db";
 import { v2 as cloudinary } from "cloudinary";
@@ -39,6 +40,7 @@ const client = new GoogleGenAI({
 const GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview";
 const IMAGE_ASPECT_RATIO = "16:9";
 const IMAGE_SIZE = "2K";
+const MAX_FEATURED_CHARACTERS = 5;
 
 const SPREAD_TEMPLATE_PATH = path.resolve(
   process.cwd(),
@@ -109,12 +111,23 @@ async function getImagePart(source: string) {
   return { inlineData: { data: buffer.toString("base64"), mimeType } };
 }
 
-async function saveImageToStorage(base64Data: string, mimeType: string, storyId: string) {
+async function saveImageToStorage(
+  base64Data: string,
+  mimeType: string,
+  storyId: string
+) {
   const buffer = Buffer.from(base64Data, "base64");
   return new Promise<string>((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      { folder: `flipwhizz/stories/${storyId}/spreads`, filename_override: uuid(), resource_type: "image" },
-      (err, res) => { if (err) return reject(err); resolve(res?.secure_url ?? ""); }
+      {
+        folder: `flipwhizz/stories/${storyId}/spreads`,
+        filename_override: uuid(),
+        resource_type: "image",
+      },
+      (err, res) => {
+        if (err) return reject(err);
+        resolve(res?.secure_url ?? "");
+      }
     );
     Readable.from(buffer).pipe(stream);
   });
@@ -126,35 +139,132 @@ function extractInlineImage(result: any) {
   if (!imagePart) {
     const lastImage = [...parts].reverse().find((p: any) => p.inlineData?.data);
     if (!lastImage) return null;
-    return { data: lastImage.inlineData.data as string, mimeType: lastImage.inlineData.mimeType as string };
+    return {
+      data: lastImage.inlineData.data as string,
+      mimeType: lastImage.inlineData.mimeType as string,
+    };
   }
-  return { data: imagePart.inlineData.data as string, mimeType: imagePart.inlineData.mimeType as string };
+  return {
+    data: imagePart.inlineData.data as string,
+    mimeType: imagePart.inlineData.mimeType as string,
+  };
 }
 
-type OutfitRef = { characterId: string; outfitKey: string; outfitDescription: string };
+function uniqueIds(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
+}
 
-type CharacterRef = {
-  id: string; name: string;
-  portraitUrl: string | null; fullBodyUrl: string | null; referenceUrl: string | null;
-  description: string | null; appearance: string | null;
-  species: string | null; breed: string | null; visualDetails: any;
+type OutfitRef = {
+  characterId: string;
+  outfitKey: string;
+  outfitDescription: string;
 };
 
+type CharacterRef = {
+  id: string;
+  name: string;
+  portraitUrl: string | null;
+  fullBodyUrl: string | null;
+  referenceUrl: string | null;
+  description: string | null;
+  appearance: string | null;
+  species: string | null;
+  breed: string | null;
+  visualDetails: any;
+};
 
+type SpreadPresenceCharacter = {
+  characterId: string;
+  role?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
+};
+
+async function loadSpreadRecord(
+  leftPageId: string,
+  rightPageId: string | null | undefined
+) {
+  return db
+    .select({
+      spreadId: storySpreads.id,
+      sceneSummary: storySpreads.sceneSummary,
+    })
+    .from(storySpreads)
+    .where(
+      rightPageId
+        ? or(
+            eq(storySpreads.leftPageId, leftPageId),
+            eq(storySpreads.rightPageId, rightPageId)
+          )
+        : eq(storySpreads.leftPageId, leftPageId)
+    )
+    .orderBy(desc(storySpreads.createdAt))
+    .limit(1)
+    .then((r) => r[0]);
+}
+
+async function loadFeaturedAndBackgroundCharacterIds(
+  spreadId: string
+): Promise<{ featuredIds: string[]; backgroundIds: string[] }> {
+  const presence = await db.query.storySpreadPresence.findFirst({
+    where: eq(storySpreadPresence.spreadId, spreadId),
+  });
+
+  const chars = (presence?.characters ?? []) as SpreadPresenceCharacter[];
+
+  const featuredIds = uniqueIds(
+    chars
+      .filter((c) => c.role === "primary")
+      .map((c) => c.characterId)
+  );
+
+  const backgroundIds = uniqueIds(
+    chars
+      .filter((c) => c.role === "background")
+      .map((c) => c.characterId)
+      .filter((id) => !featuredIds.includes(id))
+  );
+
+  return { featuredIds, backgroundIds };
+}
+
+async function loadPageCharacterIds(pageIds: string[]) {
+  const rows = await db
+    .select({ characterId: storyPageCharacters.characterId })
+    .from(storyPageCharacters)
+    .where(inArray(storyPageCharacters.pageId, pageIds));
+
+  return uniqueIds(rows.map((a) => a.characterId));
+}
 
 /* -------------------------------------------------------------------------- */
 /*                          STYLE GUIDE EXTRACTION                            */
 /* -------------------------------------------------------------------------- */
 
-type ColorPalette = { primary?: string; secondary?: string; accent?: string; mood?: string; hex?: string[] };
-type ResolvedStyleGuide = { geminiStyleBlock: string; geminiAvoidBlock: string; typographyBlock: string };
+type ColorPalette = {
+  primary?: string;
+  secondary?: string;
+  accent?: string;
+  mood?: string;
+  hex?: string[];
+};
+type ResolvedStyleGuide = {
+  geminiStyleBlock: string;
+  geminiAvoidBlock: string;
+  typographyBlock: string;
+};
 
-function resolveStyleGuide(style: typeof storyStyleGuide.$inferSelect | null | undefined): ResolvedStyleGuide {
+function resolveStyleGuide(
+  style: typeof storyStyleGuide.$inferSelect | null | undefined
+): ResolvedStyleGuide {
   if (!style) {
     return {
-      geminiStyleBlock: "Whimsical, warm children's book illustration, storybook quality",
-      geminiAvoidBlock: "Photorealism, CGI, harsh shadows, logos, watermarks, guide lines, template markers",
-      typographyBlock: "Large, child-friendly hand-lettered text with excellent contrast",
+      geminiStyleBlock:
+        "Whimsical, warm children's book illustration, storybook quality",
+      geminiAvoidBlock:
+        "Photorealism, CGI, harsh shadows, logos, watermarks, guide lines, template markers",
+      typographyBlock:
+        "Large, child-friendly hand-lettered text with excellent contrast",
     };
   }
 
@@ -164,10 +274,25 @@ function resolveStyleGuide(style: typeof storyStyleGuide.$inferSelect | null | u
   const colorPalette = style.colorPalette as ColorPalette | null;
 
   const styleLines: string[] = [];
-  if (promptBase) { styleLines.push(promptBase); }
-  else { styleLines.push(artStyle ? `${artStyle}, children's book illustration` : "Whimsical, warm children's book illustration"); }
+  if (promptBase) {
+    styleLines.push(promptBase);
+  } else {
+    styleLines.push(
+      artStyle
+        ? `${artStyle}, children's book illustration`
+        : "Whimsical, warm children's book illustration"
+    );
+  }
   if (colorPalette?.primary) {
-    styleLines.push(`Palette: ${[colorPalette.primary, colorPalette.secondary, colorPalette.accent].filter(Boolean).join(", ")}`);
+    styleLines.push(
+      `Palette: ${[
+        colorPalette.primary,
+        colorPalette.secondary,
+        colorPalette.accent,
+      ]
+        .filter(Boolean)
+        .join(", ")}`
+    );
   }
 
   const avoidParts: string[] = [];
@@ -177,7 +302,9 @@ function resolveStyleGuide(style: typeof storyStyleGuide.$inferSelect | null | u
   return {
     geminiStyleBlock: styleLines.join(". "),
     geminiAvoidBlock: avoidParts.join(", "),
-    typographyBlock: style.typography?.trim() ?? "Large, child-friendly hand-lettered text with excellent contrast",
+    typographyBlock:
+      style.typography?.trim() ??
+      "Large, child-friendly hand-lettered text with excellent contrast",
   };
 }
 
@@ -193,20 +320,28 @@ export const generateBookSpreads = inngest.createFunction(
     assertNonEmpty(storyId, "storyId");
 
     const [{ count }] = await step.run("check-character-anchors", async () =>
-      db.select({ count: sql<number>`count(*)` })
+      db
+        .select({ count: sql<number>`count(*)` })
         .from(characters)
-        .innerJoin(storyCharacters, eq(characters.id, storyCharacters.characterId))
-        .where(and(
-          eq(storyCharacters.storyId, storyId),
-          or(
-            sql`${characters.portraitImageUrl} IS NOT NULL`,
-            sql`${characters.referenceImageUrl} IS NOT NULL`,
-            sql`${characters.fullBodyImageUrl} IS NOT NULL`
+        .innerJoin(
+          storyCharacters,
+          eq(characters.id, storyCharacters.characterId)
+        )
+        .where(
+          and(
+            eq(storyCharacters.storyId, storyId),
+            or(
+              sql`${characters.portraitImageUrl} IS NOT NULL`,
+              sql`${characters.referenceImageUrl} IS NOT NULL`,
+              sql`${characters.fullBodyImageUrl} IS NOT NULL`
+            )
           )
-        ))
+        )
     );
 
-    if (count === 0) throw new Error("Generate blocked: no character reference images");
+    if (count === 0) {
+      throw new Error("Generate blocked: no character reference images");
+    }
 
     const pages = await db.query.storyPages.findMany({
       where: eq(storyPages.storyId, storyId),
@@ -214,21 +349,52 @@ export const generateBookSpreads = inngest.createFunction(
       columns: { id: true, pageNumber: true },
     });
 
-    const events = [];
+    const events: Array<{ name: string; data: any }> = [];
+    const skippedForFocus: string[] = [];
+
     for (let i = 0; i < pages.length; i += 2) {
+      const leftPageId = pages[i].id;
+      const rightPageId = pages[i + 1]?.id ?? null;
+      const pageLabel = `${pages[i].pageNumber}-${pages[i + 1]?.pageNumber ?? "end"}`;
+
+      const spread = await step.run(`load-spread-${pageLabel}`, async () =>
+        loadSpreadRecord(leftPageId, rightPageId)
+      );
+
+      if (spread?.spreadId) {
+        const { featuredIds } = await step.run(
+          `check-featured-characters-${pageLabel}`,
+          async () => loadFeaturedAndBackgroundCharacterIds(spread.spreadId)
+        );
+
+        if (featuredIds.length > MAX_FEATURED_CHARACTERS) {
+          console.warn(
+            `⚠️ Skipping spread ${pageLabel}: ${featuredIds.length} featured characters`
+          );
+          skippedForFocus.push(pageLabel);
+          continue;
+        }
+      }
+
       events.push({
         name: "story/generate.single.spread",
         data: {
           storyId,
-          leftPageId: pages[i].id,
-          rightPageId: pages[i + 1]?.id ?? null,
-          pageLabel: `${pages[i].pageNumber}-${pages[i + 1]?.pageNumber ?? "end"}`,
+          leftPageId,
+          rightPageId,
+          pageLabel,
         },
       });
     }
 
-    if (events.length) await step.sendEvent("dispatch-spread-workers", events);
-    return { spreadsQueued: events.length };
+    if (events.length) {
+      await step.sendEvent("dispatch-spread-workers", events);
+    }
+
+    return {
+      spreadsQueued: events.length,
+      spreadsSkippedForFocus: skippedForFocus,
+    };
   }
 );
 
@@ -246,181 +412,313 @@ export const generateSingleSpread = inngest.createFunction(
       throw new Error("Invalid spread payload");
     }
 
-    const { storyId, leftPageId, rightPageId, pageLabel, feedback, existingSpreadImageUrl, referenceOverrides } = parsed.data;
+    const {
+      storyId,
+      leftPageId,
+      rightPageId,
+      pageLabel,
+      feedback,
+      existingSpreadImageUrl,
+      referenceOverrides,
+    } = parsed.data;
+
     assertNonEmpty(storyId, "storyId");
     assertNonEmpty(leftPageId, "leftPageId");
+
     const hasOverrides = !!referenceOverrides;
 
     const imageUrl = await step.run("generate-and-upload", async () => {
+      const spreadPageIds = [leftPageId, ...(rightPageId ? [rightPageId] : [])];
 
       // ── LOAD PAGE TEXT ──
-      const left = await db.query.storyPages.findFirst({ where: eq(storyPages.id, leftPageId), columns: { text: true } });
-      const right = rightPageId ? await db.query.storyPages.findFirst({ where: eq(storyPages.id, rightPageId), columns: { text: true } }) : null;
+      const left = await db.query.storyPages.findFirst({
+        where: eq(storyPages.id, leftPageId),
+        columns: { text: true },
+      });
+      const right = rightPageId
+        ? await db.query.storyPages.findFirst({
+            where: eq(storyPages.id, rightPageId),
+            columns: { text: true },
+          })
+        : null;
 
       // ── LOAD STYLE GUIDE ──
-      const style = await db.query.storyStyleGuide.findFirst({ where: eq(storyStyleGuide.storyId, storyId) });
-      const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } = resolveStyleGuide(style);
+      const style = await db.query.storyStyleGuide.findFirst({
+        where: eq(storyStyleGuide.storyId, storyId),
+      });
+      const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } =
+        resolveStyleGuide(style);
 
       // ── STYLE REFERENCE FALLBACK ──
       let styleRefUrl: string | null = style?.sampleIllustrationUrl ?? null;
       if (!styleRefUrl || isDataUrl(styleRefUrl)) {
-        const firstSpread = await db.select({ imageUrl: storyPages.imageUrl }).from(storyPages)
-          .where(eq(storyPages.storyId, storyId)).orderBy(asc(storyPages.pageNumber)).limit(10)
+        const firstSpread = await db
+          .select({ imageUrl: storyPages.imageUrl })
+          .from(storyPages)
+          .where(eq(storyPages.storyId, storyId))
+          .orderBy(asc(storyPages.pageNumber))
+          .limit(10)
           .then((pp) => pp.find((p) => p.imageUrl && !isDataUrl(p.imageUrl)));
         styleRefUrl = firstSpread?.imageUrl ?? null;
       }
 
       // ── LOAD SPREAD PLAN ──
-      const spread = await db.select({ spreadId: storySpreads.id, sceneSummary: storySpreads.sceneSummary })
-        .from(storySpreads)
-        .where(rightPageId
-          ? or(eq(storySpreads.leftPageId, leftPageId), eq(storySpreads.rightPageId, rightPageId))
-          : eq(storySpreads.leftPageId, leftPageId))
-        .orderBy(desc(storySpreads.createdAt)).limit(1).then((r) => r[0]);
-      if (!spread) throw new Error(`No spread plan for ${pageLabel}`);
-
-      // ── RESOLVE CHARACTERS ──
-      const spreadPageIds = [leftPageId, ...(rightPageId ? [rightPageId] : [])];
-      let charIds: string[];
-
-      if (hasOverrides && referenceOverrides!.includedCharacterIds.length > 0) {
-        charIds = referenceOverrides!.includedCharacterIds;
-      } else {
-        const rows = await db.select({ characterId: storyPageCharacters.characterId })
-          .from(storyPageCharacters).where(inArray(storyPageCharacters.pageId, spreadPageIds));
-        charIds = [...new Set(rows.map((a) => a.characterId))];
+      const spread = await loadSpreadRecord(leftPageId, rightPageId);
+      if (!spread) {
+        throw new Error(`No spread plan for ${pageLabel}`);
       }
 
-      const charRefs: CharacterRef[] = charIds.length === 0 ? [] : await db.select({
-        id: characters.id, name: characters.name,
-        portraitUrl: characters.portraitImageUrl, fullBodyUrl: characters.fullBodyImageUrl,
-        referenceUrl: characters.referenceImageUrl, description: characters.description,
-        appearance: characters.appearance, species: characters.species, breed: characters.breed,
-        visualDetails: characters.visualDetails,
-      }).from(characters).where(inArray(characters.id, charIds));
+      // ── RESOLVE CHARACTERS ──
+      let featuredCharacterIds: string[] = [];
+      let backgroundCharacterIds: string[] = [];
+
+      if (hasOverrides && referenceOverrides!.includedCharacterIds.length > 0) {
+        featuredCharacterIds = uniqueIds(referenceOverrides!.includedCharacterIds);
+        backgroundCharacterIds = [];
+      } else if (spread.spreadId) {
+        const resolved = await loadFeaturedAndBackgroundCharacterIds(spread.spreadId);
+        featuredCharacterIds = resolved.featuredIds;
+        backgroundCharacterIds = resolved.backgroundIds;
+      }
+
+      if (featuredCharacterIds.length === 0) {
+        featuredCharacterIds = await loadPageCharacterIds(spreadPageIds);
+        backgroundCharacterIds = [];
+      }
+
+      featuredCharacterIds = uniqueIds(featuredCharacterIds);
+      backgroundCharacterIds = uniqueIds(
+        backgroundCharacterIds.filter((id) => !featuredCharacterIds.includes(id))
+      );
+
+      if (featuredCharacterIds.length > MAX_FEATURED_CHARACTERS) {
+        throw new Error(
+          `Spread ${pageLabel} needs focus selection before generation: ${featuredCharacterIds.length} featured characters found (max ${MAX_FEATURED_CHARACTERS}).`
+        );
+      }
+
+      const allRelevantCharacterIds = uniqueIds([
+        ...featuredCharacterIds,
+        ...backgroundCharacterIds,
+      ]);
+
+      const allCharacterRefs: CharacterRef[] =
+        allRelevantCharacterIds.length === 0
+          ? []
+          : await db
+              .select({
+                id: characters.id,
+                name: characters.name,
+                portraitUrl: characters.portraitImageUrl,
+                fullBodyUrl: characters.fullBodyImageUrl,
+                referenceUrl: characters.referenceImageUrl,
+                description: characters.description,
+                appearance: characters.appearance,
+                species: characters.species,
+                breed: characters.breed,
+                visualDetails: characters.visualDetails,
+              })
+              .from(characters)
+              .where(inArray(characters.id, allRelevantCharacterIds));
+
+      const charRefs = featuredCharacterIds
+        .map((id) => allCharacterRefs.find((c) => c.id === id))
+        .filter(Boolean) as CharacterRef[];
+
+      const backgroundNames = backgroundCharacterIds
+        .map((id) => allCharacterRefs.find((c) => c.id === id)?.name)
+        .filter(Boolean) as string[];
 
       // ── RESOLVE LOCATION ──
-      let locationRef: null | { name: string; imageUrl: string; description: string | null } = null;
-      const overrideLocationId = referenceOverrides?.primaryLocationId ?? referenceOverrides?.locationId ?? null;
+      let locationRef: null | {
+        name: string;
+        imageUrl: string;
+        description: string | null;
+      } = null;
+
+      const overrideLocationId =
+        referenceOverrides?.primaryLocationId ??
+        referenceOverrides?.locationId ??
+        null;
 
       if (hasOverrides && overrideLocationId) {
-        const loc = await db.select({ name: locations.name, imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`, description: locations.description })
-          .from(locations).where(eq(locations.id, overrideLocationId)).limit(1).then((r) => r[0]);
-        if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) locationRef = loc;
+        const loc = await db
+          .select({
+            name: locations.name,
+            imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
+            description: locations.description,
+          })
+          .from(locations)
+          .where(eq(locations.id, overrideLocationId))
+          .limit(1)
+          .then((r) => r[0]);
+
+        if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) {
+          locationRef = loc;
+        }
       } else {
-        const rows = await db.select({ locationId: storyPageLocations.locationId })
-          .from(storyPageLocations).where(inArray(storyPageLocations.pageId, spreadPageIds));
-        const locIds = [...new Set(rows.map((a) => a.locationId))];
+        const rows = await db
+          .select({ locationId: storyPageLocations.locationId })
+          .from(storyPageLocations)
+          .where(inArray(storyPageLocations.pageId, spreadPageIds));
+
+        const locIds = uniqueIds(rows.map((a) => a.locationId));
+
         if (locIds.length > 0) {
-          const loc = await db.select({ name: locations.name, imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`, description: locations.description })
-            .from(locations).where(eq(locations.id, locIds[0])).limit(1).then((r) => r[0]);
-          if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) locationRef = loc;
+          const loc = await db
+            .select({
+              name: locations.name,
+              imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
+              description: locations.description,
+            })
+            .from(locations)
+            .where(eq(locations.id, locIds[0]))
+            .limit(1)
+            .then((r) => r[0]);
+
+          if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) {
+            locationRef = loc;
+          }
         }
       }
 
-      // ── RESOLVE OUTFITS ──
-      // const outfitByCharacterId = new Map<string, OutfitRef>();
-
-      // if (hasOverrides && Object.keys(referenceOverrides!.outfitOverrides).length > 0) {
-      //   const entries = Object.entries(referenceOverrides!.outfitOverrides);
-      //   const lookups = await db.select({ characterId: characterStoryOutfits.characterId, outfitKey: characterStoryOutfits.outfitKey, outfitDescription: characterStoryOutfits.outfitDescription })
-      //     .from(characterStoryOutfits).where(and(eq(characterStoryOutfits.storyId, storyId), inArray(characterStoryOutfits.characterId, entries.map(([cid]) => cid))));
-      //   for (const [characterId, outfitKey] of entries) {
-      //     const match = lookups.find((o) => o.characterId === characterId && o.outfitKey === outfitKey);
-      //     if (match) outfitByCharacterId.set(characterId, { characterId, outfitKey: match.outfitKey, outfitDescription: match.outfitDescription });
-      //   }
-      // } else {
-      //   const assignments = spread.spreadId ? await db.query.spreadCharacterOutfits.findMany({ where: eq(spreadCharacterOutfits.spreadId, spread.spreadId) }) : [];
-      //   const cids = [...new Set(assignments.map((o) => o.characterId))];
-      //   const canonical = cids.length > 0 ? await db.select({ characterId: characterStoryOutfits.characterId, outfitKey: characterStoryOutfits.outfitKey, outfitDescription: characterStoryOutfits.outfitDescription })
-      //     .from(characterStoryOutfits).where(and(eq(characterStoryOutfits.storyId, storyId), inArray(characterStoryOutfits.characterId, cids))) : [];
-      //   for (const a of assignments) {
-      //     const match = canonical.find((o) => o.characterId === a.characterId && o.outfitKey === a.outfitKey);
-      //     if (match) outfitByCharacterId.set(a.characterId, { characterId: a.characterId, outfitKey: match.outfitKey, outfitDescription: match.outfitDescription });
-      //     else if (a.outfitDescription) outfitByCharacterId.set(a.characterId, { characterId: a.characterId, outfitKey: a.outfitKey, outfitDescription: a.outfitDescription });
-      //   }
-      // }
-
-      // ── DEBUG: what are we sending? ──
+      // ── DEBUG ──
       console.log("🗺️ Location:", locationRef ? locationRef.name : "NONE");
+      console.log(
+        `👥 Featured characters (${featuredCharacterIds.length}):`,
+        charRefs.map((c) => c.name)
+      );
+      console.log(
+        `👥 Background characters (${backgroundNames.length}):`,
+        backgroundNames
+      );
 
       // ══════════════════════════════════════════════════════════════════
       // BUILD GEMINI PROMPT — IMAGES FIRST, MINIMAL TEXT
       // ══════════════════════════════════════════════════════════════════
       const parts: any[] = [];
 
-      // 1. STYLE REFERENCE
+      // 1. FEATURED CHARACTERS FIRST — highest priority
+      const missingPortraits: string[] = [];
+
+      for (const c of charRefs) {
+        if (!c.portraitUrl || isDataUrl(c.portraitUrl)) {
+          missingPortraits.push(c.name);
+          continue;
+        }
+
+        try {
+          parts.push(await getImagePart(c.portraitUrl));
+        } catch (err) {
+          missingPortraits.push(`${c.name} (fetch failed)`);
+          continue;
+        }
+
+        const isAnimal = c.species && c.species !== "human";
+        const animalProfile = (c.visualDetails as any)?.animalProfile;
+        const anchors = c.appearance
+          ? c.appearance
+              .split(/[,.]/)
+              .map((s: string) => s.trim())
+              .filter(Boolean)
+              .slice(0, 6)
+              .join(", ")
+          : "";
+        const anchorNote = anchors ? ` Key features: ${anchors}.` : "";
+
+        if (isAnimal) {
+          const coatNote = animalProfile?.coatColour
+            ? ` — ${animalProfile.coatColour} coat`
+            : "";
+          parts.push({
+            text: `↑ FEATURED CHARACTER: ${c.name.toUpperCase()} (${c.breed || c.species}${coatNote}).${anchorNote} Preserve this character's identity exactly. ↑`,
+          });
+        } else {
+          parts.push({
+            text: `↑ FEATURED CHARACTER: ${c.name.toUpperCase()}.${anchorNote} Preserve this character's identity exactly. ↑`,
+          });
+        }
+      }
+
+      if (missingPortraits.length > 0) {
+        throw new Error(
+          `Cannot generate spread ${pageLabel}: no AI portrait for featured characters: ${missingPortraits.join(
+            ", "
+          )}. Generate portraits before illustrating.`
+        );
+      }
+
+      // 2. STYLE REFERENCE
       if (styleRefUrl && !isDataUrl(styleRefUrl)) {
         try {
           parts.push(await getImagePart(styleRefUrl));
-          parts.push({ text: "↑ STYLE REFERENCE — match this illustration style exactly. Same technique, line weight, colours, warmth. ↑" });
-        } catch (err) { console.warn("⚠️ Style ref failed:", err); }
+          parts.push({
+            text: "↑ STYLE REFERENCE — match this illustration style exactly. Same technique, line weight, colours, warmth. ↑",
+          });
+        } catch (err) {
+          console.warn("⚠️ Style ref failed:", err);
+        }
       }
-
-      // 2. LAYOUT TEMPLATE
-      try {
-        parts.push(await getImagePart(SPREAD_TEMPLATE_PATH));
-        parts.push({ text: "↑ LAYOUT GUIDE — place LEFT page text in upper-left zone, RIGHT page text in upper-right zone. Keep text away from all edges and the centre spine. Do NOT draw any guides or template markers. ↑" });
-      } catch (err) { console.warn("⚠️ Template failed:", err); }
 
       // 3. LOCATION
       if (locationRef) {
         try {
           parts.push(await getImagePart(locationRef.imageUrl));
-          parts.push({ text: `↑ LOCATION: ${locationRef.name.toUpperCase()} — use this as the setting. ↑` });
-        } catch (err) { console.warn("⚠️ Location ref failed:", err); }
+          parts.push({
+            text: `↑ LOCATION: ${locationRef.name.toUpperCase()} — use this as the setting. ↑`,
+          });
+        } catch (err) {
+          console.warn("⚠️ Location ref failed:", err);
+        }
       }
 
       // 4. EXISTING SPREAD (redraw only)
       if (existingSpreadImageUrl && !isDataUrl(existingSpreadImageUrl)) {
         try {
           parts.push(await getImagePart(existingSpreadImageUrl));
-          parts.push({ text: "↑ CURRENT VERSION — keep what works, fix what the feedback requests. Do not simply copy this. ↑" });
-        } catch (err) { console.warn("⚠️ Existing spread failed:", err); }
+          parts.push({
+            text: "↑ CURRENT VERSION — keep what works, fix what the feedback requests. Do not simply copy this. ↑",
+          });
+        } catch (err) {
+          console.warn("⚠️ Existing spread failed:", err);
+        }
       }
 
-// 5. CHARACTERS — PORTRAIT ONLY, NO FALLBACKS
-const missingPortraits: string[] = [];
+      // 5. LAYOUT TEMPLATE
+      try {
+        parts.push(await getImagePart(SPREAD_TEMPLATE_PATH));
+        parts.push({
+          text: "↑ LAYOUT GUIDE — place LEFT page text in upper-left zone, RIGHT page text in upper-right zone. Keep text away from all edges and the centre spine. Do NOT draw any guides or template markers. ↑",
+        });
+      } catch (err) {
+        console.warn("⚠️ Template failed:", err);
+      }
 
-for (const c of charRefs) {
-  if (!c.portraitUrl || isDataUrl(c.portraitUrl)) {
-    missingPortraits.push(c.name);
-    continue;
-  }
-
-  try {
-    parts.push(await getImagePart(c.portraitUrl));
-  } catch (err) {
-    missingPortraits.push(`${c.name} (fetch failed)`);
-    continue;
-  }
-
-  const isAnimal = c.species && c.species !== "human";
-  const animalProfile = (c.visualDetails as any)?.animalProfile;
-  const anchors = c.appearance
-    ? c.appearance.split(/[,.]/).map((s: string) => s.trim()).filter(Boolean).slice(0, 4).join(", ")
-    : "";
-  const anchorNote = anchors ? ` Key features: ${anchors}.` : "";
-
-  if (isAnimal) {
-    const coatNote = animalProfile?.coatColour ? ` — ${animalProfile.coatColour} coat` : "";
-    parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()} (${c.breed || c.species}${coatNote}).${anchorNote} Match exactly. ↑` });
-  } else {
-    parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()}.${anchorNote} Match this reference exactly. ↑` });
-  }
-}
-
-if (missingPortraits.length > 0) {
-  throw new Error(`Cannot generate spread ${pageLabel}: no AI portrait for: ${missingPortraits.join(", ")}. Generate portraits before illustrating.`);
-}
-
-      // 6. SCENE INSTRUCTIONS — SHORT
-      parts.push({ text: `
+      // 6. SCENE INSTRUCTIONS
+      parts.push({
+        text: `
 CREATE A DOUBLE-PAGE SPREAD ILLUSTRATION.
 One continuous 16:9 landscape. Left half = left page, right half = right page.
+
+HIGHEST PRIORITY:
+- Preserve the identity of every FEATURED character exactly
+- Do not redesign, simplify, substitute, or genericise featured characters
+- Match their face, body, colours, markings, hair/fur shape, and signature features closely
+
+STYLE:
 ${geminiStyleBlock}
 
-SCENE: ${spread.sceneSummary ?? "Illustrate the story text below."}
+SCENE:
+${spread.sceneSummary ?? "Illustrate the story text below."}
+
+${
+  backgroundNames.length > 0
+    ? `BACKGROUND CHARACTERS:
+These characters may appear as smaller or less detailed background cameos only: ${backgroundNames.join(
+        ", "
+      )}. Do not let them replace or dilute the featured characters.`
+    : ""
+}
 
 LEFT PAGE TEXT (upper-left area):
 ${left?.text ?? ""}
@@ -430,16 +728,29 @@ ${right?.text ?? ""}
 
 Hand-letter text into the illustration. Large, high-contrast, child-friendly. ${typographyBlock}
 Keep text well inside safe zones. Outer edges will be trimmed.
-AVOID: ${geminiAvoidBlock}${feedback ? `\nFEEDBACK: ${feedback}` : ""}`.trim() });
+AVOID: ${geminiAvoidBlock}${feedback ? `\nFEEDBACK: ${feedback}` : ""}
+        `.trim(),
+      });
 
       // ── Debug summary ──
       const imgCount = parts.filter((p: any) => p.inlineData).length;
-      const txtLen = parts.filter((p: any) => p.text).reduce((s: number, p: any) => s + p.text.length, 0);
+      const txtLen = parts
+        .filter((p: any) => p.text)
+        .reduce((s: number, p: any) => s + p.text.length, 0);
+
       console.log(`📦 Prompt: ${imgCount} images, ${txtLen} chars of text`);
-      console.log("📦 Parts:", parts.map((p: any, i: number) => ({
-        i, type: p.text ? "T" : "I",
-        preview: p.text ? p.text.substring(0, 60).replace(/\n/g, " ") : `${Math.round(Buffer.from(p.inlineData?.data || "", "base64").length / 1024)}KB`,
-      })));
+      console.log(
+        "📦 Parts:",
+        parts.map((p: any, i: number) => ({
+          i,
+          type: p.text ? "T" : "I",
+          preview: p.text
+            ? p.text.substring(0, 60).replace(/\n/g, " ")
+            : `${Math.round(
+                Buffer.from(p.inlineData?.data || "", "base64").length / 1024
+              )}KB`,
+        }))
+      );
 
       // ══════════════════════════════════════════════════════════════════
       // GENERATE IMAGE
@@ -449,22 +760,33 @@ AVOID: ${geminiAvoidBlock}${feedback ? `\nFEEDBACK: ${feedback}` : ""}`.trim() }
         contents: [{ role: "user", parts }],
         config: {
           responseModalities: ["IMAGE"],
-          imageConfig: { aspectRatio: IMAGE_ASPECT_RATIO, imageSize: IMAGE_SIZE },
+          imageConfig: {
+            aspectRatio: IMAGE_ASPECT_RATIO,
+            imageSize: IMAGE_SIZE,
+          },
           safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+            {
+              category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+              threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            },
           ],
         },
       });
 
       const image = extractInlineImage(response);
       if (!image) throw new Error("No image returned from Gemini");
+
       return saveImageToStorage(image.data, image.mimeType, storyId);
     });
 
     // ── SAVE URL TO DB ──
     await step.run("save-url", async () => {
-      await db.update(storyPages).set({ imageUrl })
-        .where(inArray(storyPages.id, [leftPageId, ...(rightPageId ? [rightPageId] : [])]));
+      await db
+        .update(storyPages)
+        .set({ imageUrl })
+        .where(
+          inArray(storyPages.id, [leftPageId, ...(rightPageId ? [rightPageId] : [])])
+        );
     });
 
     return { success: true, pageLabel, imageUrl };

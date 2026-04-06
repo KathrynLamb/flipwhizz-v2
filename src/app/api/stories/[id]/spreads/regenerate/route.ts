@@ -1,5 +1,3 @@
-// src/app/api/stories/[id]/spreads/regenerate/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import { inngest } from "@/inngest/client";
 import { db } from "@/db";
@@ -10,6 +8,12 @@ import {
   storyPageLocations,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
+
+const MAX_FEATURED_CHARACTERS = 5;
+
+function uniqueIds(values: string[] | undefined | null) {
+  return [...new Set((values ?? []).filter(Boolean))];
+}
 
 export async function POST(
   req: NextRequest,
@@ -25,6 +29,8 @@ export async function POST(
     includedCharacterIds,
     outfitOverrides,
     locationId,
+    primaryLocationId,
+    includedLocationIds,
     freshStart,
   } = body as {
     pageIds: string[];
@@ -32,13 +38,29 @@ export async function POST(
     feedback: string;
     includedCharacterIds: string[];
     outfitOverrides: Record<string, string>;
-    locationId: string | null;
+    locationId?: string | null;
+    primaryLocationId?: string | null;
+    includedLocationIds?: string[];
     freshStart?: boolean;
   };
 
   if (!pageIds?.length) {
     return NextResponse.json(
       { error: "pageIds are required" },
+      { status: 400 }
+    );
+  }
+
+  const normalizedCharacterIds = uniqueIds(includedCharacterIds);
+  const normalizedIncludedLocationIds = uniqueIds(includedLocationIds);
+  const resolvedPrimaryLocationId =
+    primaryLocationId ?? locationId ?? normalizedIncludedLocationIds[0] ?? null;
+
+  if (normalizedCharacterIds.length > MAX_FEATURED_CHARACTERS) {
+    return NextResponse.json(
+      {
+        error: `You can choose up to ${MAX_FEATURED_CHARACTERS} featured characters for one spread.`,
+      },
       { status: 400 }
     );
   }
@@ -64,18 +86,21 @@ export async function POST(
   }
 
   // ── Persist character overrides so they stick for future redraws ──
-  if (includedCharacterIds?.length) {
-    // Get current assignments for these pages
+  if (normalizedCharacterIds.length > 0) {
     const existingAssignments = await db
-      .select({ pageId: storyPageCharacters.pageId, characterId: storyPageCharacters.characterId })
+      .select({
+        pageId: storyPageCharacters.pageId,
+        characterId: storyPageCharacters.characterId,
+      })
       .from(storyPageCharacters)
       .where(inArray(storyPageCharacters.pageId, pageIds));
 
-    const existingCharIds = new Set(existingAssignments.map((a) => a.characterId));
-    const wantedCharIds = new Set(includedCharacterIds);
+    const existingCharIds = new Set(
+      existingAssignments.map((a) => a.characterId)
+    );
+    const wantedCharIds = new Set(normalizedCharacterIds);
 
-    // Add new characters that weren't assigned before
-    const toAdd = includedCharacterIds.filter((cid) => !existingCharIds.has(cid));
+    const toAdd = normalizedCharacterIds.filter((cid) => !existingCharIds.has(cid));
     if (toAdd.length > 0) {
       await db.insert(storyPageCharacters).values(
         toAdd.flatMap((characterId) =>
@@ -90,7 +115,6 @@ export async function POST(
       );
     }
 
-    // Remove characters that were unselected
     const toRemove = [...existingCharIds].filter((cid) => !wantedCharIds.has(cid));
     if (toRemove.length > 0) {
       for (const characterId of toRemove) {
@@ -106,39 +130,52 @@ export async function POST(
     }
   }
 
-  // ── Persist location override ──
-  if (locationId) {
-    // Get current location assignments for these pages
+  // ── Persist location overrides ──
+  const finalLocationIds = uniqueIds([
+    ...(resolvedPrimaryLocationId ? [resolvedPrimaryLocationId] : []),
+    ...normalizedIncludedLocationIds,
+  ]);
+
+  if (finalLocationIds.length > 0) {
     const existingLocAssignments = await db
-      .select({ pageId: storyPageLocations.pageId, locationId: storyPageLocations.locationId })
+      .select({
+        pageId: storyPageLocations.pageId,
+        locationId: storyPageLocations.locationId,
+      })
       .from(storyPageLocations)
       .where(inArray(storyPageLocations.pageId, pageIds));
 
-    const currentLocId = existingLocAssignments[0]?.locationId;
+    const existingLocationIds = new Set(
+      existingLocAssignments.map((a) => a.locationId)
+    );
+    const wantedLocationIds = new Set(finalLocationIds);
 
-    if (currentLocId !== locationId) {
-      // Remove old location assignments
+    const locationSetsMatch =
+      existingLocationIds.size === wantedLocationIds.size &&
+      [...existingLocationIds].every((id) => wantedLocationIds.has(id));
+
+    if (!locationSetsMatch) {
       if (existingLocAssignments.length > 0) {
         await db
           .delete(storyPageLocations)
           .where(inArray(storyPageLocations.pageId, pageIds));
       }
 
-      // Add new location assignment
       await db.insert(storyPageLocations).values(
-        pageIds.map((pageId) => ({
-          storyId,
-          pageId,
-          locationId,
-          canonical: true,
-          source: "user" as const,
-        }))
+        finalLocationIds.flatMap((locId) =>
+          pageIds.map((pageId) => ({
+            storyId,
+            pageId,
+            locationId: locId,
+            canonical: true,
+            source: "user" as const,
+          }))
+        )
       );
     }
   }
 
   // Capture the existing spread image BEFORE clearing
-  // so Gemini can see what the user's feedback refers to
   const existingPages = await db
     .select({ id: storyPages.id, imageUrl: storyPages.imageUrl })
     .from(storyPages)
@@ -153,7 +190,6 @@ export async function POST(
     .set({ imageUrl: null })
     .where(inArray(storyPages.id, pageIds));
 
-  // Fire Inngest with the same event as generate-spread
   // Fresh start = clean generation with no feedback, no previous image, no overrides
   await inngest.send({
     name: "story/generate.single.spread",
@@ -168,9 +204,11 @@ export async function POST(
             feedback: feedback || undefined,
             existingSpreadImageUrl,
             referenceOverrides: {
-              includedCharacterIds,
-              outfitOverrides,
-              locationId,
+              includedCharacterIds: normalizedCharacterIds,
+              outfitOverrides: outfitOverrides ?? {},
+              locationId: resolvedPrimaryLocationId,
+              primaryLocationId: resolvedPrimaryLocationId,
+              includedLocationIds: finalLocationIds,
             },
           }),
     },

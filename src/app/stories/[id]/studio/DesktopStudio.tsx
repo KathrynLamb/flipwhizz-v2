@@ -6,20 +6,20 @@ import {
   Download,
   ImagePlus,
   Sparkles,
-  Wand2,
   RotateCcw,
   Check,
   BookImage,
   ChevronRight,
   PartyPopper,
   Printer,
+  Users,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import RedrawModal from "@/app/stories/[id]/studio/components/redrawModal";
+import FocusSceneModal from "@/app/stories/[id]/studio/components/FocusSceneModal";
 import StudioPaywall from "@/components/StudioPaywall";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
-
 
 /* ---------------------------------- Types --------------------------------- */
 
@@ -35,6 +35,38 @@ type Spread = {
   spreadId: string | null;
   left: Page;
   right: Page | null;
+};
+
+type FocusCharacterOption = {
+  characterId: string;
+  name: string;
+  imageUrl: string | null;
+  role?: string | null;
+};
+
+type FocusSceneSelection = {
+  featuredCharacterIds: string[];
+  backgroundCharacterIds: string[];
+  hiddenCharacterIds: string[];
+};
+
+type SpreadReferencesResponse = {
+  assignedCharacters: {
+    characterId: string;
+    name: string;
+    portraitImageUrl: string | null;
+    fullBodyImageUrl: string | null;
+    referenceImageUrl: string | null;
+    role: string | null;
+  }[];
+  availableCharacters: {
+    characterId: string;
+    name: string;
+    portraitImageUrl: string | null;
+    fullBodyImageUrl: string | null;
+    referenceImageUrl: string | null;
+    role: string | null;
+  }[];
 };
 
 /* -------------------------- Helper: build spreads -------------------------- */
@@ -62,6 +94,14 @@ function groupIntoSpreads(
   }
 
   return spreads;
+}
+
+function bestCharacterImage(c: {
+  portraitImageUrl?: string | null;
+  fullBodyImageUrl?: string | null;
+  referenceImageUrl?: string | null;
+}) {
+  return c.portraitImageUrl || c.fullBodyImageUrl || c.referenceImageUrl || null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -92,7 +132,6 @@ function CoverSpreadPreview({
           Cover (Back · Spine · Front)
         </div>
 
-        {/* Redraw button — hover reveal, same pattern as interior spreads */}
         <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={onRedraw}
@@ -123,18 +162,15 @@ function SpreadCard({
   const pageLabel = spread.right
     ? `Pages ${spread.left.pageNumber}–${spread.right.pageNumber}`
     : `Page ${spread.left.pageNumber}`;
- 
+
   const hasImage = !!spread.left.imageUrl;
-  const isWorking = isRegenerating || isGeneratingAll;
- 
+
   return (
     <div className="group bg-white rounded-2xl border overflow-hidden relative">
-      {/* Spread number label */}
       <div className="absolute top-3 left-3 z-10 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-white">
         {pageLabel}
       </div>
- 
-      {/* Redraw button */}
+
       {hasImage && !isRegenerating && (
         <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
@@ -146,8 +182,7 @@ function SpreadCard({
           </button>
         </div>
       )}
- 
-      {/* Image area */}
+
       <div className="aspect-[2/1] bg-gray-100 relative">
         {isRegenerating ? (
           <div className="flex h-full items-center justify-center">
@@ -194,8 +229,7 @@ function SpreadCard({
           </div>
         )}
       </div>
- 
-      {/* Text preview (only when no image) */}
+
       {!hasImage && (
         <div className="px-5 py-3 border-t border-gray-100">
           <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
@@ -207,7 +241,7 @@ function SpreadCard({
     </div>
   );
 }
- 
+
 /* -------------------------------------------------------------------------- */
 /*                           Studio Action Card                               */
 /* -------------------------------------------------------------------------- */
@@ -234,7 +268,6 @@ function StudioActionCard({
   const hasCover = !!coverSpreadUrl;
   const hasPdf = !!pdfUrl;
 
-  // ── State 1: No cover yet — celebrate + prompt cover design ──
   if (!hasCover) {
     return (
       <motion.div
@@ -245,12 +278,12 @@ function StudioActionCard({
         style={{
           background: "white",
           border: "1px solid rgba(180,150,210,0.12)",
-          boxShadow: "0 2px 12px rgba(100,60,140,0.06), 0 8px 32px rgba(100,60,140,0.04)",
+          boxShadow:
+            "0 2px 12px rgba(100,60,140,0.06), 0 8px 32px rgba(100,60,140,0.04)",
           fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
         }}
       >
         <div className="flex flex-col sm:flex-row items-center gap-6 p-6 sm:p-8">
-          {/* Left: celebration icon */}
           <div className="flex-shrink-0">
             <motion.div
               initial={{ scale: 0, rotate: -20 }}
@@ -266,7 +299,6 @@ function StudioActionCard({
             </motion.div>
           </div>
 
-          {/* Middle: copy */}
           <div className="flex-1 text-center sm:text-left">
             <h3
               className="text-lg font-extrabold mb-1"
@@ -278,13 +310,12 @@ function StudioActionCard({
               className="text-sm leading-relaxed max-w-md"
               style={{ color: "#7B6E90" }}
             >
-              Your pages are looking great. Next up: design a cover to bring
-              it all together — you'll chat through your vision and we'll
-              generate it for you.
+              Your pages are looking great. Next up: design a cover to bring it
+              all together — you'll chat through your vision and we'll generate
+              it for you.
             </p>
           </div>
 
-          {/* Right: CTA */}
           <div className="flex-shrink-0">
             <button
               onClick={onDesignCover}
@@ -307,7 +338,6 @@ function StudioActionCard({
     );
   }
 
-  // ── State 2: Cover exists — show export/order options ──
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -317,12 +347,12 @@ function StudioActionCard({
       style={{
         background: "white",
         border: "1px solid rgba(180,150,210,0.12)",
-        boxShadow: "0 2px 12px rgba(100,60,140,0.06), 0 8px 32px rgba(100,60,140,0.04)",
+        boxShadow:
+          "0 2px 12px rgba(100,60,140,0.06), 0 8px 32px rgba(100,60,140,0.04)",
         fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
       }}
     >
       <div className="flex flex-col sm:flex-row items-center gap-6 p-6 sm:p-8">
-        {/* Left: check icon */}
         <div className="flex-shrink-0">
           <div
             className="w-14 h-14 rounded-2xl flex items-center justify-center"
@@ -335,7 +365,6 @@ function StudioActionCard({
           </div>
         </div>
 
-        {/* Middle: copy */}
         <div className="flex-1 text-center sm:text-left">
           <h3
             className="text-lg font-extrabold mb-1"
@@ -352,9 +381,7 @@ function StudioActionCard({
           </p>
         </div>
 
-        {/* Right: actions */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          {/* Redesign cover — secondary */}
           <button
             onClick={onDesignCover}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all hover:shadow-md active:scale-[0.97]"
@@ -370,30 +397,36 @@ function StudioActionCard({
             Tweak Cover
           </button>
 
-
           <button
-  onClick={async () => {
-    const res = await fetch(`/api/stories/${storyId}/export-home-print`, { method: 'POST' });
-    if (res.ok) {
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'book-print-at-home.pdf';
-      a.click();
-      URL.revokeObjectURL(url);
-    } else {
-      alert('Failed to export PDF');
-    }
-  }}
-  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all hover:shadow-md active:scale-[0.97]"
-  style={{ background: 'rgba(180,150,210,0.08)', color: '#6B5C80', border: '1px solid rgba(180,150,210,0.15)', fontFamily: 'inherit', cursor: 'pointer' }}
->
-  <Printer className="w-3.5 h-3.5" />
-  Print at Home
-</button>
+            onClick={async () => {
+              const res = await fetch(`/api/stories/${storyId}/export-home-print`, {
+                method: "POST",
+              });
+              if (res.ok) {
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "book-print-at-home.pdf";
+                a.click();
+                URL.revokeObjectURL(url);
+              } else {
+                alert("Failed to export PDF");
+              }
+            }}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all hover:shadow-md active:scale-[0.97]"
+            style={{
+              background: "rgba(180,150,210,0.08)",
+              color: "#6B5C80",
+              border: "1px solid rgba(180,150,210,0.15)",
+              fontFamily: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            <Printer className="w-3.5 h-3.5" />
+            Print at Home
+          </button>
 
-          {/* Export PDF — primary */}
           <button
             onClick={onExportPDF}
             disabled={isExporting}
@@ -419,7 +452,6 @@ function StudioActionCard({
             )}
           </button>
 
-          {/* Order — only when PDF exists */}
           {hasPdf && (
             <button
               onClick={onOrderBook}
@@ -479,11 +511,18 @@ export default function DesktopStudio({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
 
-  // Spread redesign state
   const [redrawTarget, setRedrawTarget] = useState<Spread | null>(null);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [regeneratingSpreads, setRegeneratingSpreads] = useState<Set<string>>(
     new Set()
+  );
+
+  const [focusTarget, setFocusTarget] = useState<Spread | null>(null);
+  const [focusCharacters, setFocusCharacters] = useState<FocusCharacterOption[]>([]);
+  const [focusSelectedCharacterIds, setFocusSelectedCharacterIds] = useState<string[] | null>(null);
+  const [isSubmittingFocus, setIsSubmittingFocus] = useState(false);
+  const [pendingFocusMode, setPendingFocusMode] = useState<"generate" | "redraw" | null>(
+    null
   );
 
   const spreads = useMemo(
@@ -495,8 +534,6 @@ export default function DesktopStudio({
   const totalCount = pages.length;
   const allGenerated = completedCount === totalCount;
   const isPaid = story.paymentStatus === "paid";
-
-  /* ------------------------------ Polling ---------------------------------- */
 
   useEffect(() => {
     if (!isPolling) return;
@@ -538,27 +575,117 @@ export default function DesktopStudio({
     return () => clearInterval(interval);
   }, [isPolling, story.id, regeneratingSpreads, dbSpreads]);
 
-  /* ------------------------------- Actions -------------------------------- */
-
-  // After the existing useEffect hooks, add:
   useEffect(() => {
     if (!isPaid) return;
-    
+
     if (completedCount === 0 && !isGenerating) {
-      // No images yet — either generation hasn't started or is in progress
-      // Start polling immediately to pick up incoming images
       setIsGenerating(true);
       setIsPolling(true);
-      
-      // Also trigger generation in case it hasn't started
-      // (generate-all is idempotent — if spreads are already queued, this is a no-op)
-      fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" }).catch(() => {});
+      fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" }).catch(
+        () => {}
+      );
     } else if (completedCount > 0 && completedCount < totalCount) {
-      // Some images exist but not all — generation is in progress
       setIsGenerating(true);
       setIsPolling(true);
     }
-  }, [isPaid]); // Only run on mount
+  }, [isPaid]);
+
+  async function loadFocusCandidates(spread: Spread): Promise<FocusCharacterOption[] | null> {
+    if (!spread.spreadId) return null;
+
+    const res = await fetch(
+      `/api/stories/${story.id}/spreads/${spread.spreadId}/references`,
+      { cache: "no-store" }
+    );
+
+    if (!res.ok) {
+      throw new Error("Failed to load spread references");
+    }
+
+    const data: SpreadReferencesResponse = await res.json();
+
+    const assigned = (data.assignedCharacters ?? []).map((c) => ({
+      characterId: c.characterId,
+      name: c.name,
+      imageUrl: bestCharacterImage(c),
+      role: c.role,
+    }));
+
+    return assigned;
+  }
+
+  async function startRegenerationForSpread(
+    spread: Spread,
+    options?: {
+      includedCharacterIds?: string[];
+      freshStart?: boolean;
+      feedback?: string;
+      primaryLocationId?: string | null;
+      includedLocationIds?: string[];
+      outfitOverrides?: Record<string, string>;
+    }
+  ) {
+    const pageIds = [spread.left.id];
+    if (spread.right) pageIds.push(spread.right.id);
+
+    const res = await fetch(`/api/stories/${story.id}/spreads/regenerate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pageIds,
+        spreadId: spread.spreadId,
+        feedback: options?.feedback ?? "",
+        includedCharacterIds: options?.includedCharacterIds ?? [],
+        outfitOverrides: options?.outfitOverrides ?? {},
+        primaryLocationId: options?.primaryLocationId ?? null,
+        includedLocationIds: options?.includedLocationIds ?? [],
+        freshStart: options?.freshStart ?? true,
+      }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Failed to start generation");
+    }
+
+    setRegeneratingSpreads((prev) => new Set(prev).add(spread.id));
+
+    setPages((prev) =>
+      prev.map((p) =>
+        pageIds.includes(p.id) ? { ...p, imageUrl: null } : p
+      )
+    );
+
+    setIsPolling(true);
+  }
+
+  async function maybeFocusSpread(
+    spread: Spread,
+    mode: "generate" | "redraw"
+  ) {
+    try {
+      const assigned = await loadFocusCandidates(spread);
+
+      if (assigned && assigned.length > 5) {
+        setFocusTarget(spread);
+        setFocusCharacters(assigned);
+        setFocusSelectedCharacterIds(null);
+        setPendingFocusMode(mode);
+        return true;
+      }
+
+      if (mode === "redraw") {
+        setRedrawTarget(spread);
+      } else {
+        await startRegenerationForSpread(spread, { freshStart: true });
+      }
+
+      return false;
+    } catch (err: any) {
+      alert(err.message || "Failed to prepare spread");
+      return false;
+    }
+  }
 
   async function handleGenerateAll() {
     if (isGenerating) return;
@@ -569,9 +696,19 @@ export default function DesktopStudio({
       const res = await fetch(`/api/stories/${story.id}/generate-all`, {
         method: "POST",
       });
-      if (!res.ok) throw new Error("Failed to start generation");
-    } catch (err) {
-      alert("Failed to start generation");
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to start generation");
+
+      if (Array.isArray(data.spreadsSkippedForFocus) && data.spreadsSkippedForFocus.length > 0) {
+        alert(
+          `Some spreads need scene focus before they can be generated: ${data.spreadsSkippedForFocus.join(
+            ", "
+          )}`
+        );
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to start generation");
       setIsGenerating(false);
       setIsPolling(false);
     }
@@ -588,43 +725,18 @@ export default function DesktopStudio({
     if (!redrawTarget || isSubmittingFeedback) return;
     setIsSubmittingFeedback(true);
 
-    const pageIds = [redrawTarget.left.id];
-    if (redrawTarget.right) pageIds.push(redrawTarget.right.id);
-
     try {
-      const res = await fetch(
-        `/api/stories/${story.id}/spreads/regenerate`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pageIds,
-            spreadId: redrawTarget.spreadId,
-            feedback: payload.freshStart ? "" : payload.feedback,
-            includedCharacterIds: payload.includedCharacterIds,
-            outfitOverrides: payload.outfitOverrides,
-            primaryLocationId: payload.primaryLocationId,
-            includedLocationIds: payload.includedLocationIds,
-            freshStart: payload.freshStart ?? false,
-          }),
-        }
-      );
+      await startRegenerationForSpread(redrawTarget, {
+        feedback: payload.freshStart ? "" : payload.feedback,
+        includedCharacterIds: payload.includedCharacterIds,
+        outfitOverrides: payload.outfitOverrides,
+        primaryLocationId: payload.primaryLocationId,
+        includedLocationIds: payload.includedLocationIds,
+        freshStart: payload.freshStart ?? false,
+      });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to start regeneration");
-      }
-
-      setRegeneratingSpreads((prev) => new Set(prev).add(redrawTarget.id));
-
-      setPages((prev) =>
-        prev.map((p) =>
-          pageIds.includes(p.id) ? { ...p, imageUrl: null } : p
-        )
-      );
-
-      setIsPolling(true);
       setRedrawTarget(null);
+      setFocusSelectedCharacterIds(null);
     } catch (err: any) {
       alert(err.message || "Failed to redraw spread");
     } finally {
@@ -632,42 +744,43 @@ export default function DesktopStudio({
     }
   }
 
-
   async function handleGenerateSingle(spread: Spread) {
-        const pageIds = [spread.left.id];
-        if (spread.right) pageIds.push(spread.right.id);
-    
-        try {
-          const res = await fetch(
-            `/api/stories/${story.id}/spreads/regenerate`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                pageIds,
-                spreadId: spread.spreadId,
-                feedback: "",
-                includedCharacterIds: [],
-                outfitOverrides: {},
-                primaryLocationId: null,
-                includedLocationIds: [],
-                freshStart: true,
-              }),
-            }
-          );
-    
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data.error || "Failed to start generation");
-          }
-    
-          setRegeneratingSpreads((prev) => new Set(prev).add(spread.id));
-          setIsPolling(true);
-        } catch (err: any) {
-          alert(err.message || "Failed to generate spread");
-        }
+    await maybeFocusSpread(spread, "generate");
+  }
+
+  async function handleRedrawClick(spread: Spread) {
+    await maybeFocusSpread(spread, "redraw");
+  }
+
+  async function handleFocusSubmit(selection: FocusSceneSelection) {
+    if (!focusTarget || !pendingFocusMode) return;
+
+    setIsSubmittingFocus(true);
+
+    try {
+      if (pendingFocusMode === "generate") {
+        await startRegenerationForSpread(focusTarget, {
+          includedCharacterIds: selection.featuredCharacterIds,
+          freshStart: true,
+        });
+
+        setFocusTarget(null);
+        setFocusCharacters([]);
+        setFocusSelectedCharacterIds(null);
+        setPendingFocusMode(null);
+      } else {
+        setFocusSelectedCharacterIds(selection.featuredCharacterIds);
+        setRedrawTarget(focusTarget);
+        setFocusTarget(null);
+        setFocusCharacters([]);
+        setPendingFocusMode(null);
       }
-    
+    } catch (err: any) {
+      alert(err.message || "Failed to focus scene");
+    } finally {
+      setIsSubmittingFocus(false);
+    }
+  }
 
   async function handleExportPDF() {
     if (isExporting) return;
@@ -705,15 +818,18 @@ export default function DesktopStudio({
     }
   }
 
-  /* -------------------------------- Render -------------------------------- */
-
   const redrawLabel = redrawTarget
     ? redrawTarget.right
       ? `Pages ${redrawTarget.left.pageNumber}–${redrawTarget.right.pageNumber}`
       : `Page ${redrawTarget.left.pageNumber}`
     : "";
 
-  // ── Unpaid: show header + paywall ──
+  const focusLabel = focusTarget
+    ? focusTarget.right
+      ? `Pages ${focusTarget.left.pageNumber}–${focusTarget.right.pageNumber}`
+      : `Page ${focusTarget.left.pageNumber}`
+    : "";
+
   if (!isPaid) {
     const previewSpread = pages.find((p) => p.imageUrl);
 
@@ -738,25 +854,44 @@ export default function DesktopStudio({
     );
   }
 
-  // ── Paid: full studio ──
   return (
     <div className="min-h-screen bg-gray-50 pb-40">
-      {/* Redraw Modal */}
       <AnimatePresence>
         {redrawTarget && (
           <RedrawModal
             isOpen
-            onClose={() => setRedrawTarget(null)}
+            onClose={() => {
+              setRedrawTarget(null);
+              setFocusSelectedCharacterIds(null);
+            }}
             onSubmit={handleRedrawSpread}
             isSubmitting={isSubmittingFeedback}
             storyId={story.id}
             spreadId={redrawTarget.spreadId ?? ""}
             spreadLabel={redrawLabel}
+            initialIncludedCharacterIds={focusSelectedCharacterIds ?? undefined}
           />
         )}
       </AnimatePresence>
 
-      {/* UNIFIED HEADER */}
+      <AnimatePresence>
+        {focusTarget && (
+          <FocusSceneModal
+            isOpen
+            onClose={() => {
+              setFocusTarget(null);
+              setFocusCharacters([]);
+              setFocusSelectedCharacterIds(null);
+              setPendingFocusMode(null);
+            }}
+            onSubmit={handleFocusSubmit}
+            isSubmitting={isSubmittingFocus}
+            spreadLabel={focusLabel}
+            characters={focusCharacters}
+          />
+        )}
+      </AnimatePresence>
+
       <UnifiedStoryHeader
         storyId={story.id}
         title={story.title}
@@ -773,7 +908,6 @@ export default function DesktopStudio({
         isGenerating={isGenerating}
       />
 
-      {/* STUDIO ACTION CARD — contextual next step */}
       {allGenerated && (
         <div className="max-w-[1400px] mx-auto px-8 pt-6">
           <StudioActionCard
@@ -783,7 +917,6 @@ export default function DesktopStudio({
             isExporting={isExporting}
             isOrdering={isOrdering}
             onDesignCover={async () => {
-              // Mark studio as complete, then navigate
               await fetch(`/api/stories/${story.id}/complete-step`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -797,7 +930,6 @@ export default function DesktopStudio({
         </div>
       )}
 
-      {/* CONTENT */}
       <div className="max-w-[1400px] mx-auto p-8 space-y-8">
         {story.coverSpreadUrl && (
           <CoverSpreadPreview
@@ -807,15 +939,30 @@ export default function DesktopStudio({
         )}
 
         {spreads.map((spread) => (
-    <SpreadCard
-          key={spread.id}
-          spread={spread}
-           isGeneratingAll={isGenerating}
-           isRegenerating={regeneratingSpreads.has(spread.id)}
-           onRedraw={() => setRedrawTarget(spread)}
-           onGenerate={() => handleGenerateSingle(spread)}
-         />
+          <SpreadCard
+            key={spread.id}
+            spread={spread}
+            isGeneratingAll={isGenerating}
+            isRegenerating={regeneratingSpreads.has(spread.id)}
+            onRedraw={() => handleRedrawClick(spread)}
+            onGenerate={() => handleGenerateSingle(spread)}
+          />
         ))}
+
+        {focusTarget && (
+          <div className="rounded-2xl border border-purple-200 bg-purple-50 px-5 py-4 flex items-start gap-3">
+            <Users className="w-5 h-5 text-purple-600 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-purple-900">
+                Focus this scene for better likeness
+              </p>
+              <p className="text-xs text-purple-700 mt-1">
+                This spread has a large cast. Choose up to 5 featured characters
+                to keep faces and outfits more consistent.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

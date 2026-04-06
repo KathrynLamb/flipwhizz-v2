@@ -9,9 +9,9 @@ import {
   storyStyleGuide,
   characterStoryOutfits,
   spreadCharacterOutfits,
-  storyPageCharacters,    // ADD
-  storyPageLocations, 
-
+  storyPageCharacters,
+  storyPageLocations,
+  storySpreadPresence,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -24,17 +24,21 @@ type OutfitOption = {
 
 type SpreadPresenceCharacter = {
   characterId: string;
-  role: "primary" | "secondary" | "background";
-  confidence: number;
-  reason: string;
+  role?: "primary" | "secondary" | "background";
+  confidence?: number;
+  reason?: string;
 };
 
 type SpreadPresenceLocation = {
   locationId: string;
-  role: "primary" | "secondary" | "background" | "referenced" | "memory";
-  confidence: number;
-  reason: string;
+  role?: "primary" | "secondary" | "background" | "referenced" | "memory";
+  confidence?: number;
+  reason?: string;
 };
+
+function uniqueIds(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
+}
 
 export async function GET(
   _req: Request,
@@ -69,46 +73,61 @@ export async function GET(
           .where(inArray(storyPages.id, spreadPageIds))
       : [];
 
-    /* ───────── 3. Spread-level presence (NEW source of truth) ───────── */
+    /* ───────── 3. Spread presence (preferred source of truth) ───────── */
 
-/* ───────── 3. Characters & locations from per-page tables (source of truth) ───────── */
+    const spreadPresence = await db.query.storySpreadPresence.findFirst({
+      where: eq(storySpreadPresence.spreadId, spreadId),
+    });
 
+    const presenceCharacters = (spreadPresence?.characters ??
+      []) as SpreadPresenceCharacter[];
+    const presenceLocations = (spreadPresence?.locations ??
+      []) as SpreadPresenceLocation[];
 
+    /* ───────── 4. Page-level fallback assignments ───────── */
 
-// Get characters assigned to pages in this spread
-const pageCharacterRows = spreadPageIds.length
-  ? await db
-      .select({ characterId: storyPageCharacters.characterId })
-      .from(storyPageCharacters)
-      .where(
-        and(
-          eq(storyPageCharacters.storyId, storyId),
-          inArray(storyPageCharacters.pageId, spreadPageIds)
-        )
-      )
-  : [];
+    const pageCharacterRows = spreadPageIds.length
+      ? await db
+          .select({ characterId: storyPageCharacters.characterId })
+          .from(storyPageCharacters)
+          .where(
+            and(
+              eq(storyPageCharacters.storyId, storyId),
+              inArray(storyPageCharacters.pageId, spreadPageIds)
+            )
+          )
+      : [];
 
-const assignedCharacterIds = [
-  ...new Set(pageCharacterRows.map((r) => r.characterId)),
-];
+    const pageLocationRows = spreadPageIds.length
+      ? await db
+          .select({ locationId: storyPageLocations.locationId })
+          .from(storyPageLocations)
+          .where(
+            and(
+              eq(storyPageLocations.storyId, storyId),
+              inArray(storyPageLocations.pageId, spreadPageIds)
+            )
+          )
+      : [];
 
-// Get locations assigned to pages in this spread
-const pageLocationRows = spreadPageIds.length
-  ? await db
-      .select({ locationId: storyPageLocations.locationId })
-      .from(storyPageLocations)
-      .where(
-        and(
-          eq(storyPageLocations.storyId, storyId),
-          inArray(storyPageLocations.pageId, spreadPageIds)
-        )
-      )
-  : [];
+    const fallbackCharacterIds = uniqueIds(
+      pageCharacterRows.map((r) => r.characterId)
+    );
+    const fallbackLocationIds = uniqueIds(
+      pageLocationRows.map((r) => r.locationId)
+    );
 
-const assignedLocationIds = [
-  ...new Set(pageLocationRows.map((r) => r.locationId)),
-];
-    /* ───────── 4. All story characters ───────── */
+    const assignedCharacterIds =
+      presenceCharacters.length > 0
+        ? uniqueIds(presenceCharacters.map((c) => c.characterId))
+        : fallbackCharacterIds;
+
+    const assignedLocationIds =
+      presenceLocations.length > 0
+        ? uniqueIds(presenceLocations.map((l) => l.locationId))
+        : fallbackLocationIds;
+
+    /* ───────── 5. All story characters ───────── */
 
     const storyCharacterRows = await db
       .select({
@@ -134,7 +153,7 @@ const assignedLocationIds = [
           .where(inArray(characters.id, allCharacterIds))
       : [];
 
-    /* ───────── 5. All story locations ───────── */
+    /* ───────── 6. All story locations ───────── */
 
     const storyLocationRows = await db
       .select({
@@ -159,7 +178,7 @@ const assignedLocationIds = [
           .where(inArray(locations.id, allLocationIds))
       : [];
 
-    /* ───────── 6. Outfit data ───────── */
+    /* ───────── 7. Outfit data ───────── */
 
     const outfitAssignments = await db
       .select({
@@ -193,60 +212,68 @@ const assignedLocationIds = [
       });
     }
 
-    /* ───────── 7. Style guide ───────── */
+    /* ───────── 8. Style guide ───────── */
 
     const styleGuide = await db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),
     });
 
-    /* ───────── 8. Build characters response ───────── */
+    /* ───────── 9. Build characters response ───────── */
 
     const assignedCharacterIdSet = new Set(assignedCharacterIds);
 
-    const assignedCharacters = assignedCharacterIds.map((characterId) => {
-      const char = allCharacterData.find((c) => c.id === characterId);
-      const storyRole =
-        storyCharacterRows.find((sc) => sc.characterId === characterId)?.role ??
-        null;
+    const assignedCharacters = assignedCharacterIds
+      .map((characterId) => {
+        const char = allCharacterData.find((c) => c.id === characterId);
+        if (!char) return null;
 
-      const spreadAssignment =
-        outfitAssignments.find((oa) => oa.characterId === characterId) ?? null;
+        const storyRole =
+          storyCharacterRows.find((sc) => sc.characterId === characterId)
+            ?.role ?? null;
 
-      const availableOutfits = outfitsByCharacter[characterId] ?? [];
+        const presenceRole =
+          presenceCharacters.find((pc) => pc.characterId === characterId)?.role ??
+          null;
 
-      const selectedOutfit = spreadAssignment?.outfitKey
-        ? availableOutfits.find(
-            (o) => o.outfitKey === spreadAssignment.outfitKey
-          ) ?? null
-        : null;
+        const spreadAssignment =
+          outfitAssignments.find((oa) => oa.characterId === characterId) ?? null;
 
-      const defaultOutfit =
-        availableOutfits.find((o) => o.isDefault) ?? null;
+        const availableOutfits = outfitsByCharacter[characterId] ?? [];
 
-      const resolvedCurrentOutfit =
-        selectedOutfit ??
-        defaultOutfit ??
-        (spreadAssignment
-          ? {
-              outfitKey: spreadAssignment.outfitKey,
-              outfitDescription: spreadAssignment.outfitDescription ?? "",
-              isDefault: false,
-            }
-          : null);
+        const selectedOutfit = spreadAssignment?.outfitKey
+          ? availableOutfits.find(
+              (o) => o.outfitKey === spreadAssignment.outfitKey
+            ) ?? null
+          : null;
 
+        const defaultOutfit =
+          availableOutfits.find((o) => o.isDefault) ?? null;
 
-          return {
-            characterId,
-            name: char?.name ?? "Unknown",
-            portraitImageUrl: char?.portraitImageUrl ?? null,
-            fullBodyImageUrl: char?.fullBodyImageUrl ?? null,
-            referenceImageUrl: char?.referenceImageUrl ?? null,
-            role: storyRole,
-            currentOutfitKey: resolvedCurrentOutfit?.outfitKey ?? null,
-            currentOutfitDescription: resolvedCurrentOutfit?.outfitDescription ?? null,
-            availableOutfits,
-          };
-    });
+        const resolvedCurrentOutfit =
+          selectedOutfit ??
+          defaultOutfit ??
+          (spreadAssignment
+            ? {
+                outfitKey: spreadAssignment.outfitKey,
+                outfitDescription: spreadAssignment.outfitDescription ?? "",
+                isDefault: false,
+              }
+            : null);
+
+        return {
+          characterId,
+          name: char.name,
+          portraitImageUrl: char.portraitImageUrl ?? null,
+          fullBodyImageUrl: char.fullBodyImageUrl ?? null,
+          referenceImageUrl: char.referenceImageUrl ?? null,
+          role: (presenceRole ?? storyRole) as string | null,
+          currentOutfitKey: resolvedCurrentOutfit?.outfitKey ?? null,
+          currentOutfitDescription:
+            resolvedCurrentOutfit?.outfitDescription ?? null,
+          availableOutfits,
+        };
+      })
+      .filter(Boolean);
 
     const availableCharacters = allCharacterData
       .filter((c) => !assignedCharacterIdSet.has(c.id))
@@ -265,46 +292,56 @@ const assignedLocationIds = [
         };
       });
 
-    /* ───────── 9. Build locations response (NEW multi-location) ───────── */
+    /* ───────── 10. Build locations response ───────── */
 
-   /* ───────── 9. Build locations response ───────── */
+    const assignedLocationIdSet = new Set(assignedLocationIds);
 
-   const assignedLocationIdSet = new Set(assignedLocationIds);
+    const assignedLocations = assignedLocationIds
+      .map((locationId) => {
+        const loc = allLocationData.find((l) => l.id === locationId);
+        if (!loc) return null;
 
-   const assignedLocations = assignedLocationIds
-     .map((locationId) => {
-       const loc = allLocationData.find((l) => l.id === locationId);
-       if (!loc) return null;
+        const presenceRole =
+          presenceLocations.find((pl) => pl.locationId === locationId)?.role ??
+          null;
 
-       return {
-         id: loc.id,
-         name: loc.name,
-         portraitImageUrl: loc.portraitImageUrl,
-         referenceImageUrl: loc.referenceImageUrl,
-         description: loc.description,
-         significance:
-           storyLocationRows.find((sl) => sl.locationId === loc.id)
-             ?.significance ?? null,
-         role: "primary" as const, // first one is primary, rest secondary
-       };
-     })
-     .filter(Boolean);
+        return {
+          id: loc.id,
+          name: loc.name,
+          portraitImageUrl: loc.portraitImageUrl,
+          referenceImageUrl: loc.referenceImageUrl,
+          description: loc.description,
+          significance:
+            storyLocationRows.find((sl) => sl.locationId === loc.id)
+              ?.significance ?? null,
+          role:
+            (presenceRole ??
+              (assignedLocationIds[0] === locationId ? "primary" : "secondary")) as
+              | "primary"
+              | "secondary"
+              | "background"
+              | "referenced"
+              | "memory",
+        };
+      })
+      .filter(Boolean);
 
-   const primaryLocation = assignedLocations[0] ?? null;
+    const assignedLocation = assignedLocations[0] ?? null;
 
-   const availableLocations = allLocationData
-     .filter((l) => !assignedLocationIdSet.has(l.id))
-     .map((l) => ({
-       id: l.id,
-       name: l.name,
-       portraitImageUrl: l.portraitImageUrl,
-       referenceImageUrl: l.referenceImageUrl,
-       description: l.description,
-       significance:
-         storyLocationRows.find((sl) => sl.locationId === l.id)?.significance ??
-         null,
-     }));
-    /* ───────── 10. Response ───────── */
+    const availableLocations = allLocationData
+      .filter((l) => !assignedLocationIdSet.has(l.id))
+      .map((l) => ({
+        id: l.id,
+        name: l.name,
+        portraitImageUrl: l.portraitImageUrl,
+        referenceImageUrl: l.referenceImageUrl,
+        description: l.description,
+        significance:
+          storyLocationRows.find((sl) => sl.locationId === l.id)?.significance ??
+          null,
+      }));
+
+    /* ───────── 11. Response ───────── */
 
     return NextResponse.json({
       spread: {
@@ -320,7 +357,7 @@ const assignedLocationIds = [
       })),
       assignedCharacters,
       availableCharacters,
-      primaryLocation,
+      assignedLocation,
       assignedLocations,
       availableLocations,
       styleGuide: styleGuide

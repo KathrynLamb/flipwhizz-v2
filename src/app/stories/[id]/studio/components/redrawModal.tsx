@@ -7,7 +7,6 @@ import {
   Sparkles,
   Wand2,
   Plus,
-  Check,
   ChevronDown,
   ChevronUp,
   MapPin,
@@ -19,6 +18,7 @@ import {
   EyeOff,
   RotateCcw,
   Star,
+  AlertTriangle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -85,16 +85,15 @@ type SpreadReferences = {
   }[];
   assignedCharacters: AssignedCharacter[];
   availableCharacters: AvailableCharacter[];
-
-  // backwards compatible support
   assignedLocation?: LocationData | null;
-
-  // new shape
   assignedLocations?: AssignedLocation[];
-
   availableLocations: LocationData[];
   styleGuide: StyleGuideData | null;
 };
+
+/* ─────────── Constants ─────────── */
+
+const MAX_FEATURED_CHARACTERS = 5;
 
 /* ─────────── Helpers ─────────── */
 
@@ -103,9 +102,7 @@ function bestCharacterImage(c: {
   fullBodyImageUrl?: string | null;
   referenceImageUrl?: string | null;
 }) {
-  return (
-    c.portraitImageUrl || c.fullBodyImageUrl || c.referenceImageUrl || null
-  );
+  return c.portraitImageUrl || c.fullBodyImageUrl || c.referenceImageUrl || null;
 }
 
 function bestLocationImage(l: {
@@ -611,6 +608,7 @@ export default function RedrawModal({
   storyId,
   spreadId,
   spreadLabel,
+  initialIncludedCharacterIds
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -621,11 +619,13 @@ export default function RedrawModal({
     primaryLocationId: string | null;
     includedLocationIds: string[];
     freshStart?: boolean;
+
   }) => void;
   isSubmitting: boolean;
   storyId: string;
   spreadId: string;
   spreadLabel: string;
+  initialIncludedCharacterIds?: string[]
 }) {
   const [feedback, setFeedback] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -635,9 +635,9 @@ export default function RedrawModal({
   const [includedCharacterIds, setIncludedCharacterIds] = useState<Set<string>>(
     new Set()
   );
-  const [outfitOverrides, setOutfitOverrides] = useState<
-    Record<string, string>
-  >({});
+  const [outfitOverrides, setOutfitOverrides] = useState<Record<string, string>>(
+    {}
+  );
 
   const [includedLocationIds, setIncludedLocationIds] = useState<Set<string>>(
     new Set()
@@ -681,9 +681,7 @@ export default function RedrawModal({
               ? [{ ...data.assignedLocation, role: "primary" as const }]
               : [];
 
-        setIncludedLocationIds(
-          new Set(assignedLocations.map((loc) => loc.id))
-        );
+        setIncludedLocationIds(new Set(assignedLocations.map((loc) => loc.id)));
 
         const foundPrimary =
           assignedLocations.find((loc) => loc.role === "primary")?.id ??
@@ -783,6 +781,20 @@ export default function RedrawModal({
   const includedCount = allChars.filter((c) =>
     includedCharacterIds.has(c.characterId)
   ).length;
+  const exceedsFocusLimit = includedCount > MAX_FEATURED_CHARACTERS;
+
+  function submitPayload(freshStart?: boolean) {
+    if (exceedsFocusLimit) return;
+
+    onSubmit({
+      feedback: freshStart ? "" : feedback,
+      includedCharacterIds: Array.from(includedCharacterIds),
+      outfitOverrides,
+      primaryLocationId,
+      includedLocationIds: Array.from(includedLocationIds),
+      freshStart,
+    });
+  }
 
   return (
     <div
@@ -864,9 +876,28 @@ export default function RedrawModal({
               <div>
                 <SectionHeader
                   icon={User}
-                  label="Characters"
+                  label="Featured characters"
                   count={includedCount}
                 />
+
+                <p className="text-[11px] text-gray-500 mb-3">
+                  Choose up to {MAX_FEATURED_CHARACTERS} characters to match most closely.
+                </p>
+
+                {exceedsFocusLimit && (
+                  <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-700 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold text-amber-900">
+                        Too many featured characters selected
+                      </p>
+                      <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                        For the best likeness, keep this spread focused on up to{" "}
+                        {MAX_FEATURED_CHARACTERS} featured characters.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   {includedChars.map((c) => (
@@ -920,13 +951,9 @@ export default function RedrawModal({
                                 name={c.name}
                                 imageUrl={c.imageUrl}
                                 role={c.role}
-                                isIncluded={includedCharacterIds.has(
-                                  c.characterId
-                                )}
+                                isIncluded={includedCharacterIds.has(c.characterId)}
                                 onToggle={() => toggleCharacter(c.characterId)}
-                                outfitKey={
-                                  outfitOverrides[c.characterId] ?? null
-                                }
+                                outfitKey={outfitOverrides[c.characterId] ?? null}
                                 outfits={c.outfits}
                                 onOutfitChange={(key) =>
                                   setOutfit(c.characterId, key)
@@ -999,18 +1026,9 @@ export default function RedrawModal({
 
         <div className="px-5 py-3 border-t border-gray-100 flex flex-col gap-2 flex-shrink-0">
           <button
-            onClick={() =>
-              onSubmit({
-                feedback: "",
-                includedCharacterIds: Array.from(includedCharacterIds),
-                outfitOverrides,
-                primaryLocationId,
-                includedLocationIds: Array.from(includedLocationIds),
-                freshStart: true,
-              })
-            }
-            disabled={isSubmitting || isLoading}
-            className="w-full px-4 py-2 rounded-xl border border-orange-300 text-orange-600 hover:bg-orange-50 transition-colors font-medium text-xs flex items-center justify-center gap-2"
+            onClick={() => submitPayload(true)}
+            disabled={isSubmitting || isLoading || exceedsFocusLimit}
+            className="w-full px-4 py-2 rounded-xl border border-orange-300 text-orange-600 hover:bg-orange-50 transition-colors font-medium text-xs flex items-center justify-center gap-2 disabled:opacity-50"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Fresh Start — regenerate from scratch
@@ -1025,16 +1043,8 @@ export default function RedrawModal({
               Cancel
             </button>
             <button
-              onClick={() =>
-                onSubmit({
-                  feedback,
-                  includedCharacterIds: Array.from(includedCharacterIds),
-                  outfitOverrides,
-                  primaryLocationId,
-                  includedLocationIds: Array.from(includedLocationIds),
-                })
-              }
-              disabled={isSubmitting || isLoading}
+              onClick={() => submitPayload(false)}
+              disabled={isSubmitting || isLoading || exceedsFocusLimit}
               className="flex-1 bg-purple-600 text-white px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-colors disabled:opacity-50 text-sm"
             >
               {isSubmitting ? (
