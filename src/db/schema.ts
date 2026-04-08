@@ -421,7 +421,7 @@ export const storyStyleGuide = pgTable("story_style_guide", {
   userNotes: text("user_notes"),
   typography: text("typography"), 
   styleGuideImage: text("style_guide_image"),
-  artStyle: varchar("art_style"),
+  artStyle: text("art_style"),
   colorPalette: jsonb("color_palette"),
   visualThemes: text("visual_themes"),
   generationId: text("generation_id"),

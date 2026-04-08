@@ -182,24 +182,49 @@ export default function IllustrationStyleClient({
     setUploadingImage(true);
 
     try {
+      // 1. Upload to Cloudinary
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch(`/api/stories/${storyId}/style-guide/upload-reference`, {
+      const uploadRes = await fetch(`/api/stories/${storyId}/style-guide/upload`, {
         method: "POST",
         body: formData,
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setPreviewImageUrl(data.url ?? data.imageUrl ?? null);
+      if (!uploadRes.ok) throw new Error("Upload failed");
+      const { url } = await uploadRes.json();
+      setPreviewImageUrl(url);
 
-        // If the API returns auto-filled style fields, use them
-        if (data.userNotes) setEditVision(data.userNotes);
-        if (data.artStyle) setEditArtStyle(data.artStyle);
+      // 2. Analyse with Claude vision
+      const analyseRes = await fetch(`/api/stories/${storyId}/style-guide/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: url }),
+      });
+
+      if (analyseRes.ok) {
+        const v = await analyseRes.json();
+        if (v.summary) setEditVision(v.summary);
+        if (v.artStyle) setEditArtStyle(v.artStyle);
+        if (v.negativePrompt) setEditNegative(v.negativePrompt);
+
+        // 3. Save everything including internal fields that go straight to the DB
+        await fetch(`/api/stories/${storyId}/style-guide`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            summary: v.summary,
+            artStyle: v.artStyle,
+            visualThemes: v.visualThemes,
+            colorPalette: v.colorPalette,
+            sampleIllustrationUrl: url,
+            promptBase: v.promptBase,
+            negativePrompt: v.negativePrompt,
+          }),
+        });
       }
-    } catch {
-      console.error("Upload failed");
+    } catch (err) {
+      console.error("Upload/analyse failed:", err);
     } finally {
       setUploadingImage(false);
     }

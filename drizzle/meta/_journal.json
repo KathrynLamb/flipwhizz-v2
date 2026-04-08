@@ -435,6 +435,13 @@
       "when": 1774716653848,
       "tag": "0061_tan_kronos",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1775655882341,
+      "tag": "0062_fancy_mother_askani",
+      "breakpoints": true
     }
   ]
 }
