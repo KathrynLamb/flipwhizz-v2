@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, Send, Sparkles, Zap, BookOpen } from "lucide-react";
 
@@ -41,12 +42,14 @@ const SUGGESTIONS = [
 
 export default function CreateDemoClient() {
   const router = useRouter();
+  const { data: session, status: authStatus } = useSession();
 
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasAttemptedResume, setHasAttemptedResume] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -59,16 +62,33 @@ export default function CreateDemoClient() {
   const reachedLimit = userMessageCount >= MAX_USER_MESSAGES;
   const remaining = Math.max(0, MAX_USER_MESSAGES - userMessageCount);
 
+  // ── Load saved messages from sessionStorage ──
   useEffect(() => {
     const saved = sessionStorage.getItem("flipwhizz_create_demo_messages");
     if (!saved) return;
     try {
       const parsed = JSON.parse(saved) as ChatMsg[];
-      if (Array.isArray(parsed)) setMessages(parsed);
+      if (Array.isArray(parsed) && parsed.length > 0) setMessages(parsed);
     } catch {
       /* ignore */
     }
   }, []);
+
+  // ── Auto-resume: if we have saved messages at the limit AND user just signed in, retry project creation ──
+  useEffect(() => {
+    if (hasAttemptedResume) return;
+    if (authStatus !== "authenticated") return;
+    if (!reachedLimit) return;
+    if (messages.length === 0) return;
+
+    // Check if we were redirected back after sign-in
+    const pendingResume = sessionStorage.getItem("flipwhizz_demo_pending_resume");
+    if (!pendingResume) return;
+
+    setHasAttemptedResume(true);
+    sessionStorage.removeItem("flipwhizz_demo_pending_resume");
+    void continueToFullProject();
+  }, [authStatus, reachedLimit, messages, hasAttemptedResume]);
 
   useEffect(() => {
     sessionStorage.setItem(
@@ -153,37 +173,45 @@ export default function CreateDemoClient() {
 
   async function continueToFullProject() {
     if (creatingProject || messages.length === 0) return;
-  
+
     setCreatingProject(true);
     setError(null);
-  
+
     try {
       const res = await fetch("/api/projects/create-from-demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages }),
       });
-  
+
       const data = await res.json().catch(() => null);
-  
-      // If unauthorized, redirect to sign in with return URL
+
+      // If unauthorized, set resume flag and redirect to sign in
       if (res.status === 401) {
-        // Save messages so they survive the sign-in redirect
-        sessionStorage.setItem("flipwhizz_create_demo_messages", JSON.stringify(messages));
-        router.push("/auth/signin?callbackUrl=/projects/create");
+        sessionStorage.setItem(
+          "flipwhizz_create_demo_messages",
+          JSON.stringify(messages),
+        );
+        sessionStorage.setItem("flipwhizz_demo_pending_resume", "true");
+        router.push("/auth/signin?callbackUrl=/create");
         return;
       }
-  
+
       if (!res.ok || !data?.projectId) {
-        throw new Error(data?.error || "We could not create your project just now.");
+        throw new Error(
+          data?.error || "We could not create your project just now.",
+        );
       }
-  
+
       sessionStorage.removeItem("flipwhizz_create_demo_messages");
+      sessionStorage.removeItem("flipwhizz_demo_pending_resume");
       router.push(`/chat?project=${data.projectId}`);
     } catch (err) {
       setCreatingProject(false);
       setError(
-        err instanceof Error ? err.message : "We could not continue into the full project."
+        err instanceof Error
+          ? err.message
+          : "We could not continue into the full project.",
       );
     }
   }
@@ -194,6 +222,7 @@ export default function CreateDemoClient() {
     setInput("");
     setError(null);
     sessionStorage.removeItem("flipwhizz_create_demo_messages");
+    sessionStorage.removeItem("flipwhizz_demo_pending_resume");
   }
 
   return (
@@ -289,7 +318,28 @@ export default function CreateDemoClient() {
               </motion.div>
             )}
 
-            {reachedLimit && (
+            {/* Auto-resuming state — show a spinner instead of the normal CTA */}
+            {creatingProject && hasAttemptedResume && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-[24px] border border-fuchsia-200 bg-gradient-to-br from-fuchsia-50 to-pink-50 p-4 shadow-sm sm:p-5"
+              >
+                <div className="flex items-center gap-3">
+                  <Loader2 className="h-5 w-5 animate-spin text-[#D94590]" />
+                  <div>
+                    <h4 className="text-lg font-black tracking-tight text-slate-900">
+                      Welcome back — creating your book…
+                    </h4>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Picking up where you left off.
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {reachedLimit && !(creatingProject && hasAttemptedResume) && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}

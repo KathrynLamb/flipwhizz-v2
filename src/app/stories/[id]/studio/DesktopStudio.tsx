@@ -1006,6 +1006,7 @@ export default function DesktopStudio({
       });
 
       const data = await res.json().catch(() => ({}));
+      console.log("DATA", data)
 
       if (!res.ok) {
         throw new Error(data.error || "Failed to continue strategist chat");
