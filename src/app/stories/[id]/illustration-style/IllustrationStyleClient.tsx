@@ -236,6 +236,19 @@ export default function IllustrationStyleClient({
     <>
       <FontLoader />
 
+      {/* Hidden file input — must be outside AnimatePresence so ref is always available */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImageUpload(file);
+          e.target.value = "";
+        }}
+      />
+
       <div
         className="min-h-screen relative"
         style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}
@@ -591,17 +604,6 @@ export default function IllustrationStyleClient({
                             </button>
                           )}
 
-                          <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) handleImageUpload(file);
-                              e.target.value = "";
-                            }}
-                          />
                         </div>
 
                         {/* What to avoid */}
