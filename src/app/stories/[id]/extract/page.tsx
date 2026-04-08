@@ -208,8 +208,7 @@ export default function ExtractWorldPage() {
           setPhase(getCurrentPhase(p));
           // Redirect immediately
           if (!hasRedirected.current) {
-            hasRedirected.current = true;
-            router.push(`/stories/${storyId}/characters`);
+            router.push(`/stories/${storyId}/illustration-style`);
           }
           return;
         }
@@ -248,7 +247,7 @@ export default function ExtractWorldPage() {
 
     // Brief delay so the user sees "Characters — Done" before redirect
     const timer = setTimeout(() => {
-      router.push(`/stories/${storyId}/characters`);
+      router.push(`/stories/${storyId}/illustration-style`);
     }, 1200);
 
     return () => clearTimeout(timer);
