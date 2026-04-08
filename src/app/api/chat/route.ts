@@ -64,7 +64,7 @@ function getBirthdayContext(
 }
 
 // ============================================================================
-// WORLD CONTEXT LOADER — now with structured reader fields
+// WORLD CONTEXT LOADER
 // ============================================================================
 
 interface ReaderContext {
@@ -107,7 +107,6 @@ async function loadWorldContextForChat(
 
     if (!world) return null;
 
-    // Get the primary reader with full structured fields
     const readerLink = await db
       .select({ readerId: worldReaders.readerId })
       .from(worldReaders)
@@ -143,7 +142,6 @@ async function loadWorldContextForChat(
         const age = computeAge(reader.dateOfBirth, reader.age);
         const birthdayHint = getBirthdayContext(reader.dateOfBirth, reader.name, age);
 
-        // Load active insights (most recent 10)
         const insights = await db
           .select({ insightType: readerInsights.insightType, content: readerInsights.content })
           .from(readerInsights)
@@ -171,7 +169,6 @@ async function loadWorldContextForChat(
       }
     }
 
-    // Get narrative memory
     const memory = await db
       .select({
         bookNumber: worldNarrativeMemory.bookNumber,
@@ -221,6 +218,30 @@ async function loadWorldContextForChat(
 }
 
 // ============================================================================
+// TOOL DEFINITION — start_writing
+// ============================================================================
+
+const START_WRITING_TOOL: Anthropic.Tool = {
+  name: "start_writing",
+  description:
+    "Call this when the parent has confirmed they're ready for you to write the story. " +
+    "This triggers the story generation pipeline. Only call this when the parent has clearly " +
+    "agreed or asked you to go ahead — not when you're still asking questions or proposing ideas. " +
+    "You must still provide a reply to the parent alongside this tool call.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      summary: {
+        type: "string",
+        description:
+          "A 1-2 sentence summary of the agreed story concept, for logging purposes.",
+      },
+    },
+    required: ["summary"],
+  },
+};
+
+// ============================================================================
 // SYSTEM PROMPT BUILDER
 // ============================================================================
 
@@ -228,7 +249,6 @@ function buildChatSystemPrompt(
   project: any,
   worldCtx: WorldContextForChat | null
 ) {
-  // Build the reader section — used for both world and standalone stories
   const r = worldCtx?.reader;
 
   const readerSection = r?.name
@@ -248,7 +268,6 @@ Use these naturally — they show what's going on in this child's life right now
 ${r.birthdayHint ? `\n${r.birthdayHint}` : ""}`
     : "";
 
-  // World section — only for series books
   const worldSection = worldCtx
     ? `
 WORLD CONTEXT — THIS IS A SERIES BOOK:
@@ -270,7 +289,7 @@ IMPORTANT: You already know this child and this world. Don't ask the parent to r
 - Acknowledge the cast: "We've got [characters] ready to go. Everyone returning, or shall we introduce someone new?"
 - Build on themes: "The ${worldCtx.themes.slice(0, 2).join(" and ")} themes worked beautifully. Continue those or try something different?"
 `
-    : readerSection; // For standalone stories, still include reader context if we have it
+    : readerSection;
 
   return `You are a children's book author helping a parent create a story for their child. You are warm, genuinely interested, and collaborative — like a friend who's excited to help make something special.
 ${worldSection}
@@ -291,13 +310,25 @@ As you talk, gently discover:
 - How it should feel (funny? gentle? exciting? cozy?)
 - Any special details (inside jokes, real personality traits, things they said)
 
+TOOL — start_writing:
+You have a tool called start_writing. Call it when the parent has clearly confirmed they want you to go ahead and create the story. Signs the parent is ready:
+- They say "yes", "go for it", "sounds great", "let's do it", "perfect", etc. in response to your story proposal
+- They explicitly ask you to start writing or creating
+- They confirm they're happy with the direction
+
+When you call start_writing, ALSO include a warm reply in your response — something like confirming what you'll create and that you're excited to get started. The tool call and your reply happen together.
+
+Do NOT call start_writing:
+- While you're still gathering information
+- When proposing an idea and waiting for confirmation
+- If the parent seems unsure or wants to change something
+
 CRITICAL RULES:
 - Keep responses SHORT. 2-3 sentences, max 2 questions. This is a chat, not an interview.
 - Sound like a person, not a script. Build on what they say — don't ignore and jump ahead.
 - Listen for what EXCITES them. When their energy picks up, follow that thread.
 - If they mention something the child is going through (new school, sibling rivalry, fear), acknowledge it naturally. Don't turn it into a therapy session.
-- When they seem ready, offer to create the story. Don't push — read the room.
-- NEVER write the actual story in this chat. That happens separately.
+- NEVER write the actual story in this chat. That happens separately after you call start_writing.
 - NEVER use bullet points or formatted lists. This is a conversation.
 
 TONE: Warm, collaborative, genuinely interested. You're building something together.`;
@@ -325,7 +356,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ reply: "(project not found)" }, { status: 404 });
     }
 
-    // Load world context (includes structured reader data + insights + birthday)
     const worldCtx = worldId ? await loadWorldContextForChat(worldId) : null;
 
     if (worldId && worldCtx) {
@@ -386,15 +416,29 @@ export async function POST(req: Request) {
       model: "claude-sonnet-4-20250514",
       system: buildChatSystemPrompt(project, worldCtx),
       max_tokens: 1500,
+      tools: [START_WRITING_TOOL],
       messages: claudeMessages,
     });
 
-    const reply =
-      completion.content
-        .map((b) => (b.type === "text" ? b.text : ""))
-        .filter(Boolean)
-        .join("\n")
-        .trim() || "(no reply)";
+    // Extract text reply and check for tool use
+    let reply = "";
+    let readyToGenerate = false;
+    let storySummary: string | null = null;
+
+    for (const block of completion.content) {
+      if (block.type === "text") {
+        reply += block.text;
+      } else if (block.type === "tool_use" && block.name === "start_writing") {
+        readyToGenerate = true;
+        storySummary = (block.input as any)?.summary ?? null;
+      }
+    }
+
+    reply = reply.trim() || "(no reply)";
+
+    if (readyToGenerate && storySummary) {
+      console.log(`✍️ start_writing triggered: "${storySummary}"`);
+    }
 
     await db.insert(chatMessages).values({
       id: uuid(),
@@ -403,16 +447,6 @@ export async function POST(req: Request) {
       content: reply,
       createdAt: new Date(),
     });
-
-    const userMessage = message.toLowerCase();
-    const readyToGenerate =
-      userMessage.includes("generate") ||
-      userMessage.includes("create the story") ||
-      userMessage.includes("let's do it") ||
-      userMessage.includes("i'm ready") ||
-      userMessage.includes("go ahead") ||
-      userMessage.includes("make it") ||
-      (userMessage.includes("yes") && userMessage.includes("story"));
 
     return NextResponse.json({
       reply,
