@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
 
   typescript: {
-    ignoreBuildErrors: true, // Ignore TypeScript errors during build
+    ignoreBuildErrors: true,
   },
 
   images: {
@@ -15,13 +15,18 @@ const nextConfig: NextConfig = {
         hostname: "res.cloudinary.com",
         pathname: "/**",
       },
-    
       {
         protocol: "https",
         hostname: "storage.googleapis.com",
         pathname: "/**",
       },
     ],
+  },
+
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
   },
 };
 
