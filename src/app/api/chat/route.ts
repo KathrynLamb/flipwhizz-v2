@@ -434,7 +434,11 @@ export async function POST(req: Request) {
       }
     }
 
-    reply = reply.trim() || "(no reply)";
+    reply =
+      reply.trim() ||
+      (readyToGenerate
+        ? "Lovely — I'm on it! Give me a moment to write something special."
+        : "(no reply)");
 
     if (readyToGenerate && storySummary) {
       console.log(`✍️ start_writing triggered: "${storySummary}"`);
