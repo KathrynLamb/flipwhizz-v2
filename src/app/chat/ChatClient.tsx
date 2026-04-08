@@ -43,6 +43,9 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Guard to prevent double-triggering story creation
+  const creationTriggeredRef = useRef(false);
+
   // Load world context if worldId is in the URL
   useEffect(() => {
     async function loadWorldContext() {
@@ -139,6 +142,40 @@ export default function ChatPage() {
     }
   }, [input]);
 
+  async function createStoryFromChat() {
+    if (!projectId || storyCreating || storyId) return;
+    if (creationTriggeredRef.current) return;
+    creationTriggeredRef.current = true;
+
+    setStoryCreating(true);
+
+    try {
+      const res = await fetch("/api/stories/create-from-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          ...(worldIdParam && { worldId: worldIdParam }),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.storyId) {
+        setStoryId(data.storyId);
+        await waitForPagesAndNavigate(data.storyId);
+      } else {
+        console.error("No storyId returned from create-from-chat", data);
+        creationTriggeredRef.current = false;
+      }
+    } catch (err) {
+      console.error("Story creation failed:", err);
+      creationTriggeredRef.current = false;
+    } finally {
+      setStoryCreating(false);
+    }
+  }
+
   async function sendMessage() {
     if (!input.trim() || loading) return;
 
@@ -168,47 +205,25 @@ export default function ChatPage() {
 
       const data = await res.json();
 
+      const assistantReply =
+        data.reply ?? "Hmm, let me think about that again...";
+
       setMessages((m) => [
         ...m,
-        {
-          role: "assistant",
-          content: data.reply ?? "Hmm, let me think about that again...",
-        },
+        { role: "assistant", content: assistantReply },
       ]);
+
+      // Auto-trigger story creation when Claude signals readiness
+      if (data.readyToGenerate && !storyId && !storyCreating) {
+        // Small delay so the user sees Claude's reply before the transition
+        setTimeout(() => {
+          void createStoryFromChat();
+        }, 1500);
+      }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function createStoryFromChat() {
-    if (!projectId || storyCreating || storyId) return;
-
-    setStoryCreating(true);
-
-    try {
-      const res = await fetch("/api/stories/create-from-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          ...(worldIdParam && { worldId: worldIdParam }),
-        }),
-      });
-
-      const data = await res.json();
-
-      if (data.storyId) {
-        setStoryId(data.storyId);
-        await waitForPagesAndNavigate(data.storyId);
-      } else {
-        console.error("No storyId returned from create-from-chat", data);
-      }
-    } catch (err) {
-      console.error("Story creation failed:", err);
-    } finally {
-      setStoryCreating(false);
     }
   }
 
@@ -490,6 +505,27 @@ export default function ChatPage() {
               </motion.div>
             )}
 
+            {/* Story creation transition state */}
+            {storyCreating && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-end gap-2"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 flex items-center justify-center shadow-sm">
+                  <BookOpen className="w-4 h-4 text-white" />
+                </div>
+                <div className="bg-gradient-to-br from-fuchsia-50 to-pink-50 border border-fuchsia-200 px-5 py-3 rounded-[20px] rounded-bl-[4px] shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#D94590]" />
+                    <p className="text-[16px] leading-[1.4] text-gray-900 font-semibold">
+                      Writing your story…
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
             <div ref={bottomRef} />
           </div>
         </div>
@@ -526,11 +562,14 @@ export default function ChatPage() {
                     }
                   }}
                   placeholder={
-                    isWorldBook
-                      ? `What happens next in ${worldName}...`
-                      : "Message"
+                    storyCreating
+                      ? "Writing your story…"
+                      : isWorldBook
+                        ? `What happens next in ${worldName}...`
+                        : "Message"
                   }
-                  className="w-full max-h-[100px] bg-transparent border-0 focus:ring-0 focus:outline-none text-[16px] text-gray-900 placeholder:text-gray-500 resize-none font-normal"
+                  disabled={storyCreating}
+                  className="w-full max-h-[100px] bg-transparent border-0 focus:ring-0 focus:outline-none text-[16px] text-gray-900 placeholder:text-gray-500 resize-none font-normal disabled:cursor-not-allowed disabled:opacity-60"
                   rows={1}
                   style={{ lineHeight: "1.4" }}
                 />
@@ -538,12 +577,12 @@ export default function ChatPage() {
 
               <button
                 onClick={sendMessage}
-                disabled={!input.trim() || loading}
+                disabled={!input.trim() || loading || storyCreating}
                 className="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center transition-all duration-200 active:scale-90"
                 style={{
-                  background: input.trim() ? "#D94590" : "#E5E7EB",
-                  color: input.trim() ? "white" : "#9CA3AF",
-                  boxShadow: input.trim() ? "0 3px 12px rgba(217,69,144,0.3)" : "none",
+                  background: input.trim() && !storyCreating ? "#D94590" : "#E5E7EB",
+                  color: input.trim() && !storyCreating ? "white" : "#9CA3AF",
+                  boxShadow: input.trim() && !storyCreating ? "0 3px 12px rgba(217,69,144,0.3)" : "none",
                 }}
               >
                 {loading ? (
