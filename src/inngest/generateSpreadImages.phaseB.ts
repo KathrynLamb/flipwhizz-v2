@@ -53,6 +53,14 @@ const SPREAD_TEMPLATE_PATH = path.resolve(
 /*                             EVENT VALIDATION                               */
 /* -------------------------------------------------------------------------- */
 
+const StrategistPlanSchema = z.object({
+  featuredCharacterIds: z.array(z.string()),
+  backgroundCharacterIds: z.array(z.string()),
+  hiddenCharacterIds: z.array(z.string()),
+  recommendedPrompt: z.string(),
+  outfitOverrides: z.record(z.string(), z.string()).optional(),
+});
+
 const GenerateSingleSpreadEventSchema = z.object({
   storyId: z.string().min(1),
   leftPageId: z.string().min(1),
@@ -69,6 +77,8 @@ const GenerateSingleSpreadEventSchema = z.object({
       includedLocationIds: z.array(z.string()).optional(),
     })
     .optional(),
+  // ── NEW: Strategist plan passed from the regenerate route ──
+  strategistPlan: StrategistPlanSchema.optional(),
 });
 
 /* -------------------------------------------------------------------------- */
@@ -420,12 +430,14 @@ export const generateSingleSpread = inngest.createFunction(
       feedback,
       existingSpreadImageUrl,
       referenceOverrides,
+      strategistPlan,
     } = parsed.data;
 
     assertNonEmpty(storyId, "storyId");
     assertNonEmpty(leftPageId, "leftPageId");
 
     const hasOverrides = !!referenceOverrides;
+    const hasPlan = !!strategistPlan;
 
     const imageUrl = await step.run("generate-and-upload", async () => {
       const spreadPageIds = [leftPageId, ...(rightPageId ? [rightPageId] : [])];
@@ -468,11 +480,30 @@ export const generateSingleSpread = inngest.createFunction(
         throw new Error(`No spread plan for ${pageLabel}`);
       }
 
-      // ── RESOLVE CHARACTERS ──
+      // ══════════════════════════════════════════════════════════════════
+      // RESOLVE CHARACTERS — strategist plan takes priority
+      // ══════════════════════════════════════════════════════════════════
       let featuredCharacterIds: string[] = [];
       let backgroundCharacterIds: string[] = [];
+      let hiddenCharacterIds: string[] = [];
 
-      if (hasOverrides && referenceOverrides!.includedCharacterIds.length > 0) {
+      if (hasPlan) {
+        // ── STRATEGIST PATH: use the plan's explicit splits ──
+        featuredCharacterIds = uniqueIds(strategistPlan!.featuredCharacterIds);
+        backgroundCharacterIds = uniqueIds(
+          strategistPlan!.backgroundCharacterIds.filter(
+            (id) => !featuredCharacterIds.includes(id)
+          )
+        );
+        hiddenCharacterIds = uniqueIds(
+          strategistPlan!.hiddenCharacterIds.filter(
+            (id) =>
+              !featuredCharacterIds.includes(id) &&
+              !backgroundCharacterIds.includes(id)
+          )
+        );
+      } else if (hasOverrides && referenceOverrides!.includedCharacterIds.length > 0) {
+        // ── LEGACY PATH: flat list, all treated as featured ──
         featuredCharacterIds = uniqueIds(referenceOverrides!.includedCharacterIds);
         backgroundCharacterIds = [];
       } else if (spread.spreadId) {
@@ -497,13 +528,17 @@ export const generateSingleSpread = inngest.createFunction(
         );
       }
 
-      const allRelevantCharacterIds = uniqueIds([
+      // ── Load character data ──
+      // Featured characters get full portrait references sent to Gemini
+      // Background characters are loaded for name only — NO portrait sent
+      // Hidden characters are not loaded at all
+      const allVisibleCharacterIds = uniqueIds([
         ...featuredCharacterIds,
         ...backgroundCharacterIds,
       ]);
 
       const allCharacterRefs: CharacterRef[] =
-        allRelevantCharacterIds.length === 0
+        allVisibleCharacterIds.length === 0
           ? []
           : await db
               .select({
@@ -519,15 +554,23 @@ export const generateSingleSpread = inngest.createFunction(
                 visualDetails: characters.visualDetails,
               })
               .from(characters)
-              .where(inArray(characters.id, allRelevantCharacterIds));
+              .where(inArray(characters.id, allVisibleCharacterIds));
 
-      const charRefs = featuredCharacterIds
+      const featuredRefs = featuredCharacterIds
         .map((id) => allCharacterRefs.find((c) => c.id === id))
         .filter(Boolean) as CharacterRef[];
 
       const backgroundNames = backgroundCharacterIds
         .map((id) => allCharacterRefs.find((c) => c.id === id)?.name)
         .filter(Boolean) as string[];
+
+      const hiddenNames = hiddenCharacterIds.length > 0
+        ? await db
+            .select({ name: characters.name })
+            .from(characters)
+            .where(inArray(characters.id, hiddenCharacterIds))
+            .then((rows) => rows.map((r) => r.name))
+        : [];
 
       // ── RESOLVE LOCATION ──
       let locationRef: null | {
@@ -583,25 +626,29 @@ export const generateSingleSpread = inngest.createFunction(
       }
 
       // ── DEBUG ──
+      console.log(`🎯 Strategist plan: ${hasPlan ? "YES" : "no (legacy path)"}`);
       console.log("🗺️ Location:", locationRef ? locationRef.name : "NONE");
       console.log(
         `👥 Featured characters (${featuredCharacterIds.length}):`,
-        charRefs.map((c) => c.name)
+        featuredRefs.map((c) => c.name)
       );
       console.log(
         `👥 Background characters (${backgroundNames.length}):`,
         backgroundNames
       );
+      if (hiddenNames.length > 0) {
+        console.log(`🚫 Hidden characters (${hiddenNames.length}):`, hiddenNames);
+      }
 
       // ══════════════════════════════════════════════════════════════════
       // BUILD GEMINI PROMPT — IMAGES FIRST, MINIMAL TEXT
       // ══════════════════════════════════════════════════════════════════
       const parts: any[] = [];
 
-      // 1. FEATURED CHARACTERS FIRST — highest priority
+      // 1. FEATURED CHARACTERS FIRST — highest priority, with portraits
       const missingPortraits: string[] = [];
 
-      for (const c of charRefs) {
+      for (const c of featuredRefs) {
         if (!c.portraitUrl || isDataUrl(c.portraitUrl)) {
           missingPortraits.push(c.name);
           continue;
@@ -694,9 +741,60 @@ export const generateSingleSpread = inngest.createFunction(
         console.warn("⚠️ Template failed:", err);
       }
 
-      // 6. SCENE INSTRUCTIONS
-      parts.push({
-        text: `
+      // ══════════════════════════════════════════════════════════════════
+      // 6. SCENE INSTRUCTIONS — strategist prompt vs generic
+      // ══════════════════════════════════════════════════════════════════
+
+      if (hasPlan && strategistPlan!.recommendedPrompt) {
+        // ── STRATEGIST PATH: use the art-directed prompt ──
+        // The recommendedPrompt already contains specific composition,
+        // identity, and scene instructions from Claude's analysis.
+        // We wrap it with the structural requirements Gemini still needs.
+
+        const backgroundSection =
+          backgroundNames.length > 0
+            ? `\nBACKGROUND CHARACTERS (name mention only, NO portrait sent — draw as smaller, less detailed figures):\n${backgroundNames.join(", ")}.`
+            : "";
+
+        const hiddenSection =
+          hiddenNames.length > 0
+            ? `\nDO NOT INCLUDE these characters in this illustration: ${hiddenNames.join(", ")}.`
+            : "";
+
+        parts.push({
+          text: `
+CREATE A DOUBLE-PAGE SPREAD ILLUSTRATION.
+One continuous 16:9 landscape. Left half = left page, right half = right page.
+
+HIGHEST PRIORITY:
+- Preserve the identity of every FEATURED character exactly
+- Do not redesign, simplify, substitute, or genericise featured characters
+- Match their face, body, colours, markings, hair/fur shape, and signature features closely
+- Only ${featuredRefs.length} character(s) should be drawn with full detail and accurate likeness: ${featuredRefs.map((c) => c.name).join(", ")}
+
+STYLE:
+${geminiStyleBlock}
+
+ART DIRECTOR INSTRUCTIONS:
+${strategistPlan!.recommendedPrompt}
+${backgroundSection}
+${hiddenSection}
+
+LEFT PAGE TEXT (upper-left area):
+${left?.text ?? ""}
+
+RIGHT PAGE TEXT (upper-right area):
+${right?.text ?? ""}
+
+Hand-letter text into the illustration. Large, high-contrast, child-friendly. ${typographyBlock}
+Keep text well inside safe zones. Outer edges will be trimmed.
+AVOID: ${geminiAvoidBlock}${feedback ? `\nADDITIONAL FEEDBACK: ${feedback}` : ""}
+          `.trim(),
+        });
+      } else {
+        // ── LEGACY PATH: generic scene instructions ──
+        parts.push({
+          text: `
 CREATE A DOUBLE-PAGE SPREAD ILLUSTRATION.
 One continuous 16:9 landscape. Left half = left page, right half = right page.
 
@@ -729,8 +827,9 @@ ${right?.text ?? ""}
 Hand-letter text into the illustration. Large, high-contrast, child-friendly. ${typographyBlock}
 Keep text well inside safe zones. Outer edges will be trimmed.
 AVOID: ${geminiAvoidBlock}${feedback ? `\nFEEDBACK: ${feedback}` : ""}
-        `.trim(),
-      });
+          `.trim(),
+        });
+      }
 
       // ── Debug summary ──
       const imgCount = parts.filter((p: any) => p.inlineData).length;

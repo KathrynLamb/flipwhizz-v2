@@ -21,6 +21,11 @@ import FocusSceneModal from "@/app/stories/[id]/studio/components/FocusSceneModa
 import StudioPaywall from "@/components/StudioPaywall";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
 
+import RedrawStrategistModal, {
+  type RedrawPlan,
+  type RedrawStrategistContext,
+  type StrategistMessage,
+} from "@/app/stories/[id]/studio/components/RedrawStrategistModal";
 /* ---------------------------------- Types --------------------------------- */
 
 type Page = {
@@ -51,6 +56,11 @@ type FocusSceneSelection = {
 };
 
 type SpreadReferencesResponse = {
+  spread?: {
+    id: string;
+    spreadIndex: number;
+    sceneSummary: string | null;
+  };
   assignedCharacters: {
     characterId: string;
     name: string;
@@ -58,6 +68,8 @@ type SpreadReferencesResponse = {
     fullBodyImageUrl: string | null;
     referenceImageUrl: string | null;
     role: string | null;
+    currentOutfitKey?: string | null;
+    currentOutfitDescription?: string | null;
   }[];
   availableCharacters: {
     characterId: string;
@@ -66,7 +78,39 @@ type SpreadReferencesResponse = {
     fullBodyImageUrl: string | null;
     referenceImageUrl: string | null;
     role: string | null;
+    availableOutfits?: {
+      outfitKey: string;
+      outfitDescription: string;
+      isDefault: boolean;
+    }[];
   }[];
+  assignedLocation?: {
+    id: string;
+    name: string;
+    portraitImageUrl: string | null;
+    referenceImageUrl: string | null;
+    description?: string | null;
+  } | null;
+  assignedLocations?: {
+    id: string;
+    name: string;
+    portraitImageUrl: string | null;
+    referenceImageUrl: string | null;
+    description?: string | null;
+    role?: "primary" | "secondary" | "background" | "referenced" | "memory" | null;
+  }[];
+  availableLocations?: {
+    id: string;
+    name: string;
+    portraitImageUrl: string | null;
+    referenceImageUrl: string | null;
+    description?: string | null;
+  }[];
+  styleGuide?: {
+    summary: string | null;
+    artStyle: string | null;
+    sampleIllustrationUrl?: string | null;
+  } | null;
 };
 
 /* -------------------------- Helper: build spreads -------------------------- */
@@ -102,6 +146,57 @@ function bestCharacterImage(c: {
   referenceImageUrl?: string | null;
 }) {
   return c.portraitImageUrl || c.fullBodyImageUrl || c.referenceImageUrl || null;
+}
+
+function SplitRedrawBanner({
+  plan,
+  onDismiss,
+}: {
+  plan: RedrawPlan;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-orange-200 bg-orange-50 px-5 py-4 flex items-start gap-3">
+      <Users className="w-5 h-5 text-orange-600 mt-0.5" />
+      <div className="flex-1">
+        <p className="text-sm font-bold text-orange-900">
+          Split redraw plan ready
+        </p>
+        <p className="text-xs text-orange-800 mt-1 leading-relaxed">
+          The strategist judged this scene too crowded for one unified spread.
+          The plan has been captured as a two-page redraw concept, but your
+          current image worker still renders double-page spreads only.
+        </p>
+
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="rounded-xl bg-white border border-orange-200 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-orange-700 font-bold mb-1.5">
+              Left page prompt
+            </p>
+            <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">
+              {plan.leftPagePrompt || "—"}
+            </p>
+          </div>
+
+          <div className="rounded-xl bg-white border border-orange-200 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-orange-700 font-bold mb-1.5">
+              Right page prompt
+            </p>
+            <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">
+              {plan.rightPagePrompt || "—"}
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={onDismiss}
+          className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-orange-300 text-xs font-bold text-orange-800 hover:bg-orange-100 transition-colors"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -511,8 +606,8 @@ export default function DesktopStudio({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
 
-  const [redrawTarget, setRedrawTarget] = useState<Spread | null>(null);
-  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  // const [redrawTarget, setRedrawTarget] = useState<Spread | null>(null);
+  // const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [regeneratingSpreads, setRegeneratingSpreads] = useState<Set<string>>(
     new Set()
   );
@@ -524,6 +619,19 @@ export default function DesktopStudio({
   const [pendingFocusMode, setPendingFocusMode] = useState<"generate" | "redraw" | null>(
     null
   );
+
+  const [pendingSplitPlan, setPendingSplitPlan] = useState<RedrawPlan | null>(null);
+
+  const [isOpeningStrategist, setIsOpeningStrategist] = useState(false);
+
+  const [strategistTarget, setStrategistTarget] = useState<Spread | null>(null);
+  const [isStrategistOpen, setIsStrategistOpen] = useState(false);
+  const [isSendingStrategistMessage, setIsSendingStrategistMessage] = useState(false);
+  const [isApplyingStrategistPlan, setIsApplyingStrategistPlan] = useState(false);
+  const [strategistMessages, setStrategistMessages] = useState<StrategistMessage[]>([]);
+  const [strategistPlan, setStrategistPlan] = useState<RedrawPlan | null>(null);
+  const [strategistContext, setStrategistContext] =
+    useState<RedrawStrategistContext | null>(null);
 
   const spreads = useMemo(
     () => groupIntoSpreads(pages, dbSpreads),
@@ -614,6 +722,90 @@ export default function DesktopStudio({
     return assigned;
   }
 
+  async function buildStrategistContext(
+    spread: Spread,
+    initialFeaturedCharacterIds?: string[] | null
+  ): Promise<RedrawStrategistContext> {
+    if (!spread.spreadId) {
+      throw new Error("Missing spread id");
+    }
+
+    const res = await fetch(
+      `/api/stories/${story.id}/spreads/${spread.spreadId}/references`,
+      { cache: "no-store" }
+    );
+
+    if (!res.ok) {
+      throw new Error("Failed to load spread references");
+    }
+
+    const data: SpreadReferencesResponse = await res.json();
+
+    const allCharacters = [
+      ...(data.assignedCharacters ?? []),
+      ...(data.availableCharacters ?? []),
+    ];
+
+    const dedupedCharacters = Array.from(
+      new Map(
+        allCharacters.map((c) => [
+          c.characterId,
+          {
+            characterId: c.characterId,
+            name: c.name,
+            imageUrl: bestCharacterImage(c),
+            role: c.role,
+            outfitKey:
+              "currentOutfitKey" in c ? c.currentOutfitKey ?? null : null,
+          },
+        ])
+      ).values()
+    );
+
+    const selectedSet = new Set(initialFeaturedCharacterIds ?? []);
+    const charactersForContext =
+      selectedSet.size > 0
+        ? [
+            ...dedupedCharacters.filter((c) => selectedSet.has(c.characterId)),
+            ...dedupedCharacters.filter((c) => !selectedSet.has(c.characterId)),
+          ]
+        : dedupedCharacters;
+
+    const allLocations = [
+      ...(data.assignedLocations ?? []),
+      ...(data.assignedLocation ? [data.assignedLocation] : []),
+      ...(data.availableLocations ?? []),
+    ];
+
+    const dedupedLocations = Array.from(
+      new Map(
+        allLocations.map((l) => [
+          l.id,
+          {
+            id: l.id,
+            name: l.name,
+            imageUrl: l.portraitImageUrl || l.referenceImageUrl || null,
+          },
+        ])
+      ).values()
+    );
+
+    return {
+      storyTitle: story.title,
+      spreadLabel: spread.right
+        ? `Pages ${spread.left.pageNumber}–${spread.right.pageNumber}`
+        : `Page ${spread.left.pageNumber}`,
+      sceneSummary: data.spread?.sceneSummary ?? null,
+      leftPageText: spread.left.text ?? null,
+      rightPageText: spread.right?.text ?? null,
+      currentSpreadImageUrl: spread.left.imageUrl ?? null,
+      styleGuideSummary: data.styleGuide?.summary ?? styleGuide?.summary ?? null,
+      styleGuideLabel: data.styleGuide?.artStyle ?? styleGuide?.artStyle ?? null,
+      characters: charactersForContext,
+      locations: dedupedLocations,
+    };
+  }
+
   async function startRegenerationForSpread(
     spread: Spread,
     options?: {
@@ -674,8 +866,14 @@ export default function DesktopStudio({
         return true;
       }
 
+      // if (mode === "redraw") {
+      //   setRedrawTarget(spread);
+      // } else {
+      //   await startRegenerationForSpread(spread, { freshStart: true });
+      // }
+
       if (mode === "redraw") {
-        setRedrawTarget(spread);
+        await openStrategistForSpread(spread);
       } else {
         await startRegenerationForSpread(spread, { freshStart: true });
       }
@@ -714,33 +912,147 @@ export default function DesktopStudio({
     }
   }
 
-  async function handleRedrawSpread(payload: {
-    feedback: string;
-    includedCharacterIds: string[];
-    outfitOverrides: Record<string, string>;
-    primaryLocationId: string | null;
-    includedLocationIds: string[];
-    freshStart?: boolean;
+  // async function handleRedrawSpread(payload: {
+  //   feedback: string;
+  //   includedCharacterIds: string[];
+  //   outfitOverrides: Record<string, string>;
+  //   primaryLocationId: string | null;
+  //   includedLocationIds: string[];
+  //   freshStart?: boolean;
+  // }) {
+  //   if (!redrawTarget || isSubmittingFeedback) return;
+  //   setIsSubmittingFeedback(true);
+
+  //   try {
+  //     await startRegenerationForSpread(redrawTarget, {
+  //       feedback: payload.freshStart ? "" : payload.feedback,
+  //       includedCharacterIds: payload.includedCharacterIds,
+  //       outfitOverrides: payload.outfitOverrides,
+  //       primaryLocationId: payload.primaryLocationId,
+  //       includedLocationIds: payload.includedLocationIds,
+  //       freshStart: payload.freshStart ?? false,
+  //     });
+
+  //     setRedrawTarget(null);
+  //     setFocusSelectedCharacterIds(null);
+  //   } catch (err: any) {
+  //     alert(err.message || "Failed to redraw spread");
+  //   } finally {
+  //     setIsSubmittingFeedback(false);
+  //   }
+  // }
+
+  function resetStrategistState() {
+    setStrategistMessages([]);
+    setStrategistPlan(null);
+    setIsSendingStrategistMessage(false);
+    setIsApplyingStrategistPlan(false);
+  }
+
+  function closeStrategist() {
+    setIsStrategistOpen(false);
+    setStrategistTarget(null);
+    setStrategistContext(null);
+    resetStrategistState();
+  }
+
+  async function openStrategistForSpread(
+    spread: Spread,
+    initialFeaturedCharacterIds?: string[] | null
+  ) {
+    setStrategistTarget(spread);
+    setStrategistContext(null);
+    setStrategistMessages([]);
+    setStrategistPlan(null);
+    setIsStrategistOpen(true);
+    setIsOpeningStrategist(true);
+  
+    try {
+      const context = await buildStrategistContext(spread, initialFeaturedCharacterIds);
+  
+      setStrategistContext(context);
+      setStrategistMessages([
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content:
+            "I’ve reviewed this spread and the loaded references. Tell me what feels off, and I’ll turn it into a stronger redraw plan for Gemini.",
+        },
+      ]);
+    } catch (err: any) {
+      alert(err.message || "Failed to open redraw strategist");
+      closeStrategist();
+    } finally {
+      setIsOpeningStrategist(false);
+    }
+  }
+
+  async function handleStrategistMessage(payload: {
+    userMessage: string;
+    messages: StrategistMessage[];
   }) {
-    if (!redrawTarget || isSubmittingFeedback) return;
-    setIsSubmittingFeedback(true);
+    setStrategistMessages(payload.messages);
+    setIsSendingStrategistMessage(true);
 
     try {
-      await startRegenerationForSpread(redrawTarget, {
-        feedback: payload.freshStart ? "" : payload.feedback,
-        includedCharacterIds: payload.includedCharacterIds,
-        outfitOverrides: payload.outfitOverrides,
-        primaryLocationId: payload.primaryLocationId,
-        includedLocationIds: payload.includedLocationIds,
-        freshStart: payload.freshStart ?? false,
+      const res = await fetch(`/api/stories/${story.id}/spreads/strategist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          spreadId: strategistTarget?.spreadId ?? null,
+          context: strategistContext,
+          messages: payload.messages,
+        }),
       });
 
-      setRedrawTarget(null);
-      setFocusSelectedCharacterIds(null);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to continue strategist chat");
+      }
+
+      setStrategistMessages((prev) => [...prev, data.assistantMessage]);
+      setStrategistPlan(data.plan ?? null);
     } catch (err: any) {
-      alert(err.message || "Failed to redraw spread");
+      alert(err.message || "Failed to continue strategist chat");
     } finally {
-      setIsSubmittingFeedback(false);
+      setIsSendingStrategistMessage(false);
+    }
+  }
+
+  async function handleUseStrategistPlan(plan: RedrawPlan) {
+    if (!strategistTarget) return;
+
+    setIsApplyingStrategistPlan(true);
+
+    try {
+      if (
+        plan.executionMode === "single_spread_identity_repair" ||
+        plan.executionMode === "single_spread_with_reduced_cast"
+      ) {
+        await startRegenerationForSpread(strategistTarget, {
+          feedback: plan.recommendedPrompt,
+          includedCharacterIds: plan.featuredCharacterIds,
+          freshStart: false,
+        });
+
+        closeStrategist();
+        setFocusSelectedCharacterIds(null);
+        return;
+      }
+
+      if (plan.executionMode === "split_into_two_single_pages") {
+        setPendingSplitPlan(plan);
+        closeStrategist();
+        setFocusSelectedCharacterIds(null);
+        return;
+      }
+
+      throw new Error("Unknown redraw execution mode");
+    } catch (err: any) {
+      alert(err.message || "Failed to use redraw plan");
+    } finally {
+      setIsApplyingStrategistPlan(false);
     }
   }
 
@@ -770,10 +1082,13 @@ export default function DesktopStudio({
         setPendingFocusMode(null);
       } else {
         setFocusSelectedCharacterIds(selection.featuredCharacterIds);
-        setRedrawTarget(focusTarget);
+        const target = focusTarget;
+
         setFocusTarget(null);
         setFocusCharacters([]);
         setPendingFocusMode(null);
+
+        await openStrategistForSpread(target, selection.featuredCharacterIds);
       }
     } catch (err: any) {
       alert(err.message || "Failed to focus scene");
@@ -818,11 +1133,11 @@ export default function DesktopStudio({
     }
   }
 
-  const redrawLabel = redrawTarget
-    ? redrawTarget.right
-      ? `Pages ${redrawTarget.left.pageNumber}–${redrawTarget.right.pageNumber}`
-      : `Page ${redrawTarget.left.pageNumber}`
-    : "";
+  // const redrawLabel = redrawTarget
+  //   ? redrawTarget.right
+  //     ? `Pages ${redrawTarget.left.pageNumber}–${redrawTarget.right.pageNumber}`
+  //     : `Page ${redrawTarget.left.pageNumber}`
+  //   : "";
 
   const focusLabel = focusTarget
     ? focusTarget.right
@@ -856,7 +1171,7 @@ export default function DesktopStudio({
 
   return (
     <div className="min-h-screen bg-gray-50 pb-40">
-      <AnimatePresence>
+      {/* <AnimatePresence>
         {redrawTarget && (
           <RedrawModal
             isOpen
@@ -870,6 +1185,34 @@ export default function DesktopStudio({
             spreadId={redrawTarget.spreadId ?? ""}
             spreadLabel={redrawLabel}
             initialIncludedCharacterIds={focusSelectedCharacterIds ?? undefined}
+          />
+        )}
+      </AnimatePresence> */}
+
+      <AnimatePresence>
+      {isStrategistOpen && strategistTarget && (
+          <RedrawStrategistModal
+            isOpen
+            onClose={closeStrategist}
+            messages={strategistMessages}
+            isSending={isSendingStrategistMessage}
+            onSendMessage={handleStrategistMessage}
+            context={strategistContext}
+            isLoadingContext={isOpeningStrategist}
+            plan={strategistPlan}
+            onUsePlan={handleUseStrategistPlan}
+            isUsingPlan={isApplyingStrategistPlan}
+            onResetConversation={() => {
+              setStrategistMessages([
+                {
+                  id: `assistant-${Date.now()}`,
+                  role: "assistant",
+                  content:
+                    "I’ve reviewed this spread and the loaded references. Tell me what feels off, and I’ll turn it into a stronger redraw plan for Gemini.",
+                },
+              ]);
+              setStrategistPlan(null);
+            }}
           />
         )}
       </AnimatePresence>
@@ -962,6 +1305,12 @@ export default function DesktopStudio({
               </p>
             </div>
           </div>
+        )}
+        {pendingSplitPlan && (
+          <SplitRedrawBanner
+            plan={pendingSplitPlan}
+            onDismiss={() => setPendingSplitPlan(null)}
+          />
         )}
       </div>
     </div>

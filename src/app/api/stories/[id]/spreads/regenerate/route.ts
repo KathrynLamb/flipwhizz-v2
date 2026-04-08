@@ -32,6 +32,8 @@ export async function POST(
     primaryLocationId,
     includedLocationIds,
     freshStart,
+    // ── NEW: Strategist plan fields ──
+    strategistPlan,
   } = body as {
     pageIds: string[];
     spreadId: string | null;
@@ -42,6 +44,14 @@ export async function POST(
     primaryLocationId?: string | null;
     includedLocationIds?: string[];
     freshStart?: boolean;
+    strategistPlan?: {
+      featuredCharacterIds: string[];
+      backgroundCharacterIds: string[];
+      hiddenCharacterIds: string[];
+      recommendedPrompt: string;
+      outfitOverrides?: Record<string, string>;
+      notesToUser?: string;
+    } | null;
   };
 
   if (!pageIds?.length) {
@@ -51,12 +61,30 @@ export async function POST(
     );
   }
 
-  const normalizedCharacterIds = uniqueIds(includedCharacterIds);
+  // ── When a strategist plan is provided, derive character lists from it ──
+  // Otherwise fall back to the flat includedCharacterIds (legacy path)
+  const hasPlan = !!strategistPlan;
+
+  const planFeaturedIds = uniqueIds(strategistPlan?.featuredCharacterIds);
+  const planBackgroundIds = uniqueIds(strategistPlan?.backgroundCharacterIds);
+  const planHiddenIds = uniqueIds(strategistPlan?.hiddenCharacterIds);
+
+  // For DB persistence and the max-characters guard, "included" = featured + background
+  // Hidden characters are intentionally excluded from the generation entirely
+  const normalizedCharacterIds = hasPlan
+    ? uniqueIds([...planFeaturedIds, ...planBackgroundIds])
+    : uniqueIds(includedCharacterIds);
+
+  const mergedOutfitOverrides = {
+    ...(outfitOverrides ?? {}),
+    ...(strategistPlan?.outfitOverrides ?? {}),
+  };
+
   const normalizedIncludedLocationIds = uniqueIds(includedLocationIds);
   const resolvedPrimaryLocationId =
     primaryLocationId ?? locationId ?? normalizedIncludedLocationIds[0] ?? null;
 
-  if (normalizedCharacterIds.length > MAX_FEATURED_CHARACTERS) {
+  if (planFeaturedIds.length > MAX_FEATURED_CHARACTERS) {
     return NextResponse.json(
       {
         error: `You can choose up to ${MAX_FEATURED_CHARACTERS} featured characters for one spread.`,
@@ -205,11 +233,23 @@ export async function POST(
             existingSpreadImageUrl,
             referenceOverrides: {
               includedCharacterIds: normalizedCharacterIds,
-              outfitOverrides: outfitOverrides ?? {},
+              outfitOverrides: mergedOutfitOverrides,
               locationId: resolvedPrimaryLocationId,
               primaryLocationId: resolvedPrimaryLocationId,
               includedLocationIds: finalLocationIds,
             },
+            // ── NEW: Pass strategist plan to the worker ──
+            ...(hasPlan
+              ? {
+                  strategistPlan: {
+                    featuredCharacterIds: planFeaturedIds,
+                    backgroundCharacterIds: planBackgroundIds,
+                    hiddenCharacterIds: planHiddenIds,
+                    recommendedPrompt: strategistPlan!.recommendedPrompt,
+                    outfitOverrides: strategistPlan!.outfitOverrides ?? {},
+                  },
+                }
+              : {}),
           }),
     },
   });
