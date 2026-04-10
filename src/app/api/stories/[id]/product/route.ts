@@ -4,15 +4,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyProducts } from "@/db/schema";
 import { eq } from "drizzle-orm";
-
-const PRICES = {
-  digital: "14.00",
-  print: "29.00",
-  gift: "39.00",
-} as const;
+import {
+  getPriceCents,
+  formatPrice,
+  type ProductType,
+  type CurrencyCode,
+} from "@/lib/pricing";
 
 const ALLOWED_PRODUCT_TYPES = ["digital", "print", "gift"] as const;
-type ProductType = (typeof ALLOWED_PRODUCT_TYPES)[number];
+const ALLOWED_CURRENCIES: CurrencyCode[] = ["GBP", "USD", "EUR", "AUD"];
 
 function isValidProductType(value: unknown): value is ProductType {
   return (
@@ -21,8 +21,11 @@ function isValidProductType(value: unknown): value is ProductType {
   );
 }
 
-function getPrice(productType: ProductType): string {
-  return PRICES[productType];
+function isValidCurrency(value: unknown): value is CurrencyCode {
+  return (
+    typeof value === "string" &&
+    ALLOWED_CURRENCIES.includes(value as CurrencyCode)
+  );
 }
 
 function requiresShipping(productType: ProductType): boolean {
@@ -45,16 +48,22 @@ export async function GET(
     return NextResponse.json({
       productType: null,
       price: null,
+      priceCents: null,
+      currency: null,
       requiresShipping: null,
       productSelected: false,
     });
   }
 
   const productType = product.productType;
+  const currency = (isValidCurrency(product.currency) ? product.currency : "GBP") as CurrencyCode;
+  const cents = getPriceCents(productType, currency);
 
   return NextResponse.json({
     productType,
-    price: getPrice(productType),
+    price: formatPrice(cents, currency),
+    priceCents: cents,
+    currency,
     requiresShipping: requiresShipping(productType),
     productSelected: true,
   });
@@ -67,6 +76,7 @@ export async function PUT(
   const { id } = await params;
   const body = await req.json();
   const rawProductType = body?.productType;
+  const rawCurrency = body?.currency;
 
   if (!isValidProductType(rawProductType)) {
     return NextResponse.json(
@@ -76,6 +86,8 @@ export async function PUT(
   }
 
   const productType = rawProductType;
+  const currency: CurrencyCode = isValidCurrency(rawCurrency) ? rawCurrency : "GBP";
+  const cents = getPriceCents(productType, currency);
 
   const [existing] = await db
     .select()
@@ -88,6 +100,8 @@ export async function PUT(
       .update(storyProducts)
       .set({
         productType,
+        currency,
+        estimatedPrice: cents,
         requiresShipping: requiresShipping(productType),
         requiresPdf: true,
         updatedAt: new Date(),
@@ -97,6 +111,8 @@ export async function PUT(
     await db.insert(storyProducts).values({
       storyId: id,
       productType,
+      currency,
+      estimatedPrice: cents,
       requiresShipping: requiresShipping(productType),
       requiresPdf: true,
     });
@@ -104,7 +120,9 @@ export async function PUT(
 
   return NextResponse.json({
     productType,
-    price: getPrice(productType),
+    price: formatPrice(cents, currency),
+    priceCents: cents,
+    currency,
     requiresShipping: requiresShipping(productType),
     productSelected: true,
   });

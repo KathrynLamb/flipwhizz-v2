@@ -432,6 +432,49 @@ export const storyStyleGuide = pgTable("story_style_guide", {
 
 /* ==================== STYLE GUIDE IMAGES ==================== */
 
+// Add this to your schema.ts file, alongside the other table definitions
+
+/* ==================== PROMO CODES ==================== */
+
+export const promoCodes = pgTable(
+  "promo_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    code: varchar("code", { length: 50 }).notNull(),
+    label: varchar("label", { length: 100 }),
+
+    // Discount rules
+    discountType: varchar("discount_type", { length: 20 })
+      .notNull()
+      .default("percent"), // 'percent' | 'fixed'
+    discountPercent: integer("discount_percent").default(0),
+    discountFixedCents: integer("discount_fixed_cents").default(0),
+
+    // Per-product overrides: null = use default, 0 = free (100% off)
+    digitalOverride: integer("digital_override"),
+    printOverride: integer("print_override"),
+    giftOverride: integer("gift_override"),
+
+    // Usage limits
+    maxUses: integer("max_uses"),
+    currentUses: integer("current_uses").notNull().default(0),
+    maxUsesPerUser: integer("max_uses_per_user"),
+
+    // Validity
+    active: boolean("active").notNull().default(true),
+    startsAt: timestamp("starts_at"),
+    expiresAt: timestamp("expires_at"),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    codeUnique: uniqueIndex("promo_codes_code_unique").on(t.code),
+    activeIdx: index("promo_codes_active_idx").on(t.active, t.code),
+  })
+);
+
 export const styleGuideImages = pgTable("style_guide_images", {
   id: uuid("id").primaryKey().defaultRandom(),
   styleGuideId: uuid("style_guide_id")
