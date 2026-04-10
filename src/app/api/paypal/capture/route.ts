@@ -1,3 +1,4 @@
+// src/app/api/paypal/capture/route.ts
 import { NextResponse } from "next/server";
 import { paypalCaptureOrder } from "@/lib/paypal";
 import { db } from "@/db";
@@ -169,25 +170,49 @@ export async function POST(req: Request) {
     }
 
     /* --------------------------------------------------
-       UPDATE PAYMENT STATE + SET STATUS TO GENERATING
+       CHECK IF THIS IS AN UPGRADE (already paid)
     -------------------------------------------------- */
-    await db
-      .update(stories)
-      .set({
-        paymentStatus: "paid",
-        paymentId: orderID,
-        status: "generating",
-        updatedAt: new Date(),
-      })
-      .where(eq(stories.id, storyId));
+    const [storyRow] = await db
+      .select({ paymentStatus: stories.paymentStatus, status: stories.status })
+      .from(stories)
+      .where(eq(stories.id, storyId))
+      .limit(1);
+
+    const alreadyPaid = storyRow?.paymentStatus === "paid";
 
     /* --------------------------------------------------
-       FIRE INNGEST — generates all spreads in parallel
+       UPDATE PAYMENT STATE
+       For upgrades (already paid): only update the paymentId
+       For first purchase: set paid + generating + fire Inngest
     -------------------------------------------------- */
-    await inngest.send({
-      name: "story/generate.spreads",
-      data: { storyId },
-    });
+    if (alreadyPaid) {
+      // Upgrade — story is already paid and illustrations already generated.
+      // Just record the new payment ID; productType was already swapped before checkout.
+      await db
+        .update(stories)
+        .set({
+          paymentId: orderID,
+          updatedAt: new Date(),
+        })
+        .where(eq(stories.id, storyId));
+    } else {
+      // First purchase
+      await db
+        .update(stories)
+        .set({
+          paymentStatus: "paid",
+          paymentId: orderID,
+          status: "generating",
+          updatedAt: new Date(),
+        })
+        .where(eq(stories.id, storyId));
+
+      /* Fire Inngest — generates all spreads in parallel */
+      await inngest.send({
+        name: "story/generate.spreads",
+        data: { storyId },
+      });
+    }
 
     /* --------------------------------------------------
        RESPOND
@@ -197,6 +222,7 @@ export async function POST(req: Request) {
       storyId,
       orderID,
       productType,
+      isUpgrade: alreadyPaid,
     });
   } catch (err: any) {
     console.error("[PayPal capture] error:", err);

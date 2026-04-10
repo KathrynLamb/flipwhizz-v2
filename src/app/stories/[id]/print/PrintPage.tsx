@@ -1,7 +1,7 @@
 // src/app/stories/[id]/print/PrintPage.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   BookOpen,
   Loader2,
@@ -14,8 +14,13 @@ import {
   Sparkles,
   Clock,
   Printer,
+  ArrowUpRight,
+  Lock,
+  Gift,
+  ChevronRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
 import type { StepKey } from "@/lib/storySteps";
 
@@ -61,6 +66,8 @@ type Props = {
   initialShippingAddress: ShippingAddress | null;
 };
 
+type UpgradeTier = "print" | "gift";
+
 const FONT = "'Bricolage Grotesque', system-ui, sans-serif";
 
 const EMPTY_ADDRESS: ShippingAddress = {
@@ -74,6 +81,25 @@ const EMPTY_ADDRESS: ShippingAddress = {
   email: "",
   phone: "",
 };
+
+const UPGRADE_TIERS: { key: UpgradeTier; label: string; fullPrice: string; upgradePrice: string; icon: typeof Package; description: string }[] = [
+  {
+    key: "print",
+    label: "Softcover Book",
+    fullPrice: "29.00",
+    upgradePrice: "15.00",
+    icon: Printer,
+    description: "Premium softcover, delivered to your door",
+  },
+  {
+    key: "gift",
+    label: "Hardcover Gift Edition",
+    fullPrice: "39.00",
+    upgradePrice: "25.00",
+    icon: Gift,
+    description: "Deluxe hardcover keepsake, gift-ready",
+  },
+];
 
 /* -------------------------------------------------------------------------- */
 /*                             PRODUCT LABELS                                 */
@@ -107,10 +133,11 @@ function getProductIcon(type: string) {
 /*                              MAIN COMPONENT                                */
 /* -------------------------------------------------------------------------- */
 
-export default function PrintPage({ story, order, productType, initialShippingAddress }: Props) {
+export default function PrintPage({ story, order, productType: initialProductType, initialShippingAddress }: Props) {
   const [currentOrder, setCurrentOrder] = useState<Order | null>(order);
+  const [productType, setProductType] = useState(initialProductType);
   const [flowStatus, setFlowStatus] = useState<
-    "idle" | "address" | "processing" | "success" | "error"
+    "idle" | "address" | "processing" | "success" | "error" | "upgrade"
   >("idle");
   const [processingStep, setProcessingStep] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -120,10 +147,39 @@ export default function PrintPage({ story, order, productType, initialShippingAd
   const [isDownloading, setIsDownloading] = useState(false);
   const [isExportingPrint, setIsExportingPrint] = useState(false);
 
+  // Upgrade state
+  const [selectedUpgradeTier, setSelectedUpgradeTier] = useState<UpgradeTier>("print");
+  const [upgradeProcessing, setUpgradeProcessing] = useState(false);
+  const [upgradeSavingProduct, setUpgradeSavingProduct] = useState(false);
+
   const hasOrder = !!currentOrder;
   const isDigitalOnly = productType === "digital";
   const isPhysical = productType === "print" || productType === "gift";
   const ProductIcon = getProductIcon(productType);
+
+  const upgradeTier = UPGRADE_TIERS.find((t) => t.key === selectedUpgradeTier)!;
+
+  /* ----------------------------- SAVE PRODUCT SELECTION --------------------- */
+
+  const saveProductSelection = useCallback(
+    async (newType: string) => {
+      setUpgradeSavingProduct(true);
+      try {
+        const res = await fetch(`/api/stories/${story.id}/product`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productType: newType }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to save product selection");
+        }
+      } finally {
+        setUpgradeSavingProduct(false);
+      }
+    },
+    [story.id]
+  );
 
   /* ----------------------------- DOWNLOAD PDF (digital) --------------------- */
 
@@ -202,7 +258,6 @@ export default function PrintPage({ story, order, productType, initialShippingAd
     setFlowStatus("processing");
 
     try {
-      // Step 1: Export print-ready PDF for Gelato
       setProcessingStep("Preparing your book for print…");
       const exportRes = await fetch(
         `/api/stories/${story.id}/export-complete`,
@@ -214,7 +269,6 @@ export default function PrintPage({ story, order, productType, initialShippingAd
         throw new Error(data.error || "Failed to prepare PDF");
       }
 
-      // Step 2: Place Gelato order
       setProcessingStep("Placing your order…");
       const orderRes = await fetch(`/api/stories/${story.id}/order`, {
         method: "POST",
@@ -251,6 +305,13 @@ export default function PrintPage({ story, order, productType, initialShippingAd
     } else {
       setFlowStatus("address");
     }
+  }
+
+  /* ----------------------------- UPGRADE SUCCESS --------------------------- */
+
+  function handleUpgradeSuccess() {
+    setProductType(selectedUpgradeTier);
+    setFlowStatus("idle");
   }
 
   /* -------------------------------------------------------------------------- */
@@ -363,7 +424,7 @@ export default function PrintPage({ story, order, productType, initialShippingAd
           transition={{ delay: 0.2 }}
           className="space-y-3"
         >
-          {/* ── DIGITAL ONLY: single download button ── */}
+          {/* ── DIGITAL: download button ── */}
           {isDigitalOnly && (
             <button
               onClick={handleDownloadPDF}
@@ -387,6 +448,24 @@ export default function PrintPage({ story, order, productType, initialShippingAd
                   Download Print-at-Home PDF
                 </>
               )}
+            </button>
+          )}
+
+          {/* ── DIGITAL: upgrade to printed book ── */}
+          {isDigitalOnly && (
+            <button
+              onClick={() => setFlowStatus("upgrade")}
+              className="w-full flex items-center justify-center gap-2.5 py-4 rounded-xl text-base font-bold transition-all active:scale-[0.98]"
+              style={{
+                background: "rgba(176,92,230,0.06)",
+                color: "#8B5CB8",
+                border: "1.5px solid rgba(176,92,230,0.18)",
+                fontFamily: FONT,
+              }}
+            >
+              <Package className="w-5 h-5" />
+              Upgrade to Printed Book
+              <ArrowUpRight className="w-4 h-4 opacity-60" />
             </button>
           )}
 
@@ -438,6 +517,23 @@ export default function PrintPage({ story, order, productType, initialShippingAd
 
       {/* Overlays */}
       <AnimatePresence>
+        {flowStatus === "upgrade" && (
+          <UpgradeSheet
+            storyId={story.id}
+            storyTitle={story.title}
+            selectedTier={selectedUpgradeTier}
+            onSelectTier={setSelectedUpgradeTier}
+            onClose={() => setFlowStatus("idle")}
+            onSuccess={handleUpgradeSuccess}
+            saveProductSelection={saveProductSelection}
+            processing={upgradeProcessing}
+            setProcessing={setUpgradeProcessing}
+            savingProduct={upgradeSavingProduct}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {flowStatus === "address" && (
           <AddressSheet
             onClose={() => setFlowStatus("idle")}
@@ -469,6 +565,265 @@ export default function PrintPage({ story, order, productType, initialShippingAd
           />
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  UPGRADE SHEET                                                              */
+/* -------------------------------------------------------------------------- */
+
+function UpgradeSheet({
+  storyId,
+  storyTitle,
+  selectedTier,
+  onSelectTier,
+  onClose,
+  onSuccess,
+  saveProductSelection,
+  processing,
+  setProcessing,
+  savingProduct,
+}: {
+  storyId: string;
+  storyTitle: string;
+  selectedTier: UpgradeTier;
+  onSelectTier: (t: UpgradeTier) => void;
+  onClose: () => void;
+  onSuccess: () => void;
+  saveProductSelection: (type: string) => Promise<void>;
+  processing: boolean;
+  setProcessing: (v: boolean) => void;
+  savingProduct: boolean;
+}) {
+  const tier = UPGRADE_TIERS.find((t) => t.key === selectedTier)!;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end"
+      style={{ background: "rgba(20,8,40,0.6)", backdropFilter: "blur(6px)" }}
+      onClick={(e) => e.target === e.currentTarget && !processing && onClose()}
+    >
+      <motion.div
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-h-[92vh] overflow-y-auto"
+        style={{ background: "white", borderRadius: "24px 24px 0 0", fontFamily: FONT }}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-white z-10" style={{ borderRadius: "24px 24px 0 0" }}>
+          <div className="w-10 h-1 rounded-full" style={{ background: "rgba(180,150,210,0.25)" }} />
+        </div>
+
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-6 py-4 sticky top-5 bg-white z-10"
+          style={{ borderBottom: "1px solid rgba(180,150,210,0.1)" }}
+        >
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center"
+              style={{ background: "linear-gradient(135deg, #B05CE6, #D946EF)" }}
+            >
+              <ArrowUpRight className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold" style={{ color: "#2D2235" }}>
+                Upgrade to Print
+              </h3>
+              <p className="text-[11px]" style={{ color: "#8B7BA0" }}>
+                Your digital purchase is discounted
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={processing}
+            className="p-1.5 rounded-full disabled:opacity-30"
+            style={{ background: "rgba(180,150,210,0.08)", border: "none", color: "#8B7BA0" }}
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Tier selection */}
+        <div className="px-6 pt-5 pb-2 space-y-2.5">
+          {UPGRADE_TIERS.map((t) => {
+            const isSelected = t.key === selectedTier;
+            const TierIcon = t.icon;
+            return (
+              <button
+                key={t.key}
+                onClick={() => !processing && onSelectTier(t.key)}
+                disabled={processing}
+                className="w-full flex items-center gap-3 rounded-2xl px-4 py-3.5 transition-all text-left"
+                style={{
+                  background: isSelected ? "rgba(176,92,230,0.04)" : "white",
+                  border: isSelected ? "2px solid #B05CE6" : "2px solid rgba(180,150,210,0.15)",
+                  cursor: processing ? "not-allowed" : "pointer",
+                  fontFamily: FONT,
+                }}
+              >
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{
+                    background: isSelected
+                      ? "linear-gradient(135deg, #B05CE6, #D45DA0)"
+                      : "rgba(199,125,255,0.08)",
+                    color: isSelected ? "white" : "#9B59D0",
+                  }}
+                >
+                  <TierIcon className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-[14px] font-bold block" style={{ color: "#2D2235" }}>
+                    {t.label}
+                  </span>
+                  <span className="text-[12px]" style={{ color: "#7B6E90" }}>
+                    {t.description}
+                  </span>
+                </div>
+                <div className="flex flex-col items-end flex-shrink-0">
+                  <span className="text-lg font-extrabold" style={{ color: "#2D2235" }}>
+                    £{t.upgradePrice}
+                  </span>
+                  <span className="text-[10px] line-through" style={{ color: "#A897BD" }}>
+                    £{t.fullPrice}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Price summary */}
+        <div
+          className="mx-6 mt-3 mb-1 rounded-xl px-4 py-3"
+          style={{ background: "rgba(67,184,156,0.06)", border: "1px solid rgba(67,184,156,0.12)" }}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold" style={{ color: "#2D2235" }}>
+                Upgrade price
+              </p>
+              <p className="text-[11px]" style={{ color: "#7B6E90" }}>
+                £{tier.fullPrice} − £14.00 digital credit
+              </p>
+            </div>
+            <p className="text-xl font-extrabold" style={{ color: "#2FA482" }}>
+              £{tier.upgradePrice}
+            </p>
+          </div>
+        </div>
+
+        {/* PayPal */}
+        <div className="px-6 py-5">
+          {(processing || savingProduct) && (
+            <div className="flex items-center justify-center gap-2 py-8">
+              <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#B05CE6" }} />
+              <span className="text-sm font-semibold" style={{ color: "#6B5C80" }}>
+                {savingProduct ? "Saving upgrade selection…" : "Processing payment…"}
+              </span>
+            </div>
+          )}
+
+          <div style={{ display: processing || savingProduct ? "none" : "block" }}>
+            <PayPalScriptProvider
+              options={{
+                clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!,
+                currency: "GBP",
+                intent: "capture",
+              }}
+            >
+              <PayPalButtons
+                key={selectedTier}
+                style={{
+                  layout: "vertical",
+                  color: "gold",
+                  shape: "rect",
+                  label: "pay",
+                  height: 48,
+                }}
+                createOrder={async () => {
+                  // 1. Switch the product type to the upgrade tier
+                  await saveProductSelection(selectedTier);
+
+                  const currentTier = UPGRADE_TIERS.find((t) => t.key === selectedTier)!;
+
+                  // 2. Create PayPal order with upgrade pricing
+                  const res = await fetch("/api/paypal/order", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      storyId,
+                      price: currentTier.upgradePrice,
+                      currency: "GBP",
+                      upgradeFrom: "digital",
+                    }),
+                  });
+
+                  const data = await res.json();
+
+                  if (!res.ok || !data.orderID) {
+                    throw new Error(data?.error || "Failed to create upgrade order");
+                  }
+
+                  return data.orderID;
+                }}
+                onApprove={async (data) => {
+                  setProcessing(true);
+                  try {
+                    const res = await fetch("/api/paypal/capture", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ orderID: data.orderID }),
+                    });
+
+                    const result = await res.json();
+
+                    if (!res.ok || !result.success) {
+                      throw new Error(result?.error || "Payment capture failed.");
+                    }
+
+                    onSuccess();
+                  } catch (err: any) {
+                    console.error("Upgrade capture error:", err);
+                    alert(
+                      err?.message ||
+                        "Payment processed but something went wrong. Please contact support."
+                    );
+                  } finally {
+                    setProcessing(false);
+                  }
+                }}
+                onError={(err) => {
+                  console.error("PayPal upgrade error:", err);
+                  setProcessing(false);
+                  // Revert product type back to digital on failure
+                  saveProductSelection("digital").catch(() => {});
+                  alert("Payment failed. Please try again.");
+                }}
+                onCancel={() => {
+                  setProcessing(false);
+                  // Revert product type back to digital on cancel
+                  saveProductSelection("digital").catch(() => {});
+                }}
+              />
+            </PayPalScriptProvider>
+          </div>
+
+          <div className="flex justify-center gap-3 mt-4">
+            <span
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold"
+              style={{ background: "rgba(180,150,210,0.06)", color: "#8B7BA0", border: "1px solid rgba(180,150,210,0.1)" }}
+            >
+              <Lock className="w-3 h-3" /> Secure payment
+            </span>
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 }
