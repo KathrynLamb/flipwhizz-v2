@@ -171,29 +171,37 @@ export default function CoverDesignChat({
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
 
   /* ── Poll for cover generation ── */
-  useEffect(() => {
-    if (!isGeneratingCovers) return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/stories/${storyId}`);
-        const data = await res.json();
-        const newUrl = data.story?.coverSpreadUrl;
-        if (newUrl && newUrl !== knownCoverUrlRef.current) {
-          knownCoverUrlRef.current = newUrl;
-          setLocalStory(prev => ({ 
-            ...prev, 
-            coverSpreadUrl: newUrl, 
-            status: "covers_complete"  // Force out of generating state
-          }));          addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
-          clearInterval(interval);
-        } else if (data.story?.status && data.story.status !== "generating_covers") {
-          setLocalStory(prev => ({ ...prev, status: data.story.status }));
-          clearInterval(interval);
-        }
-      } catch {}
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [isGeneratingCovers, storyId]);
+// FIXED — handles same-URL regeneration + status-based completion
+useEffect(() => {
+  if (!isGeneratingCovers) return;
+  const interval = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/stories/${storyId}`);
+      const data = await res.json();
+      const newUrl = data.story?.coverSpreadUrl;
+      const newStatus = data.story?.status;
+
+      const urlChanged = newUrl && newUrl !== knownCoverUrlRef.current;
+      const statusDone = newStatus && newStatus !== "generating_covers";
+
+      if (urlChanged || (statusDone && newUrl)) {
+        knownCoverUrlRef.current = newUrl;
+        setLocalStory(prev => ({
+          ...prev,
+          coverSpreadUrl: newUrl,
+          status: "covers_complete",
+        }));
+        addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
+        clearInterval(interval);
+      } else if (statusDone && !newUrl) {
+        setLocalStory(prev => ({ ...prev, status: newStatus }));
+        addAssistantMsg("Cover generation finished but something went wrong — no image was created. Try hitting Generate Cover again.");
+        clearInterval(interval);
+      }
+    } catch {}
+  }, 3000);
+  return () => clearInterval(interval);
+}, [isGeneratingCovers, storyId]);
 
   /* ── Start chat ── */
   useEffect(() => {
