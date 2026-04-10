@@ -1,14 +1,16 @@
 // src/app/api/admin/re-extract-characters/route.ts
 //
-// ONE-SHOT utility: POST { storyId } to re-extract characters from fullDraft.
-// Skips characters that already exist (by name match).
+// ONE-SHOT: POST { storyId } to re-extract missing characters.
+// Only skips characters already LINKED to this story.
+// Characters that exist for the user but aren't linked get linked.
+// Truly new characters get created.
 // DELETE THIS FILE after use.
 
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
 import { stories, projects, characters, storyCharacters } from "@/db/schema";
-import { eq, and, ilike } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
 export const dynamic = "force-dynamic";
@@ -30,21 +32,27 @@ export async function POST(req: Request) {
 
     const userId = project.userId;
 
-    // Get existing characters for this story
-    const existingLinks = await db
+    // Get characters LINKED TO THIS STORY (not all user characters)
+    const linkedRows = await db
       .select({ characterId: storyCharacters.characterId })
       .from(storyCharacters)
       .where(eq(storyCharacters.storyId, storyId));
 
-    const existingChars = existingLinks.length > 0
-      ? await db
-          .select({ id: characters.id, name: characters.name })
-          .from(characters)
-          .where(eq(characters.userId, userId))
+    const linkedIds = new Set(linkedRows.map(r => r.characterId));
+
+    // Get the names of linked characters
+    const linkedChars = linkedIds.size > 0
+      ? await db.select({ id: characters.id, name: characters.name }).from(characters).where(eq(characters.userId, userId))
+          .then(all => all.filter(c => linkedIds.has(c.id)))
       : [];
 
-    const existingNames = new Set(existingChars.map(c => c.name.toLowerCase().trim()));
-    const linkedIds = new Set(existingLinks.map(l => l.characterId));
+    const linkedNames = new Set(linkedChars.map(c => c.name.toLowerCase().trim()));
+
+    // Get ALL user characters (for matching existing unlinked ones)
+    const allUserChars = await db
+      .select({ id: characters.id, name: characters.name })
+      .from(characters)
+      .where(eq(characters.userId, userId));
 
     // Parse the draft
     let draftText = story.fullDraft;
@@ -53,11 +61,9 @@ export async function POST(req: Request) {
       if (parsed.pages) {
         draftText = parsed.pages.map((p: any) => `Page ${p.page}: ${p.text}`).join("\n\n");
       }
-    } catch {
-      // Already plain text
-    }
+    } catch {}
 
-    // Ask Claude to extract characters
+    // Ask Claude to extract characters — only skip those linked to THIS story
     const response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 4000,
@@ -68,26 +74,26 @@ export async function POST(req: Request) {
 
 - name: their full name as used in the story
 - description: 1-2 sentences about who they are and their role
-- appearance: physical description if mentioned (hair, clothing, distinguishing features)
+- appearance: physical description if mentioned
 - species: "human", "dog", "cat", "dinosaur", "bird", "rabbit", "horse", "fantasy", or "other"
-- breed: specific breed/type if applicable (e.g. "Triceratops", "Stegosaurus", "Golden Retriever")
+- breed: specific breed/type if applicable
 - role: "protagonist", "supporting", "minor", or "antagonist"
 - personalityTraits: comma-separated personality traits
 
-Characters that already exist (DO NOT include these): ${[...existingNames].join(", ") || "none"}
+Characters ALREADY on this story (skip these): ${[...linkedNames].join(", ") || "none"}
 
-Return a JSON array of objects. Include EVERY named character that is NOT in the existing list above.
+IMPORTANT: Only skip the names listed above. Include ALL other named characters even if they might exist elsewhere.
 
 STORY:
 ${draftText.slice(0, 8000)}
 
-Return ONLY the JSON array. No explanation, no markdown.`,
+Return ONLY the JSON array.`,
       }],
     });
 
     const text = response.content.find(b => b.type === "text")?.text || "[]";
     const cleaned = text.replace(/```json\s*/g, "").replace(/```/g, "").trim();
-    
+
     let extracted: any[];
     try {
       extracted = JSON.parse(cleaned);
@@ -96,41 +102,47 @@ Return ONLY the JSON array. No explanation, no markdown.`,
     }
 
     if (!Array.isArray(extracted) || extracted.length === 0) {
-      return NextResponse.json({ message: "No new characters found", existing: [...existingNames] });
+      return NextResponse.json({
+        message: "No new characters found",
+        linkedToStory: [...linkedNames],
+      });
     }
 
-    // Filter out any that somehow match existing names
-    const newChars = extracted.filter(c => 
-      c.name && !existingNames.has(c.name.toLowerCase().trim())
+    // Filter out any that are already linked
+    const newChars = extracted.filter(c =>
+      c.name && !linkedNames.has(c.name.toLowerCase().trim())
     );
 
     if (newChars.length === 0) {
-      return NextResponse.json({ message: "All characters already exist", existing: [...existingNames] });
+      return NextResponse.json({
+        message: "All extracted characters are already linked to this story",
+        linkedToStory: [...linkedNames],
+        extracted: extracted.map(c => c.name),
+      });
     }
 
-    // Insert characters + link to story
-    const inserted: any[] = [];
+    // Process each character
+    const results: any[] = [];
 
     for (const c of newChars) {
-      // Check if character exists for this user but isn't linked to story
-      const existingChar = existingChars.find(
-        ec => ec.name.toLowerCase().trim() === c.name.toLowerCase().trim()
+      const nameLower = c.name.toLowerCase().trim();
+
+      // Check if character exists for this user (but isn't linked to this story)
+      const existingChar = allUserChars.find(
+        ec => ec.name.toLowerCase().trim() === nameLower
       );
 
-      let charId: string;
-
-      if (existingChar && !linkedIds.has(existingChar.id)) {
-        // Character exists but not linked — just link it
-        charId = existingChar.id;
+      if (existingChar) {
+        // Link existing character to this story
         await db.insert(storyCharacters).values({
           storyId,
-          characterId: charId,
+          characterId: existingChar.id,
           role: c.role || "supporting",
         });
-        inserted.push({ name: c.name, id: charId, action: "linked" });
-      } else if (!existingChar) {
-        // Brand new character
-        charId = uuid();
+        results.push({ name: c.name, id: existingChar.id, action: "linked_existing" });
+      } else {
+        // Create new character + link
+        const charId = uuid();
         await db.insert(characters).values({
           id: charId,
           userId,
@@ -151,17 +163,19 @@ Return ONLY the JSON array. No explanation, no markdown.`,
           role: c.role || "supporting",
         });
 
-        inserted.push({ name: c.name, id: charId, action: "created", species: c.species, breed: c.breed });
+        results.push({ name: c.name, id: charId, action: "created_new", species: c.species, breed: c.breed });
       }
     }
 
     return NextResponse.json({
       success: true,
       storyId,
-      existingCharacters: [...existingNames],
-      newCharacters: inserted,
+      alreadyLinked: [...linkedNames],
+      results,
       totalExtracted: extracted.length,
-      totalInserted: inserted.length,
+      totalProcessed: results.length,
+      linked: results.filter(r => r.action === "linked_existing").length,
+      created: results.filter(r => r.action === "created_new").length,
     });
   } catch (err: any) {
     console.error("[Re-extract characters] error:", err);
