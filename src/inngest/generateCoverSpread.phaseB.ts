@@ -361,8 +361,11 @@ AVOID: ${resolveAvoidBlock(style)}`,
         locationsShown: planLocIds,
         createdAt: new Date(),
       });
-      await tx.update(stories).set({ coverSpreadUrl: url, updatedAt: new Date() }).where(eq(stories.id, storyId));
-    });
+      await tx.update(stories).set({ 
+        coverSpreadUrl: url, 
+        status: "covers_complete",
+        updatedAt: new Date() 
+      }).where(eq(stories.id, storyId));    });
 
     console.log("✅ Cover generated:", url);
 

@@ -40,7 +40,9 @@ type Story = {
   coverSpreadUrl: string | null;
   status: string | null;
   pdfUrl: string | null;
+  coverPlan: any;
 };
+
 
 type WorldCharacter = {
   id: string; name: string; description: string | null; appearance: string | null;
@@ -144,8 +146,14 @@ export default function CoverDesignChat({
   const [confirmedTitle, setConfirmedTitle] = useState(story.title);
   const [coverCharacterIds, setCoverCharacterIds] = useState<Set<string>>(new Set(initialCharacterIds));
   const [coverLocationIds, setCoverLocationIds] = useState<Set<string>>(new Set(initialLocationIds));
-  const [backCoverContent, setBackCoverContent] = useState("");
-  const [authorCredit, setAuthorCredit] = useState("");
+// FIXED — seed from cover plan if it exists
+const plan = story.coverPlan as any;
+const [backCoverContent, setBackCoverContent] = useState(
+  plan?.back?.blurbText ?? plan?.back?.dedicationText ?? ""
+);
+const [authorCredit, setAuthorCredit] = useState(
+  plan?.front?.authorText ?? ""
+);
 
   // World
   const [worldCharacters, setWorldCharacters] = useState<WorldCharacter[]>([]);
@@ -172,10 +180,13 @@ export default function CoverDesignChat({
 
   /* ── Poll for cover generation ── */
 // FIXED — handles same-URL regeneration + status-based completion
+/* ── Poll for cover generation ── */
 useEffect(() => {
   if (!isGeneratingCovers) return;
+  let pollCount = 0;
   const interval = setInterval(async () => {
     try {
+      pollCount++;
       const res = await fetch(`/api/stories/${storyId}`);
       const data = await res.json();
       const newUrl = data.story?.coverSpreadUrl;
@@ -185,6 +196,7 @@ useEffect(() => {
       const statusDone = newStatus && newStatus !== "generating_covers";
 
       if (urlChanged || (statusDone && newUrl)) {
+        // Normal completion — URL changed or status updated
         knownCoverUrlRef.current = newUrl;
         setLocalStory(prev => ({
           ...prev,
@@ -194,8 +206,20 @@ useEffect(() => {
         addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
         clearInterval(interval);
       } else if (statusDone && !newUrl) {
+        // Generation finished but no image
         setLocalStory(prev => ({ ...prev, status: newStatus }));
         addAssistantMsg("Cover generation finished but something went wrong — no image was created. Try hitting Generate Cover again.");
+        clearInterval(interval);
+      } else if (newUrl && pollCount >= 3) {
+        // Defensive: URL exists, status stuck on generating_covers
+        // Backend likely forgot to update status — treat as complete
+        knownCoverUrlRef.current = newUrl;
+        setLocalStory(prev => ({
+          ...prev,
+          coverSpreadUrl: newUrl,
+          status: "covers_complete",
+        }));
+        addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
         clearInterval(interval);
       }
     } catch {}
@@ -511,8 +535,15 @@ useEffect(() => {
                               : ""
                         } 
                         done={["backcover", "author", "ready"].includes(stage)} 
-                      />                 <PlanRow label="Back Cover" value={backCoverContent ? (backCoverContent.length > 50 ? backCoverContent.slice(0, 50) + "…" : backCoverContent) : ""} done={["author", "ready"].includes(stage)} />
-                    <PlanRow label="Author" value={authorCredit} done={stage === "ready"} />
+                      />    
+                      <PlanRow label="Back Cover" 
+                          value={backCoverContent ? (backCoverContent.length > 50 ? backCoverContent.slice(0, 50) + "…" : backCoverContent) : ""} 
+                          done={!!backCoverContent || ["author", "ready"].includes(stage)} 
+                        />
+                        <PlanRow label="Author" 
+                          value={authorCredit} 
+                          done={!!authorCredit || stage === "ready"} 
+                        />
                   </div>
                 </div>
               )}
