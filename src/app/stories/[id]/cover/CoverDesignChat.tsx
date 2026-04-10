@@ -347,32 +347,35 @@ useEffect(() => {
   async function handleGenerate() {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/stories/generate-cover-prompt", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          storyId, conversationHistory: messages,
-          mode: hasCovers ? "regenerate" : "generate",
-          characters: worldCharacters, locations: worldLocations,
-          coverCharacterIds: [...coverCharacterIds], coverLocationIds: [...coverLocationIds],
-          confirmedTitle, backCoverContent, authorCredit,
-        }),
-      });
-      if (!res.ok) throw new Error(); 
+      // Ask Claude to produce the generation strategy
+      const strategyReply = await sendToBackend(
+        "Please generate the cover now",
+        stage
+      );
 
-      addAssistantMsg("Generating your cover now — about 30–60 seconds…");
+      if (strategyReply?.message) {
+        addAssistantMsg(strategyReply.message);
+      }
 
+      // The chat route saves generationStrategy to coverPlan automatically
+      // Now just trigger Inngest
       setLocalStory(s => ({ ...s, status: "generating_covers" }));
       await fetch(`/api/stories/${storyId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "generating_covers" }),
       }).catch(() => {});
 
       await fetch("/api/inngest/trigger-covers", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storyId }),
       });
-    } catch { alert("Failed to start cover generation."); }
-    finally { setIsLoading(false); }
+    } catch {
+      alert("Failed to start cover generation.");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   /* ── Placeholders ── */

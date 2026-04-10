@@ -12,9 +12,13 @@ import { decideScenes } from "@/inngest/decideSpreadScenes";
 import { generateStyleSample } from "@/inngest/generateStyle";
 import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateSpreadImages.phaseB";
 import { reviseSingleSpread } from "@/inngest/reviseSingleSpread";
-import { generateCoverSpreadPhaseB } from "@/inngest/generateCoverSpread.phaseB";
+// import { generateCoverSpreadPhaseB } from "@/inngest/generateCoverSpread.phaseB";
+// In your inngest setup file (e.g. src/inngest/index.ts or wherever functions are registered)
+// import { generateCoverSpreadV5 } from "./generateCoverSpread.v5";
+// Remove or comment out: import { generateCoverSpreadPhaseB } from "./generateCoverSpread.phaseB";
 import { buildSpreads } from "@/inngest/buildSpreads";
 import { analyseReferencePhoto } from "@/inngest/analyseReferencePhoto";
+import { generateCoverSpreadV5 } from "@/inngest/generateCoverSpread.v5";
 
 
 export const { GET, POST, PUT } = serve({
@@ -31,7 +35,7 @@ export const { GET, POST, PUT } = serve({
     generateBookSpreads,    // ✅ ADDED: Orchestrator
     generateSingleSpread,   // ✅ Worker
     reviseSingleSpread,
-    generateCoverSpreadPhaseB,
+    generateCoverSpreadV5,
     analyseReferencePhoto
   ],
 });
