@@ -251,9 +251,9 @@ export default function PrintPage({ story, order, productType: initialProductTyp
             </button>
           )}
 
-          {isPhysical && (
+          {isPhysical && !hasOrder && (
             <button onClick={() => setFlowStatus("address")} className="w-full flex items-center justify-center gap-2.5 py-4 rounded-xl text-base font-bold text-white transition-all active:scale-[0.98]" style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", boxShadow: "0 4px 20px rgba(176,92,230,0.25)", border: "none", fontFamily: FONT }}>
-              <Package className="w-5 h-5" />{hasOrder ? "Order Another Copy" : "Order Book"}
+              <Package className="w-5 h-5" />Order Book
             </button>
           )}
 

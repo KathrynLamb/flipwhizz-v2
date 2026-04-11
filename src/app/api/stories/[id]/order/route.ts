@@ -1,3 +1,5 @@
+// src/app/api/stories/[id]/order
+
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories, storyProducts, orders } from "@/db/schema";
@@ -116,11 +118,15 @@ export async function POST(
        5. Update order with Gelato response
     -------------------------------------------------- */
 
+    const shipment = (result as any)?.shipment;
+
     await db
       .update(orders)
       .set({
         gelatoOrderId: result.id,
         gelatoStatus: result.fulfillmentStatus ?? "created",
+        ...(shipment?.minDeliveryDate && { gelatoMinDeliveryDate: shipment.minDeliveryDate }),
+        ...(shipment?.maxDeliveryDate && { gelatoMaxDeliveryDate: shipment.maxDeliveryDate }),
         updatedAt: new Date(),
       })
       .where(eq(orders.id, orderId));
