@@ -26,8 +26,15 @@ type Story = {
 };
 
 type Order = {
-  id: string; status: string; gelatoOrderId: string | null;
-  gelatoStatus: string | null; createdAt: string | null;
+  id: string;
+  status: string;
+  gelatoOrderId: string | null;
+  gelatoStatus: string | null;
+  gelatoTrackingCode: string | null;
+  gelatoTrackingUrl: string | null;
+  gelatoMinDeliveryDate: string | null;
+  gelatoMaxDeliveryDate: string | null;
+  createdAt: string | null;
 };
 
 type ShippingAddress = {
@@ -482,20 +489,108 @@ function UpgradeSheet({ storyId, selectedTier, onSelectTier, onClose, onSuccess,
 
 function OrderStatusCard({ order }: { order: Order }) {
   const statusConfig = getStatusConfig(order.gelatoStatus ?? order.status);
+  const s = order.gelatoStatus ?? order.status ?? "";
+
   return (
     <div className="rounded-[22px] overflow-hidden" style={{ background: "white", border: "1px solid rgba(180,150,210,0.12)", boxShadow: "0 2px 12px rgba(100,60,140,0.06)" }}>
       <div className="flex items-center gap-3 px-5 py-3.5" style={{ borderBottom: "1px solid rgba(180,150,210,0.08)", background: "rgba(249,245,255,0.5)" }}>
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: statusConfig.iconBg }}><statusConfig.icon className="w-4 h-4" style={{ color: statusConfig.iconColor }} /></div>
-        <div className="flex-1"><p className="text-sm font-bold" style={{ color: "#2D2235" }}>{statusConfig.title}</p><p className="text-[11px]" style={{ color: "#A897BD" }}>{statusConfig.description}</p></div>
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: statusConfig.iconBg }}>
+          <statusConfig.icon className="w-4 h-4" style={{ color: statusConfig.iconColor }} />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-bold" style={{ color: "#2D2235" }}>{statusConfig.title}</p>
+          <p className="text-[11px]" style={{ color: "#A897BD" }}>{statusConfig.description}</p>
+        </div>
       </div>
+
       <div className="px-5 py-4 space-y-3">
-        <div className="flex items-center gap-3"><StatusDot active done /><span className="text-xs font-semibold" style={{ color: "#2D2235" }}>Order placed</span></div>
-        <div className="flex items-center gap-3"><StatusDot active={["processing","shipped","delivered"].includes(order.gelatoStatus??"")} done={["shipped","delivered"].includes(order.gelatoStatus??"")} /><span className="text-xs font-semibold" style={{ color: ["processing","shipped","delivered"].includes(order.gelatoStatus??"") ? "#2D2235" : "#C4B5D4" }}>Printing</span></div>
-        <div className="flex items-center gap-3"><StatusDot active={["shipped","delivered"].includes(order.gelatoStatus??"")} done={order.gelatoStatus==="delivered"} /><span className="text-xs font-semibold" style={{ color: ["shipped","delivered"].includes(order.gelatoStatus??"") ? "#2D2235" : "#C4B5D4" }}>Shipped</span></div>
-        {order.gelatoOrderId && <p className="text-[11px] pt-1" style={{ color: "#A897BD" }}>Order ref: {order.gelatoOrderId}</p>}
+        <StatusRow label="Order placed" active done />
+        <StatusRow
+          label="Printing"
+          active={["confirmed", "printing", "shipped", "delivered"].includes(s)}
+          done={["shipped", "delivered"].includes(s)}
+        />
+        <StatusRow
+          label="Shipped"
+          active={["shipped", "delivered"].includes(s)}
+          done={s === "delivered"}
+        />
+
+        {/* Tracking link */}
+        {order.gelatoTrackingUrl && (
+          <a
+          href={order.gelatoTrackingUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+          style={{
+            background: "rgba(67,184,156,0.06)",
+            border: "1px solid rgba(67,184,156,0.15)",
+            color: "#2FA482",
+            textDecoration: "none",
+          }}
+        >
+          <Truck className="w-3.5 h-3.5" />
+          Track your delivery
+          <ArrowUpRight className="w-3 h-3 ml-auto opacity-60" />
+        </a>
+      )}
+
+        {/* Delivery estimate */}
+        {order.gelatoMinDeliveryDate && order.gelatoMaxDeliveryDate && (
+          <div className="flex items-center gap-2 pt-1">
+            <Clock className="w-3 h-3 flex-shrink-0" style={{ color: "#A897BD" }} />
+            <span className="text-[11px]" style={{ color: "#7B6E90" }}>
+              Estimated delivery: {formatDeliveryDate(order.gelatoMinDeliveryDate)} – {formatDeliveryDate(order.gelatoMaxDeliveryDate)}
+            </span>
+          </div>
+        )}
+
+        {order.gelatoOrderId && (
+          <p className="text-[11px] pt-1" style={{ color: "#A897BD" }}>
+            Order ref: {order.gelatoOrderId}
+          </p>
+        )}
       </div>
     </div>
   );
+}
+
+function StatusRow({ label, active, done }: { label: string; active: boolean; done: boolean }) {
+  return (
+    <div className="flex items-center gap-3">
+      <StatusDot active={active} done={done} />
+      <span className="text-xs font-semibold" style={{ color: active ? "#2D2235" : "#C4B5D4" }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function formatDeliveryDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr + "T00:00:00");
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  } catch {
+    return dateStr;
+  }
+}
+
+function getStatusConfig(status: string) {
+  switch (status) {
+    case "shipped":
+      return { icon: Truck, iconBg: "rgba(67,184,156,0.1)", iconColor: "#2FA482", title: "On its way!", description: "Your book has been shipped" };
+    case "delivered":
+      return { icon: Check, iconBg: "rgba(67,184,156,0.1)", iconColor: "#2FA482", title: "Delivered", description: "Your book has arrived" };
+    case "printing":
+      return { icon: Clock, iconBg: "rgba(176,92,230,0.1)", iconColor: "#B05CE6", title: "Being printed", description: "Your book is at the printers" };
+    case "confirmed":
+      return { icon: Package, iconBg: "rgba(176,92,230,0.1)", iconColor: "#B05CE6", title: "Order confirmed", description: "Your book is queued for printing" };
+    case "failed": case "canceled":
+      return { icon: AlertCircle, iconBg: "rgba(233,30,99,0.08)", iconColor: "#E91E63", title: "Issue with order", description: "Something went wrong — please contact us" };
+    default:
+      return { icon: Package, iconBg: "rgba(176,92,230,0.1)", iconColor: "#B05CE6", title: "Order submitted", description: "We're preparing your book" };
+  }
 }
 
 function StatusDot({ active, done }: { active: boolean; done: boolean }) {
@@ -505,15 +600,7 @@ function StatusDot({ active, done }: { active: boolean; done: boolean }) {
   </div>;
 }
 
-function getStatusConfig(status: string) {
-  switch (status) {
-    case "shipped": return { icon: Truck, iconBg: "rgba(67,184,156,0.1)", iconColor: "#2FA482", title: "On its way!", description: "Your book has been shipped" };
-    case "delivered": return { icon: Check, iconBg: "rgba(67,184,156,0.1)", iconColor: "#2FA482", title: "Delivered", description: "Your book has arrived" };
-    case "processing": return { icon: Clock, iconBg: "rgba(176,92,230,0.1)", iconColor: "#B05CE6", title: "Being printed", description: "Your book is at the printers" };
-    case "error": case "failed": return { icon: AlertCircle, iconBg: "rgba(233,30,99,0.08)", iconColor: "#E91E63", title: "Issue with order", description: "Something went wrong — please try again" };
-    default: return { icon: Package, iconBg: "rgba(176,92,230,0.1)", iconColor: "#B05CE6", title: "Order submitted", description: "We're preparing your book" };
-  }
-}
+
 
 /* -------------------------------------------------------------------------- */
 /*  ADDRESS SHEET                                                              */

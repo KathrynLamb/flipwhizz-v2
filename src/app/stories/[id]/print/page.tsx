@@ -62,6 +62,10 @@ export default async function PrintRoute({
               status: latestOrder.status,
               gelatoOrderId: latestOrder.gelatoOrderId,
               gelatoStatus: latestOrder.gelatoStatus,
+              gelatoTrackingCode: latestOrder.gelatoTrackingCode ?? null,
+              gelatoTrackingUrl: latestOrder.gelatoTrackingUrl ?? null,
+              gelatoMinDeliveryDate: latestOrder.gelatoMinDeliveryDate ?? null,
+              gelatoMaxDeliveryDate: latestOrder.gelatoMaxDeliveryDate ?? null,
               createdAt: latestOrder.createdAt?.toISOString() ?? null,
             }
           : null

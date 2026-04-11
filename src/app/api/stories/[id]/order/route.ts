@@ -1,8 +1,6 @@
-// src/app/api/stories/[id]/create-order/route.ts
-
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { stories, storyProducts } from "@/db/schema";
+import { stories, storyProducts, orders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { createGelatoOrder } from "print/gelato/createOrder";
@@ -70,11 +68,32 @@ export async function POST(
     }
 
     /* --------------------------------------------------
-       3. Create Gelato order
+       3. Create local order record
+    -------------------------------------------------- */
+
+    const orderId = uuidv4();
+
+    await db.insert(orders).values({
+      id: orderId,
+      storyId,
+      userId: story.userId ?? "unknown",
+      paymentId: story.paymentId,
+      paymentStatus: story.paymentStatus ?? "pending",
+      amount: String(storyProduct?.estimatedPrice ?? 0),
+      currency: storyProduct?.currency ?? "GBP",
+      pdfUrl: story.pdfUrl,
+      shippingAddress: shippingAddress,
+      storyProductId: storyProduct?.id,
+      status: "submitted",
+      submittedAt: new Date(),
+    });
+
+    /* --------------------------------------------------
+       4. Create Gelato order
     -------------------------------------------------- */
 
     const result = await createGelatoOrder({
-      orderReferenceId: `flipwhizz-${uuidv4()}`,
+      orderReferenceId: orderId,
       customerReferenceId: story.userId ?? "unknown",
       pdfUrl: story.pdfUrl,
       productUid: printSpec.gelatoProductUid,
@@ -94,26 +113,35 @@ export async function POST(
     });
 
     /* --------------------------------------------------
-       4. Persist order
+       5. Update order with Gelato response
     -------------------------------------------------- */
 
     await db
-      .update(stories)
+      .update(orders)
       .set({
         gelatoOrderId: result.id,
-        orderStatus: result.fulfillmentStatus ?? "created",
-        orderedAt: new Date(),
+        gelatoStatus: result.fulfillmentStatus ?? "created",
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, orderId));
+
+    // Also update story orderStatus for the UI tracker
+    await db
+      .update(stories)
+      .set({
+        orderStatus: "submitted",
+        updatedAt: new Date(),
       })
       .where(eq(stories.id, storyId));
 
     /* --------------------------------------------------
-       5. Send confirmation email (non-blocking)
+       6. Send confirmation email (non-blocking)
     -------------------------------------------------- */
 
     if (shippingAddress.email) {
       sendOrderConfirmation({
         to: shippingAddress.email,
-        childName: story.childName ?? "your child",
+        childName: story.title ?? "your child",
         storyTitle: story.title ?? "Your FlipWhizz Story",
         productType: printSpec.productType,
         gelatoOrderId: result.id,
@@ -127,13 +155,13 @@ export async function POST(
           countryIsoCode: shippingAddress.countryIsoCode || "GB",
         },
       }).catch((err) => {
-        // Log but don't fail the order if email fails
         console.error("❌ Order confirmation email failed:", err);
       });
     }
 
     return NextResponse.json({
       success: true,
+      orderId,
       gelatoOrderId: result.id,
       status: result.fulfillmentStatus,
     });
