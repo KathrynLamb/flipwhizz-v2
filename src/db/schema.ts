@@ -791,6 +791,12 @@ export const orders = pgTable("orders", {
     onDelete: "cascade",
   }),
 
+  gelatoTrackingCode: text("gelato_tracking_code"),
+  gelatoTrackingUrl: text("gelato_tracking_url"),
+  gelatoMinDeliveryDate: date("gelato_min_delivery_date"),
+  gelatoMaxDeliveryDate: date("gelato_max_delivery_date"),
+  gelatoUpdatedAt: timestamp("gelato_updated_at"),
+
   status: text("status").notNull().default("pending"),
   submittedAt: timestamp("submitted_at"),
 
