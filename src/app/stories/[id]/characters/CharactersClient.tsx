@@ -16,6 +16,7 @@ import type { StepKey } from '@/lib/storySteps';
 import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
 import CharactersCard from '@/app/stories/[id]/characters/components/CharacterCard';
 import MobileCharacterStack from '@/app/stories/[id]/characters/components/MobileCharacterStack';
+import GroupPhotoModal from '@/app/stories/[id]/characters/components/GroupPhotoModal';
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
@@ -83,6 +84,8 @@ export default function CharactersClient({
   const [confirming, setConfirming] = useState(false);
   const [charactersLocal, setCharactersLocal] = useState(characters);
   const [isPurchased, setIsPurchased] = useState<boolean | null>(null);
+  const [showGroupPhoto, setShowGroupPhoto] = useState(false);
+
   const [generatingAvatars, setGeneratingAvatars] = useState(false);
 
   useEffect(() => {
@@ -262,6 +265,61 @@ useEffect(() => {
               </div>
             </motion.div>
           )}
+
+       {/* Group photo button — goes near the intro section / alongside Generate All */}
+<button
+  onClick={() => setShowGroupPhoto(true)}
+  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all active:scale-[0.97]"
+  style={{
+    background: 'white',
+    border: '1.5px solid rgba(180,150,210,0.25)',
+    color: '#6B5C80',
+    boxShadow: '0 2px 8px rgba(100,60,140,0.06)',
+    fontFamily: "'Bricolage Grotesque', sans-serif",
+  }}
+>
+  <Users className="w-4 h-4" style={{ color: '#C77DFF' }} />
+  Use group photo
+</button>
+
+        {showGroupPhoto && (
+          <GroupPhotoModal
+            storyId={storyId}
+            characters={charactersLocal}
+            onComplete={() => router.refresh()}
+            onClose={() => setShowGroupPhoto(false)}
+          />
+        )}
+
+
+        {/* Group photo shortcut — mobile only, sits between intro and stack */}
+<div className="md:hidden mt-5">
+  <button
+    onClick={() => setShowGroupPhoto(true)}
+    className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all active:scale-[0.98]"
+    style={{
+      background: 'linear-gradient(135deg, rgba(199,125,255,0.12), rgba(217,69,144,0.08))',
+      border: '1.5px solid rgba(199,125,255,0.2)',
+      fontFamily: "'Bricolage Grotesque', sans-serif",
+    }}
+  >
+    <div
+      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+      style={{ background: 'linear-gradient(135deg, #B05CE6, #D94590)' }}
+    >
+      <Users className="w-4 h-4 text-white" />
+    </div>
+    <div className="text-left flex-1">
+      <p className="text-sm font-bold" style={{ color: '#2D2235' }}>
+        Everyone in one photo?
+      </p>
+      <p className="text-xs" style={{ color: '#9B59D0' }}>
+        Tap to match faces from a group shot
+      </p>
+    </div>
+    <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: '#C77DFF' }} />
+  </button>
+</div>
 
           {/* Mobile: Generate All */}
           {isPurchased && !allLocked && !storyConfirmed && (
