@@ -145,14 +145,7 @@ export default function CharacterCard({
         );
       }
 
-      useEffect(() => {
-        setEditName(character.name);
-        setEditDescription(character.description || '');
-        setEditAppearance(character.appearance || '');
-        setEditTraits(character.personalityTraits || '');
-        setCurrentImageUrl(character.portraitImageUrl || character.referenceImageUrl);
-        setOutfitEdits(Object.fromEntries((character.outfits || []).map((o) => [o.id, o.outfitDescription])));
-      }, [character]);
+
 
       const path = `story-references/${storyId}/${crypto.randomUUID()}-${uploadFile.name}`;
       const storageRef = ref(storage, path);
@@ -177,6 +170,15 @@ export default function CharacterCard({
       setUploading(false);
     }
   }
+
+  useEffect(() => {
+    setEditName(character.name);
+    setEditDescription(character.description || '');
+    setEditAppearance(character.appearance || '');
+    setEditTraits(character.personalityTraits || '');
+    setCurrentImageUrl(character.portraitImageUrl || character.referenceImageUrl);
+    setOutfitEdits(Object.fromEntries((character.outfits || []).map((o) => [o.id, o.outfitDescription])));
+  }, [character]);
 
   async function useAiImage(outfitMode?: 'story' | 'reference') {
     if (locked) return;
