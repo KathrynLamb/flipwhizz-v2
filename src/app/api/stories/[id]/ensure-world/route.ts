@@ -29,18 +29,29 @@ export async function POST(
   console.log("🌍 [API] Ensure-world requested for:", storyId, { force });
 
   // Validate story exists
-  const story = await db.query.stories.findFirst({
-    where: eq(stories.id, storyId),
-    columns: { 
-      id: true, 
-      status: true, 
-      updatedAt: true 
-    },
-  });
+// After fetching the story, add storyConfirmed to the columns:
+const story = await db.query.stories.findFirst({
+  where: eq(stories.id, storyId),
+  columns: { 
+    id: true, 
+    status: true, 
+    updatedAt: true,
+    storyConfirmed: true,  // ← add this
+  },
+});
 
-  if (!story) {
-    return NextResponse.json({ error: "Story not found" }, { status: 404 });
-  }
+if (!story) {
+  return NextResponse.json({ error: "Story not found" }, { status: 404 });
+}
+
+// Guard: story must be confirmed before extraction
+if (!story.storyConfirmed && !force) {
+  console.log("⛔ Story not yet confirmed, skipping extraction. Status:", story.status);
+  return NextResponse.json(
+    { error: "Story must be confirmed before world extraction" },
+    { status: 400 }
+  );
+}
 
   // Check if already processing (unless forced)
   if (story.status === "extracting" && !force) {

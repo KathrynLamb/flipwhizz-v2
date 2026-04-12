@@ -123,8 +123,8 @@ export async function POST(
     await db
       .update(orders)
       .set({
-        gelatoOrderId: result.id,
-        gelatoStatus: result.fulfillmentStatus ?? "created",
+        gelatoOrderId: shipment.id,
+        gelatoStatus: shipment.fulfillmentStatus ?? "created",
         ...(shipment?.minDeliveryDate && { gelatoMinDeliveryDate: shipment.minDeliveryDate }),
         ...(shipment?.maxDeliveryDate && { gelatoMaxDeliveryDate: shipment.maxDeliveryDate }),
         updatedAt: new Date(),

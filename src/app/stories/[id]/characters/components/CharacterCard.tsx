@@ -2,7 +2,7 @@
 'use client';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebaseClient";
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -144,6 +144,15 @@ export default function CharacterCard({
           { type: 'image/jpeg' }
         );
       }
+
+      useEffect(() => {
+        setEditName(character.name);
+        setEditDescription(character.description || '');
+        setEditAppearance(character.appearance || '');
+        setEditTraits(character.personalityTraits || '');
+        setCurrentImageUrl(character.portraitImageUrl || character.referenceImageUrl);
+        setOutfitEdits(Object.fromEntries((character.outfits || []).map((o) => [o.id, o.outfitDescription])));
+      }, [character]);
 
       const path = `story-references/${storyId}/${crypto.randomUUID()}-${uploadFile.name}`;
       const storageRef = ref(storage, path);
@@ -359,7 +368,8 @@ export default function CharacterCard({
 
         {/* Appearance preview — always visible, truncated */}
         {character.appearance && (
-          <p className="text-[12px] leading-relaxed line-clamp-2 mb-2" style={{ color: '#5A4D6B' }}>
+          <p className="text-[12px] leading-relaxed line-clamp-5 mb-2" style={{ color: '#5A4D6B' }}>
+     
             {character.appearance}
           </p>
         )}

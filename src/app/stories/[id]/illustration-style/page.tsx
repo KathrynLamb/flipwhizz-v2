@@ -7,6 +7,7 @@ import { stories, storyStyleGuide } from "@/db/schema";
 
 import IllustrationStyleClient from "@/app/stories/[id]/illustration-style/IllustrationStyleClient";
 import { StepKey } from "@/lib/storySteps";
+import { ConsoleMessage } from "puppeteer-core";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -76,6 +77,7 @@ export default async function IllustrationStylePage({ params }: Props) {
       }
     : null;
 
+
   return (
     <IllustrationStyleClient
       storyId={storyId}
@@ -83,6 +85,8 @@ export default async function IllustrationStylePage({ params }: Props) {
       currentStep="design"
       completedSteps={(story.completedSteps as StepKey[]) ?? []}
       initialStyleGuide={initialStyleGuide}
+      storyConfirmed={story.storyConfirmed}
+
     />
   );
 }

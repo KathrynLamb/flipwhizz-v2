@@ -221,7 +221,10 @@ export default function StoryReaderClient({
       const res = await fetch(`/api/stories/${id}/lock`, { method: "POST" });
       const data = await res.json();
   
-      // Always mark "write" as complete (ensures getNextStepHref skips it)
+      // Mark story as confirmed
+      await fetch(`/api/stories/${id}/confirm`, { method: "POST" }).catch(() => {});
+  
+      // Always mark "write" as complete
       await fetch(`/api/stories/${id}/complete-step`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -229,9 +232,7 @@ export default function StoryReaderClient({
       }).catch(() => {});
   
       if (data.alreadyConfirmed) {
-        const storyRes = await fetch(`/api/stories/${id}`, {
-          cache: "no-store",
-        });
+        const storyRes = await fetch(`/api/stories/${id}`, { cache: "no-store" });
         if (storyRes.ok) {
           const storyData = await storyRes.json();
           const story = storyData.story ?? storyData;

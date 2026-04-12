@@ -1,10 +1,4 @@
 // src/app/stories/[id]/illustration-style/IllustrationStyleClient.tsx
-//
-// Redesigned: the AI has already generated a style guide from the story.
-// The user lands on a clean page that says "here's what we suggest" with
-// a single big "Looks great" button. Only if they want to customise do
-// they expand into the detail fields or upload a reference image.
-
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -13,12 +7,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
   ChevronDown,
-  ImageIcon,
   Loader2,
   Paintbrush,
   Sparkles,
   Upload,
   X,
+  ArrowLeft,
 } from "lucide-react";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
 import { getNextStepHref, type StepKey } from "@/lib/storySteps";
@@ -59,22 +53,24 @@ export default function IllustrationStyleClient({
   currentStep = "design",
   completedSteps = [],
   initialStyleGuide,
+  storyConfirmed,
 }: {
   storyId: string;
   title: string;
   currentStep?: StepKey;
   completedSteps?: StepKey[];
   initialStyleGuide: StyleGuide | null;
+  storyConfirmed?: boolean;
 }) {
   const router = useRouter();
 
   const [style, setStyle] = useState<StyleGuide | null>(initialStyleGuide);
   const [isLoading, setIsLoading] = useState(!initialStyleGuide);
   const [isSaving, setIsSaving] = useState(false);
-  const [showCustomise, setShowCustomise] = useState(false);
+  const [mode, setMode] = useState<"suggest" | "customise">("suggest");
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // Editable fields (only used if user opens customise)
+  // Editable fields
   const [editVision, setEditVision] = useState("");
   const [editArtStyle, setEditArtStyle] = useState("");
   const [editNegative, setEditNegative] = useState("");
@@ -110,7 +106,9 @@ export default function IllustrationStyleClient({
     };
 
     poll();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [storyId, initialStyleGuide]);
 
   // Sync edit fields when style loads
@@ -122,15 +120,17 @@ export default function IllustrationStyleClient({
     setPreviewImageUrl(style.sampleIllustrationUrl ?? null);
   }, [style]);
 
-  // Build the summary sentence the user sees
+  // Summary for the suggestion card
   const styleSummary = style
     ? [style.userNotes, style.artStyle].filter(Boolean).join(" — ")
     : "";
 
-  // Palette values can be strings ("warm orange") or arrays (["warm orange", "bright green"])
-  // Flatten into a simple list for display
   const paletteColors = style?.colorPalette
-    ? [style.colorPalette.primary, style.colorPalette.secondary, style.colorPalette.accent]
+    ? [
+        style.colorPalette.primary,
+        style.colorPalette.secondary,
+        style.colorPalette.accent,
+      ]
         .flat()
         .filter((v): v is string => typeof v === "string" && v.length > 0)
     : [];
@@ -140,8 +140,8 @@ export default function IllustrationStyleClient({
   const handleAcceptAndContinue = async () => {
     setIsSaving(true);
     try {
-      // If user customised, save their edits first
-      if (showCustomise) {
+      // If user customised, save their edits
+      if (mode === "customise") {
         await fetch(`/api/stories/${storyId}/style-guide`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -162,7 +162,9 @@ export default function IllustrationStyleClient({
       }).catch(() => {});
 
       // Navigate to next step
-      const storyRes = await fetch(`/api/stories/${storyId}`, { cache: "no-store" });
+      const storyRes = await fetch(`/api/stories/${storyId}`, {
+        cache: "no-store",
+      });
       if (storyRes.ok) {
         const storyData = await storyRes.json();
         const story = storyData.story ?? storyData;
@@ -177,58 +179,60 @@ export default function IllustrationStyleClient({
     }
   };
 
-  const handleImageUpload = useCallback(async (file: File) => {
-    if (!file.type.startsWith("image/")) return;
-    setUploadingImage(true);
+  const handleImageUpload = useCallback(
+    async (file: File) => {
+      if (!file.type.startsWith("image/")) return;
+      setUploadingImage(true);
 
-    try {
-      // 1. Upload to Cloudinary
-      const formData = new FormData();
-      formData.append("file", file);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
 
-      const uploadRes = await fetch(`/api/stories/${storyId}/style-guide/upload`, {
-        method: "POST",
-        body: formData,
-      });
+        const uploadRes = await fetch(
+          `/api/stories/${storyId}/style-guide/upload`,
+          { method: "POST", body: formData }
+        );
+        if (!uploadRes.ok) throw new Error("Upload failed");
+        const { url } = await uploadRes.json();
+        setPreviewImageUrl(url);
 
-      if (!uploadRes.ok) throw new Error("Upload failed");
-      const { url } = await uploadRes.json();
-      setPreviewImageUrl(url);
+        const analyseRes = await fetch(
+          `/api/stories/${storyId}/style-guide/analyze`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageUrl: url }),
+          }
+        );
 
-      // 2. Analyse with Claude vision
-      const analyseRes = await fetch(`/api/stories/${storyId}/style-guide/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl: url }),
-      });
+        if (analyseRes.ok) {
+          const v = await analyseRes.json();
+          if (v.summary) setEditVision(v.summary);
+          if (v.artStyle) setEditArtStyle(v.artStyle);
+          if (v.negativePrompt) setEditNegative(v.negativePrompt);
 
-      if (analyseRes.ok) {
-        const v = await analyseRes.json();
-        if (v.summary) setEditVision(v.summary);
-        if (v.artStyle) setEditArtStyle(v.artStyle);
-        if (v.negativePrompt) setEditNegative(v.negativePrompt);
-
-        // 3. Save everything including internal fields that go straight to the DB
-        await fetch(`/api/stories/${storyId}/style-guide`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            summary: v.summary,
-            artStyle: v.artStyle,
-            visualThemes: v.visualThemes,
-            colorPalette: v.colorPalette,
-            sampleIllustrationUrl: url,
-            promptBase: v.promptBase,
-            negativePrompt: v.negativePrompt,
-          }),
-        });
+          await fetch(`/api/stories/${storyId}/style-guide`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              summary: v.summary,
+              artStyle: v.artStyle,
+              visualThemes: v.visualThemes,
+              colorPalette: v.colorPalette,
+              sampleIllustrationUrl: url,
+              promptBase: v.promptBase,
+              negativePrompt: v.negativePrompt,
+            }),
+          });
+        }
+      } catch (err) {
+        console.error("Upload/analyse failed:", err);
+      } finally {
+        setUploadingImage(false);
       }
-    } catch (err) {
-      console.error("Upload/analyse failed:", err);
-    } finally {
-      setUploadingImage(false);
-    }
-  }, [storyId]);
+    },
+    [storyId]
+  );
 
   /* ── Render ── */
 
@@ -236,7 +240,6 @@ export default function IllustrationStyleClient({
     <>
       <FontLoader />
 
-      {/* Hidden file input — must be outside AnimatePresence so ref is always available */}
       <input
         ref={fileInputRef}
         type="file"
@@ -278,12 +281,12 @@ export default function IllustrationStyleClient({
           title={title}
           currentStep={currentStep}
           completedSteps={completedSteps}
+          storyConfirmed={storyConfirmed}
         />
 
         {/* Content */}
         <div className="max-w-xl mx-auto px-4 sm:px-6 py-10 pb-32">
           {isLoading ? (
-            /* ── Loading state ── */
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -291,7 +294,9 @@ export default function IllustrationStyleClient({
             >
               <div
                 className="w-16 h-16 rounded-[22px] flex items-center justify-center mb-5"
-                style={{ background: "linear-gradient(135deg, #E8D5FF, #FFD5E5)" }}
+                style={{
+                  background: "linear-gradient(135deg, #E8D5FF, #FFD5E5)",
+                }}
               >
                 <Loader2
                   className="w-7 h-7 animate-spin"
@@ -302,361 +307,442 @@ export default function IllustrationStyleClient({
                 className="text-xl font-extrabold"
                 style={{ color: "#2D2235" }}
               >
-                Creating your style guide…
+                Choosing a style for your story…
               </h2>
               <p className="text-sm mt-2" style={{ color: "#7B6E90" }}>
-                Reading the story and choosing an illustration style to match.
+                This only takes a moment.
               </p>
             </motion.div>
           ) : !style ? (
-            /* ── No style found ── */
             <div className="text-center py-20">
               <p className="text-sm" style={{ color: "#7B6E90" }}>
                 No style guide found. Please go back and try again.
               </p>
             </div>
           ) : (
-            /* ── Main content ── */
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-              className="space-y-6"
-            >
-              {/* Hero card */}
-              <div
-                className="rounded-[22px] border overflow-hidden"
-                style={{
-                  background: "white",
-                  borderColor: "rgba(180,150,210,0.12)",
-                  boxShadow:
-                    "0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)",
-                }}
-              >
-                {/* Header */}
-                <div
-                  className="px-6 py-5 flex items-start gap-4"
-                  style={{ borderBottom: "1px solid rgba(180,150,210,0.08)" }}
+            <AnimatePresence mode="wait">
+              {mode === "suggest" ? (
+                /* ════════════════════════════════════════
+                   SUGGESTION CARD
+                   ════════════════════════════════════════ */
+                <motion.div
+                  key="suggest"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.3 }}
                 >
                   <div
-                    className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
+                    className="rounded-[22px] border overflow-hidden"
                     style={{
-                      background: "linear-gradient(135deg, #E8D5FF, #FFD5E5)",
+                      background: "white",
+                      borderColor: "rgba(180,150,210,0.12)",
+                      boxShadow:
+                        "0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)",
                     }}
                   >
-                    <Paintbrush className="w-5 h-5" style={{ color: "#B05CE6" }} />
-                  </div>
-                  <div>
-                    <h2
-                      className="text-lg font-extrabold"
-                      style={{ color: "#2D2235" }}
-                    >
-                      Your illustration style
-                    </h2>
-                    <p className="text-sm mt-1 leading-relaxed" style={{ color: "#7B6E90" }}>
-                      We picked this based on your story. If it feels right, just continue.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Style summary */}
-                <div className="px-6 py-5">
-                  {/* Reference image if exists */}
-                  {previewImageUrl && (
-                    <div className="mb-4 rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
-                      <img
-                        src={previewImageUrl}
-                        alt="Style reference"
-                        className="w-full h-44 object-cover"
-                      />
-                    </div>
-                  )}
-
-                  {/* Vision text */}
-                  <p
-                    className="text-[15px] leading-[1.7]"
-                    style={{ color: "#3A2E48" }}
-                  >
-                    {styleSummary || "A warm, whimsical children's book illustration style."}
-                  </p>
-
-                  {/* Colour palette */}
-                  {paletteColors.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-2 mt-4">
-                      <span
-                        className="text-[11px] font-bold uppercase tracking-wide"
-                        style={{ color: "#A897BD" }}
-                      >
-                        Palette
-                      </span>
-                      {paletteColors.map((color, i) => (
-                        <span
-                          key={i}
-                          className="text-xs font-medium px-2.5 py-1 rounded-full capitalize"
-                          style={{
-                            background: "rgba(180,150,210,0.1)",
-                            color: "#6B5C80",
-                          }}
-                        >
-                          {color}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Mood tag */}
-                  {style.colorPalette?.mood && (
-                    <div className="mt-3">
-                      <span
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full"
-                        style={{
-                          background: "rgba(176,92,230,0.08)",
-                          color: "#8B5CB8",
-                        }}
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        {style.colorPalette.mood}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Primary action */}
-                <div className="px-6 pb-6 space-y-3">
-                  <button
-                    onClick={handleAcceptAndContinue}
-                    disabled={isSaving}
-                    className="w-full py-4 rounded-[14px] text-sm font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-px active:scale-[0.98] disabled:opacity-60 relative overflow-hidden"
-                    style={{
-                      background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
-                      boxShadow: "0 4px 16px rgba(176,92,230,0.25)",
-                      border: "none",
-                    }}
-                  >
+                    {/* Header */}
                     <div
-                      className="absolute inset-0 rounded-[inherit]"
+                      className="px-6 py-5 flex items-start gap-4"
                       style={{
-                        background:
-                          "linear-gradient(135deg, rgba(255,255,255,0.15), transparent)",
-                      }}
-                    />
-                    {isSaving ? (
-                      <Loader2 className="w-4 h-4 animate-spin relative z-10" />
-                    ) : (
-                      <Check className="w-4 h-4 relative z-10" />
-                    )}
-                    <span className="relative z-10">
-                      {isSaving ? "Saving…" : "Looks great — continue"}
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => setShowCustomise((v) => !v)}
-                    className="w-full py-3 rounded-[14px] text-sm font-semibold flex items-center justify-center gap-2 transition-all"
-                    style={{
-                      background: "transparent",
-                      color: "#7B6E90",
-                      border: "1px solid rgba(180,150,210,0.2)",
-                    }}
-                  >
-                    <ChevronDown
-                      className="w-4 h-4 transition-transform"
-                      style={{
-                        transform: showCustomise ? "rotate(180deg)" : "none",
-                      }}
-                    />
-                    {showCustomise ? "Hide options" : "I want to customise"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Customise panel — only shown if user asks for it */}
-              <AnimatePresence>
-                {showCustomise && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="overflow-hidden"
-                  >
-                    <div
-                      className="rounded-[22px] border overflow-hidden"
-                      style={{
-                        background: "white",
-                        borderColor: "rgba(180,150,210,0.12)",
-                        boxShadow: "0 2px 8px rgba(100,60,140,0.05)",
+                        borderBottom: "1px solid rgba(180,150,210,0.08)",
                       }}
                     >
                       <div
-                        className="px-6 py-4 border-b"
-                        style={{ borderColor: "rgba(180,150,210,0.08)" }}
+                        className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #E8D5FF, #FFD5E5)",
+                        }}
                       >
-                        <h3
-                          className="text-sm font-bold"
+                        <Paintbrush
+                          className="w-5 h-5"
+                          style={{ color: "#B05CE6" }}
+                        />
+                      </div>
+                      <div>
+                        <h2
+                          className="text-lg font-extrabold"
                           style={{ color: "#2D2235" }}
                         >
-                          Make it yours
-                        </h3>
+                          Here's the look we'd suggest
+                        </h2>
                         <p
-                          className="text-xs mt-0.5"
-                          style={{ color: "#A897BD" }}
+                          className="text-sm mt-1 leading-relaxed"
+                          style={{ color: "#7B6E90" }}
                         >
-                          Edit the style description or upload a reference image.
+                          Based on the tone and characters in your story, we
+                          think this style fits. You can always change it.
                         </p>
                       </div>
+                    </div>
 
-                      <div className="px-6 py-5 space-y-5">
-                        {/* Style Vision */}
-                        <div>
-                          <label
-                            className="text-[11px] font-bold uppercase tracking-wide block mb-2"
-                            style={{ color: "#6B5C80" }}
-                          >
-                            Style vision
-                          </label>
-                          <textarea
-                            value={editVision}
-                            onChange={(e) => setEditVision(e.target.value)}
-                            rows={3}
-                            className="w-full rounded-xl border px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 transition-all"
-                            style={{
-                              borderColor: "rgba(180,150,210,0.18)",
-                              background: "#FDFBFF",
-                              color: "#2D2235",
-                              fontFamily: "inherit",
-                              // @ts-ignore
-                              "--tw-ring-color": "rgba(199,125,255,0.2)",
-                            }}
-                            placeholder="Describe the look and feel you're imagining…"
+                    {/* Style content */}
+                    <div className="px-6 py-5">
+                      {previewImageUrl && (
+                        <div className="mb-4 rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+                          <img
+                            src={previewImageUrl}
+                            alt="Style reference"
+                            className="w-full h-44 object-cover"
                           />
                         </div>
+                      )}
 
-                        {/* Art Style */}
-                        <div>
-                          <label
-                            className="text-[11px] font-bold uppercase tracking-wide block mb-2"
-                            style={{ color: "#6B5C80" }}
+                      <p
+                        className="text-[15px] leading-[1.75]"
+                        style={{ color: "#3A2E48" }}
+                      >
+                        {styleSummary ||
+                          "A warm, whimsical children's book illustration style."}
+                      </p>
+
+                      {/* Palette */}
+                      {paletteColors.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-2 mt-4">
+                          <span
+                            className="text-[11px] font-bold uppercase tracking-wide"
+                            style={{ color: "#A897BD" }}
                           >
-                            Art style
-                          </label>
-                          <textarea
-                            value={editArtStyle}
-                            onChange={(e) => setEditArtStyle(e.target.value)}
-                            rows={2}
-                            className="w-full rounded-xl border px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 transition-all"
-                            style={{
-                              borderColor: "rgba(180,150,210,0.18)",
-                              background: "#FDFBFF",
-                              color: "#2D2235",
-                              fontFamily: "inherit",
-                              // @ts-ignore
-                              "--tw-ring-color": "rgba(199,125,255,0.2)",
-                            }}
-                            placeholder="e.g. Watercolour, digital cartoon, pencil sketch…"
-                          />
-                        </div>
-
-                        {/* Reference image upload */}
-                        <div>
-                          <label
-                            className="text-[11px] font-bold uppercase tracking-wide block mb-2"
-                            style={{ color: "#6B5C80" }}
-                          >
-                            Reference image (optional)
-                          </label>
-
-                          {previewImageUrl ? (
-                            <div className="relative rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
-                              <img
-                                src={previewImageUrl}
-                                alt="Style reference"
-                                className="w-full h-36 object-cover"
-                              />
-                              <button
-                                onClick={() => setPreviewImageUrl(null)}
-                                className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => fileInputRef.current?.click()}
-                              disabled={uploadingImage}
-                              className="w-full py-8 rounded-xl border-2 border-dashed flex flex-col items-center gap-2 transition-all hover:border-purple-300 hover:bg-purple-50/30"
+                            Palette
+                          </span>
+                          {paletteColors.map((color, i) => (
+                            <span
+                              key={i}
+                              className="text-xs font-medium px-2.5 py-1 rounded-full capitalize"
                               style={{
-                                borderColor: "rgba(180,150,210,0.25)",
-                                background: "rgba(200,180,220,0.04)",
-                                color: "#8B7BA0",
+                                background: "rgba(180,150,210,0.1)",
+                                color: "#6B5C80",
                               }}
                             >
-                              {uploadingImage ? (
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                              ) : (
-                                <Upload className="w-5 h-5" />
-                              )}
-                              <span className="text-xs font-semibold">
-                                {uploadingImage
-                                  ? "Uploading…"
-                                  : "Drop an image or tap to browse"}
-                              </span>
-                            </button>
-                          )}
-
+                              {color}
+                            </span>
+                          ))}
                         </div>
+                      )}
 
-                        {/* What to avoid */}
-                        <div>
-                          <label
-                            className="text-[11px] font-bold uppercase tracking-wide block mb-2"
-                            style={{ color: "#6B5C80" }}
-                          >
-                            What to avoid
-                          </label>
-                          <input
-                            value={editNegative}
-                            onChange={(e) => setEditNegative(e.target.value)}
-                            className="w-full rounded-xl border px-4 py-3 text-sm focus:outline-none focus:ring-2 transition-all"
+                      {style.colorPalette?.mood && (
+                        <div className="mt-3">
+                          <span
+                            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full"
                             style={{
-                              borderColor: "rgba(180,150,210,0.18)",
-                              background: "#FDFBFF",
-                              color: "#2D2235",
-                              fontFamily: "inherit",
-                              // @ts-ignore
-                              "--tw-ring-color": "rgba(199,125,255,0.2)",
+                              background: "rgba(176,92,230,0.08)",
+                              color: "#8B5CB8",
                             }}
-                            placeholder="e.g. Photorealism, scary imagery, dark themes…"
-                          />
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            {style.colorPalette.mood}
+                          </span>
                         </div>
-                      </div>
+                      )}
+                    </div>
 
-                      {/* Save from customise panel */}
-                      <div className="px-6 pb-6">
-                        <button
-                          onClick={handleAcceptAndContinue}
-                          disabled={isSaving}
-                          className="w-full py-4 rounded-[14px] text-sm font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-px active:scale-[0.98] disabled:opacity-60"
+                    {/* Actions */}
+                    <div className="px-6 pb-6 space-y-3">
+                      <button
+                        onClick={handleAcceptAndContinue}
+                        disabled={isSaving}
+                        className="w-full py-4 rounded-[14px] text-sm font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-px active:scale-[0.98] disabled:opacity-60 relative overflow-hidden"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                          boxShadow: "0 4px 16px rgba(176,92,230,0.25)",
+                          border: "none",
+                        }}
+                      >
+                        <div
+                          className="absolute inset-0 rounded-[inherit]"
                           style={{
                             background:
-                              "linear-gradient(135deg, #B05CE6, #D45DA0)",
-                            boxShadow: "0 4px 16px rgba(176,92,230,0.25)",
-                            border: "none",
+                              "linear-gradient(135deg, rgba(255,255,255,0.15), transparent)",
+                          }}
+                        />
+                        {isSaving ? (
+                          <Loader2 className="w-4 h-4 animate-spin relative z-10" />
+                        ) : (
+                          <Check className="w-4 h-4 relative z-10" />
+                        )}
+                        <span className="relative z-10">
+                          {isSaving ? "Saving…" : "Looks great — continue"}
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => setMode("customise")}
+                        className="w-full py-3 rounded-[14px] text-sm font-semibold flex items-center justify-center gap-2 transition-all hover:bg-[rgba(180,150,210,0.04)]"
+                        style={{
+                          background: "transparent",
+                          color: "#7B6E90",
+                          border: "1px solid rgba(180,150,210,0.2)",
+                        }}
+                      >
+                        <Paintbrush className="w-3.5 h-3.5" />
+                        I'd like to change something
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              ) : (
+                /* ════════════════════════════════════════
+                   CUSTOMISE CARD — replaces suggestion
+                   ════════════════════════════════════════ */
+                <motion.div
+                  key="customise"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <div
+                    className="rounded-[22px] border overflow-hidden"
+                    style={{
+                      background: "white",
+                      borderColor: "rgba(180,150,210,0.12)",
+                      boxShadow:
+                        "0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)",
+                    }}
+                  >
+                    {/* Header with back */}
+                    <div
+                      className="px-6 py-4 flex items-center justify-between border-b"
+                      style={{ borderColor: "rgba(180,150,210,0.08)" }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                          style={{
+                            background:
+                              "linear-gradient(135deg, #E8D5FF, #FFD5E5)",
                           }}
                         >
-                          {isSaving ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Check className="w-4 h-4" />
-                          )}
-                          {isSaving ? "Saving…" : "Save & continue"}
-                        </button>
+                          <Paintbrush
+                            className="w-4 h-4"
+                            style={{ color: "#B05CE6" }}
+                          />
+                        </div>
+                        <div>
+                          <h3
+                            className="text-[15px] font-bold"
+                            style={{ color: "#2D2235" }}
+                          >
+                            Customise your style
+                          </h3>
+                          <p
+                            className="text-[11px] mt-0.5"
+                            style={{ color: "#A897BD" }}
+                          >
+                            Edit anything below, or upload an image you like.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setMode("suggest")}
+                        className="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all hover:bg-[rgba(180,150,210,0.06)]"
+                        style={{
+                          color: "#8B7BA0",
+                          border: "1px solid rgba(180,150,210,0.15)",
+                          background: "transparent",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        ← Back
+                      </button>
+                    </div>
+
+                    {/* Fields */}
+                    <div className="px-6 py-5 space-y-5">
+                      {/* Reference image */}
+                      <div>
+                        <label
+                          className="text-[11px] font-bold uppercase tracking-wide block mb-2"
+                          style={{ color: "#6B5C80" }}
+                        >
+                          Reference image
+                        </label>
+                        <p
+                          className="text-xs mb-3 leading-relaxed"
+                          style={{ color: "#A897BD" }}
+                        >
+                          Got an illustration style you love? Upload it and
+                          we'll match the feel.
+                        </p>
+
+                        {previewImageUrl ? (
+                          <div className="relative rounded-xl overflow-hidden border" style={{ borderColor: "rgba(180,150,210,0.12)" }}>
+                            <img
+                              src={previewImageUrl}
+                              alt="Style reference"
+                              className="w-full h-36 object-cover"
+                            />
+                            <button
+                              onClick={() => setPreviewImageUrl(null)}
+                              className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center transition-colors"
+                              style={{
+                                background: "rgba(0,0,0,0.5)",
+                                color: "white",
+                                border: "none",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploadingImage}
+                            className="w-full py-7 rounded-xl border-2 border-dashed flex flex-col items-center gap-2 transition-all hover:border-[#C77DFF] hover:bg-[rgba(199,125,255,0.03)]"
+                            style={{
+                              borderColor: "rgba(180,150,210,0.25)",
+                              background: "rgba(200,180,220,0.04)",
+                              color: "#8B7BA0",
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            {uploadingImage ? (
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                            ) : (
+                              <Upload className="w-5 h-5" />
+                            )}
+                            <span className="text-xs font-semibold">
+                              {uploadingImage
+                                ? "Analysing your image…"
+                                : "Tap to upload"}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Divider */}
+                      <div
+                        className="h-px"
+                        style={{ background: "rgba(180,150,210,0.08)" }}
+                      />
+
+                      {/* Overall feel */}
+                      <div>
+                        <label
+                          className="text-[11px] font-bold uppercase tracking-wide block mb-1.5"
+                          style={{ color: "#6B5C80" }}
+                        >
+                          Overall feel
+                        </label>
+                        <p
+                          className="text-xs mb-2"
+                          style={{ color: "#A897BD" }}
+                        >
+                          Describe the vibe in your own words.
+                        </p>
+                        <textarea
+                          value={editVision}
+                          onChange={(e) => setEditVision(e.target.value)}
+                          rows={3}
+                          className="w-full rounded-xl border px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 transition-all"
+                          style={{
+                            borderColor: "rgba(180,150,210,0.18)",
+                            background: "#FDFBFF",
+                            color: "#2D2235",
+                            fontFamily: "inherit",
+                          }}
+                          placeholder="e.g. Warm and cosy, like a bedtime story…"
+                        />
+                      </div>
+
+                      {/* Art style */}
+                      <div>
+                        <label
+                          className="text-[11px] font-bold uppercase tracking-wide block mb-1.5"
+                          style={{ color: "#6B5C80" }}
+                        >
+                          Art style
+                        </label>
+                        <p
+                          className="text-xs mb-2"
+                          style={{ color: "#A897BD" }}
+                        >
+                          The illustration technique — watercolour, digital
+                          cartoon, pencil sketch, etc.
+                        </p>
+                        <textarea
+                          value={editArtStyle}
+                          onChange={(e) => setEditArtStyle(e.target.value)}
+                          rows={2}
+                          className="w-full rounded-xl border px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 transition-all"
+                          style={{
+                            borderColor: "rgba(180,150,210,0.18)",
+                            background: "#FDFBFF",
+                            color: "#2D2235",
+                            fontFamily: "inherit",
+                          }}
+                          placeholder="e.g. Soft watercolour with ink outlines"
+                        />
+                      </div>
+
+                      {/* What to avoid */}
+                      <div>
+                        <label
+                          className="text-[11px] font-bold uppercase tracking-wide block mb-1.5"
+                          style={{ color: "#6B5C80" }}
+                        >
+                          Anything to avoid?
+                        </label>
+                        <p
+                          className="text-xs mb-2"
+                          style={{ color: "#A897BD" }}
+                        >
+                          Styles or elements you definitely don't want.
+                        </p>
+                        <input
+                          value={editNegative}
+                          onChange={(e) => setEditNegative(e.target.value)}
+                          className="w-full rounded-xl border px-4 py-3 text-sm focus:outline-none focus:ring-2 transition-all"
+                          style={{
+                            borderColor: "rgba(180,150,210,0.18)",
+                            background: "#FDFBFF",
+                            color: "#2D2235",
+                            fontFamily: "inherit",
+                          }}
+                          placeholder="e.g. Photorealism, scary imagery"
+                        />
                       </div>
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
+
+                    {/* Save */}
+                    <div className="px-6 pb-6">
+                      <button
+                        onClick={handleAcceptAndContinue}
+                        disabled={isSaving}
+                        className="w-full py-4 rounded-[14px] text-sm font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-px active:scale-[0.98] disabled:opacity-60 relative overflow-hidden"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                          boxShadow: "0 4px 16px rgba(176,92,230,0.25)",
+                          border: "none",
+                        }}
+                      >
+                        <div
+                          className="absolute inset-0 rounded-[inherit]"
+                          style={{
+                            background:
+                              "linear-gradient(135deg, rgba(255,255,255,0.15), transparent)",
+                          }}
+                        />
+                        {isSaving ? (
+                          <Loader2 className="w-4 h-4 animate-spin relative z-10" />
+                        ) : (
+                          <Check className="w-4 h-4 relative z-10" />
+                        )}
+                        <span className="relative z-10">
+                          {isSaving ? "Saving…" : "Save & continue"}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           )}
         </div>
       </div>

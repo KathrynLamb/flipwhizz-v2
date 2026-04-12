@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, XCircle, ArrowLeft, User, MapPin, Palette, Scissors, BookOpen } from "lucide-react";
+import { Loader2, XCircle, ArrowLeft, User } from "lucide-react";
 import type { StepKey } from "@/lib/storySteps";
 
 /* ─────────────── TYPES ─────────────── */
@@ -194,6 +194,20 @@ export default function ExtractWorldPage() {
         setPhase("checking");
         lastPhaseRef.current = "checking";
 
+        // ── Guard: story must be confirmed before extraction ──
+        try {
+          const storyRes = await fetch(`/api/stories/${storyId}`, { cache: "no-store" });
+          if (storyRes.ok) {
+            const storyData = await storyRes.json();
+            if (!storyData.story?.storyConfirmed) {
+              router.push(`/stories/${storyId}/pages`);
+              return;
+            }
+          }
+        } catch {}
+
+        if (cancelled) return;
+
         let p: ProgressData | null = null;
         try {
           const res = await fetch(`/api/stories/${storyId}/workflow-progress`, { cache: "no-store" });
@@ -206,7 +220,6 @@ export default function ExtractWorldPage() {
         if (p && p.charactersExtracted) {
           setProgress(p);
           setPhase(getCurrentPhase(p));
-          // Redirect immediately
           if (!hasRedirected.current) {
             router.push(`/stories/${storyId}/illustration-style`);
           }
@@ -217,7 +230,13 @@ export default function ExtractWorldPage() {
 
         if (!workflowTriggered.current) {
           workflowTriggered.current = true;
-          try { await fetch(`/api/stories/${storyId}/ensure-world`, { method: "POST" }); } catch {}
+          try {
+            const res = await fetch(`/api/stories/${storyId}/ensure-world`, { method: "POST" });
+            if (res.status === 400) {
+              router.push(`/stories/${storyId}/chat`);
+              return;
+            }
+          } catch {}
         }
         if (!cancelled) doStartPolling();
       } catch {

@@ -45,7 +45,7 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
         )
       );
 
-    // console.log("📊 Story query result:", JSON.stringify(result, null, 2));
+
 
     if (!result || result.length === 0) {
       console.log("❌ Story not found or user doesn't own it");
@@ -55,16 +55,18 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
     const story = result[0].stories;
     const project = result[0].projects;
 
-    console.log("✅ Found story:", {
-      id: story.id,
-      title: story.title,
-      status: story.status,
-      currentStep: story.currentStep,
-      completedSteps: story.completedSteps,
-    });
+    // console.log("✅ Found story:", {
+    //   id: story.id,
+    //   title: story.title,
+    //   status: story.status,
+    //   currentStep: story.currentStep,
+    //   completedSteps: story.completedSteps,
+    //   storyConfirmed: story.storyConfirmed
+    // });
 
     return (
       <StoryJourneyShell
+        storyConfirmed={story.storyConfirmed}
         storyId={story.id}
         title={story.title || "Untitled Story"}
         currentStep={stepNumberToKey(story.currentStep ?? undefined)}

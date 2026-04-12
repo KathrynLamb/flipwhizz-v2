@@ -81,11 +81,13 @@ export default function StoryJourneyShell({
   title,
   currentStep,
   completedSteps,
+  storyConfirmed,
   children,
 }: {
   storyId: string;
   title: string;
   currentStep: StepKey;
+  storyConfirmed?: boolean
   completedSteps: StepKey[];
   children: React.ReactNode;
 }) {
