@@ -36,6 +36,7 @@
     "framer-motion": "^12.34.3",
     "gray-matter": "^4.0.3",
     "heic-convert": "^2.1.0",
+    "heic-to": "^1.4.2",
     "heic2any": "^0.0.4",
     "inngest": "^3.47.0",
     "lucide-react": "^0.556.0",

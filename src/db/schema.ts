@@ -804,6 +804,63 @@ export const orders = pgTable("orders", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+/* ==================== REVIEWS ==================== */
+
+export const reviews = pgTable("reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+
+  storyId: uuid("story_id")
+    .notNull()
+    .references(() => stories.id, { onDelete: "cascade" }),
+
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+
+  // Rating (1-5 emoji scale)
+  rating: integer("rating").notNull(),
+
+  // Guided text responses
+  responses: jsonb("responses").$type<{
+    bestMoment?: string;
+    reaction?: string;
+    recommend?: string;
+  }>(),
+
+  // Media URLs (uploaded to Cloudinary)
+  mediaUrls: jsonb("media_urls").$type<
+    {
+      url: string;
+      type: "photo" | "video";
+      cloudinaryPublicId: string;
+    }[]
+  >().default([]),
+
+  // Permissions
+  permissions: jsonb("permissions").$type<{
+    rightToShare: boolean;
+    publishWebsite: boolean;
+    publishSocial: boolean;
+  }>().notNull(),
+
+  // Linked promo code reward
+  promoCodeId: uuid("promo_code_id").references(() => promoCodes.id, {
+    onDelete: "set null",
+  }),
+  promoCode: varchar("promo_code", { length: 50 }),
+
+  // Moderation
+  published: boolean("published").default(false).notNull(),
+  featured: boolean("featured").default(false).notNull(),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  storyIdx: index("reviews_story_idx").on(t.storyId),
+  userIdx: index("reviews_user_idx").on(t.userId),
+  publishedIdx: index("reviews_published_idx").on(t.published, t.featured),
+}));
+
 /* ==================== STORY SPREADS ==================== */
 
 export const storySpreads = pgTable("story_spreads", {

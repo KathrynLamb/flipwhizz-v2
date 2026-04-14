@@ -105,7 +105,7 @@ export default function ExtractWorldPage() {
     storyIdRef.current = id;
     return id;
   }, [params]);
-
+  const [redirectingToBook, setRedirectingToBook] = useState(false);
   const [phase, setPhase] = useState<Phase>("checking");
   const [progress, setProgress] = useState<ProgressData>({
     phase: "checking", charactersExtracted: false, locationsExtracted: false,
@@ -199,7 +199,21 @@ export default function ExtractWorldPage() {
           const storyRes = await fetch(`/api/stories/${storyId}`, { cache: "no-store" });
           if (storyRes.ok) {
             const storyData = await storyRes.json();
-            if (!storyData.story?.storyConfirmed) {
+            const s = storyData.story;
+
+            if (s?.paymentStatus === "paid" && s?.pdfUrl) {
+              setRedirectingToBook(true);
+              router.push(`/stories/${storyId}/book`);
+              return;
+            }
+        
+            // If book is locked (paid + has PDF), go to book page
+            if (s?.paymentStatus === "paid" && s?.pdfUrl) {
+              router.push(`/stories/${storyId}/book`);
+              return;
+            }
+        
+            if (!s?.storyConfirmed) {
               router.push(`/stories/${storyId}/pages`);
               return;
             }
@@ -301,6 +315,24 @@ export default function ExtractWorldPage() {
             <button onClick={() => window.location.reload()} className="mt-6 w-full rounded-xl py-3 text-sm font-bold text-white active:scale-[0.98] transition-transform" style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", boxShadow: "0 4px 16px rgba(176,92,230,0.25)", border: "none" }}>
               Try again
             </button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+
+  if (redirectingToBook) {
+    return (
+      <>
+        <FontLoader />
+        <div className="min-h-screen flex items-center justify-center"
+          style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif", background: "#F9F5FF" }}>
+          <div className="text-center">
+            <span className="text-4xl mb-4 block">📖</span>
+            <p className="text-sm font-semibold" style={{ color: "#2D2235" }}>
+              Opening your book…
+            </p>
           </div>
         </div>
       </>

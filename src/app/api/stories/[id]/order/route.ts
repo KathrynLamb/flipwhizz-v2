@@ -121,15 +121,13 @@ export async function POST(
     const shipment = (result as any)?.shipment;
 
     await db
-      .update(orders)
-      .set({
-        gelatoOrderId: shipment.id,
-        gelatoStatus: shipment.fulfillmentStatus ?? "created",
-        ...(shipment?.minDeliveryDate && { gelatoMinDeliveryDate: shipment.minDeliveryDate }),
-        ...(shipment?.maxDeliveryDate && { gelatoMaxDeliveryDate: shipment.maxDeliveryDate }),
-        updatedAt: new Date(),
-      })
-      .where(eq(orders.id, orderId));
+    .update(orders)
+    .set({
+      gelatoOrderId: (result as any).id,  // ← Gelato's order ID is at result.id
+      gelatoStatus: (result as any).fulfillmentStatus ?? "created",
+      updatedAt: new Date(),
+    })
+    .where(eq(orders.id, orderId));
 
     // Also update story orderStatus for the UI tracker
     await db
