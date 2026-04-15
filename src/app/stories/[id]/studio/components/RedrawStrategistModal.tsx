@@ -125,6 +125,142 @@ function strategyLabel(strategy: RedrawPlan["strategy"]) {
 
 /* --------------------------- Plan Preview Panel ---------------------------- */
 
+// function PlanPreview({
+//   plan,
+//   characters,
+//   onUsePlan,
+//   isUsingPlan,
+// }: {
+//   plan: RedrawPlan;
+//   characters: StrategistCharacter[];
+//   onUsePlan: () => void;
+//   isUsingPlan?: boolean;
+// }) {
+//   return (
+//     <div className="rounded-2xl border border-purple-200 bg-purple-50/50 overflow-hidden">
+//       <div className="px-4 py-3 border-b border-purple-100 flex items-center gap-2">
+//         <CheckCircle2 className="w-4 h-4 text-purple-600" />
+//         <h4 className="text-sm font-bold text-gray-900">Redraw plan ready</h4>
+//       </div>
+
+//       <div className="p-4 space-y-4">
+//         <div>
+//           <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
+//             Strategy
+//           </p>
+//           <div className="inline-flex items-center gap-2 rounded-full bg-white border border-purple-200 px-3 py-1.5 text-xs font-bold text-purple-700">
+//             <Wand2 className="w-3.5 h-3.5" />
+//             {strategyLabel(plan.strategy)}
+//           </div>
+//         </div>
+
+//         {!!plan.diagnosis?.length && (
+//           <div>
+//             <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
+//               Diagnosis
+//             </p>
+//             <div className="space-y-2">
+//               {plan.diagnosis.map((item, i) => (
+//                 <div
+//                   key={`${item}-${i}`}
+//                   className="rounded-xl bg-white border border-gray-200 px-3 py-2 text-xs text-gray-700 leading-relaxed"
+//                 >
+//                   {item}
+//                 </div>
+//               ))}
+//             </div>
+//           </div>
+//         )}
+
+//         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+//           <div className="rounded-xl bg-white border border-gray-200 p-3">
+//             <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
+//               Featured
+//             </p>
+//             <div className="space-y-1.5">
+//               {plan.featuredCharacterIds.length > 0 ? (
+//                 plan.featuredCharacterIds.map((id) => (
+//                   <p key={id} className="text-xs font-medium text-gray-800">
+//                     {findCharacterName(characters, id)}
+//                   </p>
+//                 ))
+//               ) : (
+//                 <p className="text-xs text-gray-400">None</p>
+//               )}
+//             </div>
+//           </div>
+
+//           <div className="rounded-xl bg-white border border-gray-200 p-3">
+//             <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
+//               Background
+//             </p>
+//             <div className="space-y-1.5">
+//               {plan.backgroundCharacterIds.length > 0 ? (
+//                 plan.backgroundCharacterIds.map((id) => (
+//                   <p key={id} className="text-xs font-medium text-gray-800">
+//                     {findCharacterName(characters, id)}
+//                   </p>
+//                 ))
+//               ) : (
+//                 <p className="text-xs text-gray-400">None</p>
+//               )}
+//             </div>
+//           </div>
+
+//           <div className="rounded-xl bg-white border border-gray-200 p-3">
+//             <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
+//               Hidden
+//             </p>
+//             <div className="space-y-1.5">
+//               {plan.hiddenCharacterIds.length > 0 ? (
+//                 plan.hiddenCharacterIds.map((id) => (
+//                   <p key={id} className="text-xs font-medium text-gray-800">
+//                     {findCharacterName(characters, id)}
+//                   </p>
+//                 ))
+//               ) : (
+//                 <p className="text-xs text-gray-400">None</p>
+//               )}
+//             </div>
+//           </div>
+//         </div>
+
+//         {plan.notesToUser && (
+//           <div className="rounded-xl bg-white border border-gray-200 p-3">
+//             <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
+//               Notes
+//             </p>
+//             <p className="text-xs text-gray-700 leading-relaxed">{plan.notesToUser}</p>
+//           </div>
+//         )}
+
+//         <div className="rounded-xl bg-white border border-gray-200 p-3">
+//           {/* <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
+//             Gemini redraw prompt
+//           </p> */}
+//           <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">
+//             {plan.recommendedPrompt}
+//           </p>
+//         </div>
+
+//         <button
+//           onClick={onUsePlan}
+//           disabled={isUsingPlan}
+//           className="w-full bg-purple-600 text-white px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-colors disabled:opacity-50 text-sm"
+//         >
+//           {isUsingPlan ? (
+//             <Loader2 className="w-4 h-4 animate-spin" />
+//           ) : (
+//             <Sparkles className="w-4 h-4" />
+//           )}
+//           Use this redraw plan
+//         </button>
+//       </div>
+//     </div>
+//   );
+// }
+
+
 function PlanPreview({
   plan,
   characters,
@@ -138,110 +274,12 @@ function PlanPreview({
 }) {
   return (
     <div className="rounded-2xl border border-purple-200 bg-purple-50/50 overflow-hidden">
-      <div className="px-4 py-3 border-b border-purple-100 flex items-center gap-2">
-        <CheckCircle2 className="w-4 h-4 text-purple-600" />
-        <h4 className="text-sm font-bold text-gray-900">Redraw plan ready</h4>
-      </div>
-
       <div className="p-4 space-y-4">
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-            Strategy
-          </p>
-          <div className="inline-flex items-center gap-2 rounded-full bg-white border border-purple-200 px-3 py-1.5 text-xs font-bold text-purple-700">
-            <Wand2 className="w-3.5 h-3.5" />
-            {strategyLabel(plan.strategy)}
-          </div>
-        </div>
-
-        {!!plan.diagnosis?.length && (
-          <div>
-            <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-              Diagnosis
-            </p>
-            <div className="space-y-2">
-              {plan.diagnosis.map((item, i) => (
-                <div
-                  key={`${item}-${i}`}
-                  className="rounded-xl bg-white border border-gray-200 px-3 py-2 text-xs text-gray-700 leading-relaxed"
-                >
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="rounded-xl bg-white border border-gray-200 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-              Featured
-            </p>
-            <div className="space-y-1.5">
-              {plan.featuredCharacterIds.length > 0 ? (
-                plan.featuredCharacterIds.map((id) => (
-                  <p key={id} className="text-xs font-medium text-gray-800">
-                    {findCharacterName(characters, id)}
-                  </p>
-                ))
-              ) : (
-                <p className="text-xs text-gray-400">None</p>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-xl bg-white border border-gray-200 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-              Background
-            </p>
-            <div className="space-y-1.5">
-              {plan.backgroundCharacterIds.length > 0 ? (
-                plan.backgroundCharacterIds.map((id) => (
-                  <p key={id} className="text-xs font-medium text-gray-800">
-                    {findCharacterName(characters, id)}
-                  </p>
-                ))
-              ) : (
-                <p className="text-xs text-gray-400">None</p>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-xl bg-white border border-gray-200 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-              Hidden
-            </p>
-            <div className="space-y-1.5">
-              {plan.hiddenCharacterIds.length > 0 ? (
-                plan.hiddenCharacterIds.map((id) => (
-                  <p key={id} className="text-xs font-medium text-gray-800">
-                    {findCharacterName(characters, id)}
-                  </p>
-                ))
-              ) : (
-                <p className="text-xs text-gray-400">None</p>
-              )}
-            </div>
-          </div>
-        </div>
-
         {plan.notesToUser && (
-          <div className="rounded-xl bg-white border border-gray-200 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-              Notes
-            </p>
-            <p className="text-xs text-gray-700 leading-relaxed">{plan.notesToUser}</p>
-          </div>
+          <p className="text-sm text-gray-700 leading-relaxed">
+            {plan.notesToUser}
+          </p>
         )}
-
-        <div className="rounded-xl bg-white border border-gray-200 p-3">
-          <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-            Gemini redraw prompt
-          </p>
-          <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">
-            {plan.recommendedPrompt}
-          </p>
-        </div>
 
         <button
           onClick={onUsePlan}
@@ -253,7 +291,7 @@ function PlanPreview({
           ) : (
             <Sparkles className="w-4 h-4" />
           )}
-          Use this redraw plan
+          {isUsingPlan ? "Redrawing…" : "Redraw this spread"}
         </button>
       </div>
     </div>
@@ -454,7 +492,7 @@ export default function RedrawStrategistModal({
   onUsePlan,
   isUsingPlan = false,
   onResetConversation,
-  title = "Talk through this redraw",
+  title = "Talk through this redraw!",
   isLoadingContext
 }: {
   isOpen: boolean;
@@ -486,12 +524,23 @@ isLoadingContext?: boolean;
 
   const hasMessages = messages.length > 0;
 
+  const STARTER_MESSAGES = [
+    (label: string) => `OK, I've got ${label} pulled up. What needs fixing?`,
+    (label: string) => `I'm looking at ${label} now. What's bugging you about it?`,
+    (label: string) => `Right, ${label} — what's not sitting right?`,
+    (label: string) => `Got ${label} in front of me. What do you want to change?`,
+    (label: string) => `${label} is loaded up. Talk me through what's off.`,
+    (label: string) => `I can see ${label}. What jumped out at you?`,
+    (label: string) => `Looking at ${label} — what caught your eye?`,
+    (label: string) => `${label}, got it. What's bothering you?`,
+  ];
+  
   const starterText = useMemo(() => {
     if (!context?.spreadLabel) {
-      return "I’m loading this spread and its references now…";
+      return "Just pulling up this spread…";
     }
-  
-    return `I’ve reviewed ${context.spreadLabel}. Tell me what feels off and I’ll turn it into a better redraw plan for Gemini.`;
+    const idx = Math.floor(Math.random() * STARTER_MESSAGES.length);
+    return STARTER_MESSAGES[idx](context.spreadLabel);
   }, [context?.spreadLabel]);
 
   async function handleSend() {

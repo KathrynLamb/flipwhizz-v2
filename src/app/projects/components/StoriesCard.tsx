@@ -7,27 +7,39 @@ import { useEffect, useState } from "react";
 const PINK = "#D94590";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: any; href: (id: string) => string; color: string }> = {
-  draft:            { label: "Draft",              icon: BookOpen,    href: id => `/stories/${id}/extract`,  color: "#F5A862" },
-  extracting:       { label: "Finding characters", icon: Sparkles,    href: id => `/stories/${id}/extract`,  color: "#E88BAE" },
-  world_ready:      { label: "Characters",         icon: Users2,      href: id => `/stories/${id}/extract`,  color: "#A78BDA" },
-  style_ready:      { label: "Style",              icon: Palette,     href: id => `/stories/${id}/design`,   color: "#6DBCE0" },
-  awaiting_payment: { label: "Unlock art",         icon: Lock,        href: id => `/stories/${id}/checkout`, color: "#F28B7B" },
-  generating:       { label: "Illustrating",       icon: Paintbrush,  href: id => `/stories/${id}/studio`,   color: "#9B7DC9" },
-  publishing:       { label: "Printing",           icon: Loader2,     href: () => "#",                       color: "#7DD4A8" },
-  completed:        { label: "Complete",           icon: PackageCheck, href: id => `/orders/${id}`,           color: "#7DD4A8" },
+  planning:         { label: "Planning",           icon: BookOpen,     href: id => `/stories/${id}/chat`,     color: "#F5A862" },
+  draft:            { label: "Draft",              icon: BookOpen,     href: id => `/stories/${id}/extract`,  color: "#F5A862" },
+  extracting:       { label: "Finding characters", icon: Sparkles,     href: id => `/stories/${id}/extract`,  color: "#E88BAE" },
+  world_ready:      { label: "Characters",         icon: Users2,       href: id => `/stories/${id}/extract`,  color: "#A78BDA" },
+  style_ready:      { label: "Style",              icon: Palette,      href: id => `/stories/${id}/design`,   color: "#6DBCE0" },
+  awaiting_payment: { label: "Unlock art",         icon: Lock,         href: id => `/stories/${id}/checkout`, color: "#F28B7B" },
+  generating:       { label: "Illustrating",       icon: Paintbrush,   href: id => `/stories/${id}/studio`,   color: "#9B7DC9" },
+  covers_complete:  { label: "Ready",              icon: PackageCheck,  href: id => `/stories/${id}/studio`,   color: "#7DD4A8" },
+  publishing:       { label: "Printing",           icon: Loader2,      href: () => "#",                       color: "#7DD4A8" },
+  completed:        { label: "Complete",           icon: PackageCheck,  href: id => `/stories/${id}/book`,     color: "#7DD4A8" },
 };
 
 export default function StoriesCard({ story }: { story: any }) {
-  const config = STATUS_CONFIG[story.status] ?? STATUS_CONFIG.draft;
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+// Determine effective status — paid books with PDF are complete
+const effectiveStatus =
+  story.paymentStatus === "paid" && story.pdfUrl
+    ? "completed"
+    : story.status;
+
+
+
+const config = STATUS_CONFIG[effectiveStatus] ?? STATUS_CONFIG.draft;
+  
+const [mounted, setMounted] = useState(false);
+useEffect(() => setMounted(true), []);
 
   return (
     <li
       className="group relative rounded-2xl overflow-hidden transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl"
       style={{ background: "white", boxShadow: "0 2px 12px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.03)" }}
     >
-      <Link href={config.href(story.id)} className="block">
+      {/* <Link href={config.href(story.id)} className="block"> */}
+      <button onClick={() => console.log(effectiveStatus)}> 
         {/* Cover */}
         <div className="relative w-full overflow-hidden">
           {story.coverImageUrl || story.coverSpread ? (
@@ -64,7 +76,8 @@ export default function StoriesCard({ story }: { story: any }) {
             Open story <span className="text-white/60 text-xs ml-0.5">→</span>
           </div>
         </div>
-      </Link>
+      {/* </Link>*/}
+      </button>
     </li>
   );
 }

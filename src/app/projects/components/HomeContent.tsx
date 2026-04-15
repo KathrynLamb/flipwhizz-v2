@@ -71,13 +71,16 @@ interface HomeContentProps {
 // ============================================================================
 
 const STATUS: Record<string, { bg: string; text: string; label: string }> = {
-  planning:     { bg: "rgba(245,168,98,0.10)",  text: "#B87A3D", label: "Planning" },
-  paged:        { bg: "rgba(109,188,224,0.10)",  text: "#4A8FB0", label: "Story ready" },
-  extracting:   { bg: "rgba(167,139,218,0.10)",  text: "#7B5EA7", label: "Building world" },
-  pages_ready:  { bg: "rgba(109,188,224,0.10)",  text: "#4A8FB0", label: "Pages ready" },
-  ready:        { bg: "rgba(109,188,224,0.10)",  text: "#4A8FB0", label: "Ready" },
-  illustrating: { bg: "rgba(167,139,218,0.10)",  text: "#7B5EA7", label: "Illustrating" },
-  complete:     { bg: "rgba(125,212,168,0.10)",  text: "#2D6A4F", label: "Complete" },
+  planning:         { bg: "rgba(245,168,98,0.10)",  text: "#B87A3D", label: "Planning" },
+  draft:            { bg: "rgba(245,168,98,0.10)",  text: "#B87A3D", label: "Draft" },
+  paged:            { bg: "rgba(109,188,224,0.10)",  text: "#4A8FB0", label: "Story ready" },
+  extracting:       { bg: "rgba(167,139,218,0.10)",  text: "#7B5EA7", label: "Building world" },
+  pages_ready:      { bg: "rgba(109,188,224,0.10)",  text: "#4A8FB0", label: "Pages ready" },
+  ready:            { bg: "rgba(109,188,224,0.10)",  text: "#4A8FB0", label: "Ready" },
+  generating:       { bg: "rgba(167,139,218,0.10)",  text: "#7B5EA7", label: "Illustrating" },
+  illustrating:     { bg: "rgba(167,139,218,0.10)",  text: "#7B5EA7", label: "Illustrating" },
+  covers_complete:  { bg: "rgba(125,212,168,0.10)",  text: "#2D6A4F", label: "Ready to order" },
+  complete:         { bg: "rgba(125,212,168,0.10)",  text: "#2D6A4F", label: "Complete" },
 };
 
 // ============================================================================
@@ -385,7 +388,14 @@ function WorldSection({ world, readerName }: { world: WorldData; readerName: str
 // ============================================================================
 
 function BookCard({ story, showBookNumber = false }: { story: Story; showBookNumber?: boolean }) {
-  const status = STATUS[story.status] ?? STATUS.planning;
+
+
+  // With:
+  const effectiveStatus =
+    story.paymentStatus === "paid"
+      ? "complete"
+      : story.status;
+  const status = STATUS[effectiveStatus] ?? STATUS.planning;
   return (
     <Link href={`/stories/${story.id}`}
       className="block rounded-xl bg-white border border-gray-100 overflow-hidden 
@@ -429,7 +439,14 @@ function BookCard({ story, showBookNumber = false }: { story: Story; showBookNum
 // ============================================================================
 
 function MobileBookRow({ story }: { story: Story }) {
-  const status = STATUS[story.status] ?? STATUS.planning;
+
+
+  // With:
+  const effectiveStatus =
+    story.paymentStatus === "paid"
+      ? "complete"
+      : story.status;
+  const status = STATUS[effectiveStatus] ?? STATUS.planning;
   return (
     <Link href={`/stories/${story.id}`}
       className="flex items-center gap-3 rounded-xl bg-white border border-gray-100 

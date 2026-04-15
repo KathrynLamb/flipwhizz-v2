@@ -148,16 +148,32 @@ function extractJsonBlock(source: string): string | null {
 }
 
 function safeParsePlan(rawText: string, context: StrategistContext): Plan | null {
+  console.log("[strategist] 🔍 Attempting to parse plan from response...");
+  
   const tagged = extractTaggedBlock(rawText, "redraw_plan_json");
   const fenced = extractJsonBlock(rawText);
   const candidate = tagged ?? fenced;
 
-  if (!candidate) return null;
+  console.log("[strategist] 📋 Tagged block found:", !!tagged);
+  console.log("[strategist] 📋 Fenced block found:", !!fenced);
+  console.log("[strategist] 📋 Candidate length:", candidate?.length ?? 0);
+
+  if (!candidate) {
+    console.log("[strategist] ⚠️ No plan JSON found in response");
+    return null;
+  }
 
   try {
     const parsed = JSON.parse(candidate);
+    console.log("[strategist] ✅ JSON parsed successfully, strategy:", parsed.strategy);
+    
     const result = PlanSchema.safeParse(parsed);
-    if (!result.success) return null;
+    if (!result.success) {
+      console.log("[strategist] ❌ Zod validation failed:", JSON.stringify(result.error.flatten()));
+      return null;
+    }
+
+    console.log("[strategist] ✅ Zod validation passed");
 
     const characterIds = context.characters.map((c) => c.characterId);
 
@@ -240,6 +256,14 @@ function safeParsePlan(rawText: string, context: StrategistContext): Plan | null
       )
     );
 
+    console.log("[strategist] 📊 Plan character assignment:", {
+      featured: featured.length,
+      background: background.length,
+      hidden: hidden.length,
+      strategy: result.data.strategy,
+      executionMode: result.data.executionMode,
+    });
+
     return {
       ...result.data,
       featuredCharacterIds: featured,
@@ -255,7 +279,8 @@ function safeParsePlan(rawText: string, context: StrategistContext): Plan | null
       leftPageHiddenCharacterIds: leftHidden,
       rightPageHiddenCharacterIds: rightHidden,
     };
-  } catch {
+  } catch (err) {
+    console.log("[strategist] ❌ JSON parse error:", err);
     return null;
   }
 }
@@ -265,6 +290,9 @@ function buildFallbackPlan(
     latestUserMessage: string,
     assistantMessage: string
   ): Plan {
+    console.log("[strategist] ⚠️ Using FALLBACK plan (Claude didn't return valid JSON)");
+    console.log("[strategist] 📝 Latest user message:", latestUserMessage.slice(0, 100));
+    
     const ids = context.characters.map((c) => c.characterId);
     const featuredIds = ids.slice(0, Math.min(3, ids.length));
     const backgroundIds = ids.filter((id) => !featuredIds.includes(id));
@@ -277,6 +305,8 @@ function buildFallbackPlan(
       lower.includes("too many") ||
       lower.includes("crowded");
   
+    console.log("[strategist] 📊 Fallback decision — shouldSplit:", shouldSplit);
+
     if (shouldSplit) {
       const leftFeatured = ids.slice(0, Math.min(3, ids.length));
       const rightFeatured = ids.slice(
@@ -384,9 +414,18 @@ function buildFallbackPlan(
       "- Never invent story facts that are not in context.",
       "",
       "Output format:",
-      "Return plain text with exactly these two XML tags after your user-facing reply:",
-      "<assistant_reply>...</assistant_reply>",
+      "Return plain text with exactly these two XML tags:",
+      "<assistant_reply>Your conversational chat response here</assistant_reply>",
       "<redraw_plan_json>{...valid JSON only...}</redraw_plan_json>",
+      "",
+      "The <assistant_reply> is your conversational response in the chat (asking questions, acknowledging the issue).",
+      "The notesToUser inside the plan is a separate, standalone summary of what the redraw will do — written so the user feels confident hitting 'Redraw'.",
+      "<redraw_plan_json>{...valid JSON only...}</redraw_plan_json>",
+      "",
+      "Important: the notesToUser field is the ONLY thing the user will see from the plan.",
+      "Write it as a brief, friendly summary of what you'll fix — as if talking to a parent, not a developer.",
+      "Example: 'I'll make Sophia's face much clearer and push the other characters into the background so she really stands out. Everything else — the bedroom, the outfits, the nighttime lighting — stays the same.'",
+      "Keep it to 1-3 sentences. No jargon, no character IDs, no technical terms.",
       "",
       "The redraw_plan_json must match this shape exactly:",
       JSON.stringify(
@@ -490,10 +529,16 @@ async function buildAnthropicUserContent(
 ) {
   const content: Array<any> = [];
 
+  console.log("[strategist] 🖼️  Building Anthropic content blocks...");
+
   if (isHttpUrl(context.currentSpreadImageUrl)) {
     content.push(await makeImageContentBlock(context.currentSpreadImageUrl));
+    console.log("[strategist] 📸 Added spread image:", context.currentSpreadImageUrl.slice(0, 80));
+  } else {
+    console.log("[strategist] ⚠️ No spread image URL available");
   }
 
+  let charImageCount = 0;
   for (const character of context.characters.slice(0, 8)) {
     if (isHttpUrl(character.imageUrl)) {
       content.push({
@@ -503,9 +548,15 @@ async function buildAnthropicUserContent(
         }${character.outfitKey ? `, outfit: ${character.outfitKey}` : ""}`,
       });
       content.push(await makeImageContentBlock(character.imageUrl));
+      charImageCount++;
+      console.log(`[strategist] 👤 Added character image: ${character.name} (${character.imageUrl.slice(0, 60)}...)`);
+    } else {
+      console.log(`[strategist] ⚠️ Character "${character.name}" has no image URL: ${character.imageUrl}`);
     }
   }
+  console.log(`[strategist] 📊 Total character images added: ${charImageCount}/${context.characters.length}`);
 
+  let locImageCount = 0;
   for (const location of (context.locations ?? []).slice(0, 3)) {
     if (isHttpUrl(location.imageUrl)) {
       content.push({
@@ -513,8 +564,11 @@ async function buildAnthropicUserContent(
         text: `Location reference: ${location.name}`,
       });
       content.push(await makeImageContentBlock(location.imageUrl));
+      locImageCount++;
+      console.log(`[strategist] 📍 Added location image: ${location.name}`);
     }
   }
+  console.log(`[strategist] 📊 Total location images added: ${locImageCount}/${(context.locations ?? []).length}`);
 
   content.push({
     type: "text",
@@ -529,6 +583,9 @@ async function buildAnthropicUserContent(
     ].join("\n\n"),
   });
 
+  console.log(`[strategist] 📦 Total content blocks: ${content.length}`);
+  console.log(`[strategist] 📝 Messages in conversation: ${messages.length}`);
+
   return content;
 }
 
@@ -541,12 +598,26 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
+  const startTime = Date.now();
+
+  console.log("\n" + "=".repeat(70));
+  console.log(`[strategist] 🚀 POST /api/stories/${storyId}/redraw-strategist`);
+  console.log("=".repeat(70));
 
   try {
     const body = await req.json();
+    
+    console.log("[strategist] 📥 Request body keys:", Object.keys(body));
+    console.log("[strategist] 📥 spreadId:", body.spreadId);
+    console.log("[strategist] 📥 Message count:", body.messages?.length);
+    console.log("[strategist] 📥 Context spread:", body.context?.spreadLabel);
+    console.log("[strategist] 📥 Context characters:", body.context?.characters?.length);
+    console.log("[strategist] 📥 Context locations:", body.context?.locations?.length);
+    
     const parsed = RequestSchema.safeParse(body);
 
     if (!parsed.success) {
+      console.log("[strategist] ❌ Request validation failed:", JSON.stringify(parsed.error.flatten()));
       return NextResponse.json(
         {
           error: "Invalid request body",
@@ -558,7 +629,28 @@ export async function POST(
 
     const { context, messages } = parsed.data;
 
+    console.log("[strategist] ✅ Request validated");
+    console.log("[strategist] 📋 Context summary:", {
+      storyTitle: context.storyTitle,
+      spreadLabel: context.spreadLabel,
+      hasSpreadImage: !!context.currentSpreadImageUrl,
+      hasSceneSummary: !!context.sceneSummary,
+      hasLeftText: !!context.leftPageText,
+      hasRightText: !!context.rightPageText,
+      hasStyleGuide: !!context.styleGuideSummary,
+      characterCount: context.characters.length,
+      characterNames: context.characters.map(c => c.name).join(", "),
+      charactersWithImages: context.characters.filter(c => isHttpUrl(c.imageUrl)).length,
+      locationCount: (context.locations ?? []).length,
+    });
+    
+    console.log("[strategist] 💬 Conversation:", messages.map(m => ({
+      role: m.role,
+      contentPreview: m.content.slice(0, 80) + (m.content.length > 80 ? "..." : ""),
+    })));
+
     if (!process.env.ANTHROPIC_API_KEY) {
+      console.log("[strategist] ❌ Missing ANTHROPIC_API_KEY");
       return NextResponse.json(
         { error: "Missing ANTHROPIC_API_KEY" },
         { status: 500 }
@@ -567,6 +659,8 @@ export async function POST(
 
     const anthropicModel =
       process.env.ANTHROPIC_STRATEGIST_MODEL || "claude-sonnet-4-6";
+    
+    console.log("[strategist] 🤖 Using model:", anthropicModel);
 
     const anthropicUserContent = await buildAnthropicUserContent(context, messages);
 
@@ -574,8 +668,6 @@ export async function POST(
       model: anthropicModel,
       max_tokens: 1800,
       temperature: 0.3,
-      // Anthropic automatic caching is a nice fit here because the system prompt,
-      // loaded spread context, and most of the conversation prefix repeat across turns.
       cache_control: { type: "ephemeral" },
       system: buildSystemPrompt(),
       messages: [
@@ -585,6 +677,14 @@ export async function POST(
         },
       ],
     };
+
+    console.log("[strategist] 📤 Sending to Anthropic...");
+    console.log("[strategist] 📤 Model:", anthropicModel);
+    console.log("[strategist] 📤 Max tokens:", 1800);
+    console.log("[strategist] 📤 Content blocks:", anthropicUserContent.length);
+    console.log("[strategist] 📤 System prompt length:", buildSystemPrompt().length, "chars");
+
+    const anthropicStart = Date.now();
 
     const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -596,9 +696,13 @@ export async function POST(
       body: JSON.stringify(anthropicRequestBody),
     });
 
+    const anthropicLatency = Date.now() - anthropicStart;
+    console.log(`[strategist] ⏱️  Anthropic response: ${anthropicRes.status} in ${anthropicLatency}ms`);
+
     const anthropicData = await anthropicRes.json().catch(() => null);
 
     if (!anthropicRes.ok) {
+      console.log("[strategist] ❌ Anthropic error:", JSON.stringify(anthropicData).slice(0, 500));
       return NextResponse.json(
         {
           error: "Anthropic strategist request failed",
@@ -609,9 +713,26 @@ export async function POST(
       );
     }
 
+    // Log usage
+    if (anthropicData?.usage) {
+      console.log("[strategist] 📊 Anthropic usage:", {
+        inputTokens: anthropicData.usage.input_tokens,
+        outputTokens: anthropicData.usage.output_tokens,
+        cacheCreationTokens: anthropicData.usage.cache_creation_input_tokens,
+        cacheReadTokens: anthropicData.usage.cache_read_input_tokens,
+      });
+    }
+
     const rawText = extractTextFromAnthropicResponse(anthropicData);
 
+    console.log("[strategist] 📝 Raw response length:", rawText.length, "chars");
+    console.log("[strategist] 📝 Raw response preview:", rawText.slice(0, 200));
+    console.log("[strategist] 📝 Has <assistant_reply> tag:", rawText.includes("<assistant_reply>"));
+    console.log("[strategist] 📝 Has <redraw_plan_json> tag:", rawText.includes("<redraw_plan_json>"));
+
     if (!rawText) {
+      console.log("[strategist] ❌ No text in Anthropic response");
+      console.log("[strategist] 📋 Full response data:", JSON.stringify(anthropicData).slice(0, 500));
       return NextResponse.json(
         { error: "Anthropic returned no text output" },
         { status: 502 }
@@ -621,12 +742,31 @@ export async function POST(
     const taggedAssistantReply =
       extractTaggedBlock(rawText, "assistant_reply") ?? rawText.trim();
 
+    console.log("[strategist] 💬 Assistant reply preview:", taggedAssistantReply.slice(0, 150));
+
     const latestUserMessage =
       [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
 
     const plan =
       safeParsePlan(rawText, context) ??
       buildFallbackPlan(context, latestUserMessage, taggedAssistantReply);
+
+    console.log("[strategist] 📊 Final plan:", {
+      strategy: plan.strategy,
+      executionMode: plan.executionMode,
+      keepUnifiedSpread: plan.keepUnifiedSpread,
+      splitIntoTwoPages: plan.splitIntoTwoPages,
+      featuredCount: plan.featuredCharacterIds.length,
+      backgroundCount: plan.backgroundCharacterIds.length,
+      hiddenCount: plan.hiddenCharacterIds.length,
+      hasLeftPrompt: !!plan.leftPagePrompt,
+      hasRightPrompt: !!plan.rightPagePrompt,
+      promptPreview: plan.recommendedPrompt.slice(0, 100),
+    });
+
+    const totalLatency = Date.now() - startTime;
+    console.log(`[strategist] ✅ Complete in ${totalLatency}ms (Anthropic: ${anthropicLatency}ms)`);
+    console.log("=".repeat(70) + "\n");
 
     return NextResponse.json({
       ok: true,
@@ -640,6 +780,10 @@ export async function POST(
       model: anthropicModel,
     });
   } catch (error: any) {
+    const totalLatency = Date.now() - startTime;
+    console.log(`[strategist] ❌ EXCEPTION after ${totalLatency}ms:`, error?.message || error);
+    console.log("[strategist] 📋 Stack:", error?.stack?.slice(0, 300));
+    
     return NextResponse.json(
       {
         error: error?.message || "Unexpected strategist error",

@@ -994,6 +994,8 @@ export default function DesktopStudio({
     setStrategistMessages(payload.messages);
     setIsSendingStrategistMessage(true);
 
+    console.log("STrategist messages", payload  )
+
     try {
       const res = await fetch(`/api/stories/${story.id}/spreads/strategist`, {
         method: "POST",
@@ -1004,6 +1006,8 @@ export default function DesktopStudio({
           messages: payload.messages,
         }),
       });
+
+      console.log("res", res)
 
       const data = await res.json().catch(() => ({}));
       console.log("DATA", data)
