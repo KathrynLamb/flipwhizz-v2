@@ -7,7 +7,7 @@ import { projects } from "@/db/schema";
 export default async function NewProjectPage({
   searchParams,
 }: {
-  searchParams: Promise<{ worldId?: string; bookNumber?: string }>;
+  searchParams: Promise<{ worldId?: string; bookNumber?: string; readerId?: string }>;
 }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) redirect("/auth/signin");
@@ -23,10 +23,11 @@ export default async function NewProjectPage({
     })
     .returning();
 
-  // Build redirect URL — carry worldId and bookNumber through to chat
+  // Build redirect URL — carry context through to chat
   const chatParams = new URLSearchParams({ project: project.id });
   if (params.worldId) chatParams.set("worldId", params.worldId);
   if (params.bookNumber) chatParams.set("bookNumber", params.bookNumber);
+  if (params.readerId) chatParams.set("readerId", params.readerId);
 
   redirect(`/chat?${chatParams.toString()}`);
 }

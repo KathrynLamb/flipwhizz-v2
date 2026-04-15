@@ -308,13 +308,13 @@ function ReaderSection({ reader }: { reader: ReaderData }) {
               </div>
             </div>
           )}
-          <Link href="/projects/new"
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-full 
-                       border border-dashed border-[#D94590]/20 text-[#D94590]/60 
-                       hover:text-[#D94590] hover:bg-[#D94590]/5 hover:border-[#D94590]/30 transition-all">
-            <Plus className="w-3 h-3" />
-            New story for {reader.name || "this reader"}
-          </Link>
+            <Link href={`/projects/new?readerId=${reader.id}`}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-full 
+                        border border-dashed border-[#D94590]/20 text-[#D94590]/60 
+                        hover:text-[#D94590] hover:bg-[#D94590]/5 hover:border-[#D94590]/30 transition-all">
+              <Plus className="w-3 h-3" />
+              New story for {reader.name || "this reader"}
+            </Link>
         </div>
       )}
     </div>
@@ -389,13 +389,12 @@ function WorldSection({ world, readerName }: { world: WorldData; readerName: str
 
 function BookCard({ story, showBookNumber = false }: { story: Story; showBookNumber?: boolean }) {
 
-
-  // With:
   const effectiveStatus =
     story.paymentStatus === "paid"
       ? "complete"
       : story.status;
   const status = STATUS[effectiveStatus] ?? STATUS.planning;
+
   return (
     <Link href={`/stories/${story.id}`}
       className="block rounded-xl bg-white border border-gray-100 overflow-hidden 
@@ -440,8 +439,6 @@ function BookCard({ story, showBookNumber = false }: { story: Story; showBookNum
 
 function MobileBookRow({ story }: { story: Story }) {
 
-
-  // With:
   const effectiveStatus =
     story.paymentStatus === "paid"
       ? "complete"

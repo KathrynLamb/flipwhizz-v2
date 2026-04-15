@@ -40,6 +40,26 @@ export default function ChatPage() {
   const [storyId, setStoryId] = useState<string | null>(null);
   const [worldContext, setWorldContext] = useState<WorldContext | null>(null);
 
+  const readerIdParam = useMemo(() => searchParams.get("readerId"), [searchParams]);
+const [readerContext, setReaderContext] = useState<{ name: string; age?: string; interests?: string[] } | null>(null);
+
+useEffect(() => {
+  async function loadReader() {
+    if (!readerIdParam) return;
+    try {
+      const res = await fetch(`/api/readers/${readerIdParam}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setReaderContext({
+        name: data.name,
+        age: data.age,
+        interests: data.interests,
+      });
+    } catch {}
+  }
+  loadReader();
+}, [readerIdParam]);
+
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -200,6 +220,7 @@ export default function ChatPage() {
           history: nextHistory,
           projectId,
           ...(worldIdParam && { worldId: worldIdParam }),
+          ...(readerIdParam && { readerId: readerIdParam }),
         }),
       });
 

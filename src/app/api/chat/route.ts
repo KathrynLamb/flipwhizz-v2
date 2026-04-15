@@ -1,5 +1,3 @@
-// src/app/api/chat/route.ts
-
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
@@ -247,7 +245,8 @@ const START_WRITING_TOOL: Anthropic.Tool = {
 
 function buildChatSystemPrompt(
   project: any,
-  worldCtx: WorldContextForChat | null
+  worldCtx: WorldContextForChat | null,
+  standaloneReader: ReaderContext | null = null
 ) {
   const r = worldCtx?.reader;
 
@@ -289,7 +288,23 @@ IMPORTANT: You already know this child and this world. Don't ask the parent to r
 - Acknowledge the cast: "We've got [characters] ready to go. Everyone returning, or shall we introduce someone new?"
 - Build on themes: "The ${worldCtx.themes.slice(0, 2).join(" and ")} themes worked beautifully. Continue those or try something different?"
 `
-    : readerSection;
+: standaloneReader?.name
+? `
+THE READER (you already know this child):
+Name: ${standaloneReader.name}
+${standaloneReader.age ? `Age: ${standaloneReader.age}` : ""}
+${standaloneReader.pronouns ? `Pronouns: ${standaloneReader.pronouns}` : ""}
+${standaloneReader.personalityNotes ? `Personality: ${standaloneReader.personalityNotes}` : ""}
+${standaloneReader.interests.length > 0 ? `Loves: ${standaloneReader.interests.join(", ")}` : ""}
+${standaloneReader.fears.length > 0 ? `Working through: ${standaloneReader.fears.join(", ")} — handle gently.` : ""}
+${standaloneReader.readingLevel ? `Reading level: ${standaloneReader.readingLevel}` : ""}
+${standaloneReader.activeInsights.length > 0 ? `
+RECENT CONTEXT:
+${standaloneReader.activeInsights.map((i) => `- [${i.type}] ${i.content}`).join("\n")}` : ""}
+${standaloneReader.birthdayHint ? `\n${standaloneReader.birthdayHint}` : ""}
+
+IMPORTANT: You already know ${standaloneReader.name}. Don't ask the parent their child's name or age — you have it. Jump straight into what story they want to create.`
+: readerSection;
 
   return `You are a children's book author helping a parent create a story for their child. You are warm, genuinely interested, and collaborative — like a friend who's excited to help make something special.
 ${worldSection}
@@ -340,7 +355,7 @@ TONE: Warm, collaborative, genuinely interested. You're building something toget
 
 export async function POST(req: Request) {
   try {
-    const { message, history = [], projectId, worldId } = await req.json();
+    const { message, history = [], projectId, worldId, readerId } = await req.json();
 
     if (!message || !projectId) {
       return NextResponse.json({ reply: "(invalid request)" });
@@ -357,6 +372,52 @@ export async function POST(req: Request) {
     }
 
     const worldCtx = worldId ? await loadWorldContextForChat(worldId) : null;
+
+    // Load reader directly if no world context but readerId is provided
+    let standaloneReaderCtx: ReaderContext | null = null;
+    if (!worldCtx && readerId) {
+      try {
+        const reader = await db.query.readers.findFirst({
+          where: eq(readers.id, readerId),
+        });
+    
+        if (reader) {
+          const age = computeAge(reader.dateOfBirthDate, reader.age);
+          const birthdayHint = getBirthdayContext(reader.dateOfBirthDate, reader.name, age);
+    
+          const insights = await db
+            .select({ insightType: readerInsights.insightType, content: readerInsights.content })
+            .from(readerInsights)
+            .where(
+              and(
+                eq(readerInsights.readerId, readerId),
+                eq(readerInsights.isActive, true)
+              )
+            )
+            .orderBy(desc(readerInsights.createdAt))
+            .limit(10);
+    
+          standaloneReaderCtx = {
+            name: reader.name ?? null,
+            age,
+            gender: reader.gender ?? null,
+            pronouns: reader.pronouns ?? null,
+            personalityNotes: reader.personalityNotes ?? null,
+            interests: (reader.interests as string[]) ?? [],
+            fears: (reader.fears as string[]) ?? [],
+            readingLevel: reader.readingLevel ?? null,
+            birthdayHint,
+            activeInsights: insights.map((i) => ({ type: i.insightType, content: i.content })),
+          };
+    
+          console.log(`🟢 Chat: standalone reader "${reader.name}", age ${age}, insights: ${insights.length}`);
+        }
+      } catch (err) {
+        console.warn("⚠️ Failed to load standalone reader:", err);
+      }
+    }
+ 
+    
 
     if (worldId && worldCtx) {
       console.log(
@@ -414,7 +475,7 @@ export async function POST(req: Request) {
 
     const completion = await client.messages.create({
       model: "claude-sonnet-4-20250514",
-      system: buildChatSystemPrompt(project, worldCtx),
+      system: buildChatSystemPrompt(project, worldCtx, standaloneReaderCtx),
       max_tokens: 1500,
       tools: [START_WRITING_TOOL],
       messages: claudeMessages,
