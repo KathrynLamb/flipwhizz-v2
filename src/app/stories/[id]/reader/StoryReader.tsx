@@ -56,6 +56,12 @@ export default function StoryReader({ story, pages }: Props) {
   const page = pages[currentPage];
   const isCover = page?.type === "cover";
 
+  // Ref for currentPage so audio onended always has latest value
+  const currentPageRef = useRef(currentPage);
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
+
   // ─── Navigation ───
   const goNext = useCallback(() => {
     if (currentPage < totalPages - 1) {
@@ -149,8 +155,9 @@ export default function StoryReader({ story, pages }: Props) {
     audio.onended = () => {
       setAudioState("idle");
       // Auto-advance to next page when narration finishes
-      if (currentPage < totalPages - 1) {
-        setTimeout(goNext, 800);
+      const cp = currentPageRef.current;
+      if (cp < totalPages - 1) {
+        setTimeout(() => setCurrentPage(cp + 1), 800);
       }
     };
     audio.onerror = () => setAudioState("error");
