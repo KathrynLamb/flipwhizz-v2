@@ -262,8 +262,8 @@ export default function ChatPage() {
           </button>
 
           {/* Center — world context or sync status */}
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
-            {isSyncing ? (
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none max-w-[50vw] overflow-hidden">
+                        {isSyncing ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
                 <span className="text-sm font-semibold text-gray-600">Syncing...</span>
@@ -385,7 +385,7 @@ export default function ChatPage() {
                 )}
 
                 {/* Prompt suggestions — context-aware */}
-                <div className="flex flex-wrap gap-2 justify-center pt-4">
+                <div className="flex flex-wrap gap-2 justify-center pt-4 overflow-hidden">
                   {isWorldBook
                     ? [
                         {
