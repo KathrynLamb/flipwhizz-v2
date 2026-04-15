@@ -87,6 +87,21 @@ function StepDots({
   );
 }
 
+function StepProgress({ current, total }: { current: number; total: number }) {
+  const pct = ((current + 1) / total) * 100;
+  return (
+    <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden mb-10">
+      <div
+        className="h-full rounded-full transition-all duration-700 ease-out"
+        style={{
+          width: `${pct}%`,
+          background: "linear-gradient(90deg, #10b981, #059669)",
+        }}
+      />
+    </div>
+  );
+}
+
 // ─── Animated page transition wrapper ───
 function StepWrapper({
   children,
@@ -544,36 +559,43 @@ export default function ReviewPage() {
             "linear-gradient(180deg, #f0fdf4 0%, #fafafa 30%, #fafafa 100%)",
         }}
       >
-        {/* ─── Header ─── */}
-        <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-200/60 px-6 py-4">
-          <div className="max-w-[640px] mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white text-[11px] font-bold">
-                FW
-              </div>
-              <div>
-                <p className="text-[13px] font-semibold text-gray-900">
-                  Your Book&apos;s Final Chapter
-                </p>
-                <p className="text-[11px] text-gray-400">
-                  Tell us about &quot;{storyTitle.length > 35 ? storyTitle.slice(0, 35) + "…" : storyTitle}&quot;
-                </p>
-              </div>
-            </div>
-            {step < TOTAL_STEPS - 1 && (
-              <button
-                onClick={() => window.history.back()}
-                className="text-[13px] text-gray-400 hover:text-gray-600 transition"
-              >
-                Skip
-              </button>
-            )}
-          </div>
-        </div>
+
+  {/* ─── Header ─── */}
+<div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-6 py-4">
+  <div className="max-w-[640px] mx-auto flex items-center justify-between">
+    <div className="flex items-center gap-4">
+      <a
+        href={`/stories/${storyId}/book`}
+        className="flex items-center justify-center w-9 h-9 rounded-[10px] border border-gray-200 text-gray-500 hover:bg-gray-50 transition"
+      >
+        <span className="text-[16px]">←</span>
+      </a>
+      <div>
+        <p className="text-[15px] font-semibold text-gray-900">
+          Share Your Thoughts
+        </p>
+        <p className="text-[11px] text-gray-400 max-w-[250px] truncate">
+          {storyTitle}
+        </p>
+      </div>
+    </div>
+    {step < TOTAL_STEPS - 1 && (
+      <a
+        href={`/stories/${storyId}/book`}
+        className="text-[13px] text-gray-400 hover:text-gray-600 transition"
+      >
+        Skip
+      </a>
+    )}
+  </div>
+</div>
+
+
 
         {/* ─── Content ─── */}
         <div className="max-w-[640px] mx-auto px-6 pt-10 pb-32">
-          <StepDots current={step} total={TOTAL_STEPS} />
+          {/* <StepDots current={step} total={TOTAL_STEPS} /> */}
+          <StepProgress current={step} total={TOTAL_STEPS} />
 
           {/* ═══ STEP 1: RATE ═══ */}
           {step === 0 && (
@@ -879,20 +901,18 @@ export default function ReviewPage() {
 
                 {/* CTA */}
                 <div className="mt-10 space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-700">
-                  <button
-                    onClick={() =>
-                      console.log("Navigate to /stories/new")
-                    }
-                    className="w-full py-4 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold text-[15px] hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
-                  >
-                    Start Your Next Adventure
-                  </button>
-                  <button
-                    onClick={() => window.history.back()}
-                    className="w-full py-3 text-[14px] text-gray-400 hover:text-gray-600 transition"
-                  >
-                    Back to my book
-                  </button>
+                  <a
+                  href="/stories/new"
+                  className="block w-full py-4 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold text-[15px] text-center hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
+                >
+                  Start Your Next Adventure
+                </a>
+                <a
+                  href={`/stories/${storyId}/book`}
+                  className="block w-full py-3 text-[14px] text-gray-400 hover:text-gray-600 transition text-center"
+                >
+                  Back to my book
+                </a>
                 </div>
               </div>
             </StepWrapper>
@@ -903,16 +923,21 @@ export default function ReviewPage() {
         {step < TOTAL_STEPS - 1 && (
           <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-200/60 px-6 py-4 z-10">
             <div className="max-w-[640px] mx-auto flex items-center justify-between">
-              {step > 0 ? (
-                <button
-                  onClick={() => setStep((s) => Math.max(s - 1, 0))}
-                  className="text-[14px] font-medium text-gray-500 hover:text-gray-700 transition"
-                >
-                  ← Back
-                </button>
-              ) : (
-                <div />
-              )}
+            {step > 0 ? (
+                    <button
+                      onClick={() => setStep((s) => Math.max(s - 1, 0))}
+                      className="text-[14px] font-medium text-gray-500 hover:text-gray-700 transition"
+                    >
+                      ← Back
+                    </button>
+                  ) : (
+                    <a
+                      href={`/stories/${storyId}/book`}
+                      className="text-[14px] font-medium text-gray-400 hover:text-gray-600 transition"
+                    >
+                      ← Book
+                    </a>
+                  )}
 
               <button
                 onClick={handleNext}

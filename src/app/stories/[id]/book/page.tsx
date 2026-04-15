@@ -7,11 +7,14 @@ import { eq, desc } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 
 // ─── Gelato status sync on page load ───
-async function syncGelatoStatus(order: {
-  id: string;
-  gelatoOrderId: string | null;
-  gelatoStatus: string | null;
-}) {
+async function syncGelatoStatus(
+  order: {
+    id: string;
+    gelatoOrderId: string | null;
+    gelatoStatus: string | null;
+  },
+  signal?: AbortSignal
+) {
   if (!order.gelatoOrderId) return null;
 
   const apiKey = process.env.GELATO_API_KEY;
@@ -26,7 +29,8 @@ async function syncGelatoStatus(order: {
           "Content-Type": "application/json",
           "X-API-KEY": apiKey,
         },
-        next: { revalidate: 0 }, // always fresh
+        signal,
+        next: { revalidate: 0 },
       }
     );
 
@@ -38,9 +42,21 @@ async function syncGelatoStatus(order: {
     }
 
     const data = await res.json();
+    console.log("[book/page] 📦 Gelato API response:", {
+      orderId: order.gelatoOrderId,
+      fulfillmentStatus: data.fulfillmentStatus,
+      orderStatus: data.orderStatus,
+      items: data.items?.length,
+      firstItemStatus: data.items?.[0]?.fulfillmentStatus,
+      trackingCode: data.items?.[0]?.fulfillments?.[0]?.trackingCode,
+    });
     const gelatoFulfillmentStatus: string = data.fulfillmentStatus;
 
-    // Map Gelato statuses to our internal ones
+    console.log("[book/page] 📦 Gelato full shipment data:", JSON.stringify({
+    // console.log("[book/page] 📦 Gelato full shipment data:", JSON.stringify({
+      shipments: data
+    }, null, 2));
+
     const statusMap: Record<string, string> = {
       created: "confirmed",
       passed: "confirmed",
@@ -48,6 +64,7 @@ async function syncGelatoStatus(order: {
       printed: "printing",
       packed: "printing",
       shipped: "shipped",
+      in_transit: "shipped",  // ← add this
       delivered: "delivered",
       canceled: "canceled",
       failed: "failed",
@@ -55,45 +72,52 @@ async function syncGelatoStatus(order: {
 
     const mappedStatus =
       statusMap[gelatoFulfillmentStatus] || gelatoFulfillmentStatus;
-
-    // Extract tracking info if available
-    let trackingCode: string | null = null;
-    let trackingUrl: string | null = null;
-
-    if (data.items?.length) {
-      const fulfillments = data.items[0]?.fulfillments;
-      if (fulfillments?.length) {
-        trackingCode = fulfillments[0].trackingCode || null;
-        trackingUrl = fulfillments[0].trackingUrl || null;
+      let trackingCode: string | null = null;
+      let trackingUrl: string | null = null;
+      let minDeliveryDate: string | null = null;
+      let maxDeliveryDate: string | null = null;
+      
+      // Gelato v4: tracking is under data.shipment.packages[]
+      const packages = data.shipment?.packages;
+      if (packages?.length) {
+        trackingCode = packages[0].trackingCode || null;
+        trackingUrl = packages[0].trackingUrl || null;
       }
-    }
+      
+      // Delivery dates are on the shipment object
+      minDeliveryDate = data.shipment?.minDeliveryDate || null;
+      maxDeliveryDate = data.shipment?.maxDeliveryDate || null;
 
-    // Only update DB if status has actually changed
     if (mappedStatus !== order.gelatoStatus) {
       console.log(
         `[book/page] Gelato status drift: DB=${order.gelatoStatus} → API=${mappedStatus}`
       );
 
       await db
-        .update(orders)
-        .set({
-          gelatoStatus: mappedStatus,
-          ...(trackingCode && { gelatoTrackingCode: trackingCode }),
-          ...(trackingUrl && { gelatoTrackingUrl: trackingUrl }),
-          gelatoUpdatedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(orders.id, order.id));
+      .update(orders)
+      .set({
+        gelatoStatus: mappedStatus,
+        ...(trackingCode && { gelatoTrackingCode: trackingCode }),
+        ...(trackingUrl && { gelatoTrackingUrl: trackingUrl }),
+        ...(minDeliveryDate && { gelatoMinDeliveryDate: minDeliveryDate }),
+        ...(maxDeliveryDate && { gelatoMaxDeliveryDate: maxDeliveryDate }),
+        gelatoUpdatedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, order.id));
     }
 
     return {
       status: mappedStatus,
       trackingCode,
       trackingUrl,
-      minDeliveryDate: data.items?.[0]?.fulfillments?.[0]?.estimatedShipDate || null,
+      minDeliveryDate,
+      maxDeliveryDate,
     };
-  } catch (err) {
-    console.error("[book/page] Gelato sync error:", err);
+  } catch (err: any) {
+    if (err?.name !== "AbortError") {
+      console.error("[book/page] Gelato sync error:", err);
+    }
     return null;
   }
 }
@@ -132,14 +156,37 @@ export default async function BookPage({
     orderBy: desc(orders.createdAt),
   });
 
-  // 4. Sync Gelato status on page load (belt-and-braces)
+  // After the latestOrder query
+console.log("[book/page] 📋 Selected order:", {
+  id: latestOrder?.id,
+  gelatoOrderId: latestOrder?.gelatoOrderId,
+  gelatoStatus: latestOrder?.gelatoStatus,
+  createdAt: latestOrder?.createdAt,
+});
+
+  // 4. Sync Gelato status — 3s timeout, skip cancelled/failed orders
   let liveStatus = null;
-  if (latestOrder) {
-    liveStatus = await syncGelatoStatus({
-      id: latestOrder.id,
-      gelatoOrderId: latestOrder.gelatoOrderId,
-      gelatoStatus: latestOrder.gelatoStatus,
-    });
+  if (
+    latestOrder?.gelatoOrderId &&
+    !["canceled", "failed"].includes(latestOrder.gelatoStatus ?? "")
+  ) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+
+      liveStatus = await syncGelatoStatus(
+        {
+          id: latestOrder.id,
+          gelatoOrderId: latestOrder.gelatoOrderId,
+          gelatoStatus: latestOrder.gelatoStatus,
+        },
+        controller.signal
+      );
+
+      clearTimeout(timeout);
+    } catch {
+      console.log("[book/page] Gelato sync skipped (timeout or error)");
+    }
   }
 
   // 5. Build the order data for the client, preferring live data
@@ -147,13 +194,17 @@ export default async function BookPage({
     ? {
         id: latestOrder.id,
         gelatoOrderId: latestOrder.gelatoOrderId,
-        status: liveStatus?.status || latestOrder.gelatoStatus || "submitted",
+        status:
+          liveStatus?.status || latestOrder.gelatoStatus || "submitted",
         trackingCode:
-          liveStatus?.trackingCode || latestOrder.gelatoTrackingCode || null,
+          liveStatus?.trackingCode ||
+          latestOrder.gelatoTrackingCode ||
+          null,
         trackingUrl:
-          liveStatus?.trackingUrl || latestOrder.gelatoTrackingUrl || null,
+          liveStatus?.trackingUrl ||
+          latestOrder.gelatoTrackingUrl ||
+          null,
         createdAt: latestOrder.createdAt?.toISOString() ?? null,
-        // Order details for the details panel
         amount: latestOrder.amount,
         currency: latestOrder.currency,
         shippingAddress: latestOrder.shippingAddress as {

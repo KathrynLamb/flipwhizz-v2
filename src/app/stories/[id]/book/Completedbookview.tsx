@@ -68,13 +68,14 @@ interface Props {
 // ─── Status badge mapping ───
 function getOrderBadge(status: string) {
   const map: Record<string, { label: string; color: string; bg: string }> = {
-    submitted: { label: "Order Placed", color: "#f59e0b", bg: "#fef3c7" },
-    confirmed: { label: "Confirmed", color: "#f59e0b", bg: "#fef3c7" },
-    printing: { label: "Being Printed", color: "#3b82f6", bg: "#dbeafe" },
-    shipped: { label: "Shipped", color: "#8b5cf6", bg: "#ede9fe" },
-    delivered: { label: "Delivered", color: "#10b981", bg: "#d1fae5" },
-    canceled: { label: "Canceled", color: "#ef4444", bg: "#fee2e2" },
-    failed: { label: "Failed", color: "#ef4444", bg: "#fee2e2" },
+    submitted:  { label: "Order Placed",  color: "#f59e0b", bg: "#fef3c7" },
+    confirmed:  { label: "Confirmed",     color: "#f59e0b", bg: "#fef3c7" },
+    printing:   { label: "Being Printed", color: "#3b82f6", bg: "#dbeafe" },
+    shipped:    { label: "Shipped",       color: "#8b5cf6", bg: "#ede9fe" },
+    in_transit: { label: "In Transit",    color: "#8b5cf6", bg: "#ede9fe" },  // ← add this
+    delivered:  { label: "Delivered",     color: "#10b981", bg: "#d1fae5" },
+    canceled:   { label: "Canceled",      color: "#ef4444", bg: "#fee2e2" },
+    failed:     { label: "Failed",        color: "#ef4444", bg: "#fee2e2" },
   };
   return map[status] || map.submitted;
 }
@@ -129,8 +130,9 @@ function formatCountry(code: string | undefined) {
 const TIMELINE_STEPS = [
   { key: "submitted", label: "Order Placed", matchStatuses: ["submitted", "confirmed"] },
   { key: "printing", label: "Printing", matchStatuses: ["printing"] },
-  { key: "shipped", label: "Shipped", matchStatuses: ["shipped"] },
+  { key: "shipped", label: "Shipped", matchStatuses: ["shipped", "in_transit"] },
   { key: "delivered", label: "Delivered", matchStatuses: ["delivered"] },
+
 ];
 
 function getTimelineIndex(status: string): number {
@@ -264,9 +266,9 @@ export default function CompletedBookView({ story, order }: Props) {
             {/* Meta over cover */}
             <div className="absolute bottom-5 left-6 right-6 flex justify-between items-end">
               <div>
-                <div className="text-white/70 text-xs font-medium mb-1 tracking-wide uppercase">
-                  Written by Katy
-                </div>
+                {/* <div className="text-white/70 text-xs font-medium mb-1 tracking-wide uppercase">
+                  Written by 
+                </div> */}
                 <div className="text-white text-xs opacity-60">
                   {story.length ? `${story.length} pages · ` : ""}
                   {story.createdAt ? `Created ${formatDate(story.createdAt)}` : ""}
@@ -456,7 +458,7 @@ export default function CompletedBookView({ story, order }: Props) {
             {/* Help link */}
             <div className="flex items-center justify-center py-2">
               <a
-                href="mailto:katy@flipwhizz.com?subject=Order%20Help%20-%20FlipWhizz"
+                href="mailto:katy@flipwhizz.co.uk?subject=Order%20Help%20-%20FlipWhizz"
                 className="flex items-center gap-1.5 text-[13px] text-gray-400 hover:text-gray-600 transition"
               >
                 <HelpCircle size={14} />
