@@ -20,6 +20,7 @@ import {
   Eye,
   MessageSquare,
   User,
+  AlertTriangle,
 } from 'lucide-react';
 import PhotoSuggestions from './PhotoSuggestions';
 import { CharacterOutfit } from '@/app/stories/[id]/characters/CharactersClient';
@@ -80,6 +81,8 @@ export default function CharacterCard({
 
   const [locked, setLocked] = useState(character.locked);
   const [uploading, setUploading] = useState(false);
+  const [validating, setValidating] = useState(false);       // NEW
+  const [uploadError, setUploadError] = useState<string | null>(null); // NEW
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -127,8 +130,11 @@ export default function CharacterCard({
 
   async function uploadReference(file: File) {
     if (locked) return;
+    setUploadError(null);
     setUploading(true);
+
     try {
+      // ── HEIC conversion ──
       let uploadFile = file;
       if (
         file.name.toLowerCase().endsWith('.heic') ||
@@ -145,13 +151,36 @@ export default function CharacterCard({
         );
       }
 
-
-
+      // ── Upload to Firebase ──
       const path = `story-references/${storyId}/${crypto.randomUUID()}-${uploadFile.name}`;
       const storageRef = ref(storage, path);
       await uploadBytes(storageRef, uploadFile, { contentType: uploadFile.type });
       const publicUrl = await getDownloadURL(storageRef);
 
+      // ── Validate via Claude vision ──
+      setUploading(false);
+      setValidating(true);
+
+      const validationRes = await fetch('/api/characters/validate-reference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: publicUrl, characterName: character.name }),
+      });
+
+      const validation = validationRes.ok ? await validationRes.json() : { valid: true };
+
+      if (!validation.valid) {
+        setUploadError(
+          validation.message ||
+            (validation.issue === 'group_photo'
+              ? `Looks like a group photo — upload one with just ${character.name}`
+              : 'Photo not suitable — try a clear solo photo')
+        );
+        // Orphaned Firebase upload — will be cleaned up by storage lifecycle rules
+        return;
+      }
+
+      // ── Accepted — save to DB ──
       const res = await fetch('/api/characters/upload-reference', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -166,8 +195,10 @@ export default function CharacterCard({
       }
     } catch (err) {
       console.error('Photo upload failed:', err);
+      setUploadError('Photo upload failed — please try again');
     } finally {
       setUploading(false);
+      setValidating(false);
     }
   }
 
@@ -247,6 +278,8 @@ export default function CharacterCard({
     setEditing(false);
   }
 
+  const isBusy = uploading || validating;
+
   /* ── Render ── */
 
   return (
@@ -285,9 +318,10 @@ export default function CharacterCard({
         )}
 
         {/* Upload controls */}
-        {!locked && !uploading && (
+        {!locked && !isBusy && (
           <div className="absolute top-3 left-3 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <button onClick={() => {
+              setUploadError(null);
               const input = document.createElement('input');
               input.type = 'file';
               input.accept = 'image/jpeg,image/png,image/webp,image/heic';
@@ -309,9 +343,19 @@ export default function CharacterCard({
           </div>
         )}
 
+        {/* Uploading overlay */}
         {uploading && (
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-20">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center gap-2 z-20">
             <Loader2 className="w-7 h-7 text-white animate-spin" />
+            <span className="text-xs font-semibold text-white">Uploading…</span>
+          </div>
+        )}
+
+        {/* Validating overlay — NEW */}
+        {validating && (
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center gap-2 z-20">
+            <Loader2 className="w-7 h-7 text-white animate-spin" />
+            <span className="text-xs font-semibold text-white">Checking photo…</span>
           </div>
         )}
 
@@ -354,6 +398,27 @@ export default function CharacterCard({
         </div>
       </div>
 
+      {/* ── Upload error banner — NEW ── */}
+      <AnimatePresence>
+        {uploadError && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="mx-4 mt-3 flex items-start gap-2 px-3 py-2.5 rounded-xl text-[11px] font-semibold"
+              style={{ background: 'rgba(217,119,6,0.07)', color: '#B45309', border: '1px solid rgba(217,119,6,0.18)' }}>
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              <span className="flex-1 leading-relaxed">{uploadError}</span>
+              <button onClick={() => setUploadError(null)} className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Collapsed body — always visible ── */}
       <div className="px-4 pt-3.5 pb-1">
         {/* Traits */}
@@ -368,10 +433,9 @@ export default function CharacterCard({
           </div>
         )}
 
-        {/* Appearance preview — always visible, truncated */}
+        {/* Appearance preview */}
         {character.appearance && (
           <p className="text-[12px] leading-relaxed line-clamp-5 mb-2" style={{ color: '#5A4D6B' }}>
-     
             {character.appearance}
           </p>
         )}
@@ -455,17 +519,6 @@ export default function CharacterCard({
                   )}
                 </DetailSection>
               )}
-
-              {/* Personality traits */}
-              {/* {editing && (
-                <DetailSection label="Personality traits" icon={<Sparkles className="w-3 h-3" />}>
-                  <input type="text" value={editTraits}
-                    onChange={(e) => setEditTraits(e.target.value)}
-                    className="w-full text-[12px] p-2.5 rounded-lg border outline-none transition-colors focus:border-[#C77DFF] focus:ring-2 focus:ring-[rgba(199,125,255,0.1)]"
-                    style={{ borderColor: 'rgba(180,150,210,0.15)', background: '#FDFBFF', color: '#2D2235' }}
-                    placeholder="brave, funny, kind, curious" />
-                </DetailSection>
-              )} */}
 
               {/* Outfits */}
               {outfits.length > 0 && (
