@@ -23,6 +23,7 @@ interface WorldContext {
   bookNumber: number;
   readerName: string | null;
   themes: string[];
+  characters: Array<{ name: string }>; 
 }
 
 export default function ChatPage() {
@@ -81,6 +82,7 @@ useEffect(() => {
           bookNumber: Number(bookNumberParam) || 1,
           readerName: data.readers?.[0]?.reader?.name ?? null,
           themes: (data.themes as string[]) ?? [],
+          characters: (data.characters as Array<{ name: string }>) ?? [],
         });
       } catch {
         // World not found — continue without context
@@ -390,20 +392,32 @@ useEffect(() => {
                   )}
                 </div>
 
-                {/* World context banner */}
                 {isWorldBook && (
-                  <div
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium"
-                    style={{
-                      background: "rgba(123,94,167,0.08)",
-                      color: "#7B5EA7",
-                    }}
-                  >
-                    <Globe2 className="w-4 h-4" />
-                    Characters & world carry forward from{" "}
-                    {bookNumber > 1 ? `Book ${bookNumber - 1}` : "this world"}
-                  </div>
-                )}
+  <div className="space-y-2">
+    <div
+      className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium"
+      style={{ background: "rgba(123,94,167,0.08)", color: "#7B5EA7" }}
+    >
+      <Globe2 className="w-4 h-4" />
+      Characters & world carry forward from{" "}
+      {bookNumber > 1 ? `Book ${bookNumber - 1}` : "this world"}
+    </div>
+
+    {worldContext.characters.length > 0 && (
+      <div className="flex flex-wrap gap-1.5 justify-center">
+        {worldContext.characters.map((c) => (
+          <span
+            key={c.name}
+            className="px-3 py-1 rounded-full text-xs font-semibold"
+            style={{ background: "rgba(123,94,167,0.1)", color: "#7B5EA7" }}
+          >
+            {c.name}
+          </span>
+        ))}
+      </div>
+    )}
+  </div>
+)}
 
                 {/* Prompt suggestions — context-aware */}
                 <div className="flex flex-wrap gap-2 justify-center pt-4 overflow-hidden">
