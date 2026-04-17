@@ -8,9 +8,11 @@ import {
   readers,
   stories,
   readerInsights,
+  characters,
+  storyCharacters,
 } from "@/db/schema";
 import { worlds, worldReaders, worldNarrativeMemory } from "@/db/schema-worlds";
-import { eq, and, asc, desc } from "drizzle-orm";
+import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import type { InferSelectModel } from "drizzle-orm";
 
@@ -89,6 +91,12 @@ interface WorldContextForChat {
     bookNumber: number;
     title: string;
     summary: string;
+  }>;
+  characters: Array<{
+    name: string;
+    description: string | null;
+    personalityTraits: string | null;
+    role: string | null;
   }>;
 }
 
@@ -193,6 +201,47 @@ async function loadWorldContextForChat(
       })
     );
 
+    // Load all characters that have appeared in any book in this world
+    const worldStoryIds = await db
+      .select({ id: stories.id })
+      .from(stories)
+      .where(eq(stories.worldId, worldId));
+
+    const storyIdList = worldStoryIds.map((s) => s.id);
+
+    let worldCharacters: WorldContextForChat["characters"] = [];
+
+    if (storyIdList.length > 0) {
+      const charRows = await db
+        .select({
+          characterId: characters.id,
+          name: characters.name,
+          description: characters.description,
+          personalityTraits: characters.personalityTraits,
+          role: storyCharacters.role,
+        })
+        .from(storyCharacters)
+        .innerJoin(characters, eq(storyCharacters.characterId, characters.id))
+        .where(inArray(storyCharacters.storyId, storyIdList));
+
+      // Deduplicate by characterId — keep first occurrence (role from earliest book)
+      const seen = new Set<string>();
+      worldCharacters = charRows
+        .filter((c) => {
+          if (seen.has(c.characterId)) return false;
+          seen.add(c.characterId);
+          return true;
+        })
+        .map((c) => ({
+          name: c.name,
+          description: c.description,
+          personalityTraits: c.personalityTraits,
+          role: c.role,
+        }));
+    }
+
+    console.log(`🟣 World characters loaded: ${worldCharacters.map((c) => c.name).join(", ") || "none"}`);
+
     const existingBooks = await db
       .select({ bookNumber: stories.bookNumber })
       .from(stories)
@@ -208,6 +257,7 @@ async function loadWorldContextForChat(
       reader: readerCtx,
       bookNumber: maxBook + 1,
       previousBooks,
+      characters: worldCharacters,
     };
   } catch (err) {
     console.warn("⚠️ Failed to load world context:", err);
@@ -275,6 +325,15 @@ ${worldCtx.worldDescription ? `World: ${worldCtx.worldDescription}` : ""}
 ${worldCtx.tonality ? `Tone: ${worldCtx.tonality}` : ""}
 ${worldCtx.themes.length > 0 ? `Themes: ${worldCtx.themes.join(", ")}` : ""}
 ${readerSection}
+${worldCtx.characters.length > 0
+  ? `
+ESTABLISHED CAST:
+${worldCtx.characters.map((c) =>
+  `- ${c.name}${c.role ? ` (${c.role})` : ""}${c.description ? `: ${c.description}` : ""}${c.personalityTraits ? ` — ${c.personalityTraits}` : ""}`
+).join("\n")}
+
+You know these characters well. Reference them naturally — ask if the parent wants them to return, suggest how they might fit into the new story, or note if it'd make sense to introduce someone new alongside familiar faces.`
+  : ""}
 ${worldCtx.previousBooks.length > 0
   ? `
 PREVIOUS BOOKS:
@@ -380,11 +439,11 @@ export async function POST(req: Request) {
         const reader = await db.query.readers.findFirst({
           where: eq(readers.id, readerId),
         });
-    
+
         if (reader) {
           const age = computeAge(reader.dateOfBirthDate, reader.age);
           const birthdayHint = getBirthdayContext(reader.dateOfBirthDate, reader.name, age);
-    
+
           const insights = await db
             .select({ insightType: readerInsights.insightType, content: readerInsights.content })
             .from(readerInsights)
@@ -396,7 +455,7 @@ export async function POST(req: Request) {
             )
             .orderBy(desc(readerInsights.createdAt))
             .limit(10);
-    
+
           standaloneReaderCtx = {
             name: reader.name ?? null,
             age,
@@ -409,19 +468,17 @@ export async function POST(req: Request) {
             birthdayHint,
             activeInsights: insights.map((i) => ({ type: i.insightType, content: i.content })),
           };
-    
+
           console.log(`🟢 Chat: standalone reader "${reader.name}", age ${age}, insights: ${insights.length}`);
         }
       } catch (err) {
         console.warn("⚠️ Failed to load standalone reader:", err);
       }
     }
- 
-    
 
     if (worldId && worldCtx) {
       console.log(
-        `🔵 Chat: "${worldCtx.worldName}" Book ${worldCtx.bookNumber}, reader: ${worldCtx.reader.name}, insights: ${worldCtx.reader.activeInsights.length}${worldCtx.reader.birthdayHint ? ", 🎂 birthday detected" : ""}`
+        `🔵 Chat: "${worldCtx.worldName}" Book ${worldCtx.bookNumber}, reader: ${worldCtx.reader.name}, insights: ${worldCtx.reader.activeInsights.length}, characters: ${worldCtx.characters.length}${worldCtx.reader.birthdayHint ? ", 🎂 birthday detected" : ""}`
       );
     }
 
