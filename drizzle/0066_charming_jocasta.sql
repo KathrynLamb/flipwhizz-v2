@@ -1,0 +1,1 @@
+ALTER TABLE "readers" ADD COLUMN "age" integer;

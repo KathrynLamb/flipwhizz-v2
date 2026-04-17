@@ -305,36 +305,38 @@ useEffect(() => {
           </div>
 
           {/* Right CTA */}
-          <div className="flex items-center justify-end min-w-[120px]">
-            {messages.length >= 3 && !storyId ? (
-              <button
-                onClick={createStoryFromChat}
-                disabled={storyCreating}
-                className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-lg transition-transform active:scale-[0.98] disabled:opacity-60"
-                style={{
-                  background: "#D94590",
-                  boxShadow: "0 8px 28px rgba(217,69,144,0.25)",
-                }}
-              >
-                {storyCreating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="hidden sm:inline">Creating...</span>
-                  </>
-                ) : (
-                  <>
-                    <BookOpen className="w-4 h-4" />
-                    <span className="hidden sm:inline">
-                      {isWorldBook ? `Create Book ${bookNumber}` : "Create My Book"}
-                    </span>
-                    <span className="sm:hidden">Create</span>
-                  </>
-                )}
-              </button>
-            ) : (
-              <div className="w-[120px]" />
+            {/* Right CTA — only show after 3 messages */}
+            {messages.length >= 3 && !storyId && (
+              <div className="flex flex-col items-end gap-0.5">
+                <button
+                  onClick={createStoryFromChat}
+                  disabled={storyCreating}
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-lg transition-transform active:scale-[0.98] disabled:opacity-60"
+                  style={{
+                    background: "#D94590",
+                    boxShadow: "0 8px 28px rgba(217,69,144,0.25)",
+                  }}
+                >
+                  {storyCreating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="hidden sm:inline">Creating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <BookOpen className="w-4 h-4" />
+                      <span className="hidden sm:inline">
+                        {isWorldBook ? `Create Book ${bookNumber}` : "Create My Book"}
+                      </span>
+                      <span className="sm:hidden">Create</span>
+                    </>
+                  )}
+                </button>
+                <span className="text-[10px] text-gray-400 hidden sm:block pr-1">
+                  first draft · keep chatting to refine
+                </span>
+              </div>
             )}
-          </div>
         </div>
       </div>
 
@@ -393,31 +395,31 @@ useEffect(() => {
                 </div>
 
                 {isWorldBook && (
-  <div className="space-y-2">
-    <div
-      className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium"
-      style={{ background: "rgba(123,94,167,0.08)", color: "#7B5EA7" }}
-    >
-      <Globe2 className="w-4 h-4" />
-      Characters & world carry forward from{" "}
-      {bookNumber > 1 ? `Book ${bookNumber - 1}` : "this world"}
-    </div>
+                    <div className="space-y-2">
+                      <div
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium"
+                        style={{ background: "rgba(123,94,167,0.08)", color: "#7B5EA7" }}
+                      >
+                        <Globe2 className="w-4 h-4" />
+                        Characters & world carry forward from{" "}
+                        {bookNumber > 1 ? `Book ${bookNumber - 1}` : "this world"}
+                      </div>
 
-    {worldContext.characters.length > 0 && (
-      <div className="flex flex-wrap gap-1.5 justify-center">
-        {worldContext.characters.map((c) => (
-          <span
-            key={c.name}
-            className="px-3 py-1 rounded-full text-xs font-semibold"
-            style={{ background: "rgba(123,94,167,0.1)", color: "#7B5EA7" }}
-          >
-            {c.name}
-          </span>
-        ))}
-      </div>
-    )}
-  </div>
-)}
+                      {worldContext.characters.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 justify-center">
+                          {worldContext.characters.map((c) => (
+                            <span
+                              key={c.name}
+                              className="px-3 py-1 rounded-full text-xs font-semibold"
+                              style={{ background: "rgba(123,94,167,0.1)", color: "#7B5EA7" }}
+                            >
+                              {c.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                 {/* Prompt suggestions — context-aware */}
                 <div className="flex flex-wrap gap-2 justify-center pt-4 overflow-hidden">
@@ -557,6 +559,18 @@ useEffect(() => {
                       Writing your story…
                     </p>
                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {messages.length === 4 && !storyId && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex justify-center py-1"
+              >
+                <div className="px-4 py-2 rounded-full text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200">
+                  ✨ Ready to see a first draft? Hit <span className="font-bold text-[#D94590]">Create Book {bookNumber}</span> — or keep chatting to add more detail
                 </div>
               </motion.div>
             )}

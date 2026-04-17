@@ -240,6 +240,8 @@ async function loadWorldContextForChat(
         }));
     }
 
+    
+
     console.log(`🟣 World characters loaded: ${worldCharacters.map((c) => c.name).join(", ") || "none"}`);
 
     const existingBooks = await db

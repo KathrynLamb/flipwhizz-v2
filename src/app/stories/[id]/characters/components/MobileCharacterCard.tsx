@@ -131,6 +131,8 @@ export function MobileCharacterCard({
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [validating, setValidating] = useState(false);         // NEW
+  const [uploadError, setUploadError] = useState<string | null>(null); // NEW
   const [saving, setSaving] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [showOutfitChoice, setShowOutfitChoice] = useState(false);
@@ -178,24 +180,59 @@ export function MobileCharacterCard({
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
+
+      setUploadError(null);
       setUploading(true);
+
       try {
+        // ── HEIC conversion ──
         let uploadFile = file;
         if (/\.heic$/i.test(file.name) || /\.heif$/i.test(file.name) || file.type === "image/heic") {
           const heic2any = (await import("heic2any")).default;
           const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
           uploadFile = new File([blob as Blob], file.name.replace(/\.heic$/i, ".jpg"), { type: "image/jpeg" });
         }
+
+        // ── Upload to Firebase ──
         const path = `story-references/${storyId}/${crypto.randomUUID()}-${uploadFile.name}`;
         const storageRef = ref(storage, path);
         await uploadBytes(storageRef, uploadFile, { contentType: uploadFile.type });
         const publicUrl = await getDownloadURL(storageRef);
 
+        // ── Validate via Claude vision ──
+        setUploading(false);
+        setValidating(true);
+
+        const validationRes = await fetch("/api/characters/validate-reference", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl: publicUrl, characterName: char.name }),
+        });
+
+        const validation = validationRes.ok ? await validationRes.json() : { valid: true };
+
+        if (!validation.valid) {
+          // Rejected — show inline error, don't write to DB
+          if (isMounted.current) {
+            setUploadError(
+              validation.message ||
+                (validation.issue === "group_photo"
+                  ? `Looks like a group photo — upload one with just ${char.name}`
+                  : "Photo not suitable — try a clear solo photo")
+            );
+          }
+          // Note: we intentionally leave the Firebase upload in place but don't
+          // reference it from the DB. It will be cleaned up by Firebase TTL rules.
+          return;
+        }
+
+        // ── Accepted — save to DB ──
         const res = await fetch("/api/characters/upload-reference", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ characterId: char.id, imageUrl: publicUrl, storagePath: path }),
         });
+
         if (res.ok) {
           if (isMounted.current) {
             setImageUrl(publicUrl);
@@ -205,9 +242,14 @@ export function MobileCharacterCard({
         }
       } catch (err) {
         console.error("Upload failed:", err);
-        alert("Photo upload failed. Please try again.");
+        if (isMounted.current) {
+          setUploadError("Photo upload failed — please try again");
+        }
       } finally {
-        if (isMounted.current) setUploading(false);
+        if (isMounted.current) {
+          setUploading(false);
+          setValidating(false);
+        }
       }
     };
     input.click();
@@ -296,7 +338,6 @@ export function MobileCharacterCard({
         });
 
         if (!res.ok) {
-          // Endpoint doesn't exist yet or failed — skip analysis, just generate
           console.warn("Vision analysis unavailable, generating portrait directly");
           setLockPhase("generating");
           await doGenerateAndLock();
@@ -307,17 +348,14 @@ export function MobileCharacterCard({
         const foundConflicts: VisionConflict[] = data.conflicts || [];
 
         if (foundConflicts.length === 0) {
-          // No conflicts — generate portrait and lock
           setLockPhase("generating");
           await doGenerateAndLock();
         } else {
-          // Show conflicts for user resolution
           setConflicts(foundConflicts);
           setResolutions({});
           setLockPhase("conflicts");
         }
       } catch {
-        // Network error — skip analysis
         setLockPhase("generating");
         await doGenerateAndLock();
       }
@@ -330,14 +368,12 @@ export function MobileCharacterCard({
   }
 
   async function resolveConflictsAndContinue() {
-    // Apply resolutions — update character description/appearance
     const updates: Record<string, string> = {};
     for (const conflict of conflicts) {
       const choice = resolutions[conflict.field];
       if (choice === "photo") {
         updates[conflict.field] = conflict.photo;
       }
-      // "extracted" means keep as-is, no update needed
     }
 
     if (Object.keys(updates).length > 0) {
@@ -347,7 +383,6 @@ export function MobileCharacterCard({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updates),
         });
-        // Update local state
         setChar(prev => ({ ...prev, ...updates }));
         if (updates.appearance) setEditAppearance(updates.appearance);
         if (updates.description) setEditDescription(updates.description);
@@ -379,7 +414,6 @@ export function MobileCharacterCard({
         setLockPhase("done");
       }
 
-      // Fly card away
       await controls.start({
         x: 650, rotate: 20, opacity: 0,
         transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] },
@@ -415,12 +449,10 @@ export function MobileCharacterCard({
       const hasPortrait = !!char.portraitImageUrl;
       
       if (hasPortrait) {
-        // Case C: already has portrait — fly away immediately
         await controls.start({
           x: 650, rotate: 20, opacity: 0,
           transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] },
         });
-        // Lock in background, don't wait
         fetch("/api/characters/lock", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -428,7 +460,6 @@ export function MobileCharacterCard({
         }).then(() => { setLocked(true); });
         onSwiped?.(char.id);
       } else {
-        // Cases A & B: snap back, show processing overlay
         await controls.start({ x: 0, rotate: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
         startSmartLock();
       }
@@ -470,7 +501,7 @@ export function MobileCharacterCard({
     setEditing(false);
   }
 
-  /* ── Lock phase overlay ── */
+  /* ── Derived UI flags ── */
 
   const isProcessing = lockPhase === "analyzing" || lockPhase === "generating" || lockPhase === "locking";
   const showConflictUI = lockPhase === "conflicts";
@@ -488,7 +519,7 @@ export function MobileCharacterCard({
       dragMomentum={false}
       onDragStart={() => setIsDragging(true)}
       onDragEnd={handleDragEnd}
-      style={{ x, rotate, fontFamily: FONT,  touchAction: "none" }}
+      style={{ x, rotate, fontFamily: FONT, touchAction: "none" }}
       className="w-full h-full select-none"
     >
       <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white flex flex-col">
@@ -535,101 +566,102 @@ export function MobileCharacterCard({
             </div>
           )}
 
-          {/* Upload buttons */}
-{/* Upload/change buttons — always visible at bottom of image */}
-{!uploading && !isProcessing && !showConflictUI && !isDragging && (
-  <>
-    <div className="absolute bottom-14 left-3 flex gap-1.5 z-10">
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          if (locked) {
-            fetch("/api/characters/unlock", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ characterId: char.id }),
-            }).then(() => {
-              setLocked(false);
-              handleUpload();
-            });
-          } else {
-            handleUpload();
-          }
-        }}
-        className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-semibold active:scale-95 transition-transform"
-        style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)", color: "#2D2235" }}
-      >
-        <Camera className="w-3 h-3" /> {imageUrl ? "Change" : "Photo"}
-      </button>
+          {/* Upload / AI Portrait buttons */}
+          {!uploading && !validating && !isProcessing && !showConflictUI && !isDragging && (
+            <>
+              <div className="absolute bottom-14 left-3 flex gap-1.5 z-10">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setUploadError(null);
+                    if (locked) {
+                      fetch("/api/characters/unlock", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ characterId: char.id }),
+                      }).then(() => {
+                        setLocked(false);
+                        handleUpload();
+                      });
+                    } else {
+                      handleUpload();
+                    }
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-semibold active:scale-95 transition-transform"
+                  style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)", color: "#2D2235" }}
+                >
+                  <Camera className="w-3 h-3" /> {imageUrl ? "Change" : "Photo"}
+                </button>
 
-      {!locked && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            generatePortrait();
-          }}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-bold text-white active:scale-95 transition-transform"
-          style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", boxShadow: "0 2px 8px rgba(176,92,230,0.3)" }}
-        >
-          <Sparkles className="w-3 h-3" /> AI Portrait
-        </button>
-      )}
-    </div>
+                {!locked && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      generatePortrait();
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-bold text-white active:scale-95 transition-transform"
+                    style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", boxShadow: "0 2px 8px rgba(176,92,230,0.3)" }}
+                  >
+                    <Sparkles className="w-3 h-3" /> AI Portrait
+                  </button>
+                )}
+              </div>
 
-    <AnimatePresence>
-      {showOutfitChoice && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="absolute inset-0 z-30 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowOutfitChoice(false);
-          }}
-        >
-          <div
-            className="w-full max-w-[260px] p-4 space-y-2.5 bg-white rounded-2xl shadow-2xl"
-            style={{ fontFamily: FONT }}
-          >
-            <p className="text-xs font-bold text-center" style={{ color: "#2D2235" }}>
-              What should they wear?
-            </p>
-
-            <button
-              onClick={() => generatePortrait("story", pendingLockAfterGenerate)}
-              className="w-full py-2 rounded-xl text-[11px] font-bold text-white"
-              style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)" }}
-            >
-              <Shirt className="w-3 h-3 inline mr-1" style={{ verticalAlign: "-1px" }} />
-              Story outfit
-            </button>
-
-            <button
-              onClick={() => generatePortrait("reference", pendingLockAfterGenerate)}
-              className="w-full py-2 rounded-xl text-[11px] font-semibold"
-              style={{
-                border: "1px solid rgba(180,150,210,0.2)",
-                color: "#6B5C80",
-                background: "white",
-              }}
-            >
-              <Camera className="w-3 h-3 inline mr-1" style={{ verticalAlign: "-1px" }} />
-              Keep photo outfit
-            </button>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  </>
-)}
+              <AnimatePresence>
+                {showOutfitChoice && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 z-30 flex items-center justify-center p-4"
+                    style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) setShowOutfitChoice(false);
+                    }}
+                  >
+                    <div className="w-full max-w-[260px] p-4 space-y-2.5 bg-white rounded-2xl shadow-2xl" style={{ fontFamily: FONT }}>
+                      <p className="text-xs font-bold text-center" style={{ color: "#2D2235" }}>
+                        What should they wear?
+                      </p>
+                      <button
+                        onClick={() => generatePortrait("story", pendingLockAfterGenerate)}
+                        className="w-full py-2 rounded-xl text-[11px] font-bold text-white"
+                        style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)" }}
+                      >
+                        <Shirt className="w-3 h-3 inline mr-1" style={{ verticalAlign: "-1px" }} />
+                        Story outfit
+                      </button>
+                      <button
+                        onClick={() => generatePortrait("reference", pendingLockAfterGenerate)}
+                        className="w-full py-2 rounded-xl text-[11px] font-semibold"
+                        style={{ border: "1px solid rgba(180,150,210,0.2)", color: "#6B5C80", background: "white" }}
+                      >
+                        <Camera className="w-3 h-3 inline mr-1" style={{ verticalAlign: "-1px" }} />
+                        Keep photo outfit
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </>
+          )}
 
           {/* Uploading overlay */}
           {uploading && !isProcessing && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm">
               <div className="flex flex-col items-center gap-2 px-4 py-3 rounded-2xl bg-black/30 backdrop-blur-sm">
                 <Loader2 className="w-7 h-7 text-white animate-spin" />
-                <span className="text-sm font-semibold text-white">Processing…</span>
+                <span className="text-sm font-semibold text-white">Uploading…</span>
+              </div>
+            </div>
+          )}
+
+          {/* Validating overlay — NEW */}
+          {validating && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-2 px-4 py-3 rounded-2xl bg-black/30 backdrop-blur-sm">
+                <Loader2 className="w-7 h-7 text-white animate-spin" />
+                <span className="text-sm font-semibold text-white">Checking photo…</span>
               </div>
             </div>
           )}
@@ -730,9 +762,32 @@ export function MobileCharacterCard({
             )}
           </AnimatePresence>
 
-          {/* Normal body content (when not in conflict resolution) */}
+          {/* Normal body content */}
           {!showConflictUI && (
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+
+              {/* Upload error — NEW */}
+              <AnimatePresence>
+                {uploadError && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-[11px] font-semibold"
+                    style={{ background: "rgba(217,119,6,0.07)", color: "#B45309", border: "1px solid rgba(217,119,6,0.18)" }}
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                    <span className="flex-1 leading-relaxed">{uploadError}</span>
+                    <button
+                      onClick={() => setUploadError(null)}
+                      className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Lock error */}
               {lockError && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-semibold" style={{ background: "rgba(233,30,99,0.06)", color: "#E91E63", border: "1px solid rgba(233,30,99,0.15)" }}>
@@ -769,7 +824,6 @@ export function MobileCharacterCard({
               <AnimatePresence>
                 {expanded && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-3">
-                    {/* Description */}
                     {(char.description || editing) && (
                       <Section label="Description" icon={<MessageSquare className="w-3 h-3" />}>
                         {editing ? (
@@ -783,7 +837,6 @@ export function MobileCharacterCard({
                       </Section>
                     )}
 
-                    {/* Appearance (full) */}
                     {(char.appearance || editing) && (
                       <Section label="Appearance" icon={<Eye className="w-3 h-3" />}>
                         {editing ? (
@@ -797,7 +850,6 @@ export function MobileCharacterCard({
                       </Section>
                     )}
 
-                    {/* Animal details */}
                     {isAnimal && animalProfile && (
                       <Section label={`${char.species} details`} icon={<PawPrint className="w-3 h-3" />}>
                         <div className="grid grid-cols-2 gap-1.5 text-[11px]">
@@ -811,7 +863,6 @@ export function MobileCharacterCard({
                       </Section>
                     )}
 
-                    {/* Outfits */}
                     {outfits.length > 0 && (
                       <Section label={`${outfits.length} outfit${outfits.length !== 1 ? "s" : ""}`} icon={<Shirt className="w-3 h-3" />}>
                         <div className="space-y-1.5">
@@ -825,7 +876,6 @@ export function MobileCharacterCard({
                       </Section>
                     )}
 
-                    {/* Traits editing */}
                     {editing && (
                       <Section label="Personality" icon={<Sparkles className="w-3 h-3" />}>
                         <input type="text" value={editTraits} onChange={(e) => setEditTraits(e.target.value)}
@@ -843,7 +893,6 @@ export function MobileCharacterCard({
           {/* ━━━ BOTTOM BAR ━━━ */}
           {!showConflictUI && !isProcessing && (
             <div className="flex-shrink-0 px-4 pb-4 pt-1 space-y-2">
-              {/* Expand toggle */}
               {!editing && (
                 <button onClick={() => setExpanded(!expanded)}
                   className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-semibold"
@@ -853,7 +902,6 @@ export function MobileCharacterCard({
                 </button>
               )}
 
-              {/* Edit save/cancel */}
               {editing ? (
                 <div className="flex gap-2">
                   <button onClick={cancelEdit} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-semibold"
@@ -868,7 +916,6 @@ export function MobileCharacterCard({
                   </button>
                 </div>
               ) : (
-                /* Drag handle + edit button */
                 <div className="flex items-center gap-2">
                   <button onClick={() => { setExpanded(true); setEditing(true); }}
                     className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 active:scale-95 transition-transform"

@@ -585,6 +585,7 @@ export const readers = pgTable("readers", {
   name: varchar("name", { length: 120 }),
   dateOfBirth: varchar("dob", { length: 40 }),
   relationship: varchar("relationship", { length: 80 }),
+  age: integer("age"),
   gender: varchar("gender", { length: 40 }),
   aiSummary: text("ai_summary"),
   createdAt: timestamp("created_at").defaultNow(),
