@@ -20,6 +20,9 @@ export const users = pgTable("users", {
   email: varchar("email", { length: 255 }).notNull().unique(),
   hashedPassword: text("hashed_password"),  
   image: text("image"),
+  tiktokAccessToken: text("tiktok_access_token"),
+tiktokOpenId: text("tiktok_open_id"),
+tiktokTokenExpiresAt: timestamp("tiktok_token_expires_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

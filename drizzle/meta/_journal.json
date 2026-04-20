@@ -470,6 +470,13 @@
       "when": 1776441623953,
       "tag": "0066_charming_jocasta",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1776692587590,
+      "tag": "0067_ambitious_nighthawk",
+      "breakpoints": true
     }
   ]
 }

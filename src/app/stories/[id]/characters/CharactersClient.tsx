@@ -91,6 +91,7 @@ export default function CharactersClient({
   const [groupPhotoGenerating, setGroupPhotoGenerating] = useState(false);
   const [groupPhotoRemaining, setGroupPhotoRemaining] = useState(0);
 
+  console.log("Story confirmed", storyConfirmed)
   useEffect(() => {
     if (!storyId) return;
     let cancelled = false;
@@ -206,7 +207,9 @@ export default function CharactersClient({
           )}
 
           {/* ── Group photo banner (mobile) ── */}
-          {!storyConfirmed && !groupPhotoGenerating && (
+          {/* {!storyConfirmed && !groupPhotoGenerating && (
+             */}
+          {storyConfirmed && !groupPhotoGenerating && (
             <div className="md:hidden mb-4">
               <button
                 onClick={() => setShowGroupPhoto(true)}
@@ -252,7 +255,7 @@ export default function CharactersClient({
           )}
 
           {/* ── Desktop: group photo button ── */}
-          {!storyConfirmed && (
+          {storyConfirmed && (
             <div className="hidden md:flex justify-end mb-4">
               <button
                 onClick={() => setShowGroupPhoto(true)}
@@ -272,7 +275,7 @@ export default function CharactersClient({
           )}
 
           {/* ── Mobile: Generate All ── */}
-          {isPurchased && !allLocked && !storyConfirmed && (
+          {isPurchased && !allLocked && storyConfirmed && (
             <motion.button
               initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
               onClick={generateAIAvatars} disabled={generatingAvatars}
