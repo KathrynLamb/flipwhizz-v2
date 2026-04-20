@@ -2,9 +2,12 @@
 
 import CompletedBookView from "@/app/stories/[id]/book/Completedbookview";
 import { db } from "@/db";
-import { stories, orders } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { stories, orders, storySpreads, storyPages } from "@/db/schema";
+import { eq, desc, asc, inArray } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
+
+
+
 
 // ─── Gelato status sync on page load ───
 async function syncGelatoStatus(
@@ -164,6 +167,47 @@ console.log("[book/page] 📋 Selected order:", {
   createdAt: latestOrder?.createdAt,
 });
 
+// After fetching latestOrder, add:
+// const spreads = await db.query.storySpreads.findMany({
+//   where: eq(storySpreads.storyId, id),
+//   orderBy: asc(storySpreads.spreadIndex),
+// });
+
+
+
+
+const spreads = await db
+  .select()
+  .from(storySpreads)
+  .where(eq(storySpreads.storyId, id))
+  .orderBy(asc(storySpreads.spreadIndex));
+
+
+
+// Collect all page IDs
+const pageIds = spreads.flatMap(s => 
+  [s.leftPageId, s.rightPageId].filter(Boolean) as string[]
+);
+
+// Fetch image URLs for those pages
+const pages = pageIds.length > 0
+  ? await db
+      .select({ id: storyPages.id, imageUrl: storyPages.imageUrl })
+      .from(storyPages)
+      .where(inArray(storyPages.id, pageIds))
+  : [];
+
+const pageImageMap = Object.fromEntries(pages.map(p => [p.id, p.imageUrl]));
+
+// One URL per spread (prefer left page, fall back to right)
+const spreadImageUrls = spreads
+  .map(s => pageImageMap[s.leftPageId ?? ""] ?? pageImageMap[s.rightPageId ?? ""] ?? null)
+  .filter(Boolean) as string[];
+// Get page image URLs — you'll need to query storyPages
+// const spreadImageUrls = spreads
+//   .map(s => /* left or right page imageUrl */)
+//   .filter(Boolean);
+
   // 4. Sync Gelato status — 3s timeout, skip cancelled/failed orders
   let liveStatus = null;
   if (
@@ -237,6 +281,7 @@ console.log("[book/page] 📋 Selected order:", {
           bookNumber: story.bookNumber,
           length: story.length,
           createdAt: story.createdAt?.toISOString() ?? null,
+          spreadImageUrls,
         }}
         order={orderData}
       />

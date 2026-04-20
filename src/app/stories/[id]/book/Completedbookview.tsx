@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   BookOpen,
@@ -21,6 +21,7 @@ import {
   ExternalLink,
   Truck,
 } from "lucide-react";
+import { ShareTikTokButton } from "@/components/ShareTikTokButton";
 
 // ─── Types ───
 interface StoryData {
@@ -33,6 +34,7 @@ interface StoryData {
   bookNumber: number | null;
   length: number | null;
   createdAt: string | null;
+  spreadImageUrls: string[] | null
 }
 
 interface OrderData {
@@ -213,7 +215,12 @@ function ActionCard({
 
 // ─── Main Component ───
 export default function CompletedBookView({ story, order }: Props) {
+  const [mounted, setMounted] = useState(false);
   const [downloadStarted, setDownloadStarted] = useState(false);
+  
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+
   const orderStatus = order?.status || "submitted";
   const badge = getOrderBadge(orderStatus);
   const timelineIdx = getTimelineIndex(orderStatus);
@@ -315,23 +322,14 @@ export default function CompletedBookView({ story, order }: Props) {
             href={`/stories/${story.id}/order`}
           />
 
-          {/* 4. Share */}
-          <ActionCard
-            icon={Share2}
-            title="Share"
-            description="Show off your creation on social media."
-            variant="growth"
-            onClick={() => {
-              // TODO: Open social share modal
-              if (navigator.share) {
-                navigator.share({
-                  title: story.title,
-                  text: `Check out this personalised book I made on FlipWhizz: "${story.title}"`,
-                  url: `https://flipwhizz.com/stories/${story.id}/preview`,
-                }).catch(() => {});
-              }
-            }}
-          />
+   {/* 4. Share to TikTok */}
+<div className="text-left w-full">
+  <ShareTikTokButton
+    storyId={story.id}
+    imageUrls={story.spreadImageUrls}
+    storyTitle={story.title}
+  />
+</div>
 
           {/* 5. Write a Review */}
           <ActionCard

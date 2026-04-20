@@ -2,19 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { db } from "@/db";
-import { users, stories, storySpreads } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { users, stories } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export async function POST(
-  req: NextRequest,
-  { params }: { params: { storyId: string } }
-) {
+    req: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+  ) {
+    const { id: storyId } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const userId = (session.user as any).id;
+
 
   // Get user's TikTok token
   const user = await db
@@ -35,26 +37,14 @@ export async function POST(
     return NextResponse.json({ error: "tiktok_token_expired" }, { status: 403 });
   }
 
-  // Get story spreads with images, ordered correctly
-  const spreads = await db
-    .select({
-      spreadIndex: storySpreads.spreadIndex,
-      leftPageId: storySpreads.leftPageId,
-      rightPageId: storySpreads.rightPageId,
-    })
-    .from(storySpreads)
-    .where(eq(storySpreads.storyId, params.storyId))
-    .orderBy(asc(storySpreads.spreadIndex));
-
-  // Get the story for the caption
+  // Get story for caption
   const story = await db
     .select({ title: stories.title })
     .from(stories)
-    .where(eq(stories.id, params.storyId))
+    .where(eq(stories.id, storyId))
     .then((r) => r[0]);
 
-  // Pull image URLs from request body (client passes the Cloudinary URLs
-  // it already has — avoids another DB round-trip)
+  // Image URLs come from the client (already fetched on the page)
   const { imageUrls, caption } = await req.json() as {
     imageUrls: string[];
     caption?: string;
@@ -67,12 +57,37 @@ export async function POST(
     );
   }
 
-  // TikTok photo carousel — max 35 images
-  const photos = imageUrls.slice(0, 35).map((url) => ({ image_url: url }));
+  const baseUrl = process.env.NEXTAUTH_URL; // https://flipwhizz.com
+  const photos = imageUrls.slice(0, 35).map(
+    (url) => `${baseUrl}/api/image-proxy?url=${encodeURIComponent(url)}`
+  );
+
 
   const postCaption =
-    caption ??
-    `${story?.title ?? "Our Story"} 📖✨ Created with FlipWhizz #FlipWhizz #PersonalisedBooks #KidsBooks #StoryTime`;
+  caption ??
+  `${story?.title ?? "Our Story"} - Created with FlipWhizz`;
+
+    const payload = {
+        post_info: {
+            title: postCaption,
+            privacy_level: "SELF_ONLY",
+            disable_duet: false,
+            disable_comment: false,
+            disable_stitch: false,
+          }, 
+        source_info: {
+          source: "PULL_FROM_URL",
+          photo_cover_index: 0,
+          photo_images: photos,
+        },
+        media_type: "PHOTO",
+        post_mode: "DIRECT_POST",
+      };
+      
+      console.log("TikTok payload:", JSON.stringify(payload, null, 2));
+      console.log("First image URL:", photos[0]?.image_url);
+      console.log("Photo count:", photos.length);
+      console.log("Caption length:", postCaption.length);
 
   const tiktokRes = await fetch(
     "https://open.tiktokapis.com/v2/post/publish/content/init/",
@@ -85,20 +100,21 @@ export async function POST(
       body: JSON.stringify({
         post_info: {
           title: postCaption,
-          privacy_level: "SELF_ONLY", // sandbox-safe; change to PUBLIC_TO_EVERYONE for production
+          privacy_level: "SELF_ONLY",
           disable_duet: false,
           disable_comment: false,
           disable_stitch: false,
         },
         source_info: {
           source: "PULL_FROM_URL",
-          photo_cover_index: 0,
-          photo_images: photos,
+          photo_cover_index: 1,  // 1-based per docs
+          photo_images: photos,  // array of strings
         },
+        post_mode: "MEDIA_UPLOAD",
         media_type: "PHOTO",
-      }),
-    }
-  );
+      }),   // ← closes JSON.stringify
+    }        // ← closes fetch options object
+  );         // ← closes fetch()
 
   const tiktokData = await tiktokRes.json();
 
