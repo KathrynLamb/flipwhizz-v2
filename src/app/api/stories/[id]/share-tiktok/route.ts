@@ -110,7 +110,7 @@ export async function POST(
           photo_cover_index: 1,  // 1-based per docs
           photo_images: photos,  // array of strings
         },
-        post_mode: "MEDIA_UPLOAD",
+        post_mode: "DIRECT_POST",
         media_type: "PHOTO",
       }),   // ← closes JSON.stringify
     }        // ← closes fetch options object
