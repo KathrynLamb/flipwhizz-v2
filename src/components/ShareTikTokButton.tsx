@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SiTiktok } from "react-icons/si";
+import posthog from "posthog-js";
 
 interface Props {
   storyId: string;
@@ -18,6 +19,7 @@ export function ShareTikTokButton({ storyId, imageUrls, storyTitle }: Props) {
   async function handleShare() {
     setState("posting");
     setErrorMsg("");
+    posthog.capture("tiktok_share_initiated", { story_id: storyId, story_title: storyTitle, image_count: imageUrls.length });
 
     try {
       const res = await fetch(`/api/stories/${storyId}/share-tiktok`, {
@@ -41,9 +43,11 @@ export function ShareTikTokButton({ storyId, imageUrls, storyTitle }: Props) {
       }
 
       setState("done");
+      posthog.capture("tiktok_share_completed", { story_id: storyId, story_title: storyTitle });
     } catch (err: any) {
       setState("error");
       setErrorMsg(err.message ?? "Something went wrong");
+      posthog.captureException(err);
     }
   }
 

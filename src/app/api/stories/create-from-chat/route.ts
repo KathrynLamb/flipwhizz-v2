@@ -18,6 +18,7 @@ import { eq, asc, and } from "drizzle-orm";
 import { sql as rawSql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { worlds, worldReaders } from "@/db/schema-worlds";
+import { captureServerEvent } from "@/lib/posthog-server";
 
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("Missing ANTHROPIC_API_KEY environment variable");
@@ -586,6 +587,22 @@ JSON OUTPUT — no markdown, no preamble, ONLY this:
     );
 
     console.log("🟢 Story creation complete!");
+
+
+
+    await captureServerEvent(userId, "story_created", {
+      story_id: storyId,
+      project_id: projectId,
+      title,
+      page_count: pages?.length || 0,
+      reader_name: extraction.reader.childName,
+      reader_age: extraction.reader.age,
+      world_name: extraction.world.worldName,
+      book_number: bookNumber,
+      insights_count: extraction.insights.length,
+      purchase_intent: intent || null,
+    });
+
     return NextResponse.json({
       storyId,
       title,

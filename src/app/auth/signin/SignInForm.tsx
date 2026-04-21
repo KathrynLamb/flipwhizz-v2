@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import posthog from "posthog-js";
 
 const PINK = "#D94590";
 
@@ -69,6 +70,13 @@ export default function SignInForm() {
           return;
         }
 
+        // Register route returns userId — use it as distinctId
+        // identify is also fired server-side in /api/auth/register, this
+        // aliases the client anonymous ID to the real user
+        if (data.userId) {
+          posthog.identify(data.userId, { email, name: name.trim() });
+        }
+        posthog.capture("user_registered", { method: "email" });
         window.location.href = callbackUrl;
       } else {
         const result = await signIn("credentials", {
@@ -84,6 +92,11 @@ export default function SignInForm() {
           return;
         }
 
+        // For sign-in we don't have the userId here — identify happens
+        // in the PostHogIdentifier component that runs after session loads.
+        // Just capture the event; the anonymous session will be aliased once
+        // the session-aware component calls posthog.identify().
+        posthog.capture("user_signed_in", { method: "email" });
         window.location.href = callbackUrl;
       }
     } catch {

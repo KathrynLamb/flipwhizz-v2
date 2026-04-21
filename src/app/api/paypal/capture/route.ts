@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { stories, storyProducts } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
+import { captureServerEvent } from "@/lib/posthog-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,7 +65,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "orderID required" }, { status: 400 });
     }
 
-    /* ---------- CAPTURE ---------- */
     const receipt = await paypalCaptureOrder(orderID);
 
     if (receipt?.status !== "COMPLETED") {
@@ -74,7 +74,6 @@ export async function POST(req: Request) {
       );
     }
 
-    /* ---------- RESOLVE STORY ---------- */
     const pu = receipt?.purchase_units?.[0];
     const storyId: string | undefined = pu?.custom_id || pu?.reference_id;
 
@@ -85,7 +84,6 @@ export async function POST(req: Request) {
       );
     }
 
-    /* ---------- REQUIRE STORY PRODUCT ---------- */
     const storyProduct = await db.query.storyProducts.findFirst({
       where: eq(storyProducts.storyId, storyId),
     });
@@ -108,7 +106,6 @@ export async function POST(req: Request) {
 
     const isPhysical = productType === "print" || productType === "gift";
 
-    /* ---------- SAVE SHIPPING ADDRESS ---------- */
     if (isPhysical) {
       const checkoutAddress = extractPaypalShippingAddress(receipt);
 
@@ -125,7 +122,6 @@ export async function POST(req: Request) {
         .where(eq(storyProducts.storyId, storyId));
     }
 
-    /* ---------- CHECK IF UPGRADE (already paid) ---------- */
     const [storyRow] = await db
       .select({ paymentStatus: stories.paymentStatus })
       .from(stories)
@@ -134,15 +130,12 @@ export async function POST(req: Request) {
 
     const alreadyPaid = storyRow?.paymentStatus === "paid";
 
-    /* ---------- UPDATE STORY ---------- */
     if (alreadyPaid) {
-      // Upgrade — just record new payment ID
       await db
         .update(stories)
         .set({ paymentId: orderID, updatedAt: new Date() })
         .where(eq(stories.id, storyId));
     } else {
-      // First purchase — mark paid, start generation
       await db
         .update(stories)
         .set({
@@ -158,6 +151,21 @@ export async function POST(req: Request) {
         data: { storyId },
       });
     }
+
+    const payerEmail = receipt?.payer?.email_address;
+    const amountValue = receipt?.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value;
+    const currency = receipt?.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.currency_code;
+    const distinctId = payerEmail ?? storyId;
+
+    await captureServerEvent(distinctId, "payment_captured", {
+      story_id: storyId,
+      paypal_order_id: orderID,
+      product_type: productType,
+      is_upgrade: alreadyPaid,
+      amount: amountValue ? parseFloat(amountValue) : undefined,
+      currency,
+      payer_email: payerEmail,
+    });
 
     return NextResponse.json({
       success: true,

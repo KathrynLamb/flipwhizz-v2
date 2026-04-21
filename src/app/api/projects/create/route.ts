@@ -4,6 +4,7 @@ import { projects, storyProducts } from "@/db/schema";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { v4 as uuid } from "uuid";
+import { captureServerEvent } from "@/lib/posthog-server";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -22,14 +23,18 @@ export async function POST(req: Request) {
   await db.insert(projects).values({
     id: projectId,
     userId: session.user.id,
-    name: title,          // ← FIXED: correct column name
+    name: title,
     storyBrief: null,
     storyBasePrompt: null,
     fullAiStory: null,
     purchaseIntent: intent || null,
   });
 
-
+  await captureServerEvent(session.user.id, "project_created", {
+    project_id: projectId,
+    title,
+    purchase_intent: intent || null,
+  });
 
   return NextResponse.json({ id: projectId });
 }

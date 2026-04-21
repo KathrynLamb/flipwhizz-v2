@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { createGelatoOrder } from "print/gelato/createOrder";
 import { storyProducts } from "@/db/schema";
+import { captureServerEvent } from "@/lib/posthog-server";
 
 
 interface CreateOrderRequest {
@@ -37,10 +38,6 @@ export async function POST(req: Request) {
       );
     }
 
-    /* --------------------------------------------------
-       1. Load story
-    -------------------------------------------------- */
-
     const story = await db.query.stories.findFirst({
       where: eq(stories.id, storyId),
     });
@@ -52,71 +49,46 @@ export async function POST(req: Request) {
       );
     }
 
+    const storyProduct = await db.query.storyProducts.findFirst({
+      where: eq(storyProducts.storyId, storyId),
+    });
 
+    const productType = storyProduct?.productType || "print";
 
-// After loading the story...
-const storyProduct = await db.query.storyProducts.findFirst({
-  where: eq(storyProducts.storyId, storyId),
-});
-
-const productType = storyProduct?.productType || "print";
-
-// Digital = no physical order
-if (productType === "digital") {
-  return NextResponse.json(
-    { error: "Digital orders do not require printing" },
-    { status: 400 }
-  );
-}
-
-// Resolve Gelato product UID
-const gelatoProductUid =
-  productType === "gift"
-    ? process.env.GELATO_PRODUCT_UID_HARDCOVER
-    : process.env.GELATO_PRODUCT_UID_SOFTCOVER;
-
-if (!gelatoProductUid) {
-  throw new Error("Missing Gelato product UID for " + productType);
-}
-
-// Resolve price
-const PRICES: Record<string, string> = {
-  print: "29.00",
-  gift: "39.00",
-};
-const orderAmount = PRICES[productType] || "29.00";
-
-    /* --------------------------------------------------
-       2. Validate readiness (NEW MODEL)
-    -------------------------------------------------- */
-
-    const validationErrors: string[] = [];
-
-    if (!story.pdfUrl) {
-      validationErrors.push("PDF has not been generated");
-    }
-
-    if (story.paymentStatus !== "paid") {
-      validationErrors.push("Payment not confirmed");
-    }
-
-    if (!story.coverSpreadUrl) {
-      validationErrors.push("Cover not generated");
-    }
-
-    if (validationErrors.length > 0) {
+    if (productType === "digital") {
       return NextResponse.json(
-        {
-          error: "Order not ready",
-          missing: validationErrors,
-        },
+        { error: "Digital orders do not require printing" },
         { status: 400 }
       );
     }
 
-    /* --------------------------------------------------
-       3. Create order record
-    -------------------------------------------------- */
+    const gelatoProductUid =
+      productType === "gift"
+        ? process.env.GELATO_PRODUCT_UID_HARDCOVER
+        : process.env.GELATO_PRODUCT_UID_SOFTCOVER;
+
+    if (!gelatoProductUid) {
+      throw new Error("Missing Gelato product UID for " + productType);
+    }
+
+    const PRICES: Record<string, string> = {
+      print: "29.00",
+      gift: "39.00",
+    };
+    const orderAmount = PRICES[productType] || "29.00";
+
+    const validationErrors: string[] = [];
+
+    if (!story.pdfUrl) validationErrors.push("PDF has not been generated");
+    if (story.paymentStatus !== "paid") validationErrors.push("Payment not confirmed");
+    if (!story.coverSpreadUrl) validationErrors.push("Cover not generated");
+
+    if (validationErrors.length > 0) {
+      return NextResponse.json(
+        { error: "Order not ready", missing: validationErrors },
+        { status: 400 }
+      );
+    }
 
     const orderId = uuidv4();
     const orderReferenceId = `ORD-${orderId.slice(0, 8)}`;
@@ -128,17 +100,13 @@ const orderAmount = PRICES[productType] || "29.00";
       paymentId: story.paymentId ?? null,
       paymentStatus: "paid",
       amount: orderAmount,
-      currency: "USD",
+      currency: "GBP",
       pdfUrl: story.pdfUrl!,
       shippingAddress: shippingAddress as any,
       status: "pending",
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-
-    /* --------------------------------------------------
-       4. Submit to Gelato
-    -------------------------------------------------- */
 
     try {
       const gelatoResponse = await createGelatoOrder({
@@ -148,10 +116,6 @@ const orderAmount = PRICES[productType] || "29.00";
         shippingAddress,
         productUid: gelatoProductUid,
       });
-
-      /* --------------------------------------------------
-         5. Persist Gelato IDs
-      -------------------------------------------------- */
 
       await db
         .update(orders)
@@ -172,6 +136,16 @@ const orderAmount = PRICES[productType] || "29.00";
         })
         .where(eq(stories.id, storyId));
 
+      await captureServerEvent(userId, "print_order_submitted", {
+        order_id: orderId,
+        story_id: storyId,
+        gelato_order_id: gelatoResponse.id,
+        product_type: productType,
+        amount: parseFloat(orderAmount),
+        currency: "GBP",
+        shipping_country: shippingAddress.countryIsoCode,
+      });
+
       return NextResponse.json({
         success: true,
         orderId,
@@ -181,22 +155,17 @@ const orderAmount = PRICES[productType] || "29.00";
     } catch (gelatoError) {
       await db
         .update(orders)
-        .set({
-          status: "failed",
-          updatedAt: new Date(),
-        })
+        .set({ status: "failed", updatedAt: new Date() })
         .where(eq(orders.id, orderId));
 
       throw gelatoError;
     }
   } catch (error) {
     console.error("❌ Failed to create order:", error);
-
     return NextResponse.json(
       {
         error: "Failed to create order",
-        details:
-          error instanceof Error ? error.message : "Unknown error",
+        details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
     );

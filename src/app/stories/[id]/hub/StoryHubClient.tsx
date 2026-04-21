@@ -1,7 +1,8 @@
 'use client';
 
 import { useRouter, usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import posthog from 'posthog-js';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
@@ -135,6 +136,18 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
 
   // If we're on /hub itself, show the hub landing. Otherwise just render the nav.
   const isHubLanding = pathname.endsWith('/hub');
+
+  useEffect(() => {
+    if (isHubLanding) {
+      posthog.capture('story_hub_viewed', {
+        story_id: story.id,
+        story_title: story.title,
+        progress_percent: hub.progressPercent,
+        next_step: nextStep?.title ?? null,
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story.id, isHubLanding]);
 
   return (
     <>

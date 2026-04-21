@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, Send, Sparkles, Zap, BookOpen } from "lucide-react";
+import posthog from "posthog-js";
 
 type ChatMsg = {
   role: "user" | "assistant";
@@ -81,7 +82,6 @@ export default function CreateDemoClient() {
     if (!reachedLimit) return;
     if (messages.length === 0) return;
 
-    // Check if we were redirected back after sign-in
     const pendingResume = sessionStorage.getItem("flipwhizz_demo_pending_resume");
     if (!pendingResume) return;
 
@@ -107,8 +107,21 @@ export default function CreateDemoClient() {
     textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
   }, [input]);
 
+  // Track when the paywall CTA appears
+  useEffect(() => {
+    if (reachedLimit) {
+      posthog.capture("demo_limit_reached", {
+        is_authenticated: authStatus === "authenticated",
+        message_count: userMessageCount,
+      });
+    }
+  }, [reachedLimit]);
+
   function fillSuggestion(value: string) {
     if (loading || reachedLimit) return;
+    posthog.capture("demo_suggestion_clicked", {
+      suggestion: SUGGESTIONS.find((s) => s.value === value)?.label ?? value.slice(0, 40),
+    });
     setInput(value);
     requestAnimationFrame(() => textareaRef.current?.focus());
   }
@@ -119,6 +132,14 @@ export default function CreateDemoClient() {
     const text = input.trim();
     const userMessage: ChatMsg = { role: "user", content: text };
     const nextHistory = [...messages, userMessage];
+
+    // Track first message as demo_started
+    if (messages.filter((m) => m.role === "user").length === 0) {
+      posthog.capture("demo_started", {
+        is_authenticated: authStatus === "authenticated",
+        message_preview: text.slice(0, 80),
+      });
+    }
 
     setMessages(nextHistory);
     setInput("");
@@ -157,6 +178,7 @@ export default function CreateDemoClient() {
           ? err.message
           : "Something went wrong while sending your message.";
 
+      posthog.capture("demo_error", { error: message, message_count: userMessageCount });
       setError(message);
       setMessages((prev) => [
         ...prev,
@@ -174,6 +196,12 @@ export default function CreateDemoClient() {
   async function continueToFullProject() {
     if (creatingProject || messages.length === 0) return;
 
+    posthog.capture("demo_continue_clicked", {
+      is_authenticated: authStatus === "authenticated",
+      message_count: userMessageCount,
+      is_resume: hasAttemptedResume,
+    });
+
     setCreatingProject(true);
     setError(null);
 
@@ -186,8 +214,8 @@ export default function CreateDemoClient() {
 
       const data = await res.json().catch(() => null);
 
-      // If unauthorized, set resume flag and redirect to sign in
       if (res.status === 401) {
+        posthog.capture("demo_auth_wall_hit");
         sessionStorage.setItem(
           "flipwhizz_create_demo_messages",
           JSON.stringify(messages),
@@ -203,21 +231,27 @@ export default function CreateDemoClient() {
         );
       }
 
+      posthog.capture("demo_project_created", {
+        project_id: data.projectId,
+        is_resume: hasAttemptedResume,
+      });
+
       sessionStorage.removeItem("flipwhizz_create_demo_messages");
       sessionStorage.removeItem("flipwhizz_demo_pending_resume");
       router.push(`/chat?project=${data.projectId}`);
     } catch (err) {
       setCreatingProject(false);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "We could not continue into the full project.",
-      );
+      const message = err instanceof Error
+        ? err.message
+        : "We could not continue into the full project.";
+      posthog.capture("demo_project_creation_failed", { error: message });
+      setError(message);
     }
   }
 
   function resetDemo() {
     if (loading || creatingProject) return;
+    posthog.capture("demo_reset", { message_count: userMessageCount });
     setMessages([]);
     setInput("");
     setError(null);
@@ -318,7 +352,6 @@ export default function CreateDemoClient() {
               </motion.div>
             )}
 
-            {/* Auto-resuming state — show a spinner instead of the normal CTA */}
             {creatingProject && hasAttemptedResume && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}

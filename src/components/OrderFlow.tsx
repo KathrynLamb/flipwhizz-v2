@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { StepKey } from '@/lib/storySteps';
 import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
+import posthog from 'posthog-js';
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
@@ -157,9 +158,15 @@ export default function OrderFlowClient({
         body: JSON.stringify({ step: 'pay' }),
       });
 
+      posthog.capture('order_form_submitted', {
+        story_id: storyId,
+        order_id: data.orderId,
+        shipping_country: shippingAddress.countryIsoCode,
+      });
       setOrderId(data.orderId);
     } catch (err) {
       console.error('Order submission failed:', err);
+      posthog.captureException(err);
       alert('Failed to submit order');
     } finally {
       setIsSubmitting(false);

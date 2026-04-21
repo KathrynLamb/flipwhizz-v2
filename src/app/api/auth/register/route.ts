@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { Resend } from "resend";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -63,7 +64,7 @@ export async function POST(req: Request) {
         .set({ hashedPassword, name: trimmedName || undefined })
         .where(eq(users.id, existing.id));
 
-      return NextResponse.json({ ok: true, linked: true });
+      return NextResponse.json({ ok: true, linked: true, userId: existing.id });
     }
 
     // ── Create new user ──
@@ -76,6 +77,12 @@ export async function POST(req: Request) {
       name: trimmedName,
       hashedPassword,
     });
+
+    // ── Track registration ──
+    const posthog = getPostHogClient();
+    posthog.identify({ distinctId: userId, properties: { email: trimmedEmail, name: trimmedName } });
+    posthog.capture({ distinctId: userId, event: "user_registered", properties: { email: trimmedEmail, name: trimmedName, method: "email" } });
+    await posthog.shutdown();
 
     // ── Send welcome email (non-blocking) ──
     resend
@@ -104,7 +111,7 @@ export async function POST(req: Request) {
       })
       .catch((err) => console.error("Welcome email failed:", err));
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, userId });
   } catch (err) {
     console.error("Registration error:", err);
     return NextResponse.json(

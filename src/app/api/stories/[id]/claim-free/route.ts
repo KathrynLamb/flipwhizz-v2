@@ -16,6 +16,7 @@ import {
   type ProductType,
   type CurrencyCode,
 } from "@/lib/pricing";
+import { captureServerEvent, getPostHogClient } from "@/lib/posthog-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -110,6 +111,14 @@ export async function POST(
       data: { storyId },
     });
 
+
+
+    await captureServerEvent(storyId, "free_story_claimed", {
+      story_id: storyId,
+      product_type: productType,
+      promo_code: promo.code,
+      currency,
+    });
     return NextResponse.json({
       success: true,
       storyId,

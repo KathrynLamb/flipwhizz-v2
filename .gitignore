@@ -42,3 +42,4 @@ next-env.d.ts
 src/lib/privateKey
 src/lib/privateKey
 src/lib/privateKey
+.env.local
