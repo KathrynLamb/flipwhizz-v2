@@ -46,6 +46,7 @@ export default function CreateDemoClient() {
   const { data: session, status: authStatus } = useSession();
 
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
@@ -63,43 +64,46 @@ export default function CreateDemoClient() {
   const reachedLimit = userMessageCount >= MAX_USER_MESSAGES;
   const remaining = Math.max(0, MAX_USER_MESSAGES - userMessageCount);
 
-  // ── Load saved messages from sessionStorage ──
-  useEffect(() => {
-    const saved = sessionStorage.getItem("flipwhizz_create_demo_messages");
-    if (!saved) return;
+
+// Load messages effect
+useEffect(() => {
+  const saved = sessionStorage.getItem("flipwhizz_create_demo_messages");
+  if (saved) {
     try {
       const parsed = JSON.parse(saved) as ChatMsg[];
       if (Array.isArray(parsed) && parsed.length > 0) setMessages(parsed);
-    } catch {
-      /* ignore */
-    }
-  }, []);
+    } catch { /* ignore */ }
+  }
+  setMessagesLoaded(true); // always set, even if nothing to load
+}, []);
 
-  // ── Auto-resume: if we have saved messages at the limit AND user just signed in, retry project creation ──
-  useEffect(() => {
-    if (hasAttemptedResume) return;
-    if (authStatus !== "authenticated") return;
-    if (!reachedLimit) return;
-    if (messages.length === 0) return;
+// Resume effect — gate on messagesLoaded
+useEffect(() => {
+  if (!messagesLoaded) return;  // <-- add this
+  if (hasAttemptedResume) return;
+  if (authStatus !== "authenticated") return;
+  if (!reachedLimit) return;
+  if (messages.length === 0) return;
 
-    const pendingResume = sessionStorage.getItem("flipwhizz_demo_pending_resume");
-    if (!pendingResume) return;
+  const pendingResume = sessionStorage.getItem("flipwhizz_demo_pending_resume");
+  if (!pendingResume) return;
 
-    setHasAttemptedResume(true);
-    sessionStorage.removeItem("flipwhizz_demo_pending_resume");
-    void continueToFullProject();
-  }, [authStatus, reachedLimit, messages, hasAttemptedResume]);
+  setHasAttemptedResume(true);
+  sessionStorage.removeItem("flipwhizz_demo_pending_resume");
+  void continueToFullProject();
+}, [authStatus, reachedLimit, messages, hasAttemptedResume, messagesLoaded]);
 
-  useEffect(() => {
-    sessionStorage.setItem(
-      "flipwhizz_create_demo_messages",
-      JSON.stringify(messages),
-    );
-    const id = window.setTimeout(() => {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 80);
-    return () => window.clearTimeout(id);
-  }, [messages]);
+useEffect(() => {
+  if (!messagesLoaded) return; // don't overwrite before we've loaded
+  sessionStorage.setItem(
+    "flipwhizz_create_demo_messages",
+    JSON.stringify(messages),
+  );
+  const id = window.setTimeout(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, 80);
+  return () => window.clearTimeout(id);
+}, [messages, messagesLoaded]);
 
   useEffect(() => {
     if (!textareaRef.current) return;
@@ -221,7 +225,7 @@ export default function CreateDemoClient() {
           JSON.stringify(messages),
         );
         sessionStorage.setItem("flipwhizz_demo_pending_resume", "true");
-        router.push("/auth/signin?callbackUrl=/create");
+        router.push("/auth/signin?callbackUrl=/projects/create");
         return;
       }
 
