@@ -13,6 +13,7 @@ export default function robots(): MetadataRoute.Robots {
         "/api/",
         "/login",
         "/signup",
+        "/_next/"
       ],
     },
     sitemap: "https://www.flipwhizz.com/sitemap.xml",

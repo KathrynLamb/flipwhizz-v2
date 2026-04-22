@@ -1,9 +1,19 @@
-// next.config.ts
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
   skipTrailingSlashRedirect: true,
+
+  async redirects() {
+    return [
+      {
+        source: "/sign-in",
+        destination: "/login",
+        permanent: true,
+      },
+    ];
+  },
+
   async rewrites() {
     return [
       {
