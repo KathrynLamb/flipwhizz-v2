@@ -323,13 +323,26 @@ export default function CompletedBookView({ story, order }: Props) {
           />
 
    {/* 4. Share to TikTok */}
-<div className="text-left w-full">
+{/* <div className="text-left w-full">
   <ShareTikTokButton
     storyId={story.id}
     imageUrls={story.spreadImageUrls}
     storyTitle={story.title}
   />
-</div>
+</div> */}
+
+{/* 4. Share */}
+<ActionCard
+  icon={Share2}
+  title="Share"
+  description="Copy a link to share your book with anyone."
+  onClick={() => {
+    const url = story.pdfUrl || `${window.location.origin}/stories/${story.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      alert("Link copied to clipboard!");
+    });
+  }}
+/>
 
           {/* 5. Write a Review */}
           <ActionCard

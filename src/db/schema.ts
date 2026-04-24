@@ -8,7 +8,7 @@ import {
   boolean,
   jsonb,
   index,
-  uniqueIndex,
+  uniqueIndex,    
   date
 } from "drizzle-orm/pg-core";
 

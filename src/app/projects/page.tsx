@@ -15,6 +15,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import CreateStoryButton from "@/app/projects/components/CreateStoryButton";
 import HomeContent from "@/app/projects/components/HomeContent";
+import UserMenu from "@/app/stories/components/UserMenu";
 // import HomeContent from "../components/HomeContent";
 
 export default async function ProjectsIndexPage() {
@@ -229,6 +230,7 @@ export default async function ProjectsIndexPage() {
             />
           </Link>
           <CreateStoryButton />
+          <UserMenu />
         </div>
       </header>
 

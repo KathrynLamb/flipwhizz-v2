@@ -330,7 +330,7 @@ export default function StoryReaderClient({
         <div className="max-w-[1320px] mx-auto px-6 lg:px-8 py-9 pb-28">
           <div className="grid lg:grid-cols-[1fr_390px] gap-8 items-start">
             {/* BOOK AREA */}
-            <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-5 sticky top-24 self-start">
               {/* Book spread */}
               <div style={{ perspective: '1200px' }}>
                 <AnimatePresence mode="wait" custom={pageDirection}>
