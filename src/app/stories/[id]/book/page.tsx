@@ -130,7 +130,7 @@ function isBookLocked(story: {
   paymentStatus: string | null;
   pdfUrl: string | null;
 }) {
-  return story.paymentStatus === "paid" && !!story.pdfUrl;
+  return story.paymentStatus === "paid";
 }
 
 // ─── Page ───
