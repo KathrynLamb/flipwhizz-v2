@@ -431,53 +431,92 @@ function UpgradeSheet({ storyId, selectedTier, onSelectTier, onClose, onSuccess,
         </div>
 
         {/* PayPal */}
-        <div className="px-6 py-5">
-          {(processing || savingProduct) && (
-            <div className="flex items-center justify-center gap-2 py-8">
-              <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#B05CE6" }} />
-              <span className="text-sm font-semibold" style={{ color: "#6B5C80" }}>{savingProduct ? "Saving upgrade selection…" : "Processing payment…"}</span>
-            </div>
-          )}
-          <div style={{ display: processing || savingProduct ? "none" : "block" }}>
-            <PayPalScriptProvider options={{ clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!, currency, intent: "capture" }}>
-              <PayPalButtons
-                key={`${selectedTier}-${currency}-${promoState?.code ?? "none"}`}
-                style={{ layout: "vertical", color: "gold", shape: "rect", label: "pay", height: 48 }}
-                createOrder={async () => {
-                  await saveProductSelection(selectedTier);
-                  const res = await fetch("/api/paypal/order", {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      storyId, price: (finalCents / 100).toFixed(2), currency,
-                      upgradeFrom: "digital",
-                      promoCode: promoState?.valid ? promoState.code : undefined,
-                    }),
-                  });
-                  const data = await res.json();
-                  if (!res.ok || !data.orderID) throw new Error(data?.error || "Failed to create upgrade order");
-                  return data.orderID;
-                }}
-                onApprove={async (data) => {
-                  setProcessing(true);
-                  try {
-                    const res = await fetch("/api/paypal/capture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderID: data.orderID }) });
-                    const result = await res.json();
-                    if (!res.ok || !result.success) throw new Error(result?.error || "Payment capture failed.");
-                    onSuccess();
-                  } catch (err: any) { alert(err?.message || "Payment processed but something went wrong."); }
-                  finally { setProcessing(false); }
-                }}
-                onError={(err) => { console.error("PayPal upgrade error:", err); setProcessing(false); saveProductSelection("digital").catch(() => {}); alert("Payment failed. Please try again."); }}
-                onCancel={() => { setProcessing(false); saveProductSelection("digital").catch(() => {}); }}
-              />
-            </PayPalScriptProvider>
-          </div>
-          <div className="flex justify-center gap-3 mt-4">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(180,150,210,0.06)", color: "#8B7BA0", border: "1px solid rgba(180,150,210,0.1)" }}>
-              <Lock className="w-3 h-3" /> Secure payment
-            </span>
-          </div>
-        </div>
+{/* PayPal or Free Checkout */}
+<div className="px-6 py-5">
+  {(processing || savingProduct) && (
+    <div className="flex items-center justify-center gap-2 py-8">
+      <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#B05CE6" }} />
+      <span className="text-sm font-semibold" style={{ color: "#6B5C80" }}>
+        {savingProduct ? "Saving upgrade selection…" : "Processing…"}
+      </span>
+    </div>
+  )}
+
+  {!processing && !savingProduct && finalCents === 0 ? (
+    // FREE BYPASS — no PayPal needed
+    <button
+      onClick={async () => {
+        setProcessing(true);
+        try {
+          await saveProductSelection(selectedTier);
+          const res = await fetch("/api/paypal/capture-free", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              storyId,
+              productType: selectedTier,
+              promoCode: promoState?.valid ? promoState.code : undefined,
+            }),
+          });
+          const result = await res.json();
+          if (!res.ok || !result.success) throw new Error(result?.error || "Failed to process free order");
+          onSuccess();
+        } catch (err: any) {
+          alert(err?.message || "Something went wrong.");
+        } finally {
+          setProcessing(false);
+        }
+      }}
+      className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+      style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", border: "none", fontFamily: FONT }}
+    >
+      <Check className="w-5 h-5" />
+      Get it free
+    </button>
+  ) : (
+    // PAYPAL NORMAL FLOW
+    <div style={{ display: processing || savingProduct ? "none" : "block" }}>
+      <PayPalScriptProvider options={{ clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!, currency, intent: "capture" }}>
+        <PayPalButtons
+          key={`${selectedTier}-${currency}-${promoState?.code ?? "none"}`}
+          style={{ layout: "vertical", color: "gold", shape: "rect", label: "pay", height: 48 }}
+          createOrder={async () => {
+            await saveProductSelection(selectedTier);
+            const res = await fetch("/api/paypal/order", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                storyId, price: (finalCents / 100).toFixed(2), currency,
+                upgradeFrom: "digital",
+                promoCode: promoState?.valid ? promoState.code : undefined,
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.orderID) throw new Error(data?.error || "Failed to create upgrade order");
+            return data.orderID;
+          }}
+          onApprove={async (data) => {
+            setProcessing(true);
+            try {
+              const res = await fetch("/api/paypal/capture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderID: data.orderID }) });
+              const result = await res.json();
+              if (!res.ok || !result.success) throw new Error(result?.error || "Payment capture failed.");
+              onSuccess();
+            } catch (err: any) { alert(err?.message || "Payment processed but something went wrong."); }
+            finally { setProcessing(false); }
+          }}
+          onError={(err) => { console.error("PayPal upgrade error:", err); setProcessing(false); saveProductSelection("digital").catch(() => {}); alert("Payment failed. Please try again."); }}
+          onCancel={() => { setProcessing(false); saveProductSelection("digital").catch(() => {}); }}
+        />
+      </PayPalScriptProvider>
+    </div>
+  )}
+
+  <div className="flex justify-center gap-3 mt-4">
+    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(180,150,210,0.06)", color: "#8B7BA0", border: "1px solid rgba(180,150,210,0.1)" }}>
+      <Lock className="w-3 h-3" /> Secure payment
+    </span>
+  </div>
+</div>
       </motion.div>
     </div>
   );
