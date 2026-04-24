@@ -67,9 +67,7 @@ const jsonOrNull = (v: unknown) => (v && typeof v === "object" ? v : null);
 export const ensureWorld = inngest.createFunction(
   {
     id: "ensure-world",
-    retries: 2,
-  },
-  { event: "story/ensure-world" },
+    retries: 2, triggers: [{ event: "story/ensure-world" }] },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
 

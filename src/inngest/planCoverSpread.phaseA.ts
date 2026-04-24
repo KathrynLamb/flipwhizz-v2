@@ -62,9 +62,7 @@ function extractJson(raw: string) {
 export const planCoverSpread = inngest.createFunction(
   {
     id: "plan-cover-spread",
-    retries: 2,
-  },
-  { event: "cover/plan" },
+    retries: 2, triggers: [{ event: "cover/plan" }] },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId?: string };
     if (!storyId) throw new Error("storyId required");

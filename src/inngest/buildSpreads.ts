@@ -12,9 +12,7 @@ import { v4 as uuid } from "uuid";
 export const buildSpreads = inngest.createFunction(
   {
     id: "build-spreads",
-    retries: 2,
-  },
-  { event: "story/build-spreads" },
+    retries: 2, triggers: [{ event: "story/build-spreads" }] },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
 

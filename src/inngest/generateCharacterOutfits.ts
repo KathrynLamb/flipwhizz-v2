@@ -73,9 +73,7 @@ export const generateCharacterOutfits = inngest.createFunction(
   {
     id: "generate-character-outfits",
     retries: 1,
-    concurrency: 3,
-  },
-  { event: "character/generate-outfits" },
+    concurrency: 3, triggers: [{ event: "character/generate-outfits" }] },
   async ({ event, step }) => {
     const { characterId, characterName, appearance, outfitsNeeded } = event.data;
 

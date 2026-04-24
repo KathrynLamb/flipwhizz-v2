@@ -4,8 +4,7 @@ import { storyPages } from "@/db/schema";
 import { db } from "@/db";
 
 export const generateBookSpreads = inngest.createFunction(
-  { id: "generate-book-spreads", concurrency: 5, retries: 2 },
-  { event: "story/generate-spreads" }, // ✅ Fixed: dash instead of dot
+  { id: "generate-book-spreads", concurrency: 5, retries: 2 , triggers: [{ event: "story/generate-spreads" }] }, // ✅ Fixed: dash instead of dot
   async ({ event, step }) => {
     const { storyId } = event.data;
 

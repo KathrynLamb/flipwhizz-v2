@@ -99,8 +99,7 @@ function extractImage(result: any) {
 /* ---------------- WORKER ---------------- */
 
 export const generateStyleSample = inngest.createFunction(
-  { id: "generate-style-sample", concurrency: 1, retries: 1 },
-  { event: "style/generate.sample" },
+  { id: "generate-style-sample", concurrency: 1, retries: 1 , triggers: [{ event: "style/generate.sample" }] },
   async ({ event, step }) => {
     const {
       storyId,

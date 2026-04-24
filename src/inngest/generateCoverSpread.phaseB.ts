@@ -148,8 +148,7 @@ function resolveAvoidBlock(style: typeof storyStyleGuide.$inferSelect | null | u
 /* -------------------------------------------------------------------------- */
 
 export const generateCoverSpreadPhaseB = inngest.createFunction(
-  { id: "generate-cover-spread-phase-b", retries: 1, concurrency: 1 },
-  { event: "story/generate.cover.spread" },
+  { id: "generate-cover-spread-phase-b", retries: 1, concurrency: 1 , triggers: [{ event: "story/generate.cover.spread" }] },
   async ({ event, step }) => {
     const { storyId } = event.data;
     if (!storyId) throw new Error("storyId required");
