@@ -141,16 +141,35 @@ export default function PrintPage({ story, order, productType: initialProductTyp
     setIsDownloading(true);
     try {
       const res = await fetch(`/api/stories/${story.id}/export-home-print`, { method: "POST" });
-      if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to generate PDF"); }
+      if (!res.ok) { 
+        const data = await res.json().catch(() => ({})); 
+        throw new Error(data.error || "Failed to generate PDF"); 
+      }
       const blob = await res.blob();
+      
+      // Upload to Cloudinary and save URL back to story
+      const formData = new FormData();
+      formData.append("file", blob, "book.pdf");
+      formData.append("storyId", story.id);
+      
+      fetch(`/api/stories/${story.id}/save-pdf`, {
+        method: "POST",
+        body: formData,
+      }).catch(() => {}); // fire and forget — don't block the download
+      
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const safeName = (story.title || "FlipWhizz-Book").replace(/[^a-zA-Z0-9\s-]/g, "").trim().replace(/\s+/g, "-");
+      const safeName = (story.title || "FlipWhizz-Book")
+        .replace(/[^a-zA-Z0-9\s-]/g, "")
+        .trim()
+        .replace(/\s+/g, "-");
       a.download = `${safeName}-print-at-home.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) { alert(err instanceof Error ? err.message : "Failed to download PDF"); }
+    } catch (err) { 
+      alert(err instanceof Error ? err.message : "Failed to download PDF"); 
+    }
     finally { setIsDownloading(false); }
   }
 
