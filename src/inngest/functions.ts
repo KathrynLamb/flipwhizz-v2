@@ -49,9 +49,9 @@ function extractJson(raw: string) {
 }
 
 export const globalRewriteJob = inngest.createFunction(
-  { id: "global-rewrite-job", retries: 1 },
-  { event: "story/global-rewrite" },
+  { id: "global-rewrite-job", retries: 1, triggers: [{ event: "story/global-rewrite" }] },
   async ({ event }) => {
+
     const { storyId } = event.data;
 
     const pages = await db.query.storyPages.findMany({

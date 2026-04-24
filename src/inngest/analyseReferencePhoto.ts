@@ -12,8 +12,8 @@ export const analyseReferencePhoto = inngest.createFunction(
   {
     id: "analyse-reference-photo",
     retries: 2,
+    triggers: [{ event: "character/reference-photo.uploaded" }],
   },
-  { event: "character/reference-photo.uploaded" },
   async ({ event, step }) => {
     const { characterId, storyId, imageUrl } = event.data;
 

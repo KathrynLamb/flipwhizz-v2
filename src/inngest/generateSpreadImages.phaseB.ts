@@ -323,8 +323,7 @@ function resolveStyleGuide(
 /* -------------------------------------------------------------------------- */
 
 export const generateBookSpreads = inngest.createFunction(
-  { id: "generate-book-spreads", concurrency: 5, retries: 2 },
-  { event: "story/generate-spreads" },
+  { id: "generate-book-spreads", concurrency: 5, retries: 2, triggers: [{ event: "story/generate-spreads" }] },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId?: string };
     assertNonEmpty(storyId, "storyId");
@@ -413,8 +412,7 @@ export const generateBookSpreads = inngest.createFunction(
 /* -------------------------------------------------------------------------- */
 
 export const generateSingleSpread = inngest.createFunction(
-  { id: "generate-single-spread", concurrency: 4, retries: 2 },
-  { event: "story/generate.single.spread" },
+  { id: "generate-single-spread", concurrency: 4, retries: 2, triggers: [{ event: "story/generate.single.spread" }] },
   async ({ event, step }) => {
     const parsed = GenerateSingleSpreadEventSchema.safeParse(event.data);
     if (!parsed.success) {

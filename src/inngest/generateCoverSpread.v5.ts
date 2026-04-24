@@ -137,8 +137,7 @@ const SAFETY_SETTINGS = [
 /* -------------------------------------------------------------------------- */
 
 export const generateCoverSpreadV5 = inngest.createFunction(
-  { id: "generate-cover-spread-v5", retries: 1, concurrency: 1 },
-  { event: "story/generate.cover.spread" },
+  { id: "generate-cover-spread-v5", retries: 1, concurrency: 1, triggers: [{ event: "story/generate.cover.spread" }] },
   async ({ event, step }) => {
     const { storyId } = event.data;
     if (!storyId) throw new Error("storyId required");

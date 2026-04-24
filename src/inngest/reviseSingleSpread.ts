@@ -57,8 +57,7 @@ function extractInlineImage(result: any) {
 /* -------------------------------- WORKER -------------------------------- */
 
 export const reviseSingleSpread = inngest.createFunction(
-  { id: "revise-single-spread", concurrency: 2, retries: 1 },
-  { event: "story/revise.single.spread" },
+  { id: "revise-single-spread", concurrency: 2, retries: 1, triggers: [{ event: "story/revise.single.spread" }] },
   async ({ event, step }) => {
     const { storyId, leftPageId, rightPageId, feedback } = event.data;
 
