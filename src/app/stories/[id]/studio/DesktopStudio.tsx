@@ -685,14 +685,14 @@ export default function DesktopStudio({
 
   useEffect(() => {
     if (!isPaid) return;
-
+  
     if (completedCount === 0 && !isGenerating) {
       setIsGenerating(true);
       setIsPolling(true);
       fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" }).catch(
         () => {}
       );
-    } else if (completedCount > 0 && completedCount < totalCount) {
+    } else if (completedCount > 0 && completedCount < totalCount && story.status === "generating") {
       setIsGenerating(true);
       setIsPolling(true);
     }

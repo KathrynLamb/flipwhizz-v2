@@ -460,7 +460,7 @@ useEffect(() => {
     return;
   }
 
-  if (completedCount > 0 && completedCount < totalCount) {
+  if (completedCount > 0 && completedCount < totalCount && story.status === "generating") {
     setIsGenerating(true);
     setIsPolling(true);
     return;
