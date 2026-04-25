@@ -345,8 +345,8 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       const parts: any[] = [];
 
       // Fetch Pass 1 result as a URL — no inline base64
-      parts.push(await getImagePart(pass1Url));
-      parts.push({ text: "↑ THIS IS THE COVER TO RECREATE. Keep EVERYTHING the same — layout, text, background, composition, colours, style. ↑" });
+      const pass1UrlResized = pass1Url.replace('/upload/', '/upload/w_1920,q_80/');
+      parts.push(await getImagePart(pass1UrlResized));      parts.push({ text: "↑ THIS IS THE COVER TO RECREATE. Keep EVERYTHING the same — layout, text, background, composition, colours, style. ↑" });
 
       for (const c of refs.chars) {
         parts.push(await getImagePart(c.portraitUrl!));
