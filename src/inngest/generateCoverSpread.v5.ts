@@ -30,25 +30,15 @@ import path from "path";
 
 type GenerationStrategy = {
   approach: "two-pass" | "single" | "edit";
-
-  // Pass 1: composition prompt (scene, layout, text — no character fidelity)
   pass1Prompt: string;
-
-  // Pass 2: character swap prompt (receives Pass 1 output + portraits)
   pass2Prompt: string;
-
-  // Which references to include
   characterIds: string[];
   locationIds: string[];
   includeStyleRef: boolean;
   includeTemplate: boolean;
   includeLogo: boolean;
-
-  // Output config
   aspectRatio: string;
   imageSize: string;
-
-  // For "edit" approach: existing cover URL to modify
   existingCoverUrl?: string;
   editPrompt?: string;
 };
@@ -98,7 +88,6 @@ async function getImagePart(source: string) {
 
 function extractInlineImage(result: any) {
   const parts = result?.candidates?.[0]?.content?.parts ?? [];
-  // Find the last non-thought image
   const imagePart = [...parts].reverse().find(
     (p: any) => p.inlineData?.data && !p.thought
   );
@@ -163,7 +152,6 @@ export const generateCoverSpreadV5 = inngest.createFunction(
     /* ── 2. Load references ── */
 
     const refs = await step.run("load-refs", async () => {
-      // Characters — portrait URLs
       const chars = characterIds.length > 0
         ? await db.select({
             id: characters.id,
@@ -174,7 +162,6 @@ export const generateCoverSpreadV5 = inngest.createFunction(
           }).from(characters).where(inArray(characters.id, characterIds))
         : [];
 
-      // Locations — image URL
       const locs = locationIds.length > 0
         ? await db.select({
             id: locations.id,
@@ -184,7 +171,6 @@ export const generateCoverSpreadV5 = inngest.createFunction(
           }).from(locations).where(inArray(locations.id, locationIds))
         : [];
 
-      // Style ref
       let styleRefUrl: string | null = null;
       if (strategy.includeStyleRef) {
         const style = await db.query.storyStyleGuide.findFirst({
@@ -196,7 +182,6 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       return { chars, locs, styleRefUrl };
     });
 
-    // Validate portraits
     const missingPortraits = refs.chars.filter(c => !c.portraitUrl || isDataUrl(c.portraitUrl));
     if (missingPortraits.length > 0) {
       throw new Error(`Missing portraits for: ${missingPortraits.map(c => c.name).join(", ")}`);
@@ -205,14 +190,11 @@ export const generateCoverSpreadV5 = inngest.createFunction(
     /* ── 3. Execute strategy ── */
 
     if (approach === "edit" && strategy.existingCoverUrl && strategy.editPrompt) {
-      // EDIT: Send existing cover + edit instruction
       return await step.run("edit-cover", async () => {
         const parts: any[] = [];
 
-        // Existing cover
         parts.push(await getImagePart(strategy.existingCoverUrl!));
 
-        // Character portraits for the edit
         for (const c of refs.chars) {
           parts.push(await getImagePart(c.portraitUrl!));
           parts.push({ text: `↑ This is ${c.name.toUpperCase()}. ↑` });
@@ -238,11 +220,9 @@ export const generateCoverSpreadV5 = inngest.createFunction(
     }
 
     if (approach === "single") {
-      // SINGLE PASS: everything in one shot (for simple covers)
       return await step.run("single-pass", async () => {
         const parts: any[] = [];
 
-        // Style ref
         if (refs.styleRefUrl && !isDataUrl(refs.styleRefUrl)) {
           try {
             parts.push(await getImagePart(refs.styleRefUrl));
@@ -250,13 +230,11 @@ export const generateCoverSpreadV5 = inngest.createFunction(
           } catch {}
         }
 
-        // Character portraits
         for (const c of refs.chars) {
           parts.push(await getImagePart(c.portraitUrl!));
           parts.push({ text: `↑ This is ${c.name.toUpperCase()}. Match this face exactly. ↑` });
         }
 
-        // Location
         for (const l of refs.locs) {
           const url = l.portraitUrl ?? l.refUrl;
           if (url && !isDataUrl(url)) {
@@ -267,7 +245,6 @@ export const generateCoverSpreadV5 = inngest.createFunction(
           }
         }
 
-        // Logo + template
         if (strategy.includeLogo) {
           try {
             parts.push(await getImagePart(LOGO_PATH));
@@ -282,8 +259,6 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         }
 
         parts.push({ text: strategy.pass1Prompt });
-
-        console.log(`🎨 [single] ${parts.filter((p: any) => p.inlineData).length} images, ${parts.filter((p: any) => p.text).reduce((s: number, p: any) => s + p.text.length, 0)} chars`);
 
         const response = await gemini.models.generateContent({
           model: IMAGE_MODEL,
@@ -304,12 +279,11 @@ export const generateCoverSpreadV5 = inngest.createFunction(
 
     // TWO-PASS (default)
 
-    /* ── Pass 1: Composition ── */
+    /* ── Pass 1: Composition — upload result to Cloudinary ── */
 
-    const pass1Base64 = await step.run("pass1-composition", async () => {
+    const pass1Url = await step.run("pass1-composition", async () => {
       const parts: any[] = [];
 
-      // Style ref
       if (refs.styleRefUrl && !isDataUrl(refs.styleRefUrl)) {
         try {
           parts.push(await getImagePart(refs.styleRefUrl));
@@ -317,7 +291,6 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         } catch {}
       }
 
-      // Location
       for (const l of refs.locs) {
         const url = l.portraitUrl ?? l.refUrl;
         if (url && !isDataUrl(url)) {
@@ -328,7 +301,6 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         }
       }
 
-      // Logo + template
       if (strategy.includeLogo) {
         try {
           parts.push(await getImagePart(LOGO_PATH));
@@ -342,7 +314,6 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         } catch {}
       }
 
-      // The composition prompt (Claude-authored)
       parts.push({ text: strategy.pass1Prompt });
 
       const imgCount = parts.filter((p: any) => p.inlineData).length;
@@ -361,8 +332,11 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       const image = extractInlineImage(response);
       if (!image) throw new Error("Gemini returned no image (pass 1)");
 
-      console.log("🎨 [pass1] ✅ Composition generated");
-      return image.data; // base64
+      // Upload to Cloudinary so Pass 2 fetches it as a URL rather than
+      // passing raw base64 inline — avoids the opcode validation error.
+      const url = await uploadToCloudinary(image.data, storyId);
+      console.log("🎨 [pass1] ✅ Composition uploaded:", url);
+      return url;
     });
 
     /* ── Pass 2: Character fidelity swap ── */
@@ -370,16 +344,10 @@ export const generateCoverSpreadV5 = inngest.createFunction(
     const finalBase64 = await step.run("pass2-character-swap", async () => {
       const parts: any[] = [];
 
-      // Pass 1 output as the base image
-      parts.push({
-        inlineData: {
-          data: pass1Base64,
-          mimeType: "image/png",
-        },
-      });
+      // Fetch Pass 1 result as a URL — no inline base64
+      parts.push(await getImagePart(pass1Url));
       parts.push({ text: "↑ THIS IS THE COVER TO RECREATE. Keep EVERYTHING the same — layout, text, background, composition, colours, style. ↑" });
 
-      // Character portraits
       for (const c of refs.chars) {
         parts.push(await getImagePart(c.portraitUrl!));
         const speciesNote = c.species && c.species !== "human"
@@ -388,7 +356,6 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()}${speciesNote}. COPY THIS FACE EXACTLY — same features, same colouring, same expression style. ↑` });
       }
 
-      // The swap prompt (Claude-authored)
       parts.push({ text: strategy.pass2Prompt });
 
       const imgCount = parts.filter((p: any) => p.inlineData).length;
