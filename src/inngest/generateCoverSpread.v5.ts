@@ -349,8 +349,10 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       parts.push(await getImagePart(pass1UrlResized));      parts.push({ text: "↑ THIS IS THE COVER TO RECREATE. Keep EVERYTHING the same — layout, text, background, composition, colours, style. ↑" });
 
       for (const c of refs.chars) {
-        parts.push(await getImagePart(c.portraitUrl!));
-        const speciesNote = c.species && c.species !== "human"
+        const resizedPortrait = c.portraitUrl!.includes('cloudinary.com')
+        ? c.portraitUrl!.replace('/upload/', '/upload/w_800,q_80/')
+        : c.portraitUrl!;
+      parts.push(await getImagePart(resizedPortrait));        const speciesNote = c.species && c.species !== "human"
           ? ` (${c.breed || c.species})`
           : "";
         parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()}${speciesNote}. COPY THIS FACE EXACTLY — same features, same colouring, same expression style. ↑` });
