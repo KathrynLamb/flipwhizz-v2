@@ -152,10 +152,14 @@ export default function PrintPage({ story, order, productType: initialProductTyp
       formData.append("file", blob, "book.pdf");
       formData.append("storyId", story.id);
       
-      fetch(`/api/stories/${story.id}/save-pdf`, {
-        method: "POST",
-        body: formData,
-      }).catch(() => {}); // fire and forget — don't block the download
+      try {
+        await fetch(`/api/stories/${story.id}/save-pdf`, {
+          method: "POST",
+          body: formData,
+        });
+      } catch (e) {
+        console.error("save-pdf failed:", e);
+      }
       
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

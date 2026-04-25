@@ -1157,48 +1157,50 @@ CRITICAL RULES:
       });
     }
 
-    /* --------------------------------------------------
-       STEP 9: Mark world as complete
-    -------------------------------------------------- */
-    await step.run("mark-world-complete", async () => {
-      console.log("🎉 Marking world as complete...");
+   /* --------------------------------------------------
+   STEP 9: Mark world as complete
+-------------------------------------------------- */
+await step.run("mark-world-complete", async () => {
+  console.log("🎉 Marking world as complete...");
 
-      // Inside the "mark-world-complete" step, BEFORE marking complete:
-        if (context.worldId && context.bookNumber === 1) {
-          await autoPromoteFirstBookEntities({
-            storyId,
-            worldId: context.worldId,
-          });
-        }
-
-      await db
-        .update(storyWorkflowProgress)
-        .set({
-          worldComplete: true,
-          worldCompleteAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(storyWorkflowProgress.storyId, storyId));
-
-      // Update story status
-      await db
-        .update(stories)
-        .set({
-          status: "ready",
-          updatedAt: new Date(),
-        })
-        .where(eq(stories.id, storyId));
-
-      console.log("✅ [ensure-world] Complete! World is ready for illustrations.");
+  if (context.worldId && context.bookNumber === 1) {
+    await autoPromoteFirstBookEntities({
+      storyId,
+      worldId: context.worldId,
     });
+  }
 
-    /* --------------------------------------------------
-       STEP 10: Trigger next workflow (if configured)
-    -------------------------------------------------- */
-    await step.run("trigger-next", async () => {
-      console.log("🎬 World building complete. Ready for next phase.");
-    });
+  await db
+    .update(storyWorkflowProgress)
+    .set({
+      worldComplete: true,
+      worldCompleteAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(storyWorkflowProgress.storyId, storyId));
 
-    return { ok: true, worldComplete: true };
+  await db
+    .update(stories)
+    .set({
+      status: "ready",
+      updatedAt: new Date(),
+    })
+    .where(eq(stories.id, storyId));
+
+  console.log("✅ [ensure-world] Complete! World is ready for illustrations.");
+});
+
+/* --------------------------------------------------
+   STEP 10: Trigger decide-scenes
+-------------------------------------------------- */
+await step.run("trigger-decide-scenes", async () => {
+  console.log("🎬 Triggering decide-spread-scenes...");
+  await inngest.send({
+    name: "story/decide-spread-scenes",
+    data: { storyId },
+  });
+});
+
+return { ok: true, worldComplete: true };
   }
 );
