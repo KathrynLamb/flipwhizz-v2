@@ -98,19 +98,16 @@ useEffect(() => {
           cache: "no-store",
         });
         const data = await res.json();
-
         if (Array.isArray(data) && data.length > 0) {
-          router.push(`/stories/${nextStoryId}/pages`);
+          window.location.href = `/stories/${nextStoryId}/pages`;
           return;
         }
       } catch (err) {
         console.error("Polling error:", err);
       }
-
       await new Promise((r) => setTimeout(r, 1000));
     }
-
-    router.push(`/stories/${nextStoryId}/pages`);
+    window.location.href = `/stories/${nextStoryId}/pages`;
   }
 
   useEffect(() => {
