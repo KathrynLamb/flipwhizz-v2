@@ -302,7 +302,7 @@ export default function CompletedBookView({ story, order }: Props) {
           />
 
           {/* 2. Download PDF */}
-          <ActionCard
+          {/* <ActionCard
             icon={Download}
             title="Download PDF"
             description={downloadStarted ? "Your download has started!" : "Your print-ready PDF to keep forever."}
@@ -312,7 +312,26 @@ export default function CompletedBookView({ story, order }: Props) {
                 window.open(story.pdfUrl, "_blank");
               }
             }}
-          />
+          /> */}
+
+          {/* 2b. Export Print PDF */}
+<ActionCard
+  icon={Download}
+  title="Export Print PDF"
+  description="Generate a print-ready PDF for your records or home printing."
+  onClick={async () => {
+    const res = await fetch(`/api/stories/${story.id}/export-complete`, {
+      method: "POST",
+    });
+    if (res.ok) {
+      const data = await res.json();
+      window.open(data.url, "_blank");
+    } else {
+      alert("Failed to export PDF");
+    }
+  }}
+  variant="accent"
+/>
 
           {/* 3. Order a Copy */}
           <ActionCard
