@@ -67,7 +67,6 @@ RULES:
         role: "user",
         content: "Repair this into valid JSON:\n\n" + raw,
       },
-      { role: "assistant", content: "{" },
     ],
   });
 
@@ -176,7 +175,6 @@ RULES:
               `EDITING CONVERSATION:\n\n${instruction}\n\n` +
               `Apply all discussed changes. Return ONLY the JSON.`,
           },
-          { role: "assistant", content: "{" },
         ],
       });
     } catch (err: any) {
