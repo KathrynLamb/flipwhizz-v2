@@ -271,7 +271,7 @@ export async function exportCompletePDF(
     top: ${SAFE_MARGIN_MM}mm;
     width: ${insetSpreadWidth}mm;
     height: ${insetSpreadHeight}mm;
-    object-fit: cover;
+    object-fit: fill;
     display: block;
   }
 
