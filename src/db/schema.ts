@@ -84,6 +84,9 @@ export const stories = pgTable("stories", {
   pdfUrl: text("pdf_url"),
   pdfUpdatedAt: timestamp("pdf_updated_at"),
 
+  homePrintPdfUrl: text("home_print_pdf_url"),
+  homePrintPdfUpdatedAt: timestamp("home_print_pdf_updated_at"),
+
   currentStep: integer("current_step").default(1),
   completedSteps: jsonb("completed_steps").default("[]"),
 

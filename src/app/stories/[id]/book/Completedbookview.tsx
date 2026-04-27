@@ -35,6 +35,8 @@ interface StoryData {
   length: number | null;
   createdAt: string | null;
   spreadImageUrls: string[] | null
+  homePrintPdfUrl: string | null
+
 }
 
 interface OrderData {
@@ -302,20 +304,33 @@ export default function CompletedBookView({ story, order }: Props) {
           />
 
           {/* 2. Download PDF */}
-          {/* <ActionCard
-            icon={Download}
-            title="Download PDF"
-            description={downloadStarted ? "Your download has started!" : "Your print-ready PDF to keep forever."}
-            onClick={() => {
-              if (story.pdfUrl) {
+          <ActionCard
+              icon={Download}
+              title="Download PDF"
+              description={downloadStarted ? "Your download has started!" : "Your print-ready PDF to keep forever."}
+              onClick={async () => {
+                if (story.homePrintPdfUrl) {
+                  setDownloadStarted(true);
+                  window.open(story.homePrintPdfUrl, "_blank");
+                  return;
+                }
+                // Generate and save it
                 setDownloadStarted(true);
-                window.open(story.pdfUrl, "_blank");
-              }
-            }}
-          /> */}
+                const res = await fetch(`/api/stories/${story.id}/export-home-print`, {
+                  method: "POST",
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  window.open(data.url, "_blank");
+                } else {
+                  setDownloadStarted(false);
+                  alert("Failed to generate PDF");
+                }
+              }}
+            />
 
           {/* 2b. Export Print PDF */}
-<ActionCard
+{/* <ActionCard
   icon={Download}
   title="Export Print PDF"
   description="Generate a print-ready PDF for your records or home printing."
@@ -331,7 +346,7 @@ export default function CompletedBookView({ story, order }: Props) {
     }
   }}
   variant="accent"
-/>
+/> */}
 
           {/* 3. Order a Copy */}
           <ActionCard

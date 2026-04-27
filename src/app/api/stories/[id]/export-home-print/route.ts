@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { stories, storyPages } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import { uploadPdfToR2 } from "@/lib/uploadPdfToR2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -314,22 +315,25 @@ export async function POST(
 
     stage = "serialize";
     const pdfBytes = await pdf.save();
-
+    
     console.log(`✅ Home print PDF: ${pdfBytes.length} bytes, ${pdf.getPageCount()} pages`);
+    
+    stage = "upload-r2";
+    const pdfUrl = await uploadPdfToR2(Buffer.from(pdfBytes), `${storyId}-home-print`);
+    
+    stage = "persist-url";
+    await db
+      .update(stories)
+      .set({
+        homePrintPdfUrl: pdfUrl,
+        homePrintPdfUpdatedAt: new Date(),
+      })
+      .where(eq(stories.id, storyId));
+    
+    console.log(`✅ Home print PDF uploaded: ${pdfUrl}`);
+    
+    return NextResponse.json({ url: pdfUrl });
 
-    const safeName = (story.title || "FlipWhizz-Book")
-      .replace(/[^a-zA-Z0-9\s-]/g, "")
-      .trim()
-      .replace(/\s+/g, "-");
-
-    return new NextResponse(pdfBytes, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${safeName}-print-at-home.pdf"`,
-        "Content-Length": pdfBytes.length.toString(),
-      },
-    });
   } catch (err) {
     console.error("❌ Home print export failed", {
       stage,
