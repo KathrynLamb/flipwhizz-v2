@@ -9,6 +9,7 @@ import { extractInsightsFromRewriteChat } from "@/lib/extractRewriteInsights";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 const MAX_GLOBAL_REWRITE_PAGES = 40;
@@ -57,7 +58,7 @@ RULES:
 - No markdown, no commentary.`;
 
   const completion = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     system: SYSTEM,
     max_tokens: 2200,
     temperature: 0,
@@ -124,7 +125,6 @@ export async function POST(
 
     log("storyId", storyId, "pageCount", pageCount, "instructionLen", instruction.length);
 
-    // ── System prompt — accepts full conversation as instruction ──
     const SYSTEM = `You are FlipWhizz — a children's story editor.
 
 You will rewrite the entire story based on the editing conversation below.
@@ -164,7 +164,7 @@ RULES:
     let completion;
     try {
       completion = await client.messages.create({
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         system: SYSTEM,
         max_tokens: 3500,
         temperature: 0.2,
@@ -243,7 +243,6 @@ RULES:
 
     log("DONE total ms", Date.now() - started);
 
-    // ── Fire-and-forget: extract insights from the editing conversation ──
     if (story.readerId) {
       extractInsightsFromRewriteChat(story.readerId, storyId, instruction).catch(
         (err) => console.warn("⚠️ Post-rewrite insight extraction failed:", err)
