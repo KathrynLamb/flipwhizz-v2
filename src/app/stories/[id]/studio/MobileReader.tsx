@@ -304,14 +304,19 @@ export default function MobileStudio({
   }, [index, x]);
 
   /* ── Polling ── */
+
   useEffect(() => {
     if (!isPolling) return;
     const interval = setInterval(async () => {
-      const res = await fetch(`/api/stories/${story.id}/pages`, { cache: "no-store" });
-      if (!res.ok) return;
-      const updated: Page[] = await res.json();
+      const [pagesRes, storyRes] = await Promise.all([
+        fetch(`/api/stories/${story.id}/pages`, { cache: "no-store" }),
+        fetch(`/api/stories/${story.id}/status`, { cache: "no-store" }),
+      ]);
+      if (!pagesRes.ok) return;
+  
+      const updated: Page[] = await pagesRes.json();
       setPages(updated);
-
+  
       // Check if regenerating spreads are done
       if (regeneratingSpreads.size > 0) {
         const updatedSpreads = groupIntoSpreads(updated, dbSpreads);
@@ -326,7 +331,15 @@ export default function MobileStudio({
           setRegeneratingSpreads(stillRegenerating);
         }
       }
-
+  
+      // Stop if story is no longer generating (catches skipped/failed spreads)
+      const storyStatus = storyRes.ok ? (await storyRes.json()).status : null;
+      if (storyStatus && storyStatus !== "generating") {
+        setIsPolling(false);
+        setIsGenerating(false);
+        return;
+      }
+  
       if (updated.every((p) => p.imageUrl) && regeneratingSpreads.size === 0) {
         setIsPolling(false);
         setIsGenerating(false);
@@ -334,8 +347,6 @@ export default function MobileStudio({
     }, 3000);
     return () => clearInterval(interval);
   }, [isPolling, story.id, regeneratingSpreads, dbSpreads]);
-
-
 
   /* ── Navigation ── */
   function clamp(i: number) {

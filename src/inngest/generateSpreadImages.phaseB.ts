@@ -521,9 +521,12 @@ export const generateSingleSpread = inngest.createFunction(
       );
 
       if (featuredCharacterIds.length > MAX_FEATURED_CHARACTERS) {
-        throw new Error(
-          `Spread ${pageLabel} needs focus selection before generation: ${featuredCharacterIds.length} featured characters found (max ${MAX_FEATURED_CHARACTERS}).`
-        );
+        // throw new Error(
+        //   `Spread ${pageLabel} needs focus selection before generation: ${featuredCharacterIds.length} featured characters found (max ${MAX_FEATURED_CHARACTERS}).`
+        // );
+
+        console.warn(`Skipping spread ${pageLabel} — needs focus selection (${featuredCharacterIds.length} characters)`);
+        return { skipped: true, reason: "needs_focus" };
       }
 
       // ── Load character data ──
