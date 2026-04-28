@@ -35,37 +35,26 @@ export const STEP_ORDER: StepKey[] = [
 ====================================================== */
 
 export const STEP_HREF: Record<StepKey, (id: string) => string> = {
-  write: (id) => `/stories/${id}/pages`,
-  design: (id) => `/stories/${id}/illustration-style`,
-  characters: (id) => `/stories/${id}/characters`,
+  write:     (id) => `/stories/${id}/pages`,
+  design:    (id) => `/stories/${id}/illustration-style`,
+  characters:(id) => `/stories/${id}/characters`,
   locations: (id) => `/stories/${id}/locations`,
-  preview: (id) => `/stories/${id}/preview`,
-  pay: (id) => `/stories/${id}/checkout`,
-  studio: (id) => `/stories/${id}/studio`,
-  cover: (id) => `/stories/${id}/cover`,
-  print: (id) => `/stories/${id}/print`,
+  preview:   (id) => `/stories/${id}/preview`,
+  pay:       (id) => `/stories/${id}/checkout`,
+  studio:    (id) => `/stories/${id}/studio`,
+  cover:     (id) => `/stories/${id}/cover`,
+  print:     (id) => `/stories/${id}/print`,
 };
 
 /* ======================================================
    NUMBER ↔ KEY CONVERTERS
-   Used by the layout where currentStep is stored as a
-   number in the DB.
 ====================================================== */
 
-/**
- * Convert a 1-based step number to a StepKey.
- * Falls back to "write" for out-of-range or undefined values.
- */
 export function stepNumberToKey(step?: number | null): StepKey {
   if (step == null || step < 1 || step > STEP_ORDER.length) return "write";
   return STEP_ORDER[step - 1];
 }
 
-/**
- * Convert an array that may contain step numbers (as numbers)
- * or step key strings into a clean StepKey[].
- * Handles mixed arrays gracefully.
- */
 export function stepNumbersToKeys(steps: (string | number)[]): StepKey[] {
   const valid = new Set<string>(STEP_ORDER);
   const result: StepKey[] = [];
@@ -83,13 +72,10 @@ export function stepNumbersToKeys(steps: (string | number)[]): StepKey[] {
 }
 
 /* ======================================================
-   RESOLVE NEXT INCOMPLETE STEP
-
-   Derives extra completions the same way UnifiedStoryHeader
-   does, then returns the first step not yet done.
+   STORY SHAPE (shared by helpers below)
 ====================================================== */
 
-export function getNextIncompleteStep(story: {
+type StoryRoutingFields = {
   completed_steps?: StepKey[] | null;
   completedSteps?: StepKey[] | null;
   story_confirmed?: boolean;
@@ -98,8 +84,13 @@ export function getNextIncompleteStep(story: {
   paymentStatus?: string | null;
   cover_spread_url?: string | null;
   coverSpreadUrl?: string | null;
-}): StepKey {
-  // Support both snake_case (API response) and camelCase (direct DB)
+};
+
+/* ======================================================
+   RESOLVE NEXT INCOMPLETE STEP
+====================================================== */
+
+export function getNextIncompleteStep(story: StoryRoutingFields): StepKey {
   const raw = story.completed_steps ?? story.completedSteps ?? [];
   const done = new Set<StepKey>(raw);
 
@@ -115,12 +106,30 @@ export function getNextIncompleteStep(story: {
 }
 
 /* ======================================================
-   CONVENIENCE: get the URL for the next incomplete step
+   PRIMARY ROUTING HELPER — use this everywhere
+
+   Paid stories always go to /book regardless of which
+   steps are technically "complete" in the DB.
+   All other stories route to the next incomplete step.
+====================================================== */
+
+export function getStoryHref(
+  storyId: string,
+  story: StoryRoutingFields
+): string {
+  const isPaid = (story.payment_status ?? story.paymentStatus) === "paid";
+  if (isPaid) return `/stories/${storyId}/book`;
+  return getNextStepHref(storyId, story);
+}
+
+/* ======================================================
+   CONVENIENCE: URL for next incomplete step
+   (use getStoryHref instead for card/library routing)
 ====================================================== */
 
 export function getNextStepHref(
   storyId: string,
-  story: Parameters<typeof getNextIncompleteStep>[0]
+  story: StoryRoutingFields
 ): string {
   const step = getNextIncompleteStep(story);
   return STEP_HREF[step](storyId);
