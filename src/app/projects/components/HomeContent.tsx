@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
-  ChevronRight,
   Plus,
   BookOpen,
   Sparkles,
@@ -23,6 +22,12 @@ import {
 // TYPES
 // ============================================================================
 
+interface IncompleteProject {
+  id: string;
+  name: string | null;
+  createdAt: Date | string | null;
+}
+
 interface Story {
   id: string;
   projectId: string;
@@ -34,8 +39,8 @@ interface Story {
   worldId: string | null;
   bookNumber: number | null;
   coverImageUrl: string | null;
-  createdAt: Date | null;
-  updatedAt: Date | null;
+  createdAt: Date | string | null;
+  updatedAt: Date | string | null;
 }
 
 interface WorldData {
@@ -64,6 +69,7 @@ interface HomeContentProps {
   readers: ReaderData[];
   orphanStories: Story[];
   totalStories: number;
+  incompleteProjects: IncompleteProject[];
 }
 
 // ============================================================================
@@ -71,38 +77,26 @@ interface HomeContentProps {
 // ============================================================================
 
 const STATUS: Record<string, { bg: string; text: string; label: string }> = {
-  planning:         { bg: "rgba(245,168,98,0.10)",  text: "#B87A3D", label: "Planning" },
-  draft:            { bg: "rgba(245,168,98,0.10)",  text: "#B87A3D", label: "Draft" },
-  paged:            { bg: "rgba(109,188,224,0.10)",  text: "#4A8FB0", label: "Story ready" },
-  extracting:       { bg: "rgba(167,139,218,0.10)",  text: "#7B5EA7", label: "Building world" },
-  pages_ready:      { bg: "rgba(109,188,224,0.10)",  text: "#4A8FB0", label: "Pages ready" },
-  ready:            { bg: "rgba(109,188,224,0.10)",  text: "#4A8FB0", label: "Ready" },
-  generating:       { bg: "rgba(167,139,218,0.10)",  text: "#7B5EA7", label: "Illustrating" },
-  illustrating:     { bg: "rgba(167,139,218,0.10)",  text: "#7B5EA7", label: "Illustrating" },
-  covers_complete:  { bg: "rgba(125,212,168,0.10)",  text: "#2D6A4F", label: "Ready to order" },
-  complete:         { bg: "rgba(125,212,168,0.10)",  text: "#2D6A4F", label: "Complete" },
+  planning:        { bg: "rgba(245,168,98,0.10)",  text: "#B87A3D", label: "Planning" },
+  draft:           { bg: "rgba(245,168,98,0.10)",  text: "#B87A3D", label: "Draft" },
+  paged:           { bg: "rgba(109,188,224,0.10)", text: "#4A8FB0", label: "Story ready" },
+  extracting:      { bg: "rgba(167,139,218,0.10)", text: "#7B5EA7", label: "Building world" },
+  pages_ready:     { bg: "rgba(109,188,224,0.10)", text: "#4A8FB0", label: "Pages ready" },
+  ready:           { bg: "rgba(109,188,224,0.10)", text: "#4A8FB0", label: "Ready" },
+  generating:      { bg: "rgba(167,139,218,0.10)", text: "#7B5EA7", label: "Illustrating" },
+  illustrating:    { bg: "rgba(167,139,218,0.10)", text: "#7B5EA7", label: "Illustrating" },
+  covers_complete: { bg: "rgba(125,212,168,0.10)", text: "#2D6A4F", label: "Ready to order" },
+  complete:        { bg: "rgba(125,212,168,0.10)", text: "#2D6A4F", label: "Complete" },
 };
+
+function formatDate(d: Date | string | null, opts?: Intl.DateTimeFormatOptions) {
+  if (!d) return "";
+  return new Date(d).toLocaleDateString("en-GB", opts ?? { day: "numeric", month: "short" });
+}
 
 // ============================================================================
 // MAIN
 // ============================================================================
-
-// Add to HomeContentProps interface:
-
-interface IncompleteProject {
-  id: string;
-  name: string | null;
-  createdAt: Date | null;
-}
-
-interface HomeContentProps {
-  readers: ReaderData[];
-  orphanStories: Story[];
-  totalStories: number;
-  incompleteProjects: IncompleteProject[]; // ← add this
-}
-
-// ── Replace the HomeContent function signature and add the banner ──
 
 export default function HomeContent({
   readers,
@@ -117,6 +111,7 @@ export default function HomeContent({
 
   return (
     <div className="relative z-10">
+      {/* Page heading */}
       <section className="px-5 lg:px-8 pt-8 lg:pt-12 pb-4">
         <div className="mx-auto max-w-5xl">
           <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -153,7 +148,7 @@ export default function HomeContent({
       <section className="px-5 lg:px-8 pb-24">
         <div className="mx-auto max-w-5xl">
 
-          {/* ── Incomplete projects banner ── */}
+          {/* ── Resume banners for incomplete projects ── */}
           {incompleteProjects.length > 0 && (
             <div className="mb-6 mt-2 space-y-2">
               {incompleteProjects.map((project) => (
@@ -180,7 +175,7 @@ export default function HomeContent({
                       <p className="text-xs text-gray-400 mt-0.5">
                         Started{" "}
                         {project.createdAt
-                          ? new Date(project.createdAt).toLocaleDateString("en-GB", {
+                          ? formatDate(project.createdAt, {
                               day: "numeric",
                               month: "short",
                               hour: "2-digit",
@@ -192,7 +187,7 @@ export default function HomeContent({
                     </div>
                   </div>
                   <span
-                    className="text-xs font-bold px-3 py-1.5 rounded-full flex-shrink-0"
+                    className="text-xs font-bold px-3 py-1.5 rounded-full flex-shrink-0 whitespace-nowrap"
                     style={{ background: "rgba(245,168,98,0.15)", color: "#B87A3D" }}
                   >
                     Resume →
@@ -227,7 +222,8 @@ export default function HomeContent({
       </section>
     </div>
   );
-}x
+}
+
 // ============================================================================
 // READER
 // ============================================================================
@@ -245,8 +241,7 @@ function ReaderSection({ reader }: { reader: ReaderData }) {
     reader.worlds.reduce((sum, w) => sum + w.stories.length, 0) +
     reader.standaloneStories.length;
   const totalWorlds = reader.worlds.length;
-
-  const interests = (reader as any).interests as string[] | undefined;
+  const interests = reader.interests as string[] | undefined;
 
   async function saveReaderName() {
     if (!nameValue.trim()) return;
@@ -311,8 +306,7 @@ function ReaderSection({ reader }: { reader: ReaderData }) {
               <span className="text-white text-sm font-semibold">{initials}</span>
             </div>
           )}
-          <div className="absolute inset-0 bg-black/30 flex items-center justify-center 
-                          opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
             <Camera className="w-3.5 h-3.5 text-white" />
           </div>
           <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
@@ -324,11 +318,18 @@ function ReaderSection({ reader }: { reader: ReaderData }) {
           <div className="flex items-center gap-2">
             {editingName ? (
               <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                <input type="text" value={nameValue}
+                <input
+                  type="text"
+                  value={nameValue}
                   onChange={(e) => setNameValue(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") saveReaderName(); if (e.key === "Escape") setEditingName(false); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveReaderName();
+                    if (e.key === "Escape") setEditingName(false);
+                  }}
                   className="text-lg font-bold text-[#2D2235] bg-transparent border-b-2 border-[#D94590] outline-none w-36"
-                  style={{ fontFamily: "Bricolage Grotesque, sans-serif" }} autoFocus />
+                  style={{ fontFamily: "Bricolage Grotesque, sans-serif" }}
+                  autoFocus
+                />
                 <button onClick={saveReaderName} className="p-1 hover:bg-[#D94590]/10 rounded-full">
                   <Check className="w-3.5 h-3.5 text-[#D94590]" />
                 </button>
@@ -338,12 +339,16 @@ function ReaderSection({ reader }: { reader: ReaderData }) {
               </div>
             ) : (
               <>
-                <h2 className="text-lg font-bold text-[#2D2235] truncate"
-                  style={{ fontFamily: "Bricolage Grotesque, sans-serif" }}>
+                <h2
+                  className="text-lg font-bold text-[#2D2235] truncate"
+                  style={{ fontFamily: "Bricolage Grotesque, sans-serif" }}
+                >
                   {reader.name || "Unnamed Reader"}
                 </h2>
-                <button onClick={(e) => { e.stopPropagation(); setEditingName(true); }}
-                  className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-100 rounded-full transition-opacity">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setEditingName(true); }}
+                  className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-100 rounded-full transition-opacity"
+                >
                   <Pencil className="w-3 h-3 text-gray-400" />
                 </button>
               </>
@@ -362,7 +367,9 @@ function ReaderSection({ reader }: { reader: ReaderData }) {
           </div>
         </div>
 
-        <ChevronDown className={`w-4 h-4 text-gray-300 transition-transform flex-shrink-0 ${expanded ? "" : "-rotate-90"}`} />
+        <ChevronDown
+          className={`w-4 h-4 text-gray-300 transition-transform flex-shrink-0 ${expanded ? "" : "-rotate-90"}`}
+        />
       </div>
 
       {expanded && (
@@ -372,19 +379,23 @@ function ReaderSection({ reader }: { reader: ReaderData }) {
           ))}
           {reader.standaloneStories.length > 0 && (
             <div>
-              <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider mb-2">Standalone</p>
+              <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider mb-2">
+                Standalone
+              </p>
               <div className="space-y-2 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-3 sm:space-y-0">
                 {reader.standaloneStories.map((s) => <BookCard key={s.id} story={s} />)}
               </div>
             </div>
           )}
-            <Link href={`/projects/new?readerId=${reader.id}`}
-              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-full 
-                        border border-dashed border-[#D94590]/20 text-[#D94590]/60 
-                        hover:text-[#D94590] hover:bg-[#D94590]/5 hover:border-[#D94590]/30 transition-all">
-              <Plus className="w-3 h-3" />
-              New story for {reader.name || "this reader"}
-            </Link>
+          <Link
+            href={`/projects/new?readerId=${reader.id}`}
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-full
+                       border border-dashed border-[#D94590]/20 text-[#D94590]/60
+                       hover:text-[#D94590] hover:bg-[#D94590]/5 hover:border-[#D94590]/30 transition-all"
+          >
+            <Plus className="w-3 h-3" />
+            New story for {reader.name || "this reader"}
+          </Link>
         </div>
       )}
     </div>
@@ -397,31 +408,51 @@ function ReaderSection({ reader }: { reader: ReaderData }) {
 
 function WorldSection({ world, readerName }: { world: WorldData; readerName: string | null }) {
   const [expanded, setExpanded] = useState(true);
-  const nextBookNumber = world.stories.length > 0
-    ? Math.max(...world.stories.map((s) => s.bookNumber ?? 0)) + 1 : 1;
+  const nextBookNumber =
+    world.stories.length > 0
+      ? Math.max(...world.stories.map((s) => s.bookNumber ?? 0)) + 1
+      : 1;
 
   return (
     <div>
-      <div onClick={() => setExpanded(!expanded)}
+      <div
+        onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 group mb-2 cursor-pointer select-none"
-        role="button" tabIndex={0}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setExpanded(!expanded); }}>
-        <div className="w-6 h-6 rounded-md flex-shrink-0 flex items-center justify-center"
-          style={{ background: "rgba(123,94,167,0.08)" }}>
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setExpanded(!expanded); }}
+      >
+        <div
+          className="w-6 h-6 rounded-md flex-shrink-0 flex items-center justify-center"
+          style={{ background: "rgba(123,94,167,0.08)" }}
+        >
           <Globe2 className="w-3.5 h-3.5 text-[#7B5EA7]" />
         </div>
         <div className="flex-1 min-w-0 flex items-center gap-2">
-          <h3 className="text-sm font-bold text-[#2D2235] truncate"
-            style={{ fontFamily: "Bricolage Grotesque, sans-serif" }}>{world.name}</h3>
-          <span className="text-[11px] text-gray-300">{world.stories.length} {world.stories.length === 1 ? "book" : "books"}</span>
+          <h3
+            className="text-sm font-bold text-[#2D2235] truncate"
+            style={{ fontFamily: "Bricolage Grotesque, sans-serif" }}
+          >
+            {world.name}
+          </h3>
+          <span className="text-[11px] text-gray-300">
+            {world.stories.length} {world.stories.length === 1 ? "book" : "books"}
+          </span>
         </div>
         <div className="hidden sm:flex items-center gap-1 flex-shrink-0">
           {world.themes.slice(0, 2).map((t) => (
-            <span key={t} className="text-[9px] px-1.5 py-0.5 rounded-full"
-              style={{ background: "rgba(123,94,167,0.06)", color: "#7B5EA7" }}>{t}</span>
+            <span
+              key={t}
+              className="text-[9px] px-1.5 py-0.5 rounded-full"
+              style={{ background: "rgba(123,94,167,0.06)", color: "#7B5EA7" }}
+            >
+              {t}
+            </span>
           ))}
         </div>
-        <ChevronDown className={`w-3.5 h-3.5 text-gray-300 transition-transform flex-shrink-0 ${expanded ? "" : "-rotate-90"}`} />
+        <ChevronDown
+          className={`w-3.5 h-3.5 text-gray-300 transition-transform flex-shrink-0 ${expanded ? "" : "-rotate-90"}`}
+        />
       </div>
 
       {expanded && (
@@ -429,10 +460,12 @@ function WorldSection({ world, readerName }: { world: WorldData; readerName: str
           {/* Desktop grid */}
           <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {world.stories.map((s) => <BookCard key={s.id} story={s} showBookNumber />)}
-            <Link href={`/projects/new?worldId=${world.id}&bookNumber=${nextBookNumber}`}
-              className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-[#D94590]/15 
-                         text-[#D94590]/50 hover:border-[#D94590]/30 hover:text-[#D94590] hover:bg-[#D94590]/3 
-                         transition-all min-h-[120px] group">
+            <Link
+              href={`/projects/new?worldId=${world.id}&bookNumber=${nextBookNumber}`}
+              className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-[#D94590]/15
+                         text-[#D94590]/50 hover:border-[#D94590]/30 hover:text-[#D94590] hover:bg-[#D94590]/3
+                         transition-all min-h-[120px] group"
+            >
               <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
               <span className="text-xs font-medium">Book {nextBookNumber}</span>
             </Link>
@@ -440,9 +473,11 @@ function WorldSection({ world, readerName }: { world: WorldData; readerName: str
           {/* Mobile rows */}
           <div className="sm:hidden space-y-2">
             {world.stories.map((s) => <MobileBookRow key={s.id} story={s} />)}
-            <Link href={`/projects/new?worldId=${world.id}&bookNumber=${nextBookNumber}`}
-              className="flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed 
-                         border-[#D94590]/15 text-[#D94590]/50 hover:text-[#D94590] transition-all">
+            <Link
+              href={`/projects/new?worldId=${world.id}&bookNumber=${nextBookNumber}`}
+              className="flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed
+                         border-[#D94590]/15 text-[#D94590]/50 hover:text-[#D94590] transition-all"
+            >
               <Plus className="w-3.5 h-3.5" />
               <span className="text-xs font-medium">Book {nextBookNumber}</span>
             </Link>
@@ -458,44 +493,56 @@ function WorldSection({ world, readerName }: { world: WorldData; readerName: str
 // ============================================================================
 
 function BookCard({ story, showBookNumber = false }: { story: Story; showBookNumber?: boolean }) {
-
-  const effectiveStatus =
-    story.paymentStatus === "paid"
-      ? "complete"
-      : story.status;
+  const effectiveStatus = story.paymentStatus === "paid" ? "complete" : story.status;
   const status = STATUS[effectiveStatus] ?? STATUS.planning;
+  const href = story.paymentStatus === "paid"
+    ? `/stories/${story.id}/book`
+    : `/stories/${story.id}`;
 
   return (
-    <Link href={story.paymentStatus === "paid" ? `/stories/${story.id}/book` : `/stories/${story.id}`}
-      className="block rounded-xl bg-white border border-gray-100 overflow-hidden 
-                 hover:border-[#D94590]/20 hover:shadow-md transition-all group">
+    <Link
+      href={href}
+      className="block rounded-xl bg-white border border-gray-100 overflow-hidden
+                 hover:border-[#D94590]/20 hover:shadow-md transition-all group"
+    >
       <div className="relative h-24 bg-gradient-to-br from-[#D94590]/6 to-[#7B5EA7]/6 overflow-hidden">
         {story.coverImageUrl ? (
-          <img src={story.coverImageUrl} alt={story.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+          <img
+            src={story.coverImageUrl}
+            alt={story.title}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <BookOpen className="w-8 h-8 text-[#D94590]/15" />
           </div>
         )}
         {showBookNumber && story.bookNumber && (
-          <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/90 backdrop-blur-sm"
-            style={{ color: "#D94590" }}>
+          <div
+            className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/90 backdrop-blur-sm"
+            style={{ color: "#D94590" }}
+          >
             Book {story.bookNumber}
           </div>
         )}
-        <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[9px] font-semibold backdrop-blur-sm"
-          style={{ background: status.bg, color: status.text }}>
+        <div
+          className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[9px] font-semibold backdrop-blur-sm"
+          style={{ background: status.bg, color: status.text }}
+        >
           {status.label}
         </div>
       </div>
       <div className="p-3">
-        <h4 className="font-bold text-[#2D2235] text-xs truncate group-hover:text-[#D94590] transition-colors"
-          style={{ fontFamily: "Bricolage Grotesque, sans-serif" }}>{story.title}</h4>
+        <h4
+          className="font-bold text-[#2D2235] text-xs truncate group-hover:text-[#D94590] transition-colors"
+          style={{ fontFamily: "Bricolage Grotesque, sans-serif" }}
+        >
+          {story.title}
+        </h4>
         {story.updatedAt && (
           <div className="flex items-center gap-1 mt-1.5 text-[10px] text-gray-300">
             <Clock className="w-2.5 h-2.5" />
-            {new Date(story.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+            {formatDate(story.updatedAt)}
           </div>
         )}
       </div>
@@ -508,16 +555,18 @@ function BookCard({ story, showBookNumber = false }: { story: Story; showBookNum
 // ============================================================================
 
 function MobileBookRow({ story }: { story: Story }) {
-
-  const effectiveStatus =
-    story.paymentStatus === "paid"
-      ? "complete"
-      : story.status;
+  const effectiveStatus = story.paymentStatus === "paid" ? "complete" : story.status;
   const status = STATUS[effectiveStatus] ?? STATUS.planning;
+  const href = story.paymentStatus === "paid"
+    ? `/stories/${story.id}/book`
+    : `/stories/${story.id}`;
+
   return (
-    <Link href={story.paymentStatus === "paid" ? `/stories/${story.id}/book` : `/stories/${story.id}`}
-      className="flex items-center gap-3 rounded-xl bg-white border border-gray-100 
-                 overflow-hidden hover:border-[#D94590]/20 transition-all active:scale-[0.98]">
+    <Link
+      href={href}
+      className="flex items-center gap-3 rounded-xl bg-white border border-gray-100
+                 overflow-hidden hover:border-[#D94590]/20 transition-all active:scale-[0.98]"
+    >
       <div className="w-16 h-16 flex-shrink-0 bg-gradient-to-br from-[#D94590]/6 to-[#7B5EA7]/6 overflow-hidden">
         {story.coverImageUrl ? (
           <img src={story.coverImageUrl} alt={story.title} className="w-full h-full object-cover" />
@@ -530,34 +579,53 @@ function MobileBookRow({ story }: { story: Story }) {
       <div className="flex-1 min-w-0 py-2 pr-3">
         <div className="flex items-center gap-2">
           {story.bookNumber && (
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
-              style={{ background: "rgba(217,69,144,0.08)", color: "#D94590" }}>
+            <span
+              className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+              style={{ background: "rgba(217,69,144,0.08)", color: "#D94590" }}
+            >
               {story.bookNumber}
             </span>
           )}
-          <h4 className="text-sm font-bold text-[#2D2235] truncate"
-            style={{ fontFamily: "Bricolage Grotesque, sans-serif" }}>{story.title}</h4>
+          <h4
+            className="text-sm font-bold text-[#2D2235] truncate"
+            style={{ fontFamily: "Bricolage Grotesque, sans-serif" }}
+          >
+            {story.title}
+          </h4>
         </div>
-        <span className="inline-block mt-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
-          style={{ background: status.bg, color: status.text }}>{status.label}</span>
+        <span
+          className="inline-block mt-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+          style={{ background: status.bg, color: status.text }}
+        >
+          {status.label}
+        </span>
       </div>
     </Link>
   );
 }
 
 // ============================================================================
-// ORPHAN CARD (smaller, for earlier stories)
+// ORPHAN CARD
 // ============================================================================
 
 function OrphanCard({ story }: { story: Story }) {
+  const href = story.paymentStatus === "paid"
+    ? `/stories/${story.id}/book`
+    : `/stories/${story.id}`;
+
   return (
-    <Link href={story.paymentStatus === "paid" ? `/stories/${story.id}/book` : `/stories/${story.id}`}
-      className="block rounded-lg bg-white border border-gray-100 overflow-hidden 
-                 hover:border-[#D94590]/15 hover:shadow-sm transition-all group">
+    <Link
+      href={href}
+      className="block rounded-lg bg-white border border-gray-100 overflow-hidden
+                 hover:border-[#D94590]/15 hover:shadow-sm transition-all group"
+    >
       <div className="h-16 bg-gradient-to-br from-[#D94590]/5 to-[#7B5EA7]/5 overflow-hidden">
         {story.coverImageUrl ? (
-          <img src={story.coverImageUrl} alt={story.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+          <img
+            src={story.coverImageUrl}
+            alt={story.title}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <BookOpen className="w-5 h-5 text-[#D94590]/10" />
@@ -565,8 +633,12 @@ function OrphanCard({ story }: { story: Story }) {
         )}
       </div>
       <div className="p-2.5">
-        <h4 className="font-semibold text-[#2D2235] text-[11px] truncate"
-          style={{ fontFamily: "Bricolage Grotesque, sans-serif" }}>{story.title}</h4>
+        <h4
+          className="font-semibold text-[#2D2235] text-[11px] truncate"
+          style={{ fontFamily: "Bricolage Grotesque, sans-serif" }}
+        >
+          {story.title}
+        </h4>
       </div>
     </Link>
   );
@@ -580,21 +652,29 @@ function EmptyState() {
   return (
     <div className="mt-6 rounded-[22px] overflow-hidden border border-gray-100">
       <div className="bg-white px-6 py-14 lg:py-20 text-center">
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"
-          style={{ background: "linear-gradient(135deg, #D94590, #7B5EA7)", boxShadow: "0 8px 24px rgba(217,69,144,0.2)" }}>
+        <div
+          className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"
+          style={{
+            background: "linear-gradient(135deg, #D94590, #7B5EA7)",
+            boxShadow: "0 8px 24px rgba(217,69,144,0.2)",
+          }}
+        >
           <Sparkles className="w-8 h-8 text-white" />
         </div>
-        <h2 className="text-2xl lg:text-3xl font-extrabold mb-2 tracking-tight"
-          style={{ color: "#2D2235", fontFamily: "Bricolage Grotesque, sans-serif" }}>
+        <h2
+          className="text-2xl lg:text-3xl font-extrabold mb-2 tracking-tight"
+          style={{ color: "#2D2235", fontFamily: "Bricolage Grotesque, sans-serif" }}
+        >
           No stories yet
         </h2>
         <p className="text-gray-400 max-w-xs mx-auto mb-8 text-sm leading-relaxed">
           Ready to create something magical? Tell us about your little one and we'll build a world just for them.
         </p>
-        <Link href="/projects/new"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-white text-sm font-semibold 
-                     shadow-lg hover:shadow-xl transition-all"
-          style={{ background: "linear-gradient(135deg, #D94590, #7B5EA7)" }}>
+        <Link
+          href="/projects/new"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-white text-sm font-semibold shadow-lg hover:shadow-xl transition-all"
+          style={{ background: "linear-gradient(135deg, #D94590, #7B5EA7)" }}
+        >
           <Sparkles className="w-4 h-4" />
           Create your first story
         </Link>
