@@ -87,12 +87,33 @@ const STATUS: Record<string, { bg: string; text: string; label: string }> = {
 // MAIN
 // ============================================================================
 
+// Add to HomeContentProps interface:
+
+interface IncompleteProject {
+  id: string;
+  name: string | null;
+  createdAt: Date | null;
+}
+
+interface HomeContentProps {
+  readers: ReaderData[];
+  orphanStories: Story[];
+  totalStories: number;
+  incompleteProjects: IncompleteProject[]; // ← add this
+}
+
+// ── Replace the HomeContent function signature and add the banner ──
+
 export default function HomeContent({
   readers,
   orphanStories,
   totalStories,
+  incompleteProjects,
 }: HomeContentProps) {
-  const hasContent = readers.length > 0 || orphanStories.length > 0;
+  const hasContent =
+    readers.length > 0 ||
+    orphanStories.length > 0 ||
+    incompleteProjects.length > 0;
 
   return (
     <div className="relative z-10">
@@ -131,6 +152,56 @@ export default function HomeContent({
 
       <section className="px-5 lg:px-8 pb-24">
         <div className="mx-auto max-w-5xl">
+
+          {/* ── Incomplete projects banner ── */}
+          {incompleteProjects.length > 0 && (
+            <div className="mb-6 mt-2 space-y-2">
+              {incompleteProjects.map((project) => (
+                <Link
+                  key={project.id}
+                  href={`/projects/${project.id}`}
+                  className="flex items-center justify-between gap-4 px-5 py-4 rounded-2xl border transition-all hover:-translate-y-[1px] hover:shadow-md"
+                  style={{
+                    background: "rgba(245,168,98,0.06)",
+                    borderColor: "rgba(245,168,98,0.25)",
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-base"
+                      style={{ background: "rgba(245,168,98,0.15)" }}
+                    >
+                      ✏️
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: "#2D2235" }}>
+                        Continue setting up your story
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Started{" "}
+                        {project.createdAt
+                          ? new Date(project.createdAt).toLocaleDateString("en-GB", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "recently"}
+                        {" · "}Chat not finished
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className="text-xs font-bold px-3 py-1.5 rounded-full flex-shrink-0"
+                    style={{ background: "rgba(245,168,98,0.15)", color: "#B87A3D" }}
+                  >
+                    Resume →
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+
           {!hasContent ? (
             <EmptyState />
           ) : (
@@ -157,7 +228,6 @@ export default function HomeContent({
     </div>
   );
 }
-
 // ============================================================================
 // READER
 // ============================================================================

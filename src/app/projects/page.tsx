@@ -1,14 +1,9 @@
 // src/app/projects/page.tsx
-// REPLACES: your existing ProjectsIndexPage
-//
-// New structure: Reader → World → Books
-// Falls back gracefully: stories without a world/reader show in "Standalone Stories"
-// Server component — all data fetched server-side
 
 import { db } from "@/db";
 import { projects, stories, readers } from "@/db/schema";
 import { worlds, worldReaders } from "@/db/schema-worlds";
-import { eq, desc, sql, and, isNull, isNotNull } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 import Link from "next/link";
 import Image from "next/image";
 import { getServerSession } from "next-auth";
@@ -16,7 +11,6 @@ import { authOptions } from "@/lib/auth";
 import CreateStoryButton from "@/app/projects/components/CreateStoryButton";
 import HomeContent from "@/app/projects/components/HomeContent";
 import UserMenu from "@/app/stories/components/UserMenu";
-// import HomeContent from "../components/HomeContent";
 
 export default async function ProjectsIndexPage() {
   const session = await getServerSession(authOptions);
@@ -26,18 +20,18 @@ export default async function ProjectsIndexPage() {
 
   // 1. Get all readers for this user
   const userReaders = await db
-  .select({
-    id: readers.id,
-    name: readers.name,
-    gender: readers.gender,
-    aiSummary: readers.aiSummary,
-    interests: readers.interests,    // ADD
-    avatarUrl: readers.avatarUrl,    // ADD
-    createdAt: readers.createdAt,
-  })
-  .from(readers)
-  .where(eq(readers.userId, userId))
-  .orderBy(desc(readers.createdAt));
+    .select({
+      id: readers.id,
+      name: readers.name,
+      gender: readers.gender,
+      aiSummary: readers.aiSummary,
+      interests: readers.interests,
+      avatarUrl: readers.avatarUrl,
+      createdAt: readers.createdAt,
+    })
+    .from(readers)
+    .where(eq(readers.userId, userId))
+    .orderBy(desc(readers.createdAt));
 
   // 2. Get all worlds for this user
   const userWorlds = await db
@@ -96,8 +90,25 @@ export default async function ProjectsIndexPage() {
     .where(eq(projects.userId, userId))
     .orderBy(desc(stories.updatedAt));
 
-  // 5. Assemble the data structure for the client component
-  // Build reader → worlds → stories hierarchy
+  // 5. Projects with no stories yet — incomplete chat sessions
+  const incompleteProjects = await db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      createdAt: projects.createdAt,
+    })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.userId, userId),
+        sql`NOT EXISTS (
+          SELECT 1 FROM stories s WHERE s.project_id = ${projects.id}
+        )`
+      )
+    )
+    .orderBy(desc(projects.createdAt));
+
+  // 6. Assemble reader → world → story hierarchy
   const readerMap = new Map<
     string,
     {
@@ -119,7 +130,6 @@ export default async function ProjectsIndexPage() {
     }
   >();
 
-  // Initialize readers
   for (const reader of userReaders) {
     readerMap.set(reader.id, {
       id: reader.id,
@@ -131,43 +141,36 @@ export default async function ProjectsIndexPage() {
     });
   }
 
-  // Build world lookup: worldId → world data + readerId
   const worldToReader = new Map<string, string>();
   for (const link of readerWorldLinks) {
     worldToReader.set(link.worldId, link.readerId);
   }
 
-  // Attach worlds to readers
   for (const world of userWorlds) {
     const readerId = worldToReader.get(world.id);
     if (readerId && readerMap.has(readerId)) {
-      const readerEntry = readerMap.get(readerId)!;
-      readerEntry.worlds.push({
+      readerMap.get(readerId)!.worlds.push({
         id: world.id,
         name: world.name,
         description: world.description,
         tonality: world.tonality,
         themes: (world.themes as string[]) ?? [],
         coverImageUrl: world.coverImageUrl,
-        role:
-          readerWorldLinks.find(
-            (l) => l.worldId === world.id && l.readerId === readerId
-          )?.role ?? null,
+        role: readerWorldLinks.find(
+          (l) => l.worldId === world.id && l.readerId === readerId
+        )?.role ?? null,
         stories: [],
       });
     }
   }
 
-  // Attach stories to worlds (or standalone)
   const orphanStories: typeof userStories = [];
 
   for (const story of userStories) {
     if (story.worldId) {
-      // Find the reader that owns this world
       const readerId = worldToReader.get(story.worldId);
       if (readerId && readerMap.has(readerId)) {
-        const readerEntry = readerMap.get(readerId)!;
-        const worldEntry = readerEntry.worlds.find(
+        const worldEntry = readerMap.get(readerId)!.worlds.find(
           (w) => w.id === story.worldId
         );
         if (worldEntry) {
@@ -178,20 +181,15 @@ export default async function ProjectsIndexPage() {
     }
 
     if (story.readerId && readerMap.has(story.readerId)) {
-      // Story has a reader but no world
       readerMap.get(story.readerId)!.standaloneStories.push(story);
     } else {
-      // Fully orphaned — no reader, no world
       orphanStories.push(story);
     }
   }
 
-  // Sort world stories by book number
   for (const [, reader] of readerMap) {
     for (const world of reader.worlds) {
-      world.stories.sort(
-        (a, b) => (a.bookNumber ?? 0) - (b.bookNumber ?? 0)
-      );
+      world.stories.sort((a, b) => (a.bookNumber ?? 0) - (b.bookNumber ?? 0));
     }
   }
 
@@ -200,23 +198,17 @@ export default async function ProjectsIndexPage() {
 
   return (
     <main className="min-h-screen bg-[#FEFCFA] relative overflow-hidden">
-      {/* Background blobs */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div
           className="absolute -top-[20%] -right-[10%] w-[50%] h-[50%] rounded-full blur-[100px] opacity-[0.06]"
-          style={{
-            background: "linear-gradient(135deg, #E88BAE, #A78BDA)",
-          }}
+          style={{ background: "linear-gradient(135deg, #E88BAE, #A78BDA)" }}
         />
         <div
           className="absolute top-[40%] -left-[15%] w-[40%] h-[40%] rounded-full blur-[80px] opacity-[0.05]"
-          style={{
-            background: "linear-gradient(135deg, #7DD4A8, #6DBCE0)",
-          }}
+          style={{ background: "linear-gradient(135deg, #7DD4A8, #6DBCE0)" }}
         />
       </div>
 
-      {/* Header */}
       <header className="sticky top-0 z-20 bg-white/90 backdrop-blur-xl border-b border-gray-100">
         <div className="mx-auto max-w-7xl px-5 lg:px-8 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-1 group">
@@ -234,11 +226,11 @@ export default async function ProjectsIndexPage() {
         </div>
       </header>
 
-      {/* Content */}
       <HomeContent
         readers={readersData}
         orphanStories={orphanStories}
         totalStories={totalStories}
+        incompleteProjects={incompleteProjects}
       />
     </main>
   );
