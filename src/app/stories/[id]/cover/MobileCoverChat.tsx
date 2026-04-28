@@ -262,7 +262,7 @@ export default function MobileCoverChat({
   const [authorCredit,      setAuthorCredit]      = useState(plan?.front?.authorText ?? "");
 
   const messagesEndRef   = useRef<HTMLDivElement>(null);
-  const inputRef         = useRef<HTMLInputElement>(null);
+  const inputRef         = useRef<HTMLTextAreaElement>(null);
   const hasStartedRef    = useRef(false);
   const knownCoverUrlRef = useRef<string | null>(localStory.coverSpreadUrl);
 
@@ -445,10 +445,10 @@ export default function MobileCoverChat({
         {lightboxSrc && <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
       </AnimatePresence>
 
-      {/* Root — fixed, no bounce */}
+      {/* Root — fixed, no bounce, keyboard-aware via dvh */}
       <div
         className="fixed inset-0 flex flex-col"
-        style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif", background: "#F9F5FF", overscrollBehavior: "none" }}
+        style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif", background: "#F9F5FF", overscrollBehavior: "none", height: "100dvh" }}
       >
         {/* ── FIXED HEADER ── */}
         <div
@@ -556,20 +556,36 @@ export default function MobileCoverChat({
             </button>
           )}
 
-          <div className="flex gap-2 items-center">
-            <div className="flex-1 flex items-center rounded-2xl px-3.5" style={{ background: "rgba(249,245,255,0.8)", border: "1.5px solid rgba(180,150,210,0.18)", minHeight: 44 }}>
-              <input
-                ref={inputRef} type="text" value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSend(); } }}
+          <div className="flex gap-2 items-end">
+            <div className="flex-1 flex items-end rounded-2xl px-3.5 py-2" style={{ background: "rgba(249,245,255,0.8)", border: "1.5px solid rgba(180,150,210,0.18)", minHeight: 44 }}>
+              <textarea
+                ref={inputRef as any}
+                value={input}
+                onChange={e => {
+                  setInput(e.target.value);
+                  // Auto-grow: reset then set to scrollHeight
+                  e.target.style.height = "auto";
+                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+                }}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                 placeholder={PLACEHOLDERS[stage]}
                 disabled={isLoading || isGeneratingCovers}
-                className="flex-1 bg-transparent border-0 focus:outline-none text-[15px] py-2.5 disabled:opacity-50"
-                style={{ color: "#2D2235", fontFamily: "inherit" }}
+                rows={1}
+                className="flex-1 bg-transparent border-0 focus:outline-none resize-none disabled:opacity-50 leading-relaxed"
+                style={{
+                  color: "#2D2235",
+                  fontFamily: "inherit",
+                  fontSize: "16px", // prevents iOS zoom — must be exactly 16px
+                  lineHeight: "1.4",
+                  paddingTop: "6px",
+                  paddingBottom: "6px",
+                  maxHeight: "120px",
+                  overflowY: "auto",
+                }}
               />
             </div>
             <button onClick={handleSend} disabled={!input.trim() || isLoading || isGeneratingCovers}
-              className="w-11 h-11 rounded-2xl flex items-center justify-center text-white disabled:opacity-30 active:scale-90 transition-transform flex-shrink-0"
+              className="w-11 h-11 rounded-2xl flex items-center justify-center text-white disabled:opacity-30 active:scale-90 transition-transform flex-shrink-0 mb-0.5"
               style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", border: "none" }}>
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" style={{ transform: "translateX(1px)" }} />}
             </button>
