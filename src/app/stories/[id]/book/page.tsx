@@ -5,7 +5,8 @@ import { db } from "@/db";
 import { stories, orders, storySpreads, storyPages, readers } from "@/db/schema";
 import { eq, desc, asc, inArray } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
-import { auth } from "@/auth"; // adjust to your auth import
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 // ─── Gelato status sync on page load ───
 async function syncGelatoStatus(
@@ -121,7 +122,8 @@ export default async function BookPage({
   const { id } = await params;
 
   // 1. Session — for userEmail
-  const session = await auth();
+  const session = await getServerSession(authOptions);
+
   const userEmail = session?.user?.email ?? "";
 
   // 2. Fetch story
