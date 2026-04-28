@@ -3,46 +3,27 @@
 
 import { useState, useRef, useEffect } from "react";
 import {
-  Send,
-  Loader2,
-  Sparkles,
-  Wand2,
-  Check,
-  ImagePlus,
-  MessageCircle,
-  User,
-  MapPin,
-  ChevronDown,
-  ChevronUp,
-  X,
-  ZoomIn,
-  BookOpen,
-  Type,
-  Heart,
-  UserCircle,
+  Send, Loader2, Sparkles, Wand2, Check,
+  ImagePlus, X, ZoomIn, BookOpen, Type, Heart, UserCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import type { StepKey } from "@/lib/storySteps";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
+import MobileCoverChat from "./MobileCoverChat";
 
 /* -------------------------------------------------------------------------- */
-/*                                   TYPES                                    */
+/*  TYPES                                                                      */
 /* -------------------------------------------------------------------------- */
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
 type CoverStage = "greeting" | "title" | "image" | "backcover" | "author" | "ready";
 
 type Story = {
-  id: string;
-  projectId: string;
-  title: string;
-  coverSpreadUrl: string | null;
-  status: string | null;
-  pdfUrl: string | null;
-  coverPlan: any;
+  id: string; projectId: string; title: string;
+  coverSpreadUrl: string | null; status: string | null;
+  pdfUrl: string | null; coverPlan: any;
 };
-
 
 type WorldCharacter = {
   id: string; name: string; description: string | null; appearance: string | null;
@@ -54,7 +35,7 @@ type WorldLocation = {
   portraitImageUrl: string | null; imageUrl: string | null; significance: string | null;
 };
 
-type Props = {
+export type Props = {
   storyId: string; projectId: string; story: Story;
   initialMessages: ChatMsg[];
   currentStep?: StepKey; completedSteps?: StepKey[];
@@ -65,7 +46,7 @@ type Props = {
 const FONT = "'Bricolage Grotesque', system-ui, sans-serif";
 
 /* -------------------------------------------------------------------------- */
-/*                            LIGHTBOX                                        */
+/*  LIGHTBOX                                                                   */
 /* -------------------------------------------------------------------------- */
 
 function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
@@ -88,16 +69,16 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                            STAGE PROGRESS                                  */
+/*  STAGE PROGRESS (desktop)                                                   */
 /* -------------------------------------------------------------------------- */
 
 function StageProgress({ current }: { current: CoverStage }) {
   const stages: { key: CoverStage; icon: any; label: string }[] = [
-    { key: "title", icon: Type, label: "Title" },
-    { key: "image", icon: ImagePlus, label: "Cover Art" },
-    { key: "backcover", icon: Heart, label: "Back Cover" },
-    { key: "author", icon: UserCircle, label: "Author" },
-    { key: "ready", icon: Check, label: "Generate" },
+    { key: "title",     icon: Type,       label: "Title"      },
+    { key: "image",     icon: ImagePlus,  label: "Cover Art"  },
+    { key: "backcover", icon: Heart,      label: "Back Cover" },
+    { key: "author",    icon: UserCircle, label: "Author"     },
+    { key: "ready",     icon: Check,      label: "Generate"   },
   ];
   const currentIdx = stages.findIndex(s => s.key === current);
 
@@ -125,49 +106,41 @@ function StageProgress({ current }: { current: CoverStage }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                              MAIN COMPONENT                                */
+/*  DESKTOP LAYOUT                                                             */
 /* -------------------------------------------------------------------------- */
 
-export default function CoverDesignChat({
+function DesktopCoverChat({
   storyId, story, projectId, initialMessages,
   currentStep = "cover", completedSteps = [], paymentStatus,
   initialCharacterIds, initialLocationIds,
 }: Props) {
   const router = useRouter();
 
-  const [localStory, setLocalStory] = useState<Story>(story);
-  const [messages, setMessages] = useState<ChatMsg[]>(initialMessages);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
-  const [stage, setStage] = useState<CoverStage>("greeting");
+  const [localStory,        setLocalStory]        = useState<Story>(story);
+  const [messages,          setMessages]          = useState<ChatMsg[]>(initialMessages);
+  const [input,             setInput]             = useState("");
+  const [isLoading,         setIsLoading]         = useState(false);
+  const [lightboxSrc,       setLightboxSrc]       = useState<string | null>(null);
+  const [stage,             setStage]             = useState<CoverStage>("greeting");
 
-  // Cover plan
-  const [confirmedTitle, setConfirmedTitle] = useState(story.title);
+  const plan = story.coverPlan as any;
+  const [confirmedTitle,    setConfirmedTitle]    = useState(story.title);
   const [coverCharacterIds, setCoverCharacterIds] = useState<Set<string>>(new Set(initialCharacterIds));
-  const [coverLocationIds, setCoverLocationIds] = useState<Set<string>>(new Set(initialLocationIds));
-// FIXED — seed from cover plan if it exists
-const plan = story.coverPlan as any;
-const [backCoverContent, setBackCoverContent] = useState(
-  plan?.back?.blurbText ?? plan?.back?.dedicationText ?? ""
-);
-const [authorCredit, setAuthorCredit] = useState(
-  plan?.front?.authorText ?? ""
-);
+  const [coverLocationIds,  setCoverLocationIds]  = useState<Set<string>>(new Set(initialLocationIds));
+  const [backCoverContent,  setBackCoverContent]  = useState(plan?.back?.blurbText ?? plan?.back?.dedicationText ?? "");
+  const [authorCredit,      setAuthorCredit]      = useState(plan?.front?.authorText ?? "");
 
-  // World
-  const [worldCharacters, setWorldCharacters] = useState<WorldCharacter[]>([]);
-  const [worldLocations, setWorldLocations] = useState<WorldLocation[]>([]);
-  const [worldLoading, setWorldLoading] = useState(true);
+  const [worldCharacters,   setWorldCharacters]   = useState<WorldCharacter[]>([]);
+  const [worldLocations,    setWorldLocations]    = useState<WorldLocation[]>([]);
+  const [worldLoading,      setWorldLoading]      = useState(true);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const hasStartedRef = useRef(false);
+  const messagesEndRef   = useRef<HTMLDivElement>(null);
+  const hasStartedRef    = useRef(false);
   const knownCoverUrlRef = useRef<string | null>(localStory.coverSpreadUrl);
 
-  const hasCovers = !!localStory.coverSpreadUrl;
+  const hasCovers          = !!localStory.coverSpreadUrl;
   const isGeneratingCovers = localStory.status === "generating_covers";
 
-  /* ── Fetch world ── */
   useEffect(() => {
     if (!storyId) return;
     fetch(`/api/stories/${storyId}/world`).then(r => r.json()).then(d => {
@@ -175,67 +148,48 @@ const [authorCredit, setAuthorCredit] = useState(
     }).catch(() => {}).finally(() => setWorldLoading(false));
   }, [storyId]);
 
-  /* ── Auto scroll ── */
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
 
-  /* ── Poll for cover generation ── */
-// FIXED — handles same-URL regeneration + status-based completion
-/* ── Poll for cover generation ── */
-useEffect(() => {
-  if (!isGeneratingCovers) return;
-  let pollCount = 0;
-  const interval = setInterval(async () => {
-    try {
-      pollCount++;
-      const res = await fetch(`/api/stories/${storyId}`);
-      const data = await res.json();
-      const newUrl = data.story?.coverSpreadUrl;
-      const newStatus = data.story?.status;
+  useEffect(() => {
+    if (!isGeneratingCovers) return;
+    let pollCount = 0;
+    const interval = setInterval(async () => {
+      try {
+        pollCount++;
+        const res  = await fetch(`/api/stories/${storyId}`);
+        const data = await res.json();
+        const newUrl    = data.story?.coverSpreadUrl;
+        const newStatus = data.story?.status;
+        const urlChanged = newUrl && newUrl !== knownCoverUrlRef.current;
+        const statusDone = newStatus && newStatus !== "generating_covers";
 
-      const urlChanged = newUrl && newUrl !== knownCoverUrlRef.current;
-      const statusDone = newStatus && newStatus !== "generating_covers";
+        if (urlChanged || (statusDone && newUrl)) {
+          knownCoverUrlRef.current = newUrl;
+          setLocalStory(prev => ({ ...prev, coverSpreadUrl: newUrl, status: "covers_complete" }));
+          addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
+          clearInterval(interval);
+        } else if (statusDone && !newUrl) {
+          setLocalStory(prev => ({ ...prev, status: newStatus }));
+          addAssistantMsg("Cover generation finished but something went wrong — no image was created. Try hitting Generate Cover again.");
+          clearInterval(interval);
+        } else if (newUrl && pollCount >= 3) {
+          knownCoverUrlRef.current = newUrl;
+          setLocalStory(prev => ({ ...prev, coverSpreadUrl: newUrl, status: "covers_complete" }));
+          addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
+          clearInterval(interval);
+        }
+      } catch {}
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isGeneratingCovers, storyId]);
 
-      if (urlChanged || (statusDone && newUrl)) {
-        // Normal completion — URL changed or status updated
-        knownCoverUrlRef.current = newUrl;
-        setLocalStory(prev => ({
-          ...prev,
-          coverSpreadUrl: newUrl,
-          status: "covers_complete",
-        }));
-        addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
-        clearInterval(interval);
-      } else if (statusDone && !newUrl) {
-        // Generation finished but no image
-        setLocalStory(prev => ({ ...prev, status: newStatus }));
-        addAssistantMsg("Cover generation finished but something went wrong — no image was created. Try hitting Generate Cover again.");
-        clearInterval(interval);
-      } else if (newUrl && pollCount >= 3) {
-        // Defensive: URL exists, status stuck on generating_covers
-        // Backend likely forgot to update status — treat as complete
-        knownCoverUrlRef.current = newUrl;
-        setLocalStory(prev => ({
-          ...prev,
-          coverSpreadUrl: newUrl,
-          status: "covers_complete",
-        }));
-        addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
-        clearInterval(interval);
-      }
-    } catch {}
-  }, 3000);
-  return () => clearInterval(interval);
-}, [isGeneratingCovers, storyId]);
-
-  /* ── Start chat ── */
   useEffect(() => {
     if (hasStartedRef.current || !storyId || worldLoading) return;
     hasStartedRef.current = true;
 
     if (initialMessages.length > 0) {
-      // Restore stage heuristically
       const all = initialMessages.map(m => m.content).join(" ").toLowerCase();
-      if (all.includes("author") || all.includes("written by")) setStage("ready");
+      if      (all.includes("author") || all.includes("written by")) setStage("ready");
       else if (all.includes("dedication") || all.includes("back cover")) setStage("author");
       else if (all.includes("front cover") || all.includes("who should")) setStage("backcover");
       else if (all.includes("title")) setStage("image");
@@ -255,17 +209,8 @@ useEffect(() => {
     }).finally(() => setIsLoading(false));
   }, [storyId, worldLoading]);
 
-  console.log("Messages", messages)
-
-  /* ── Helpers ── */
-
   function addAssistantMsg(content: string) {
-    const msg: ChatMsg = { role: "assistant", content };
-    setMessages(prev => [...prev, msg]);
-    // fetch("/api/stories/cover-chat/save-message", {
-    //   method: "POST", headers: { "Content-Type": "application/json" },
-    //   body: JSON.stringify({ storyId, role: "assistant", content }),
-    // }).catch(() => {});
+    setMessages(prev => [...prev, { role: "assistant", content }]);
   }
 
   async function sendToBackend(userMessage: string, currentStage: CoverStage) {
@@ -278,45 +223,31 @@ useEffect(() => {
           world: {
             title: confirmedTitle,
             characters: worldCharacters.map(c => ({ id: c.id, name: c.name, role: c.role })),
-            locations: worldLocations.map(l => ({ id: l.id, name: l.name })),
+            locations:  worldLocations.map(l => ({ id: l.id, name: l.name })),
           },
           coverCharacterIds: [...coverCharacterIds],
-          coverLocationIds: [...coverLocationIds],
+          coverLocationIds:  [...coverLocationIds],
         }),
       });
       if (!res.ok) return null;
       const data = await res.json();
-      // Handle both old shape (reply) and new shape (message)
-      if (!data.message && data.reply) {
-        data.message = data.reply;
-      }
+      if (!data.message && data.reply) data.message = data.reply;
       return data;
     } catch { return null; }
   }
 
-  /* ── Send message ── */
-
   async function handleSend() {
     if (!input.trim() || isLoading) return;
     const text = input.trim();
-    const userMsg: ChatMsg = { role: "user", content: text };
-    setMessages(prev => [...prev, userMsg]);
-    // fetch("/api/stories/cover-chat/save-message", {
-    //   method: "POST", headers: { "Content-Type": "application/json" },
-    //   body: JSON.stringify({ storyId, role: "user", content: text }),
-    // }).catch(() => {});
+    setMessages(prev => [...prev, { role: "user", content: text }]);
     setInput("");
     setIsLoading(true);
-
-
 
     const reply = await sendToBackend(text, stage);
 
     if (reply) {
       addAssistantMsg(reply.message);
-
       if (reply.stage && reply.stage !== stage) setStage(reply.stage);
-
       if (reply.confirmedTitle) {
         setConfirmedTitle(reply.confirmedTitle);
         fetch(`/api/stories/${storyId}`, {
@@ -324,74 +255,47 @@ useEffect(() => {
           body: JSON.stringify({ title: reply.confirmedTitle }),
         }).catch(() => {});
       }
-
       if (reply.coverCharacterIds) setCoverCharacterIds(new Set(reply.coverCharacterIds));
-      if (reply.coverLocationIds) setCoverLocationIds(new Set(reply.coverLocationIds));
-      if (reply.backCoverContent) setBackCoverContent(reply.backCoverContent);
-      if (reply.authorCredit) setAuthorCredit(reply.authorCredit);
-
-      console.log("DEBUG cover state:", {
-        charIds: reply.coverCharacterIds,
-        worldChars: worldCharacters.map(c => c.id),
-        match: reply.coverCharacterIds?.filter((id: string) => worldCharacters.some(c => c.id === id)),
-      });
+      if (reply.coverLocationIds)  setCoverLocationIds(new Set(reply.coverLocationIds));
+      if (reply.backCoverContent)  setBackCoverContent(reply.backCoverContent);
+      if (reply.authorCredit)      setAuthorCredit(reply.authorCredit);
     } else {
       addAssistantMsg("Sorry — something went wrong. Please try again.");
     }
-
     setIsLoading(false);
   }
-
-  /* ── Generate ── */
 
   async function handleGenerate() {
     setIsLoading(true);
     try {
-      // Ask Claude to produce the generation strategy
-      const strategyReply = await sendToBackend(
-        "Please generate the cover now",
-        stage
-      );
+      const strategyReply = await sendToBackend("Please generate the cover now", stage);
+      if (strategyReply?.message) addAssistantMsg(strategyReply.message);
 
-      if (strategyReply?.message) {
-        addAssistantMsg(strategyReply.message);
-      }
-
-      // The chat route saves generationStrategy to coverPlan automatically
-      // Now just trigger Inngest
       setLocalStory(s => ({ ...s, status: "generating_covers" }));
       await fetch(`/api/stories/${storyId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "generating_covers" }),
       }).catch(() => {});
 
       await fetch("/api/inngest/trigger-covers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storyId }),
       });
     } catch {
-      alert("Failed to start cover generation.");
+      addAssistantMsg("Failed to start cover generation. Please try again.");
     } finally {
       setIsLoading(false);
     }
   }
 
-  /* ── Placeholders ── */
-
   const placeholders: Record<CoverStage, string> = {
-    greeting: "Type your message…",
-    title: "Type your preferred title, or ask for suggestions…",
-    image: "Describe your vision for the front cover…",
+    greeting:  "Type your message…",
+    title:     "Type your preferred title, or ask for suggestions…",
+    image:     "Describe your vision for the front cover…",
     backcover: "Write a dedication, blurb, or character message…",
-    author: "Who wrote this book?",
-    ready: "Any final tweaks before we generate?",
+    author:    "Who wrote this book?",
+    ready:     "Any final tweaks before we generate?",
   };
-
-  /* -------------------------------------------------------------------------- */
-  /*                                   RENDER                                   */
-  /* -------------------------------------------------------------------------- */
 
   return (
     <>
@@ -443,7 +347,6 @@ useEffect(() => {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Input */}
                 <div className="p-3 flex-shrink-0 space-y-2" style={{ borderTop: "1px solid rgba(180,150,210,0.08)" }}>
                   <div className="flex gap-2">
                     <input type="text" value={input} onChange={e => setInput(e.target.value)}
@@ -457,7 +360,6 @@ useEffect(() => {
                       <Send className="w-4 h-4" />
                     </button>
                   </div>
-
                   {(stage === "ready" || hasCovers) && !isGeneratingCovers && (
                     <button onClick={handleGenerate} disabled={isLoading}
                       className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white disabled:opacity-40 active:scale-[0.98]"
@@ -477,7 +379,6 @@ useEffect(() => {
 
             {/* ── PREVIEW + PLAN ── */}
             <div className="lg:col-span-2 flex flex-col gap-4 min-h-0 overflow-y-auto scrollbar-hide">
-              {/* Cover image */}
               <div className="overflow-hidden rounded-[22px] flex-shrink-0" style={{ background: "white", border: "1px solid rgba(180,150,210,0.12)", boxShadow: "0 2px 12px rgba(100,60,140,0.06)" }}>
                 <div className="flex items-center gap-3 px-5 py-3" style={{ borderBottom: "1px solid rgba(180,150,210,0.08)", background: "rgba(249,245,255,0.5)" }}>
                   <Sparkles className="w-4 h-4" style={{ color: "#B05CE6" }} />
@@ -520,7 +421,6 @@ useEffect(() => {
                 </div>
               </div>
 
-              {/* Cover plan summary */}
               {stage !== "greeting" && (
                 <div className="rounded-[22px] overflow-hidden flex-shrink-0" style={{ background: "white", border: "1px solid rgba(180,150,210,0.12)" }}>
                   <div className="px-5 py-3" style={{ borderBottom: "1px solid rgba(180,150,210,0.08)", background: "rgba(249,245,255,0.5)" }}>
@@ -528,25 +428,20 @@ useEffect(() => {
                   </div>
                   <div className="p-4 space-y-2.5 text-[12px]">
                     <PlanRow label="Title" value={confirmedTitle} done={["image", "backcover", "author", "ready"].includes(stage)} />
-                    <PlanRow 
-                        label="Front Cover" 
-                        value={
-                          coverCharacterIds.size > 0 
-                            ? worldCharacters.filter(c => coverCharacterIds.has(c.id)).map(c => c.name).join(", ") || `${coverCharacterIds.size} characters selected`
-                            : ["backcover", "author", "ready"].includes(stage) 
-                              ? "Discussed in chat" 
-                              : ""
-                        } 
-                        done={["backcover", "author", "ready"].includes(stage)} 
-                      />    
-                      <PlanRow label="Back Cover" 
-                          value={backCoverContent ? (backCoverContent.length > 50 ? backCoverContent.slice(0, 50) + "…" : backCoverContent) : ""} 
-                          done={!!backCoverContent || ["author", "ready"].includes(stage)} 
-                        />
-                        <PlanRow label="Author" 
-                          value={authorCredit} 
-                          done={!!authorCredit || stage === "ready"} 
-                        />
+                    <PlanRow
+                      label="Front Cover"
+                      value={
+                        coverCharacterIds.size > 0
+                          ? worldCharacters.filter(c => coverCharacterIds.has(c.id)).map(c => c.name).join(", ") || `${coverCharacterIds.size} characters selected`
+                          : ["backcover", "author", "ready"].includes(stage) ? "Discussed in chat" : ""
+                      }
+                      done={["backcover", "author", "ready"].includes(stage)}
+                    />
+                    <PlanRow label="Back Cover"
+                      value={backCoverContent ? (backCoverContent.length > 50 ? backCoverContent.slice(0, 50) + "…" : backCoverContent) : ""}
+                      done={!!backCoverContent || ["author", "ready"].includes(stage)}
+                    />
+                    <PlanRow label="Author" value={authorCredit} done={!!authorCredit || stage === "ready"} />
                   </div>
                 </div>
               )}
@@ -559,7 +454,24 @@ useEffect(() => {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  SUB-COMPONENTS                                                             */
+/*  ROOT EXPORT — routes mobile vs desktop                                     */
+/* -------------------------------------------------------------------------- */
+
+export default function CoverDesignChat(props: Props) {
+  return (
+    <>
+      <div className="block md:hidden">
+        <MobileCoverChat {...props} />
+      </div>
+      <div className="hidden md:block">
+        <DesktopCoverChat {...props} />
+      </div>
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  SHARED SUB-COMPONENTS (desktop only — mobile has its own)                  */
 /* -------------------------------------------------------------------------- */
 
 function PlanRow({ label, value, done }: { label: string; value: string; done: boolean }) {
