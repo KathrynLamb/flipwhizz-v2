@@ -396,7 +396,7 @@ function BookCard({ story, showBookNumber = false }: { story: Story; showBookNum
   const status = STATUS[effectiveStatus] ?? STATUS.planning;
 
   return (
-    <Link href={`/stories/${story.id}`}
+    <Link href={story.paymentStatus === "paid" ? `/stories/${story.id}/book` : `/stories/${story.id}`}
       className="block rounded-xl bg-white border border-gray-100 overflow-hidden 
                  hover:border-[#D94590]/20 hover:shadow-md transition-all group">
       <div className="relative h-24 bg-gradient-to-br from-[#D94590]/6 to-[#7B5EA7]/6 overflow-hidden">
@@ -445,7 +445,7 @@ function MobileBookRow({ story }: { story: Story }) {
       : story.status;
   const status = STATUS[effectiveStatus] ?? STATUS.planning;
   return (
-    <Link href={`/stories/${story.id}`}
+    <Link href={story.paymentStatus === "paid" ? `/stories/${story.id}/book` : `/stories/${story.id}`}
       className="flex items-center gap-3 rounded-xl bg-white border border-gray-100 
                  overflow-hidden hover:border-[#D94590]/20 transition-all active:scale-[0.98]">
       <div className="w-16 h-16 flex-shrink-0 bg-gradient-to-br from-[#D94590]/6 to-[#7B5EA7]/6 overflow-hidden">
@@ -481,7 +481,7 @@ function MobileBookRow({ story }: { story: Story }) {
 
 function OrphanCard({ story }: { story: Story }) {
   return (
-    <Link href={`/stories/${story.id}`}
+    <Link href={story.paymentStatus === "paid" ? `/stories/${story.id}/book` : `/stories/${story.id}`}
       className="block rounded-lg bg-white border border-gray-100 overflow-hidden 
                  hover:border-[#D94590]/15 hover:shadow-sm transition-all group">
       <div className="h-16 bg-gradient-to-br from-[#D94590]/5 to-[#7B5EA7]/5 overflow-hidden">
