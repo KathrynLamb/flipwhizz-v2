@@ -92,21 +92,19 @@ useEffect(() => {
   }, [worldIdParam, bookNumberParam]);
 
   async function waitForPagesAndNavigate(nextStoryId: string) {
-    for (let attempt = 0; attempt < 30; attempt++) {
+    // Try a few quick polls first
+    for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        const res = await fetch(`/api/stories/${nextStoryId}/pages`, {
-          cache: "no-store",
-        });
+        const res = await fetch(`/api/stories/${nextStoryId}/pages`, { cache: "no-store" });
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           window.location.href = `/stories/${nextStoryId}/pages`;
           return;
         }
-      } catch (err) {
-        console.error("Polling error:", err);
-      }
-      await new Promise((r) => setTimeout(r, 1000));
+      } catch {}
+      await new Promise(r => setTimeout(r, 800));
     }
+    // Navigate regardless — don't leave mobile hanging for 30 seconds
     window.location.href = `/stories/${nextStoryId}/pages`;
   }
 
