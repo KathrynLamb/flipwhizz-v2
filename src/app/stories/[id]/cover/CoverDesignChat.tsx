@@ -163,7 +163,7 @@ function DesktopCoverChat({
         const urlChanged = newUrl && newUrl !== knownCoverUrlRef.current;
         const statusDone = newStatus && newStatus !== "generating_covers";
 
-        if (urlChanged || (statusDone && newUrl)) {
+        if (urlChanged) {
           knownCoverUrlRef.current = newUrl;
           setLocalStory(prev => ({ ...prev, coverSpreadUrl: newUrl, status: "covers_complete" }));
           addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
@@ -172,12 +172,13 @@ function DesktopCoverChat({
           setLocalStory(prev => ({ ...prev, status: newStatus }));
           addAssistantMsg("Cover generation finished but something went wrong — no image was created. Try hitting Generate Cover again.");
           clearInterval(interval);
-        } else if (newUrl && pollCount >= 3) {
-          knownCoverUrlRef.current = newUrl;
-          setLocalStory(prev => ({ ...prev, coverSpreadUrl: newUrl, status: "covers_complete" }));
-          addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
-          clearInterval(interval);
-        }
+        } 
+        // else if (newUrl && pollCount >= 3) {
+        //   knownCoverUrlRef.current = newUrl;
+        //   setLocalStory(prev => ({ ...prev, coverSpreadUrl: newUrl, status: "covers_complete" }));
+        //   addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
+        //   clearInterval(interval);
+        // }
       } catch {}
     }, 3000);
     return () => clearInterval(interval);
@@ -266,6 +267,8 @@ function DesktopCoverChat({
   }
 
   async function handleGenerate() {
+    knownCoverUrlRef.current = localStory.coverSpreadUrl; // snapshot current before regenerating
+    setLocalStory(s => ({ ...s, status: "generating_covers" }));
     setIsLoading(true);
     try {
       const strategyReply = await sendToBackend("Please generate the cover now", stage);
