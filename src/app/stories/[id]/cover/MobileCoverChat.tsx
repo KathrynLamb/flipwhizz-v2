@@ -434,9 +434,6 @@ export default function MobileCoverChat({
   return (
     <>
       <style>{`
-        @media screen and (orientation: landscape) {
-          body { transform: rotate(-90deg); transform-origin: left top; width: 100vh; height: 100vw; overflow: hidden; position: absolute; top: 100%; left: 0; }
-        }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
       `}</style>
