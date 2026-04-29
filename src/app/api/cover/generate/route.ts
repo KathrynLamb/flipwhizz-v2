@@ -23,7 +23,6 @@ export async function POST(req: Request) {
       where: eq(coverChatSessions.id, sessionId),
     });
 
-    console.log('Session ====>', session)
 
     if (!session || !session.coverPlan) {
       return NextResponse.json(
