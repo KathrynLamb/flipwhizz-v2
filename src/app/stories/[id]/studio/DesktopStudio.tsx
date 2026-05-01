@@ -815,11 +815,18 @@ export default function DesktopStudio({
       primaryLocationId?: string | null;
       includedLocationIds?: string[];
       outfitOverrides?: Record<string, string>;
+      strategistPlan?: {                          // ← ADD
+        featuredCharacterIds: string[];
+        backgroundCharacterIds: string[];
+        hiddenCharacterIds: string[];
+        recommendedPrompt: string;
+        outfitOverrides?: Record<string, string>;
+      } | null;
     }
   ) {
     const pageIds = [spread.left.id];
     if (spread.right) pageIds.push(spread.right.id);
-
+  
     const res = await fetch(`/api/stories/${story.id}/spreads/regenerate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -832,8 +839,10 @@ export default function DesktopStudio({
         primaryLocationId: options?.primaryLocationId ?? null,
         includedLocationIds: options?.includedLocationIds ?? [],
         freshStart: options?.freshStart ?? true,
+        strategistPlan: options?.strategistPlan ?? null,   // ← ADD
       }),
     });
+
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -866,11 +875,7 @@ export default function DesktopStudio({
         return true;
       }
 
-      // if (mode === "redraw") {
-      //   setRedrawTarget(spread);
-      // } else {
-      //   await startRegenerationForSpread(spread, { freshStart: true });
-      // }
+   
 
       if (mode === "redraw") {
         await openStrategistForSpread(spread);
@@ -912,35 +917,6 @@ export default function DesktopStudio({
     }
   }
 
-  // async function handleRedrawSpread(payload: {
-  //   feedback: string;
-  //   includedCharacterIds: string[];
-  //   outfitOverrides: Record<string, string>;
-  //   primaryLocationId: string | null;
-  //   includedLocationIds: string[];
-  //   freshStart?: boolean;
-  // }) {
-  //   if (!redrawTarget || isSubmittingFeedback) return;
-  //   setIsSubmittingFeedback(true);
-
-  //   try {
-  //     await startRegenerationForSpread(redrawTarget, {
-  //       feedback: payload.freshStart ? "" : payload.feedback,
-  //       includedCharacterIds: payload.includedCharacterIds,
-  //       outfitOverrides: payload.outfitOverrides,
-  //       primaryLocationId: payload.primaryLocationId,
-  //       includedLocationIds: payload.includedLocationIds,
-  //       freshStart: payload.freshStart ?? false,
-  //     });
-
-  //     setRedrawTarget(null);
-  //     setFocusSelectedCharacterIds(null);
-  //   } catch (err: any) {
-  //     alert(err.message || "Failed to redraw spread");
-  //   } finally {
-  //     setIsSubmittingFeedback(false);
-  //   }
-  // }
 
   function resetStrategistState() {
     setStrategistMessages([]);
@@ -1027,32 +1003,76 @@ export default function DesktopStudio({
 
   async function handleUseStrategistPlan(plan: RedrawPlan) {
     if (!strategistTarget) return;
-
+  
     setIsApplyingStrategistPlan(true);
-
+  
     try {
       if (
         plan.executionMode === "single_spread_identity_repair" ||
         plan.executionMode === "single_spread_with_reduced_cast"
       ) {
         await startRegenerationForSpread(strategistTarget, {
-          feedback: plan.recommendedPrompt,
-          includedCharacterIds: plan.featuredCharacterIds,
           freshStart: false,
+          strategistPlan: {
+            featuredCharacterIds: plan.featuredCharacterIds,
+            backgroundCharacterIds: plan.backgroundCharacterIds,
+            hiddenCharacterIds: plan.hiddenCharacterIds,
+            recommendedPrompt: plan.recommendedPrompt,
+            outfitOverrides: plan.outfitOverrides ?? {},
+          },
         });
-
+  
         closeStrategist();
         setFocusSelectedCharacterIds(null);
         return;
       }
-
+  
       if (plan.executionMode === "split_into_two_single_pages") {
-        setPendingSplitPlan(plan);
+        if (!strategistTarget.right) {
+          throw new Error("Split plan requires a spread with both left and right pages");
+        }
+  
+        // Left page only — its own prompt and character list
+        const leftOnlySpread: Spread = {
+          ...strategistTarget,
+          right: null,
+        };
+  
+        await startRegenerationForSpread(leftOnlySpread, {
+          freshStart: false,
+          strategistPlan: {
+            featuredCharacterIds: plan.leftPageFeaturedCharacterIds ?? [],
+            backgroundCharacterIds: plan.leftPageBackgroundCharacterIds ?? [],
+            hiddenCharacterIds: plan.leftPageHiddenCharacterIds ?? [],
+            recommendedPrompt: plan.leftPagePrompt ?? "",
+            outfitOverrides: plan.outfitOverrides ?? {},
+          },
+        });
+  
+        // Right page only — promote it to "left" so the worker treats it as a solo page
+        const rightOnlySpread: Spread = {
+          id: `spread-${strategistTarget.right.id}`,
+          spreadId: strategistTarget.spreadId,
+          left: strategistTarget.right,
+          right: null,
+        };
+  
+        await startRegenerationForSpread(rightOnlySpread, {
+          freshStart: false,
+          strategistPlan: {
+            featuredCharacterIds: plan.rightPageFeaturedCharacterIds ?? [],
+            backgroundCharacterIds: plan.rightPageBackgroundCharacterIds ?? [],
+            hiddenCharacterIds: plan.rightPageHiddenCharacterIds ?? [],
+            recommendedPrompt: plan.rightPagePrompt ?? "",
+            outfitOverrides: plan.outfitOverrides ?? {},
+          },
+        });
+  
         closeStrategist();
         setFocusSelectedCharacterIds(null);
         return;
       }
-
+  
       throw new Error("Unknown redraw execution mode");
     } catch (err: any) {
       alert(err.message || "Failed to use redraw plan");
