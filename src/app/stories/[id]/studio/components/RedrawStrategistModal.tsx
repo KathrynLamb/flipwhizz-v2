@@ -123,6 +123,12 @@ function strategyLabel(strategy: RedrawPlan["strategy"]) {
   }
 }
 
+function sanitiseAssistantMessage(content: string): string {
+  return content
+    .replace(/<redraw_plan_json>[\s\S]*?<\/redraw_plan_json>/g, "")
+    .trim();
+}
+
 /* --------------------------- Plan Preview Panel ---------------------------- */
 
 // function PlanPreview({
@@ -674,7 +680,7 @@ isLoadingContext?: boolean;
                           : "bg-purple-600 text-white"
                       )}
                     >
-                      {message.content}
+                       {isAssistant ? sanitiseAssistantMessage(message.content) : message.content}
                     </div>
                   </div>
                 );
