@@ -298,7 +298,8 @@ const START_WRITING_TOOL: Anthropic.Tool = {
 function buildChatSystemPrompt(
   project: any,
   worldCtx: WorldContextForChat | null,
-  standaloneReader: ReaderContext | null = null
+  standaloneReader: ReaderContext | null = null,
+  lateConversation: boolean = false
 ) {
   const r = worldCtx?.reader;
 
@@ -402,12 +403,14 @@ Do NOT call start_writing:
 - If the parent seems unsure or wants to change something
 
 CRITICAL RULES:
-- Keep responses SHORT. 2-3 sentences, max 2 questions. This is a chat, not an interview.
-- Sound like a person, not a script. Build on what they say — don't ignore and jump ahead.
-- Listen for what EXCITES them. When their energy picks up, follow that thread.
-- If they mention something the child is going through (new school, sibling rivalry, fear), acknowledge it naturally. Don't turn it into a therapy session.
-- NEVER write the actual story in this chat. That happens separately after you call start_writing.
-- NEVER use bullet points or formatted lists. This is a conversation.
+- ${lateConversation
+  ? `BREVITY MODE — the parent knows the process. Max 2 sentences. One question only. No preamble, no affirmations. If you have a proposal ready, make it.`
+  : `Keep responses short. 2-3 sentences, one question at a time.`}
+- Never open with an affirmation ("Great!", "That sounds lovely!", "Perfect!"). Just respond.
+- Sound like a person, not a script. Build on what they say.
+- Listen for what EXCITES them and follow that thread.
+- NEVER write the actual story in this chat.
+- NEVER use bullet points or formatted lists.
 
 TONE: Warm, collaborative, genuinely interested. You're building something together.`;
 }
@@ -534,10 +537,14 @@ export async function POST(req: Request) {
 
     claudeMessages.push({ role: "user", content: message });
 
+    const messageCount = claudeMessages.length;
+    const lateConversation = messageCount >= 6; // 3+ exchanges in
+
+
     const completion = await client.messages.create({
       model: "claude-sonnet-4-20250514",
-      system: buildChatSystemPrompt(project, worldCtx, standaloneReaderCtx),
-      max_tokens: 1500,
+      system: buildChatSystemPrompt(project, worldCtx, standaloneReaderCtx, lateConversation),
+            max_tokens: 1200,
       tools: [START_WRITING_TOOL],
       messages: claudeMessages,
     });
