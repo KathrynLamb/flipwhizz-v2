@@ -95,7 +95,7 @@ const decideSpreadScenesTool: Anthropic.Tool = {
             locations: {
               type: "array",
               description:
-                "Array of locations relevant to this spread. Use one primary location when there is a clear main visible setting. Add additional locations only if they are also relevant as referenced, memory, background, or secondary context.",
+                "Array of locations relevant to this spread. Use one primary location when there is a clear main visible setting.",
               items: {
                 type: "object",
                 required: ["locationId", "role", "reason"],
@@ -113,8 +113,7 @@ const decideSpreadScenesTool: Anthropic.Tool = {
                       "referenced",
                       "memory",
                     ],
-                    description:
-                      "How this location functions in the spread",
+                    description: "How this location functions in the spread",
                   },
                   reason: {
                     type: "string",
@@ -162,7 +161,11 @@ function isStringArray(value: unknown): value is string[] {
 function uniqueStrings(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
   return Array.from(
-    new Set(values.filter((id): id is string => typeof id === "string" && id.trim().length > 0))
+    new Set(
+      values.filter(
+        (id): id is string => typeof id === "string" && id.trim().length > 0
+      )
+    )
   );
 }
 
@@ -182,23 +185,15 @@ function isValidClaudeToolInput(value: unknown): value is ClaudeToolInput {
       locations?: unknown;
     };
 
-    if (typeof s.spreadIndex !== "number" || !Number.isFinite(s.spreadIndex)) {
+    if (typeof s.spreadIndex !== "number" || !Number.isFinite(s.spreadIndex))
       return false;
-    }
-
     if (!isStringArray(s.featuredCharacterIds)) return false;
     if (!isStringArray(s.backgroundCharacterIds)) return false;
     if (!Array.isArray(s.locations)) return false;
 
     for (const loc of s.locations) {
       if (!loc || typeof loc !== "object") return false;
-
-      const l = loc as {
-        locationId?: unknown;
-        role?: unknown;
-        reason?: unknown;
-      };
-
+      const l = loc as { locationId?: unknown; role?: unknown; reason?: unknown };
       if (typeof l.locationId !== "string") return false;
       if (!isValidLocationRole(l.role)) return false;
       if (typeof l.reason !== "string") return false;
@@ -222,7 +217,6 @@ function normalizeClaudeToolInput(input: ClaudeToolInput): ClaudeToolInput {
         0,
         MAX_FEATURED_CHARACTERS_PER_SPREAD
       );
-
       const overflowFeatured = featuredCharacterIds.slice(
         MAX_FEATURED_CHARACTERS_PER_SPREAD
       );
@@ -295,7 +289,9 @@ function normalizeClaudeToolInput(input: ClaudeToolInput): ClaudeToolInput {
 export const decideScenes = inngest.createFunction(
   {
     id: "decide-scenes-v5",
-    retries: 2, triggers: [{ event: "story/decide-spread-scenes" }] },
+    retries: 2,
+    triggers: [{ event: "story/decide-spread-scenes" }],
+  },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
 
@@ -312,8 +308,16 @@ export const decideScenes = inngest.createFunction(
       });
     });
 
-    if (!spreads.length) {
-      throw new Error("No spreads found");
+    if (!spreads.length) throw new Error("No spreads found");
+
+    // ── SAFEGUARD: verify page IDs are populated before running Claude ──
+    const nullPageSpreads = spreads.filter((s) => !s.leftPageId);
+    if (nullPageSpreads.length > 0) {
+      throw new Error(
+        `Cannot decide scenes: ${nullPageSpreads.length} spread(s) have null leftPageId ` +
+          `(indices: ${nullPageSpreads.map((s) => s.spreadIndex).join(", ")}). ` +
+          `Run build-spreads first and ensure page IDs are linked.`
+      );
     }
 
     const spreadByIndex = new Map(spreads.map((s) => [s.spreadIndex, s]));
@@ -334,6 +338,14 @@ export const decideScenes = inngest.createFunction(
     });
 
     const pageText = new Map(pages.map((p) => [p.id, p.text ?? ""]));
+
+    // ── SAFEGUARD: verify page text was loaded ──
+    if (pages.length === 0) {
+      throw new Error(
+        `No page text loaded for story ${storyId}. ` +
+          `Pages may not exist or page IDs in spreads are incorrect.`
+      );
+    }
 
     /* ------------------------------------------------------------------ */
     /* Load characters                                                     */
@@ -390,16 +402,7 @@ export const decideScenes = inngest.createFunction(
       .map((s) => {
         const left = s.leftPageId ? pageText.get(s.leftPageId) ?? "" : "";
         const right = s.rightPageId ? pageText.get(s.rightPageId) ?? "" : "";
-
-        return `
-SPREAD ${s.spreadIndex}
-
-LEFT PAGE:
-${left}
-
-RIGHT PAGE:
-${right}
-`.trim();
+        return `SPREAD ${s.spreadIndex}\n\nLEFT PAGE:\n${left}\n\nRIGHT PAGE:\n${right}`.trim();
       })
       .join("\n\n");
 
@@ -469,12 +472,10 @@ Rules:
 - If no background characters appear, use empty array []
 - If no locations are relevant, use empty array []
 - Every spreadIndex from the input must be included exactly once
-- "spreads" must always be present
-- "spreads" must always be an array
+- "spreads" must always be present and always be an array
 - Each spread must include: spreadIndex, featuredCharacterIds, backgroundCharacterIds, locations
 - Prefer exactly one "primary" location when a clear main setting exists
 - Do not mark a merely mentioned past location as "primary" if the visible action is happening somewhere else
-- Do not add commentary outside the tool
 `.trim();
 
     const userPrompt = `
@@ -493,22 +494,13 @@ ${spreadText}
 
     const firstResult = await step.run("decide-with-claude", async () => {
       console.log("🤖 Calling Claude with tool...");
-
       return client.messages.create({
         model: MODEL,
         max_tokens: 2500,
         tools: [decideSpreadScenesTool],
-        tool_choice: {
-          type: "tool",
-          name: "decide_spread_scenes",
-        },
+        tool_choice: { type: "tool", name: "decide_spread_scenes" },
         system: systemPrompt,
-        messages: [
-          {
-            role: "user",
-            content: userPrompt,
-          },
-        ],
+        messages: [{ role: "user", content: userPrompt }],
       });
     });
 
@@ -523,8 +515,6 @@ ${spreadText}
       throw new Error("Claude did not return tool output");
     }
 
-    console.log("🔍 First tool input:", JSON.stringify(rawToolInput, null, 2));
-
     if (!isValidClaudeToolInput(rawToolInput)) {
       console.warn("⚠️ Invalid first tool input structure:", rawToolInput);
 
@@ -533,14 +523,9 @@ ${spreadText}
           model: MODEL,
           max_tokens: 1500,
           tools: [decideSpreadScenesTool],
-          tool_choice: {
-            type: "tool",
-            name: "decide_spread_scenes",
-          },
+          tool_choice: { type: "tool", name: "decide_spread_scenes" },
           system: `
-You previously returned invalid tool arguments.
-
-You must now call the decide_spread_scenes tool again with VALID input.
+You previously returned invalid tool arguments. Call the decide_spread_scenes tool again with VALID input.
 
 Required shape:
 {
@@ -550,49 +535,37 @@ Required shape:
       "featuredCharacterIds": ["id1", "id2"],
       "backgroundCharacterIds": ["id3"],
       "locations": [
-        {
-          "locationId": "location-id-1",
-          "role": "primary",
-          "reason": "Main visible setting"
-        }
+        { "locationId": "location-id-1", "role": "primary", "reason": "Main visible setting" }
       ]
     }
   ]
 }
 
 Rules:
-- spreads must be present
-- spreads must be an array
+- spreads must be present and be an array
 - every spreadIndex from the input must appear exactly once
 - use only IDs already provided
 - every spread must include featuredCharacterIds, backgroundCharacterIds, and locations
-- locations must be an array, not a string
-- do not omit required fields
-- do not add commentary
+- locations must be an array
 - featuredCharacterIds must contain no more than ${MAX_FEATURED_CHARACTERS_PER_SPREAD} IDs
 - do not duplicate a character across featuredCharacterIds and backgroundCharacterIds
 `.trim(),
           messages: [
             {
               role: "user",
-              content: `
-Your previous tool input was invalid:
-${JSON.stringify(rawToolInput, null, 2)}
-
-Please correct it for the same story using this required spread index list:
-${expectedSpreadIndexes.join(", ")}
-`.trim(),
+              content: `Your previous tool input was invalid:\n${JSON.stringify(
+                rawToolInput,
+                null,
+                2
+              )}\n\nPlease correct it for the same story using this required spread index list:\n${expectedSpreadIndexes.join(
+                ", "
+              )}`,
             },
           ],
         });
       });
 
       rawToolInput = extractDecideScenesToolInput(repairedResult);
-
-      console.log(
-        "🔍 Repaired tool input:",
-        JSON.stringify(rawToolInput, null, 2)
-      );
     }
 
     if (!isValidClaudeToolInput(rawToolInput)) {
@@ -610,20 +583,12 @@ ${expectedSpreadIndexes.join(", ")}
       JSON.stringify(returnedSpreadIndexes) !==
       JSON.stringify(expectedSpreadIndexes)
     ) {
-      console.error("❌ Spread index mismatch", {
-        expectedSpreadIndexes,
-        returnedSpreadIndexes,
-      });
       throw new Error(
         `Claude returned wrong spread indexes. Expected ${expectedSpreadIndexes.join(
           ", "
         )}, got ${returnedSpreadIndexes.join(", ")}`
       );
     }
-
-    console.log(
-      `✅ Claude returned decisions for ${toolInput.spreads.length} spreads`
-    );
 
     /* ------------------------------------------------------------------ */
     /* Persist                                                             */
@@ -636,10 +601,6 @@ ${expectedSpreadIndexes.join(", ")}
         const spread = spreadByIndex.get(decision.spreadIndex);
 
         if (!spread) {
-          console.error(
-            `❌ Invalid spreadIndex ${decision.spreadIndex}. Available:`,
-            Array.from(spreadByIndex.keys())
-          );
           throw new Error(`Invalid spreadIndex ${decision.spreadIndex}`);
         }
 
@@ -652,11 +613,15 @@ ${expectedSpreadIndexes.join(", ")}
             reason: "Featured character selected from spread text",
           }));
 
-        const backgroundCharacterPresence = (decision.backgroundCharacterIds || [])
+        const backgroundCharacterPresence = (
+          decision.backgroundCharacterIds || []
+        )
           .filter((characterId) => validCharacterIds.has(characterId))
           .filter(
             (characterId) =>
-              !featuredCharacterPresence.some((c) => c.characterId === characterId)
+              !featuredCharacterPresence.some(
+                (c) => c.characterId === characterId
+              )
           )
           .map((characterId) => ({
             characterId,
@@ -705,9 +670,57 @@ ${expectedSpreadIndexes.join(", ")}
           });
       }
 
+      console.log(`✅ Saved ${toolInput.spreads.length} spread presence records`);
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* SAFEGUARD: Validate spread presence was actually populated          */
+    /* ------------------------------------------------------------------ */
+
+    await step.run("validate-spread-presence", async () => {
+      const presenceRows = await db
+        .select({
+          spreadId: storySpreadPresence.spreadId,
+          characters: storySpreadPresence.characters,
+        })
+        .from(storySpreadPresence)
+        .innerJoin(
+          storySpreads,
+          eq(storySpreads.id, storySpreadPresence.spreadId)
+        )
+        .where(eq(storySpreads.storyId, storyId));
+
+      const totalCount = presenceRows.length;
+      const emptyCount = presenceRows.filter(
+        (r) => !r.characters || (r.characters as any[]).length === 0
+      ).length;
+
       console.log(
-        `✅ Saved ${toolInput.spreads.length} spread presence records`
+        `📊 Spread presence validation: ${totalCount - emptyCount}/${totalCount} spreads have characters`
       );
+
+      if (totalCount === 0) {
+        throw new Error(
+          `No spread presence rows found for story ${storyId}. ` +
+            `Spreads may not have been built yet.`
+        );
+      }
+
+      if (emptyCount === totalCount) {
+        throw new Error(
+          `All ${totalCount} spreads have empty character arrays. ` +
+            `Page text may have been missing when Claude ran, or spread page IDs were null. ` +
+            `Check that storySpreads.leftPageId is populated before running decide-scenes.`
+        );
+      }
+
+      if (emptyCount > 0) {
+        console.warn(
+          `⚠️ ${emptyCount} spread(s) have no character assignments — illustration may use fallback`
+        );
+      }
+
+      console.log(`✅ Spread presence validation passed`);
     });
 
     /* ------------------------------------------------------------------ */

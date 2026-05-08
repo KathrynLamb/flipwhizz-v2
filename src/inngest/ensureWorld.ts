@@ -18,7 +18,7 @@ import {
   projects,
 } from "@/db/schema";
 import { worlds } from "@/db/schema-worlds";
-import { eq, asc, and, inArray } from "drizzle-orm";
+import { eq, asc, and, inArray, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
 import {
@@ -44,7 +44,8 @@ function extractJson(raw: string) {
   const text = (fenced?.[1] ?? raw).trim();
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
-  const json = first !== -1 && last !== -1 ? text.slice(first, last + 1) : text;
+  const json =
+    first !== -1 && last !== -1 ? text.slice(first, last + 1) : text;
   return JSON.parse(json);
 }
 
@@ -67,7 +68,9 @@ const jsonOrNull = (v: unknown) => (v && typeof v === "object" ? v : null);
 export const ensureWorld = inngest.createFunction(
   {
     id: "ensure-world",
-    retries: 2, triggers: [{ event: "story/ensure-world" }] },
+    retries: 2,
+    triggers: [{ event: "story/ensure-world" }],
+  },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
 
@@ -92,13 +95,11 @@ export const ensureWorld = inngest.createFunction(
         orderBy: asc(storyPages.pageNumber),
       });
 
-      // Get or create progress tracker
       let progress = await db.query.storyWorkflowProgress.findFirst({
         where: eq(storyWorkflowProgress.storyId, storyId),
       });
 
       if (!progress) {
-        // Create initial progress record
         await db.insert(storyWorkflowProgress).values({
           storyId,
           charactersExtracted: false,
@@ -119,7 +120,14 @@ export const ensureWorld = inngest.createFunction(
         });
       }
 
-      return { story, project, pages, progress: progress!, worldId: story.worldId ?? null,   bookNumber: story.bookNumber ?? null };
+      return {
+        story,
+        project,
+        pages,
+        progress: progress!,
+        worldId: story.worldId ?? null,
+        bookNumber: story.bookNumber ?? null,
+      };
     });
 
     console.log("📊 Current progress:", {
@@ -135,141 +143,123 @@ export const ensureWorld = inngest.createFunction(
 
     /* --------------------------------------------------
        STEP 1: Extract Characters (if not done)
-/* --------------------------------------------------
-   STEP 1: Extract Characters (if not done)
--------------------------------------------------- */
-if (!context.progress.charactersExtracted) {
-  await step.run("extract-characters", async () => {
-    const storyText = context.pages
-      .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
-      .join("\n");
+    -------------------------------------------------- */
+    if (!context.progress.charactersExtracted) {
+      await step.run("extract-characters", async () => {
+        const storyText = context.pages
+          .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
+          .join("\n");
 
-    if (context.worldId) {
-      // WORLD-AWARE: match against existing roster
-      await extractCharactersWorldAware({
-        storyId,
-        worldId: context.worldId,
-        userId: context.project.userId!,
-        storyText,
-      });
-    } else {
-      // STANDALONE: original extraction logic
-      console.log("👥 Extracting characters (standalone)...");
+        if (context.worldId) {
+          await extractCharactersWorldAware({
+            storyId,
+            worldId: context.worldId,
+            userId: context.project.userId!,
+            storyText,
+          });
+        } else {
+          console.log("👥 Extracting characters (standalone)...");
 
-      const res = await client.messages.create({
-        model: MODEL,
-        max_tokens: 2000,
-        system: `Extract ALL characters from this story. Return ONLY this JSON:
+          const res = await client.messages.create({
+            model: MODEL,
+            max_tokens: 2000,
+            system: `Extract ALL characters from this story. Return ONLY this JSON:
 {
   "characters": [
     {
-      "existingId": "uuid-or-null",
       "name": "Character Name",
-       "nameIsUpgrade": false,
-       "species": "human",
-       "breed": null,
-       "description": "personality, traits, behavior",
-       "appearance": "detailed physical description for illustration",
-       "role": "main/supporting/minor",
-       "isNew": false,
-       "shouldPromoteToWorld": false
-     }
+      "species": "human",
+      "breed": null,
+      "description": "personality, traits, behavior",
+      "appearance": "detailed physical description for illustration",
+      "role": "main/supporting/minor"
+    }
   ]
 }
 
-Include:
-- Main characters (protagonists, important figures)
-- Supporting characters (friends, family, helpers)
-- Minor characters (briefly mentioned)
-
-   - Set "species" to one of: "human", "dog", "cat", "rabbit", "horse", "bird", "fantasy", "other"
-   - For animals, set "breed" to the best guess (e.g. "Border Collie mix", "Golden Retriever", "Tabby cat")
-   - For animals, the "appearance" field should LEAD with species, breed, and coat colour: "Black Border Collie mix dog, medium-sized, alert posture..." NOT "medium-sized, alert posture, black coat..."
-   - For humans, set species to "human" and breed to null
-
-
-For appearance, be specific: age, hair color/style, eye color, skin tone, body type, distinctive features.
-DO NOT include clothing in appearance - that will be handled separately per scene.`,
-        messages: [{ role: "user", content: storyText }],
-      });
-
-      const data = extractJson(extractClaudeText(res.content));
-
-      await db.transaction(async (tx) => {
-        // Clear existing story ↔ character links
-        await tx
-          .delete(storyCharacters)
-          .where(eq(storyCharacters.storyId, storyId));
-
-        // Insert newly extracted characters
-        for (const c of data.characters ?? []) {
-          if (!c?.name) continue;
-
-          const characterId = uuid();
-
-          await tx.insert(characters).values({
-            id: characterId,
-            userId: context.project.userId!,
-            name: cap(c.name, 80)!,
-            species: c.species || "human",        // ADD
-            breed: cap(c.breed, 100),   
-            description: cap(c.description, 500),
-            appearance: cap(c.appearance, 500),
-            createdAt: new Date(),
-            updatedAt: new Date(),
+- Set "species" to one of: "human", "dog", "cat", "rabbit", "horse", "bird", "fantasy", "other"
+- For animals, set "breed" to the best guess (e.g. "Border Collie mix", "Golden Retriever", "Tabby cat")
+- For animals, the "appearance" field should LEAD with species, breed, and coat colour
+- For humans, set species to "human" and breed to null
+- Be specific: age, hair color/style, eye color, skin tone, body type, distinctive features
+- DO NOT include clothing in appearance`,
+            messages: [{ role: "user", content: storyText }],
           });
 
-          await tx.insert(storyCharacters).values({
-            storyId,
-            characterId,
-            role: cap(c.role, 40),
-            arcSummary: null,
+          const data = extractJson(extractClaudeText(res.content));
+
+          await db.transaction(async (tx) => {
+            await tx
+              .delete(storyCharacters)
+              .where(eq(storyCharacters.storyId, storyId));
+
+            for (const c of data.characters ?? []) {
+              if (!c?.name) continue;
+
+              const characterId = uuid();
+
+              await tx.insert(characters).values({
+                id: characterId,
+                userId: context.project.userId!,
+                name: cap(c.name, 80)!,
+                species: c.species || "human",
+                breed: cap(c.breed, 100),
+                description: cap(c.description, 500),
+                appearance: cap(c.appearance, 500),
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              });
+
+              await tx.insert(storyCharacters).values({
+                storyId,
+                characterId,
+                role: cap(c.role, 40),
+                arcSummary: null,
+              });
+            }
+
+            console.log(
+              `✅ Created ${data.characters?.length || 0} characters`
+            );
           });
         }
 
-        console.log(`✅ Created ${data.characters?.length || 0} characters`);
-      });
-    }
-
-    // Mark progress
-    await db
-      .update(storyWorkflowProgress)
-      .set({
-        charactersExtracted: true,
-        charactersExtractedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(storyWorkflowProgress.storyId, storyId));
-  });
-} else {
-  console.log("✓ Characters already extracted, skipping");
-}
-
-/* --------------------------------------------------
-   STEP 2: Extract Locations (if not done)
--------------------------------------------------- */
-if (!context.progress.locationsExtracted) {
-  await step.run("extract-locations", async () => {
-    const storyText = context.pages
-      .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
-      .join("\n");
-
-    if (context.worldId) {
-      // WORLD-AWARE: match against existing roster
-      await extractLocationsWorldAware({
-        storyId,
-        worldId: context.worldId,
-        userId: context.project.userId!,
-        storyText,
+        await db
+          .update(storyWorkflowProgress)
+          .set({
+            charactersExtracted: true,
+            charactersExtractedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
       });
     } else {
-      // STANDALONE: original extraction logic
-      console.log("🗺️ Extracting locations (standalone)...");
+      console.log("✓ Characters already extracted, skipping");
+    }
 
-      const res = await client.messages.create({
-        model: MODEL,
-        max_tokens: 1500,
-        system: `Extract ALL locations/settings from this story. Return ONLY this JSON:
+    /* --------------------------------------------------
+       STEP 2: Extract Locations (if not done)
+    -------------------------------------------------- */
+    if (!context.progress.locationsExtracted) {
+      await step.run("extract-locations", async () => {
+        const storyText = context.pages
+          .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
+          .join("\n");
+
+        if (context.worldId) {
+          await extractLocationsWorldAware({
+            storyId,
+            worldId: context.worldId,
+            userId: context.project.userId!,
+            storyText,
+          });
+        } else {
+          console.log("🗺️ Extracting locations (standalone)...");
+
+          const res = await client.messages.create({
+            model: MODEL,
+            max_tokens: 1500,
+            system: `Extract ALL locations/settings from this story. Return ONLY this JSON:
 {
   "locations": [
     {
@@ -279,134 +269,124 @@ if (!context.progress.locationsExtracted) {
   ]
 }
 
-Include:
-- Major settings (home, school, forest, castle, etc.)
-- Minor settings (rooms, specific places briefly mentioned)
-
-For description, focus on visual details: architecture, natural features, atmosphere, colors, lighting, etc.`,
-        messages: [{ role: "user", content: storyText }],
-      });
-
-      const data = extractJson(extractClaudeText(res.content));
-
-      await db.transaction(async (tx) => {
-        // Clear existing story ↔ location links
-        await tx
-          .delete(storyLocations)
-          .where(eq(storyLocations.storyId, storyId));
-
-        // Insert new locations
-        for (const l of data.locations ?? []) {
-          if (!l?.name) continue;
-
-          const locationId = uuid();
-
-          await tx.insert(locations).values({
-            id: locationId,
-            userId: context.project.userId!,
-            name: cap(l.name, 80)!,
-            description: cap(l.description, 500),
-            createdAt: new Date(),
-            updatedAt: new Date(),
+Focus on visual details: architecture, natural features, atmosphere, colors, lighting.`,
+            messages: [{ role: "user", content: storyText }],
           });
 
-          await tx.insert(storyLocations).values({
-            storyId,
-            locationId,
-            significance: null,
+          const data = extractJson(extractClaudeText(res.content));
+
+          await db.transaction(async (tx) => {
+            await tx
+              .delete(storyLocations)
+              .where(eq(storyLocations.storyId, storyId));
+
+            for (const l of data.locations ?? []) {
+              if (!l?.name) continue;
+
+              const locationId = uuid();
+
+              await tx.insert(locations).values({
+                id: locationId,
+                userId: context.project.userId!,
+                name: cap(l.name, 80)!,
+                description: cap(l.description, 500),
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              });
+
+              await tx.insert(storyLocations).values({
+                storyId,
+                locationId,
+                significance: null,
+              });
+            }
+
+            console.log(
+              `✅ Created ${data.locations?.length || 0} locations`
+            );
           });
         }
 
-        console.log(`✅ Created ${data.locations?.length || 0} locations`);
-      });
-    }
-
-    // Mark progress
-    await db
-      .update(storyWorkflowProgress)
-      .set({
-        locationsExtracted: true,
-        locationsExtractedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(storyWorkflowProgress.storyId, storyId));
-  });
-} else {
-  console.log("✓ Locations already extracted, skipping");
-}
-  /* --------------------------------------------------
-   STEP 3: Extract Style Guide (if not done)
--------------------------------------------------- */
-if (!context.progress.styleExtracted) {
-  await step.run("extract-style", async () => {
-    const storyText = context.pages
-      .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
-      .join("\n");
-
-    /* ───────── 1. Try WORLD STYLE REUSE ───────── */
-
-    if (context.worldId && context.bookNumber && context.bookNumber > 1) {
-      console.log("🎨 Attempting to reuse world style guide...");
-
-      const worldRecord = await db
-        .select({ styleGuideId: worlds.styleGuideId })
-        .from(worlds)
-        .where(eq(worlds.id, context.worldId))
-        .limit(1)
-        .then((rows) => rows[0]);
-
-      if (worldRecord?.styleGuideId) {
-        const worldStyle = await db.query.storyStyleGuide.findFirst({
-          where: eq(storyStyleGuide.id, worldRecord.styleGuideId),
-        });
-
-        if (worldStyle) {
-          // Clear any existing style for this story first
-          await db
-            .delete(storyStyleGuide)
-            .where(eq(storyStyleGuide.storyId, storyId));
-
-          await db.insert(storyStyleGuide).values({
-            id: uuid(),
-            storyId,
-            summary: worldStyle.summary,
-            negativePrompt: worldStyle.negativePrompt,
-            artStyle: worldStyle.artStyle,
-            visualThemes: worldStyle.visualThemes,
-            colorPalette: worldStyle.colorPalette,
-            typography: worldStyle.typography,
-            sampleIllustrationUrl: worldStyle.sampleIllustrationUrl,
-            createdAt: new Date(),
+        await db
+          .update(storyWorkflowProgress)
+          .set({
+            locationsExtracted: true,
+            locationsExtractedAt: new Date(),
             updatedAt: new Date(),
-          });
-
-          console.log("🎨 Reused world style guide for series continuity");
-
-          // Mark progress + EXIT EARLY
-          await db
-            .update(storyWorkflowProgress)
-            .set({
-              styleExtracted: true,
-              styleExtractedAt: new Date(),
-              updatedAt: new Date(),
-            })
-            .where(eq(storyWorkflowProgress.storyId, storyId));
-
-          return;
-        }
-      }
-
-      console.log("⚠️ No reusable world style found, generating new...");
+          })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
+      });
+    } else {
+      console.log("✓ Locations already extracted, skipping");
     }
 
-    /* ───────── 2. GENERATE NEW STYLE ───────── */
+    /* --------------------------------------------------
+       STEP 3: Extract Style Guide (if not done)
+    -------------------------------------------------- */
+    if (!context.progress.styleExtracted) {
+      await step.run("extract-style", async () => {
+        const storyText = context.pages
+          .map((p) => `PAGE ${p.pageNumber}: ${p.text}`)
+          .join("\n");
 
-    console.log("🎨 Extracting style guide...");
+        if (context.worldId && context.bookNumber && context.bookNumber > 1) {
+          console.log("🎨 Attempting to reuse world style guide...");
 
-    const res = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1500,
-      system: `Analyze this story and create a visual style guide for illustrations. Return ONLY this JSON:
+          const worldRecord = await db
+            .select({ styleGuideId: worlds.styleGuideId })
+            .from(worlds)
+            .where(eq(worlds.id, context.worldId))
+            .limit(1)
+            .then((rows) => rows[0]);
+
+          if (worldRecord?.styleGuideId) {
+            const worldStyle = await db.query.storyStyleGuide.findFirst({
+              where: eq(storyStyleGuide.id, worldRecord.styleGuideId),
+            });
+
+            if (worldStyle) {
+              await db
+                .delete(storyStyleGuide)
+                .where(eq(storyStyleGuide.storyId, storyId));
+
+              await db.insert(storyStyleGuide).values({
+                id: uuid(),
+                storyId,
+                summary: worldStyle.summary,
+                negativePrompt: worldStyle.negativePrompt,
+                artStyle: worldStyle.artStyle,
+                visualThemes: worldStyle.visualThemes,
+                colorPalette: worldStyle.colorPalette,
+                typography: worldStyle.typography,
+                sampleIllustrationUrl: worldStyle.sampleIllustrationUrl,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              });
+
+              console.log("🎨 Reused world style guide for series continuity");
+
+              await db
+                .update(storyWorkflowProgress)
+                .set({
+                  styleExtracted: true,
+                  styleExtractedAt: new Date(),
+                  updatedAt: new Date(),
+                })
+                .where(eq(storyWorkflowProgress.storyId, storyId));
+
+              return;
+            }
+          }
+
+          console.log("⚠️ No reusable world style found, generating new...");
+        }
+
+        console.log("🎨 Extracting style guide...");
+
+        const res = await client.messages.create({
+          model: MODEL,
+          max_tokens: 1500,
+          system: `Analyze this story and create a visual style guide for illustrations. Return ONLY this JSON:
 {
   "style": {
     "summary": "one-sentence overall style description",
@@ -417,74 +397,64 @@ if (!context.progress.styleExtracted) {
       "secondary": ["color3", "color4"],
       "accent": ["color5"]
     },
-    "typography": "Describe the ideal text style for this book: the narrative font feel, and how expressive moments (sound effects, shouts, whispers) should differ.",
+    "typography": "Describe the ideal text style for this book",
     "negativePrompt": "what to avoid (modern elements, photorealism, etc.)"
   }
-}
+}`,
+          messages: [{ role: "user", content: storyText }],
+        });
 
-Consider:
-- Story tone
-- Target age group
-- Setting time period
-- Emotional feel`,
-      messages: [{ role: "user", content: storyText }],
-    });
+        const data = extractJson(extractClaudeText(res.content));
 
-    const data = extractJson(extractClaudeText(res.content));
+        await db.transaction(async (tx) => {
+          await tx
+            .delete(storyStyleGuide)
+            .where(eq(storyStyleGuide.storyId, storyId));
 
-    await db.transaction(async (tx) => {
-      // Clear existing
-      await tx
-        .delete(storyStyleGuide)
-        .where(eq(storyStyleGuide.storyId, storyId));
+          await tx.insert(storyStyleGuide).values({
+            id: uuid(),
+            storyId,
+            summary: cap(data.style?.summary, 100),
+            negativePrompt: cap(data.style?.negativePrompt, 200),
+            artStyle: cap(data.style?.artStyle, 100),
+            visualThemes: cap(data.style?.visualThemes, 200),
+            typography: cap(data.style?.typography, 200),
+            colorPalette: jsonOrNull(data.style?.colorPalette),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
 
-      await tx.insert(storyStyleGuide).values({
-        id: uuid(),
-        storyId,
-        summary: cap(data.style?.summary, 100),
-        negativePrompt: cap(data.style?.negativePrompt, 200),
-        artStyle: cap(data.style?.artStyle, 100),
-        visualThemes: cap(data.style?.visualThemes, 200),
-        typography: cap(data.style?.typography, 200),
-        colorPalette: jsonOrNull(data.style?.colorPalette),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+          console.log("✅ Style guide generated");
+        });
 
-      console.log("✅ Style guide generated");
-    });
+        if (
+          context.worldId &&
+          (!context.bookNumber || context.bookNumber === 1)
+        ) {
+          const storyStyle = await db.query.storyStyleGuide.findFirst({
+            where: eq(storyStyleGuide.storyId, storyId),
+          });
+          if (storyStyle) {
+            await db
+              .update(worlds)
+              .set({ styleGuideId: storyStyle.id })
+              .where(eq(worlds.id, context.worldId));
+          }
+        }
 
-    /* ───────── 3. OPTIONAL: SAVE TO WORLD (Book 1) ───────── */
-
-    if (context.worldId && (!context.bookNumber || context.bookNumber === 1)) {
-      console.log("🌍 Saving style guide to world for reuse...");
-
-      const storyStyle = await db.query.storyStyleGuide.findFirst({
-        where: eq(storyStyleGuide.storyId, storyId),
-      });
-
-      if (storyStyle) {
         await db
-          .update(worlds)
-          .set({ styleGuideId: storyStyle.id })
-          .where(eq(worlds.id, context.worldId));
-      }
+          .update(storyWorkflowProgress)
+          .set({
+            styleExtracted: true,
+            styleExtractedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(storyWorkflowProgress.storyId, storyId));
+      });
+    } else {
+      console.log("✓ Style already extracted, skipping");
     }
 
-    /* ───────── 4. Mark progress ───────── */
-
-    await db
-      .update(storyWorkflowProgress)
-      .set({
-        styleExtracted: true,
-        styleExtractedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(storyWorkflowProgress.storyId, storyId));
-  });
-} else {
-  console.log("✓ Style already extracted, skipping");
-}
     /* --------------------------------------------------
        STEP 4: Build Spreads (if not done)
     -------------------------------------------------- */
@@ -513,7 +483,6 @@ Consider:
 
 Rules:
 - Combine facing pages (1-2, 3-4, 5-6, etc.)
-- Cover and title pages get their own spreads
 - Each spread should show ONE key moment/scene
 - Describe scenes visually (not just repeating text)
 - Consider visual variety and pacing`,
@@ -522,21 +491,21 @@ Rules:
 
         const data = extractJson(extractClaudeText(res.content));
 
-        // Save spreads
         await db.transaction(async (tx) => {
-          // Clear existing
-          await tx.delete(storySpreads).where(eq(storySpreads.storyId, storyId));
+          await tx
+            .delete(storySpreads)
+            .where(eq(storySpreads.storyId, storyId));
 
-          // Insert new spreads
           let spreadIndex = 1;
           for (const s of data.spreads ?? []) {
             if (!s.pageNumbers || s.pageNumbers.length === 0) continue;
 
-            // Find the actual page IDs from the context
             const leftPageNum = s.pageNumbers[0];
             const rightPageNum = s.pageNumbers[1] || null;
 
-            const leftPage = context.pages.find((p) => p.pageNumber === leftPageNum);
+            const leftPage = context.pages.find(
+              (p) => p.pageNumber === leftPageNum
+            );
             const rightPage = rightPageNum
               ? context.pages.find((p) => p.pageNumber === rightPageNum)
               : null;
@@ -555,7 +524,25 @@ Rules:
           console.log(`✅ Created ${data.spreads?.length || 0} spreads`);
         });
 
-        // Mark progress
+        // ── SAFEGUARD: verify page IDs were actually linked ──
+        const nullSpreads = await db
+          .select({ spreadIndex: storySpreads.spreadIndex })
+          .from(storySpreads)
+          .where(
+            and(
+              eq(storySpreads.storyId, storyId),
+              sql`${storySpreads.leftPageId} IS NULL`
+            )
+          );
+
+        if (nullSpreads.length > 0) {
+          throw new Error(
+            `Spread build failed: ${nullSpreads.length} spread(s) have null leftPageId ` +
+              `(indices: ${nullSpreads.map((s) => s.spreadIndex).join(", ")}). ` +
+              `Claude may have returned page numbers that don't match the actual page records.`
+          );
+        }
+
         await db
           .update(storyWorkflowProgress)
           .set({
@@ -576,7 +563,6 @@ Rules:
       await step.run("assign-characters", async () => {
         console.log("👤 Assigning characters to pages...");
 
-        // Get all characters and spreads
         const allCharacters = await db.query.storyCharacters.findMany({
           where: eq(storyCharacters.storyId, storyId),
           with: { character: true },
@@ -587,11 +573,18 @@ Rules:
         });
 
         if (allCharacters.length === 0 || allSpreads.length === 0) {
-          console.log("⚠️  No characters or spreads found, skipping assignment");
+          console.log("⚠️ No characters or spreads found, skipping assignment");
+          await db
+            .update(storyWorkflowProgress)
+            .set({
+              charactersAssigned: true,
+              charactersAssignedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(storyWorkflowProgress.storyId, storyId));
           return;
         }
 
-        // Build prompt with characters and spreads
         const characterList = allCharacters
           .map((sc) => `- ${sc.character.name}: ${sc.character.description}`)
           .join("\n");
@@ -600,7 +593,10 @@ Rules:
           .map((s) => {
             const pages = [s.leftPageId, s.rightPageId]
               .filter(Boolean)
-              .map((pageId) => context.pages.find((p) => p.id === pageId)?.pageNumber)
+              .map(
+                (pageId) =>
+                  context.pages.find((p) => p.id === pageId)?.pageNumber
+              )
               .filter(Boolean)
               .join(", ");
             return `Spread ${s.spreadIndex} (pages ${pages}): ${s.sceneSummary || ""}`;
@@ -620,7 +616,7 @@ Rules:
   ]
 }
 
-Only include characters that should appear in each spread's illustration.`,
+Only include characters that should visually appear in each spread's illustration.`,
           messages: [
             {
               role: "user",
@@ -631,31 +627,30 @@ Only include characters that should appear in each spread's illustration.`,
 
         const data = extractJson(extractClaudeText(res.content));
 
-        // Save assignments
         await db.transaction(async (tx) => {
-          // Clear existing
           await tx
             .delete(storyPageCharacters)
             .where(eq(storyPageCharacters.storyId, storyId));
 
-          // Insert new assignments
           for (const assignment of data.assignments ?? []) {
             const spread = allSpreads.find(
               (s) => s.spreadIndex === assignment.spreadIndex
             );
             if (!spread) continue;
 
-            // Find pages in this spread
-            const spreadPageIds = [spread.leftPageId, spread.rightPageId].filter(Boolean);
+            const spreadPageIds = [
+              spread.leftPageId,
+              spread.rightPageId,
+            ].filter(Boolean);
             const spreadPages = context.pages.filter((p) =>
               spreadPageIds.includes(p.id)
             );
 
-            // Assign each character to each page in the spread
             for (const characterName of assignment.characterNames ?? []) {
               const storyChar = allCharacters.find(
                 (sc) =>
-                  sc.character.name.toLowerCase() === characterName.toLowerCase()
+                  sc.character.name.toLowerCase() ===
+                  characterName.toLowerCase()
               );
               if (!storyChar) continue;
 
@@ -676,7 +671,23 @@ Only include characters that should appear in each spread's illustration.`,
           console.log(`✅ Assigned characters to spreads`);
         });
 
-        // Mark progress
+        // ── SAFEGUARD: verify rows were actually written ──
+        const [countResult] = await db
+          .select({ assignedCount: sql<number>`count(*)` })
+          .from(storyPageCharacters)
+          .where(eq(storyPageCharacters.storyId, storyId));
+
+        const assignedCount = Number(countResult?.assignedCount ?? 0);
+
+        if (assignedCount === 0) {
+          throw new Error(
+            `Character assignment wrote 0 rows for story ${storyId}. ` +
+              `Claude may have returned no assignments or character names did not match.`
+          );
+        }
+
+        console.log(`✅ Verified ${assignedCount} character-page assignments written`);
+
         await db
           .update(storyWorkflowProgress)
           .set({
@@ -697,7 +708,6 @@ Only include characters that should appear in each spread's illustration.`,
       await step.run("assign-locations", async () => {
         console.log("📍 Assigning locations to pages...");
 
-        // Get all locations and spreads
         const allLocations = await db.query.storyLocations.findMany({
           where: eq(storyLocations.storyId, storyId),
           with: { location: true },
@@ -708,11 +718,18 @@ Only include characters that should appear in each spread's illustration.`,
         });
 
         if (allLocations.length === 0 || allSpreads.length === 0) {
-          console.log("⚠️  No locations or spreads found, skipping assignment");
+          console.log("⚠️ No locations or spreads found, skipping assignment");
+          await db
+            .update(storyWorkflowProgress)
+            .set({
+              locationsAssigned: true,
+              locationsAssignedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(storyWorkflowProgress.storyId, storyId));
           return;
         }
 
-        // Build prompt
         const locationList = allLocations
           .map((sl) => `- ${sl.location.name}: ${sl.location.description}`)
           .join("\n");
@@ -721,7 +738,10 @@ Only include characters that should appear in each spread's illustration.`,
           .map((s) => {
             const pages = [s.leftPageId, s.rightPageId]
               .filter(Boolean)
-              .map((pageId) => context.pages.find((p) => p.id === pageId)?.pageNumber)
+              .map(
+                (pageId) =>
+                  context.pages.find((p) => p.id === pageId)?.pageNumber
+              )
               .filter(Boolean)
               .join(", ");
             return `Spread ${s.spreadIndex} (pages ${pages}): ${s.sceneSummary || ""}`;
@@ -752,14 +772,11 @@ Each spread should have ONE primary location where the scene takes place.`,
 
         const data = extractJson(extractClaudeText(res.content));
 
-        // Save assignments
         await db.transaction(async (tx) => {
-          // Clear existing
           await tx
             .delete(storyPageLocations)
             .where(eq(storyPageLocations.storyId, storyId));
 
-          // Insert new assignments
           for (const assignment of data.assignments ?? []) {
             const spread = allSpreads.find(
               (s) => s.spreadIndex === assignment.spreadIndex
@@ -773,13 +790,14 @@ Each spread should have ONE primary location where the scene takes place.`,
             );
             if (!storyLoc) continue;
 
-            // Find pages in this spread
-            const spreadPageIds = [spread.leftPageId, spread.rightPageId].filter(Boolean);
+            const spreadPageIds = [
+              spread.leftPageId,
+              spread.rightPageId,
+            ].filter(Boolean);
             const spreadPages = context.pages.filter((p) =>
               spreadPageIds.includes(p.id)
             );
 
-            // Assign location to each page in the spread
             for (const page of spreadPages) {
               await tx.insert(storyPageLocations).values({
                 id: uuid(),
@@ -795,7 +813,23 @@ Each spread should have ONE primary location where the scene takes place.`,
           console.log(`✅ Assigned locations to spreads`);
         });
 
-        // Mark progress
+        // ── SAFEGUARD: verify rows were actually written ──
+        const [countResult] = await db
+          .select({ locationCount: sql<number>`count(*)` })
+          .from(storyPageLocations)
+          .where(eq(storyPageLocations.storyId, storyId));
+
+        const locationCount = Number(countResult?.locationCount ?? 0);
+
+        if (locationCount === 0) {
+          throw new Error(
+            `Location assignment wrote 0 rows for story ${storyId}. ` +
+              `Claude may have returned no assignments or location names did not match.`
+          );
+        }
+
+        console.log(`✅ Verified ${locationCount} location-page assignments written`);
+
         await db
           .update(storyWorkflowProgress)
           .set({
@@ -810,7 +844,7 @@ Each spread should have ONE primary location where the scene takes place.`,
     }
 
     /* --------------------------------------------------
-       STEP 7: Extract Outfit Types (NEW)
+       STEP 7: Extract Outfit Types (if not done)
     -------------------------------------------------- */
     if (!context.progress.outfitsExtracted) {
       await step.run("extract-outfit-types", async () => {
@@ -822,7 +856,7 @@ Each spread should have ONE primary location where the scene takes place.`,
         });
 
         if (allCharacters.length === 0) {
-          console.log("⚠️  No characters found, skipping outfit extraction");
+          console.log("⚠️ No characters found, skipping outfit extraction");
           await db
             .update(storyWorkflowProgress)
             .set({
@@ -839,21 +873,16 @@ Each spread should have ONE primary location where the scene takes place.`,
           .join("\n");
 
         const characterDescriptions = allCharacters
-          .map((sc) => `- ${sc.character.name}: ${sc.character.appearance || sc.character.description || "No description"}`)
+          .map(
+            (sc) =>
+              `- ${sc.character.name}: ${sc.character.appearance || sc.character.description || "No description"}`
+          )
           .join("\n");
 
         const res = await client.messages.create({
           model: MODEL,
           max_tokens: 4000,
           system: `Analyze this children's story and identify all DISTINCT OUTFITS each character would need throughout the story.
-
-Characters change clothes when:
-- Weather/environment changes (indoor → outdoor, warm → cold)
-- Activity changes (swimming, sleeping, formal events, sports)
-- Time passes significantly (next day, next morning)
-- Scene context demands it (bath time, bedtime, beach, skiing)
-
-For each character, define SPECIFIC, CONSISTENT outfit descriptions that will be reused across multiple scenes.
 
 Return ONLY this JSON:
 {
@@ -862,39 +891,20 @@ Return ONLY this JSON:
       "characterName": "Sophia",
       "outfits": [
         {
-          "key": "ski_gear",
-          "description": "Bright turquoise zip-up ski jacket with white zipper and trim, matching turquoise snow pants, pink knit beanie with fluffy white pom-pom, white waterproof ski gloves, pink snow boots with white laces and fur trim",
-          "triggers": "outdoor winter scenes, skiing, playing in snow, walking to ski lift, snowball fights"
-        },
-        {
-          "key": "hot_tub",
-          "description": "Light purple one-piece swimsuit with small white polka dots, hair pulled up in a messy bun with loose strands framing face",
-          "triggers": "hot tub scene, swimming pool, water play, spa"
-        },
-        {
-          "key": "indoor_casual",
-          "description": "Soft lavender long-sleeve thermal shirt, comfortable grey jogger pants, fuzzy white slipper socks, hair down and natural",
-          "triggers": "inside cabin or chalet, eating meals indoors, relaxing by fireplace, morning scenes indoors"
-        },
-        {
-          "key": "sleepwear",
-          "description": "Cozy pink flannel pajamas with tiny white stars pattern, matching pink fuzzy slippers, hair in loose side braid",
-          "triggers": "bedtime, waking up, nighttime scenes, getting ready for bed"
+          "key": "default",
+          "description": "Detailed outfit description 30-50 words",
+          "triggers": "when this outfit is worn"
         }
       ]
     }
   ]
 }
 
-CRITICAL RULES:
+Rules:
 1. Be EXTREMELY specific about colors, patterns, materials, and small details
-2. Each outfit must be visually DISTINCT and MEMORABLE
-3. Include hair styling if it would logically change (ponytail for sports, bun for swimming, down for casual)
-4. Keep descriptions between 30-50 words - detailed but concise
-5. Every character MUST have at least a "default" outfit
-6. Use a CONSISTENT color palette per character across all their outfits (e.g., if a character wears pink in one outfit, incorporate pink accents in others)
-7. Consider age-appropriate clothing for children
-8. Make outfits practical for the activity (waterproof for rain, warm for cold, etc.)`,
+2. Every character MUST have at least a "default" outfit
+3. Keep descriptions between 30-50 words
+4. DO NOT include clothing in appearance — outfit descriptions are separate`,
           messages: [
             {
               role: "user",
@@ -905,9 +915,7 @@ CRITICAL RULES:
 
         const data = extractJson(extractClaudeText(res.content));
 
-        // Save outfit types
         await db.transaction(async (tx) => {
-          // Clear existing outfits for this story
           const characterIds = allCharacters.map((sc) => sc.characterId);
           if (characterIds.length > 0) {
             await tx
@@ -928,10 +936,7 @@ CRITICAL RULES:
                 sc.character.name.toLowerCase() ===
                 charOutfit.characterName?.toLowerCase()
             );
-            if (!storyChar) {
-              console.warn(`⚠️  Character not found: ${charOutfit.characterName}`);
-              continue;
-            }
+            if (!storyChar) continue;
 
             for (const outfit of charOutfit.outfits ?? []) {
               if (!outfit.key || !outfit.description) continue;
@@ -949,10 +954,11 @@ CRITICAL RULES:
             }
           }
 
-          console.log(`✅ Created ${totalOutfits} outfit definitions for ${data.characterOutfits?.length || 0} characters`);
+          console.log(
+            `✅ Created ${totalOutfits} outfit definitions for ${data.characterOutfits?.length || 0} characters`
+          );
         });
 
-        // Mark progress
         await db
           .update(storyWorkflowProgress)
           .set({
@@ -967,28 +973,30 @@ CRITICAL RULES:
     }
 
     /* --------------------------------------------------
-       STEP 8: Assign Outfits to Spreads (NEW)
+       STEP 8: Assign Outfits to Spreads (if not done)
     -------------------------------------------------- */
     if (!context.progress.outfitsAssigned) {
       await step.run("assign-outfits-to-spreads", async () => {
         console.log("👔 Assigning outfits to spreads...");
-    
+
         const allSpreads = await db.query.storySpreads.findMany({
           where: eq(storySpreads.storyId, storyId),
           orderBy: asc(storySpreads.spreadIndex),
         });
-    
+
         const allCharacters = await db.query.storyCharacters.findMany({
           where: eq(storyCharacters.storyId, storyId),
           with: { character: true },
         });
-    
+
         const outfitTypes = await db.query.characterStoryOutfits.findMany({
           where: eq(characterStoryOutfits.storyId, storyId),
         });
-    
+
         if (allSpreads.length === 0 || outfitTypes.length === 0) {
-          console.log("⚠️ No spreads or outfit types found, marking outfits assigned");
+          console.log(
+            "⚠️ No spreads or outfit types found, marking outfits assigned"
+          );
           await db
             .update(storyWorkflowProgress)
             .set({
@@ -999,39 +1007,41 @@ CRITICAL RULES:
             .where(eq(storyWorkflowProgress.storyId, storyId));
           return;
         }
-    
+
         const outfitsByCharacter = new Map<string, typeof outfitTypes>();
         for (const outfit of outfitTypes) {
           const existing = outfitsByCharacter.get(outfit.characterId) ?? [];
           existing.push(outfit);
           outfitsByCharacter.set(outfit.characterId, existing);
         }
-    
+
         const pageCharacters = await db.query.storyPageCharacters.findMany({
           where: eq(storyPageCharacters.storyId, storyId),
         });
-    
+
         const spreadContext = allSpreads.map((s) => {
           const leftPage = context.pages.find((p) => p.id === s.leftPageId);
           const rightPage = context.pages.find((p) => p.id === s.rightPageId);
-    
           const spreadPageIds = [s.leftPageId, s.rightPageId].filter(Boolean);
           const charactersInSpread = pageCharacters
             .filter((pc) => spreadPageIds.includes(pc.pageId))
             .map((pc) => pc.characterId);
-    
           const uniqueCharacterIds = [...new Set(charactersInSpread)];
-    
+
           return {
             spreadIndex: s.spreadIndex,
             text: [leftPage?.text, rightPage?.text].filter(Boolean).join(" "),
             sceneSummary: s.sceneSummary,
             characterNames: uniqueCharacterIds
-              .map((id) => allCharacters.find((sc) => sc.characterId === id)?.character.name)
+              .map(
+                (id) =>
+                  allCharacters.find((sc) => sc.characterId === id)?.character
+                    .name
+              )
               .filter(Boolean),
           };
         });
-    
+
         const outfitOptions = allCharacters.map((sc) => ({
           characterName: sc.character.name,
           outfits:
@@ -1040,34 +1050,33 @@ CRITICAL RULES:
               triggers: o.triggerConditions,
             })) ?? [],
         }));
-    
+
         let parsedAssignments: any[] = [];
-    
+
         try {
           const res = await client.messages.create({
             model: MODEL,
             max_tokens: 3000,
             system: `For each spread, decide which outfit each character should wear based on the scene context.
-    
-    Return ONLY this JSON:
+
+Return ONLY this JSON:
+{
+  "assignments": [
     {
-      "assignments": [
-        {
-          "spreadIndex": 1,
-          "characters": [
-            { "characterName": "Sophia", "outfitKey": "ski_gear" }
-          ]
-        }
+      "spreadIndex": 1,
+      "characters": [
+        { "characterName": "Sophia", "outfitKey": "ski_gear" }
       ]
     }
-    
-    Rules:
-    1. Match outfit to scene context using triggers as hints
-    2. Maintain continuity across consecutive spreads in the same scene
-    3. Only change outfits when the story clearly suggests a change
-    4. Only assign outfits to characters that appear in the spread
-    5. If unsure, choose the most contextually appropriate outfit
-    6. Use EXACT characterName and EXACT outfitKey from the provided data`,
+  ]
+}
+
+Rules:
+1. Match outfit to scene context using triggers as hints
+2. Maintain continuity across consecutive spreads in the same scene
+3. Only change outfits when the story clearly suggests a change
+4. Only assign outfits to characters that appear in the spread
+5. Use EXACT characterName and EXACT outfitKey from the provided data`,
             messages: [
               {
                 role: "user",
@@ -1075,33 +1084,44 @@ CRITICAL RULES:
                   outfitOptions,
                   null,
                   2
-                )}\n\nSPREADS TO ASSIGN:\n${JSON.stringify(spreadContext, null, 2)}`,
+                )}\n\nSPREADS TO ASSIGN:\n${JSON.stringify(
+                  spreadContext,
+                  null,
+                  2
+                )}`,
               },
             ],
           });
-    
+
           const rawText = extractClaudeText(res.content);
-          console.log("👔 [assign-outfits] Claude response:", rawText.slice(0, 3000));
-    
           const data = extractJson(rawText);
           parsedAssignments = data.assignments ?? [];
-          console.log("👔 [assign-outfits] Parsed assignments:", parsedAssignments.length);
+          console.log(
+            `👔 Parsed ${parsedAssignments.length} outfit assignments`
+          );
         } catch (err) {
-          console.error("❌ [assign-outfits] Model/parse failed, falling back", err);
-    
-          // Fallback: assign first available outfit for each character in each spread
+          console.error(
+            "❌ Outfit assignment model/parse failed, falling back:",
+            err
+          );
+
+          // Fallback: assign first available outfit for each character
           parsedAssignments = spreadContext.map((spread) => ({
             spreadIndex: spread.spreadIndex,
-            characters: (spread.characterNames ?? []).map((characterName) => {
-              const option = outfitOptions.find((o) => o.characterName === characterName);
-              return {
-                characterName,
-                outfitKey: option?.outfits?.[0]?.key ?? null,
-              };
-            }).filter((c) => c.outfitKey),
+            characters: (spread.characterNames ?? [])
+              .map((characterName) => {
+                const option = outfitOptions.find(
+                  (o) => o.characterName === characterName
+                );
+                return {
+                  characterName,
+                  outfitKey: option?.outfits?.[0]?.key ?? null,
+                };
+              })
+              .filter((c) => c.outfitKey),
           }));
         }
-    
+
         await db.transaction(async (tx) => {
           const spreadIds = allSpreads.map((s) => s.id);
           if (spreadIds.length > 0) {
@@ -1109,27 +1129,30 @@ CRITICAL RULES:
               .delete(spreadCharacterOutfits)
               .where(inArray(spreadCharacterOutfits.spreadId, spreadIds));
           }
-    
+
           let totalAssignments = 0;
-    
+
           for (const assignment of parsedAssignments) {
-            const spread = allSpreads.find((s) => s.spreadIndex === assignment.spreadIndex);
+            const spread = allSpreads.find(
+              (s) => s.spreadIndex === assignment.spreadIndex
+            );
             if (!spread) continue;
-    
+
             for (const charAssign of assignment.characters ?? []) {
               const storyChar = allCharacters.find(
-                (sc) => sc.character.name.toLowerCase() === charAssign.characterName?.toLowerCase()
+                (sc) =>
+                  sc.character.name.toLowerCase() ===
+                  charAssign.characterName?.toLowerCase()
               );
               if (!storyChar) continue;
-    
+
               const outfitType = outfitTypes.find(
                 (o) =>
                   o.characterId === storyChar.characterId &&
                   o.outfitKey === charAssign.outfitKey
               );
-    
               if (!outfitType) continue;
-    
+
               await tx.insert(spreadCharacterOutfits).values({
                 id: uuid(),
                 spreadId: spread.id,
@@ -1138,14 +1161,14 @@ CRITICAL RULES:
                 outfitDescription: outfitType.outfitDescription,
                 createdAt: new Date(),
               });
-    
+
               totalAssignments++;
             }
           }
-    
+
           console.log(`✅ Created ${totalAssignments} outfit assignments`);
         });
-    
+
         await db
           .update(storyWorkflowProgress)
           .set({
@@ -1157,50 +1180,49 @@ CRITICAL RULES:
       });
     }
 
-   /* --------------------------------------------------
-   STEP 9: Mark world as complete
--------------------------------------------------- */
-await step.run("mark-world-complete", async () => {
-  console.log("🎉 Marking world as complete...");
+    /* --------------------------------------------------
+       STEP 9: Mark world as complete
+    -------------------------------------------------- */
+    await step.run("mark-world-complete", async () => {
+      console.log("🎉 Marking world as complete...");
 
-  if (context.worldId && context.bookNumber === 1) {
-    await autoPromoteFirstBookEntities({
-      storyId,
-      worldId: context.worldId,
+      if (context.worldId && context.bookNumber === 1) {
+        await autoPromoteFirstBookEntities({
+          storyId,
+          worldId: context.worldId,
+        });
+      }
+
+      await db
+        .update(storyWorkflowProgress)
+        .set({
+          worldComplete: true,
+          worldCompleteAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(storyWorkflowProgress.storyId, storyId));
+
+      await db
+        .update(stories)
+        .set({ status: "ready", updatedAt: new Date() })
+        .where(eq(stories.id, storyId));
+
+      console.log(
+        "✅ [ensure-world] Complete! World is ready for illustrations."
+      );
     });
-  }
 
-  await db
-    .update(storyWorkflowProgress)
-    .set({
-      worldComplete: true,
-      worldCompleteAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(storyWorkflowProgress.storyId, storyId));
+    /* --------------------------------------------------
+       STEP 10: Trigger decide-scenes
+    -------------------------------------------------- */
+    await step.run("trigger-decide-scenes", async () => {
+      console.log("🎬 Triggering decide-spread-scenes...");
+      await inngest.send({
+        name: "story/decide-spread-scenes",
+        data: { storyId },
+      });
+    });
 
-  await db
-    .update(stories)
-    .set({
-      status: "ready",
-      updatedAt: new Date(),
-    })
-    .where(eq(stories.id, storyId));
-
-  console.log("✅ [ensure-world] Complete! World is ready for illustrations.");
-});
-
-/* --------------------------------------------------
-   STEP 10: Trigger decide-scenes
--------------------------------------------------- */
-await step.run("trigger-decide-scenes", async () => {
-  console.log("🎬 Triggering decide-spread-scenes...");
-  await inngest.send({
-    name: "story/decide-spread-scenes",
-    data: { storyId },
-  });
-});
-
-return { ok: true, worldComplete: true };
+    return { ok: true, worldComplete: true };
   }
 );

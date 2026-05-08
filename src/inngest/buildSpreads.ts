@@ -6,13 +6,15 @@ import {
   storySpreads,
   storyWorkflowProgress,
 } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, and, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
 export const buildSpreads = inngest.createFunction(
   {
     id: "build-spreads",
-    retries: 2, triggers: [{ event: "story/build-spreads" }] },
+    retries: 2,
+    triggers: [{ event: "story/build-spreads" }],
+  },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
 
@@ -35,7 +37,7 @@ export const buildSpreads = inngest.createFunction(
     /* --------------------------------------------------
        STEP 2: Build spread pairs
     -------------------------------------------------- */
-    const spreads = await step.run("create-spreads", async () => {
+    const spreadsCreated = await step.run("create-spreads", async () => {
       const inserts = [];
       let spreadIndex = 1;
 
@@ -46,19 +48,46 @@ export const buildSpreads = inngest.createFunction(
           spreadIndex,
           leftPageId: pages[i].id,
           rightPageId: pages[i + 1]?.id ?? null,
+          createdAt: new Date(),
         });
         spreadIndex++;
       }
 
-// Replace the insert in create-spreads step with:
-await db.insert(storySpreads).values(inserts).onConflictDoNothing();
+      await db.insert(storySpreads).values(inserts).onConflictDoNothing();
       return inserts.length;
     });
 
-    console.log(`✅ [build-spreads] Created ${spreads} spreads`);
+    console.log(`✅ [build-spreads] Created ${spreadsCreated} spreads`);
 
     /* --------------------------------------------------
-       STEP 3: Mark complete and trigger next phase
+       STEP 3: Validate page IDs were linked
+    -------------------------------------------------- */
+    await step.run("validate-spread-page-ids", async () => {
+      const nullSpreads = await db
+        .select({
+          spreadIndex: storySpreads.spreadIndex,
+        })
+        .from(storySpreads)
+        .where(
+          and(
+            eq(storySpreads.storyId, storyId),
+            sql`${storySpreads.leftPageId} IS NULL`
+          )
+        );
+
+      if (nullSpreads.length > 0) {
+        throw new Error(
+          `Spread build failed: ${nullSpreads.length} spread(s) have null leftPageId ` +
+            `(indices: ${nullSpreads.map((s) => s.spreadIndex).join(", ")}). ` +
+            `Pages may not have been saved before spread building ran.`
+        );
+      }
+
+      console.log(`✅ All ${spreadsCreated} spreads have valid page IDs`);
+    });
+
+    /* --------------------------------------------------
+       STEP 4: Mark complete and trigger next phase
     -------------------------------------------------- */
     await step.run("mark-complete-and-trigger-next", async () => {
       await db
@@ -78,6 +107,6 @@ await db.insert(storySpreads).values(inserts).onConflictDoNothing();
       });
     });
 
-    return { ok: true, spreadsCreated: spreads };
+    return { ok: true, spreadsCreated };
   }
 );
