@@ -20,6 +20,7 @@ import {
   ExternalLink,
   Truck,
   Instagram,
+  PenLine
 } from "lucide-react";
 import { ShareToInstagram } from "@/components/ShareToInstagram";
 
@@ -332,6 +333,13 @@ export default function CompletedBookView({ story, order, userEmail }: Props) {
             variant="primary"
             href={`/stories/${story.id}/reader`}
           />
+
+<ActionCard
+  icon={PenLine}
+  title="Edit Story"
+  description="Go back to the studio to make changes before ordering."
+  href={`/stories/${story.id}/studio`}
+/>
 
           {/* 2. Download PDF */}
           <ActionCard
