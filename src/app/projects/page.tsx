@@ -1,9 +1,9 @@
 // src/app/projects/page.tsx
 
 import { db } from "@/db";
-import { projects, stories, readers } from "@/db/schema";
+import { projects, stories, readers, chatSessions, chatMessages } from "@/db/schema";
 import { worlds, worldReaders } from "@/db/schema-worlds";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, inArray } from "drizzle-orm";
 import Link from "next/link";
 import Image from "next/image";
 import { getServerSession } from "next-auth";
@@ -11,6 +11,7 @@ import { authOptions } from "@/lib/auth";
 import CreateStoryButton from "@/app/projects/components/CreateStoryButton";
 import HomeContent from "@/app/projects/components/HomeContent";
 import UserMenu from "@/app/stories/components/UserMenu";
+import { ShoppingBag } from "lucide-react";
 
 export default async function ProjectsIndexPage() {
   const session = await getServerSession(authOptions);
@@ -69,6 +70,7 @@ export default async function ProjectsIndexPage() {
       description: stories.description,
       status: sql<string>`coalesce(${stories.status}, 'planning')`,
       paymentStatus: sql<string>`coalesce(${stories.paymentStatus}, 'pending')`,
+      completedSteps: stories.completedSteps,
       readerId: stories.readerId,
       worldId: stories.worldId,
       bookNumber: stories.bookNumber,
@@ -91,7 +93,7 @@ export default async function ProjectsIndexPage() {
     .orderBy(desc(stories.updatedAt));
 
   // 5. Projects with no stories yet — incomplete chat sessions
-  const incompleteProjects = await db
+  const rawIncompleteProjects = await db
     .select({
       id: projects.id,
       name: projects.name,
@@ -108,7 +110,46 @@ export default async function ProjectsIndexPage() {
     )
     .orderBy(desc(projects.createdAt));
 
-  // 6. Assemble reader → world → story hierarchy
+  // 6. Get message counts for incomplete projects
+  let incompleteProjects: {
+    id: string;
+    name: string | null;
+    createdAt: Date | string | null;
+    messageCount: number;
+    lastUserMessage: string | null;
+  }[] = [];
+
+  if (rawIncompleteProjects.length > 0) {
+    const projectIds = rawIncompleteProjects.map(p => p.id);
+
+    const messageCounts = await db
+      .select({
+        projectId: chatSessions.projectId,
+        messageCount: sql<number>`COUNT(${chatMessages.id})::int`,
+        lastUserMessage: sql<string | null>`MAX(${chatMessages.content}) FILTER (WHERE ${chatMessages.role} = 'user')`,
+      })
+      .from(chatSessions)
+      .leftJoin(chatMessages, eq(chatMessages.sessionId, chatSessions.id))
+      .where(
+        sql`${chatSessions.projectId} = ANY(${sql.raw(`ARRAY[${projectIds.map(id => `'${id}'`).join(",")}]::uuid[]`)})`)
+      .groupBy(chatSessions.projectId);
+
+    const countMap = new Map(messageCounts.map(r => [r.projectId, r]));
+
+    incompleteProjects = rawIncompleteProjects.map(p => ({
+      ...p,
+      messageCount: countMap.get(p.id)?.messageCount ?? 0,
+      lastUserMessage: countMap.get(p.id)?.lastUserMessage ?? null,
+    }));
+  }
+
+  // 7. Count unpaid ready stories for basket badge
+  const basketCount = userStories.filter(s => {
+    const steps = (s.completedSteps ?? []) as string[];
+    return s.paymentStatus === "pending" && steps.includes("preview");
+  }).length;
+
+  // 8. Assemble reader → world → story hierarchy
   const readerMap = new Map<
     string,
     {
@@ -221,8 +262,31 @@ export default async function ProjectsIndexPage() {
               className="transition-transform duration-300 group-hover:rotate-3"
             />
           </Link>
-          <CreateStoryButton />
-          <UserMenu />
+
+          <div className="flex items-center gap-2">
+            {basketCount > 0 && (
+              <Link
+                href="/basket"
+                className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-semibold transition-all hover:shadow-md"
+                style={{
+                  background: "linear-gradient(135deg, rgba(176,92,230,0.08), rgba(217,69,144,0.08))",
+                  color: "#7B3FA0",
+                  border: "1.5px solid rgba(176,92,230,0.15)",
+                }}
+              >
+                <ShoppingBag className="w-4 h-4" />
+                <span className="hidden sm:inline">Basket</span>
+                <span
+                  className="flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold text-white"
+                  style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)" }}
+                >
+                  {basketCount}
+                </span>
+              </Link>
+            )}
+            <CreateStoryButton />
+            <UserMenu />
+          </div>
         </div>
       </header>
 

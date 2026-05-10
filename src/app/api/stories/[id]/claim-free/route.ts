@@ -16,7 +16,7 @@ import {
   type ProductType,
   type CurrencyCode,
 } from "@/lib/pricing";
-import { captureServerEvent, getPostHogClient } from "@/lib/posthog-server";
+import { captureServerEvent } from "@/lib/posthog-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,13 +105,11 @@ export async function POST(
       })
       .where(eq(promoCodes.id, promo.id));
 
-    // Fire generation
+    // Fire generation — must match the event name in generateBookSpreads.ts
     await inngest.send({
-      name: "story/generate.spreads",
+      name: "story/generate-spreads",  // ← hyphens, not dots
       data: { storyId },
     });
-
-
 
     await captureServerEvent(storyId, "free_story_claimed", {
       story_id: storyId,
@@ -119,6 +117,7 @@ export async function POST(
       promo_code: promo.code,
       currency,
     });
+
     return NextResponse.json({
       success: true,
       storyId,

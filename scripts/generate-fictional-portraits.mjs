@@ -159,8 +159,7 @@ async function generatePortraitImage(prompt) {
 
 // ── Main ─────────────────────────────────────────────────────────────
 const CHARACTER_IDS = [
-  "e29d5703-66df-4d9f-a46c-8a85c166e0e0", // Number Block 2
-  "7db3753c-9cd4-4ede-90c8-d4bc121ee2bf", // Number Block 3
+  "9e64b987-59e3-499e-8f18-85bab1ea02f2", // Waddles — Emperor Penguin, Commander Waddles and the Frozen Star
 ];
 
 for (const characterId of CHARACTER_IDS) {

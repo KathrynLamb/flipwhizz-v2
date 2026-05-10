@@ -20,9 +20,9 @@ import { join } from "path";
 const sql = postgres(process.env.DATABASE_URL);
 
 const STORIES = [
-  { id: "f326e97b-6401-4ed3-8fdd-280087691332", title: "Oscar's Color-Mixing Garden" },
-  { id: "0f9ab06c-37e7-4288-b724-b02005d8acc9", title: "Olivia's Tiny Seahorse Secret" },
-  { id: "b1029f6d-8ebd-46fc-862d-3bf9ac613093", title: "Bicu Stefan's Words" },
+  { id: "9fa2e16d-c573-4a5d-9c27-fbbff94e5169", title: "The Monkey in the Mystery Section" },
+  { id: "063a7db7-be94-4c54-9bf2-0e082ba94aec", title: "Commander Waddles and the Frozen Star" },
+  { id: "54303573-be0f-4141-b1ec-8ccf2238682c", title: "The Capybara Who Knew Every Move" },
 ];
 
 const POLL_INTERVAL_MS = 15_000;
@@ -138,10 +138,10 @@ for (const story of STORIES) {
     if (total === 0) { console.warn(`   ⚠️  No pages found — skipping`); continue; }
 
     if (illustrated < total) {
-      pages = await waitForIllustrations(story.id, story.title);
-      if (!pages) continue;
+      console.log(`   ⏭️  Still generating — skipping`);
+      pages = pages.filter(p => p.image_url);
+      if (!pages.length) continue;
     }
-
     const hasCover = await sql`
       SELECT cover_spread_url IS NOT NULL AS has_cover FROM stories WHERE id = ${story.id}
     `.then(r => r[0]?.has_cover ?? false);
