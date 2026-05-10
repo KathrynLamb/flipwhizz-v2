@@ -16,7 +16,11 @@ import {
   X,
   Camera,
   Loader2,
+  Trash2,
+  MessageSquare,
+  AlertTriangle,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 // ============================================================================
 // TYPES
@@ -26,6 +30,8 @@ interface IncompleteProject {
   id: string;
   name: string | null;
   createdAt: Date | string | null;
+  messageCount: number;
+  lastUserMessage: string | null;
 }
 
 interface Story {
@@ -95,6 +101,167 @@ function formatDate(d: Date | string | null, opts?: Intl.DateTimeFormatOptions) 
 }
 
 // ============================================================================
+// INCOMPLETE PROJECT ITEM
+// ============================================================================
+
+function IncompleteProjectItem({
+  project,
+  onDeleted,
+}: {
+  project: IncompleteProject;
+  onDeleted: (id: string) => void;
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const isEmpty = project.messageCount === 0;
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
+      if (res.ok) {
+        onDeleted(project.id);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error ?? "Failed to delete");
+        setConfirmDelete(false);
+      }
+    } catch {
+      alert("Failed to delete");
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 1, height: "auto" }}
+        exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+        className="flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-all"
+        style={{
+          background: confirmDelete
+            ? "rgba(239,68,68,0.04)"
+            : isEmpty
+            ? "rgba(180,150,210,0.04)"
+            : "rgba(245,168,98,0.06)",
+          borderColor: confirmDelete
+            ? "rgba(239,68,68,0.2)"
+            : isEmpty
+            ? "rgba(180,150,210,0.12)"
+            : "rgba(245,168,98,0.25)",
+        }}
+      >
+        {/* Icon */}
+        <div
+          className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-sm"
+          style={{
+            background: isEmpty
+              ? "rgba(180,150,210,0.08)"
+              : "rgba(245,168,98,0.12)",
+          }}
+        >
+          {isEmpty ? (
+            <span className="text-gray-300 text-xs">✏️</span>
+          ) : (
+            <MessageSquare className="w-3.5 h-3.5" style={{ color: "#B87A3D" }} />
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          {confirmDelete ? (
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#EF4444" }} />
+              <p className="text-xs font-semibold" style={{ color: "#EF4444" }}>
+                {isEmpty
+                  ? "Delete this empty draft?"
+                  : `Delete this draft with ${project.messageCount} messages?`}
+              </p>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm font-semibold truncate" style={{ color: "#2D2235" }}>
+                {isEmpty
+                  ? "Empty draft"
+                  : project.lastUserMessage
+                  ? `"${project.lastUserMessage.slice(0, 60)}${project.lastUserMessage.length > 60 ? "…" : ""}"`
+                  : "Unfinished story chat"}
+              </p>
+              <p className="text-[11px] mt-0.5" style={{ color: "#A897BD" }}>
+                Started {project.createdAt
+                  ? formatDate(project.createdAt, {
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : "recently"}
+                {project.messageCount > 0 && ` · ${project.messageCount} messages`}
+                {isEmpty && " · Nothing typed yet"}
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {confirmDelete ? (
+            <>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 disabled:opacity-60"
+                style={{ background: "#EF4444", border: "none" }}
+              >
+                {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                {deleting ? "Deleting…" : "Yes, delete"}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all active:scale-95"
+                style={{
+                  background: "rgba(180,150,210,0.08)",
+                  color: "#6B5C80",
+                  border: "1px solid rgba(180,150,210,0.15)",
+                }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              {!isEmpty && (
+                <Link
+                  href={`/projects/${project.id}`}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all hover:shadow-sm"
+                  style={{
+                    background: "rgba(245,168,98,0.12)",
+                    color: "#B87A3D",
+                  }}
+                >
+                  Resume →
+                </Link>
+              )}
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="w-7 h-7 flex items-center justify-center rounded-lg transition-all hover:bg-red-50 active:scale-95"
+                title="Delete draft"
+                style={{ color: "#D1B8D8" }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
+        </div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+// ============================================================================
 // MAIN
 // ============================================================================
 
@@ -102,8 +269,29 @@ export default function HomeContent({
   readers,
   orphanStories,
   totalStories,
-  incompleteProjects,
+  incompleteProjects: initialIncomplete,
 }: HomeContentProps) {
+  const [incompleteProjects, setIncompleteProjects] = useState(initialIncomplete);
+  const [clearingEmpty, setClearingEmpty] = useState(false);
+
+  const emptyCount = incompleteProjects.filter(p => p.messageCount === 0).length;
+
+  function handleDeleted(id: string) {
+    setIncompleteProjects(prev => prev.filter(p => p.id !== id));
+  }
+
+  async function clearAllEmpty() {
+    setClearingEmpty(true);
+    const emptyProjects = incompleteProjects.filter(p => p.messageCount === 0);
+    for (const p of emptyProjects) {
+      try {
+        await fetch(`/api/projects/${p.id}`, { method: "DELETE" });
+      } catch {}
+    }
+    setIncompleteProjects(prev => prev.filter(p => p.messageCount !== 0));
+    setClearingEmpty(false);
+  }
+
   const hasContent =
     readers.length > 0 ||
     orphanStories.length > 0 ||
@@ -148,52 +336,38 @@ export default function HomeContent({
       <section className="px-5 lg:px-8 pb-24">
         <div className="mx-auto max-w-5xl">
 
-          {/* ── Resume banners for incomplete projects ── */}
+          {/* ── Incomplete projects ── */}
           {incompleteProjects.length > 0 && (
-            <div className="mb-6 mt-2 space-y-2">
-              {incompleteProjects.map((project) => (
-                <Link
-                  key={project.id}
-                  href={`/projects/${project.id}`}
-                  className="flex items-center justify-between gap-4 px-5 py-4 rounded-2xl border transition-all hover:-translate-y-[1px] hover:shadow-md"
-                  style={{
-                    background: "rgba(245,168,98,0.06)",
-                    borderColor: "rgba(245,168,98,0.25)",
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-base"
-                      style={{ background: "rgba(245,168,98,0.15)" }}
-                    >
-                      ✏️
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold" style={{ color: "#2D2235" }}>
-                        Continue setting up your story
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Started{" "}
-                        {project.createdAt
-                          ? formatDate(project.createdAt, {
-                              day: "numeric",
-                              month: "short",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "recently"}
-                        {" · "}Chat not finished
-                      </p>
-                    </div>
-                  </div>
-                  <span
-                    className="text-xs font-bold px-3 py-1.5 rounded-full flex-shrink-0 whitespace-nowrap"
-                    style={{ background: "rgba(245,168,98,0.15)", color: "#B87A3D" }}
+            <div className="mb-6 mt-2">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#A897BD" }}>
+                  Unfinished drafts ({incompleteProjects.length})
+                </p>
+                {emptyCount > 1 && (
+                  <button
+                    onClick={clearAllEmpty}
+                    disabled={clearingEmpty}
+                    className="flex items-center gap-1.5 text-[11px] font-semibold transition-all active:scale-95"
+                    style={{ color: "#EF4444", background: "none", border: "none", cursor: "pointer" }}
                   >
-                    Resume →
-                  </span>
-                </Link>
-              ))}
+                    {clearingEmpty ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3 h-3" />
+                    )}
+                    Clear {emptyCount} empty {emptyCount === 1 ? "draft" : "drafts"}
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
+                {incompleteProjects.map(project => (
+                  <IncompleteProjectItem
+                    key={project.id}
+                    project={project}
+                    onDeleted={handleDeleted}
+                  />
+                ))}
+              </div>
             </div>
           )}
 
@@ -287,7 +461,6 @@ function ReaderSection({ reader }: { reader: ReaderData }) {
           if (e.key === "Enter" || e.key === " ") setExpanded(!expanded);
         }}
       >
-        {/* Avatar */}
         <div
           className="relative w-10 h-10 rounded-full flex-shrink-0 overflow-hidden cursor-pointer"
           onClick={(e) => { e.stopPropagation(); fileRef.current?.click(); }}
@@ -313,7 +486,6 @@ function ReaderSection({ reader }: { reader: ReaderData }) {
             onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAvatar(f); }} />
         </div>
 
-        {/* Name + stats */}
         <div className="flex-1 text-left min-w-0">
           <div className="flex items-center gap-2">
             {editingName ? (
@@ -457,7 +629,6 @@ function WorldSection({ world, readerName }: { world: WorldData; readerName: str
 
       {expanded && (
         <div className="ml-8">
-          {/* Desktop grid */}
           <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {world.stories.map((s) => <BookCard key={s.id} story={s} showBookNumber />)}
             <Link
@@ -470,7 +641,6 @@ function WorldSection({ world, readerName }: { world: WorldData; readerName: str
               <span className="text-xs font-medium">Book {nextBookNumber}</span>
             </Link>
           </div>
-          {/* Mobile rows */}
           <div className="sm:hidden space-y-2">
             {world.stories.map((s) => <MobileBookRow key={s.id} story={s} />)}
             <Link
