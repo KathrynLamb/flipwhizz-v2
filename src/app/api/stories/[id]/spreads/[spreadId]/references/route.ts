@@ -12,8 +12,10 @@ import {
   storyPageCharacters,
   storyPageLocations,
   storySpreadPresence,
+  storySpreadScene,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
+
 import { NextResponse } from "next/server";
 
 type OutfitOption = {
@@ -60,7 +62,13 @@ export async function GET(
       return NextResponse.json({ error: "Spread not found" }, { status: 404 });
     }
 
-    /* ───────── 2. Pages for this spread ───────── */
+    /* ───────── 2. Scene record (art director brief) ───────── */
+
+    const sceneRecord = await db.query.storySpreadScene.findFirst({
+      where: eq(storySpreadScene.spreadId, spreadId),
+    });
+
+    /* ───────── 3. Pages for this spread ───────── */
 
     const spreadPageIds = [spread.leftPageId, spread.rightPageId].filter(
       Boolean
@@ -73,7 +81,7 @@ export async function GET(
           .where(inArray(storyPages.id, spreadPageIds))
       : [];
 
-    /* ───────── 3. Spread presence (preferred source of truth) ───────── */
+    /* ───────── 4. Spread presence (preferred source of truth) ───────── */
 
     const spreadPresence = await db.query.storySpreadPresence.findFirst({
       where: eq(storySpreadPresence.spreadId, spreadId),
@@ -84,7 +92,7 @@ export async function GET(
     const presenceLocations = (spreadPresence?.locations ??
       []) as SpreadPresenceLocation[];
 
-    /* ───────── 4. Page-level fallback assignments ───────── */
+    /* ───────── 5. Page-level fallback assignments ───────── */
 
     const pageCharacterRows = spreadPageIds.length
       ? await db
@@ -127,7 +135,7 @@ export async function GET(
         ? uniqueIds(presenceLocations.map((l) => l.locationId))
         : fallbackLocationIds;
 
-    /* ───────── 5. All story characters ───────── */
+    /* ───────── 6. All story characters ───────── */
 
     const storyCharacterRows = await db
       .select({
@@ -153,7 +161,7 @@ export async function GET(
           .where(inArray(characters.id, allCharacterIds))
       : [];
 
-    /* ───────── 6. All story locations ───────── */
+    /* ───────── 7. All story locations ───────── */
 
     const storyLocationRows = await db
       .select({
@@ -178,7 +186,7 @@ export async function GET(
           .where(inArray(locations.id, allLocationIds))
       : [];
 
-    /* ───────── 7. Outfit data ───────── */
+    /* ───────── 8. Outfit data ───────── */
 
     const outfitAssignments = await db
       .select({
@@ -204,7 +212,6 @@ export async function GET(
       if (!outfitsByCharacter[outfit.characterId]) {
         outfitsByCharacter[outfit.characterId] = [];
       }
-
       outfitsByCharacter[outfit.characterId].push({
         outfitKey: outfit.outfitKey,
         outfitDescription: outfit.outfitDescription,
@@ -212,13 +219,13 @@ export async function GET(
       });
     }
 
-    /* ───────── 8. Style guide ───────── */
+    /* ───────── 9. Style guide ───────── */
 
     const styleGuide = await db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),
     });
 
-    /* ───────── 9. Build characters response ───────── */
+    /* ───────── 10. Build characters response ───────── */
 
     const assignedCharacterIdSet = new Set(assignedCharacterIds);
 
@@ -292,7 +299,7 @@ export async function GET(
         };
       });
 
-    /* ───────── 10. Build locations response ───────── */
+    /* ───────── 11. Build locations response ───────── */
 
     const assignedLocationIdSet = new Set(assignedLocationIds);
 
@@ -316,7 +323,9 @@ export async function GET(
               ?.significance ?? null,
           role:
             (presenceRole ??
-              (assignedLocationIds[0] === locationId ? "primary" : "secondary")) as
+              (assignedLocationIds[0] === locationId
+                ? "primary"
+                : "secondary")) as
               | "primary"
               | "secondary"
               | "background"
@@ -341,13 +350,18 @@ export async function GET(
           null,
       }));
 
-    /* ───────── 11. Response ───────── */
+    /* ───────── 12. Response ───────── */
 
     return NextResponse.json({
       spread: {
         id: spread.id,
         spreadIndex: spread.spreadIndex,
-        sceneSummary: spread.sceneSummary,
+        // Prefer scene record data — it's the locked art director brief.
+        // Fall back to storySpreads.sceneSummary for older stories without scene records.
+        sceneSummary: sceneRecord?.sceneSummary ?? spread.sceneSummary ?? null,
+        illustrationPrompt: sceneRecord?.illustrationPrompt ?? null,
+        mood: sceneRecord?.mood ?? null,
+        compositionNotes: (sceneRecord?.compositionNotes as string[]) ?? [],
       },
       pages: pages.map((p) => ({
         id: p.id,

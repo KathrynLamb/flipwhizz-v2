@@ -16,6 +16,7 @@ import {
   Palette,
   ChevronRight,
   RefreshCcw,
+  Brush,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -43,44 +44,46 @@ export type StrategistMessage = {
 };
 
 export type RedrawPlan = {
-    diagnosis: string[];
-    strategy:
-      | "standard_redraw"
-      | "identity_repair"
-      | "cast_simplification"
-      | "split_into_two_pages";
-    executionMode:
-      | "single_spread_identity_repair"
-      | "single_spread_with_reduced_cast"
-      | "split_into_two_single_pages";
-    keepUnifiedSpread: boolean;
-    splitIntoTwoPages: boolean;
-  
-    featuredCharacterIds: string[];
-    backgroundCharacterIds: string[];
-    hiddenCharacterIds: string[];
-    outfitOverrides?: Record<string, string>;
-  
-    recommendedPrompt: string;
-    notesToUser?: string;
-  
-    leftPagePrompt?: string;
-    rightPagePrompt?: string;
-  
-    leftPageFeaturedCharacterIds?: string[];
-    rightPageFeaturedCharacterIds?: string[];
-  
-    leftPageBackgroundCharacterIds?: string[];
-    rightPageBackgroundCharacterIds?: string[];
-  
-    leftPageHiddenCharacterIds?: string[];
-    rightPageHiddenCharacterIds?: string[];
-  };
+  diagnosis: string[];
+  strategy:
+    | "standard_redraw"
+    | "identity_repair"
+    | "cast_simplification"
+    | "split_into_two_pages";
+  executionMode:
+    | "single_spread_identity_repair"
+    | "single_spread_with_reduced_cast"
+    | "split_into_two_single_pages";
+  keepUnifiedSpread: boolean;
+  splitIntoTwoPages: boolean;
+
+  featuredCharacterIds: string[];
+  backgroundCharacterIds: string[];
+  hiddenCharacterIds: string[];
+  outfitOverrides?: Record<string, string>;
+
+  recommendedPrompt: string;
+  notesToUser?: string;
+
+  leftPagePrompt?: string;
+  rightPagePrompt?: string;
+
+  leftPageFeaturedCharacterIds?: string[];
+  rightPageFeaturedCharacterIds?: string[];
+
+  leftPageBackgroundCharacterIds?: string[];
+  rightPageBackgroundCharacterIds?: string[];
+
+  leftPageHiddenCharacterIds?: string[];
+  rightPageHiddenCharacterIds?: string[];
+};
 
 export type RedrawStrategistContext = {
   storyTitle: string;
   spreadLabel: string;
   sceneSummary?: string | null;
+  illustrationBrief?: string | null; // ✅ locked art director prompt from buildSpreadPrompts
+  mood?: string | null;              // ✅ intended mood from story_spread_scene
   leftPageText?: string | null;
   rightPageText?: string | null;
   currentSpreadImageUrl?: string | null;
@@ -130,142 +133,6 @@ function sanitiseAssistantMessage(content: string): string {
 }
 
 /* --------------------------- Plan Preview Panel ---------------------------- */
-
-// function PlanPreview({
-//   plan,
-//   characters,
-//   onUsePlan,
-//   isUsingPlan,
-// }: {
-//   plan: RedrawPlan;
-//   characters: StrategistCharacter[];
-//   onUsePlan: () => void;
-//   isUsingPlan?: boolean;
-// }) {
-//   return (
-//     <div className="rounded-2xl border border-purple-200 bg-purple-50/50 overflow-hidden">
-//       <div className="px-4 py-3 border-b border-purple-100 flex items-center gap-2">
-//         <CheckCircle2 className="w-4 h-4 text-purple-600" />
-//         <h4 className="text-sm font-bold text-gray-900">Redraw plan ready</h4>
-//       </div>
-
-//       <div className="p-4 space-y-4">
-//         <div>
-//           <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-//             Strategy
-//           </p>
-//           <div className="inline-flex items-center gap-2 rounded-full bg-white border border-purple-200 px-3 py-1.5 text-xs font-bold text-purple-700">
-//             <Wand2 className="w-3.5 h-3.5" />
-//             {strategyLabel(plan.strategy)}
-//           </div>
-//         </div>
-
-//         {!!plan.diagnosis?.length && (
-//           <div>
-//             <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-//               Diagnosis
-//             </p>
-//             <div className="space-y-2">
-//               {plan.diagnosis.map((item, i) => (
-//                 <div
-//                   key={`${item}-${i}`}
-//                   className="rounded-xl bg-white border border-gray-200 px-3 py-2 text-xs text-gray-700 leading-relaxed"
-//                 >
-//                   {item}
-//                 </div>
-//               ))}
-//             </div>
-//           </div>
-//         )}
-
-//         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-//           <div className="rounded-xl bg-white border border-gray-200 p-3">
-//             <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-//               Featured
-//             </p>
-//             <div className="space-y-1.5">
-//               {plan.featuredCharacterIds.length > 0 ? (
-//                 plan.featuredCharacterIds.map((id) => (
-//                   <p key={id} className="text-xs font-medium text-gray-800">
-//                     {findCharacterName(characters, id)}
-//                   </p>
-//                 ))
-//               ) : (
-//                 <p className="text-xs text-gray-400">None</p>
-//               )}
-//             </div>
-//           </div>
-
-//           <div className="rounded-xl bg-white border border-gray-200 p-3">
-//             <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-//               Background
-//             </p>
-//             <div className="space-y-1.5">
-//               {plan.backgroundCharacterIds.length > 0 ? (
-//                 plan.backgroundCharacterIds.map((id) => (
-//                   <p key={id} className="text-xs font-medium text-gray-800">
-//                     {findCharacterName(characters, id)}
-//                   </p>
-//                 ))
-//               ) : (
-//                 <p className="text-xs text-gray-400">None</p>
-//               )}
-//             </div>
-//           </div>
-
-//           <div className="rounded-xl bg-white border border-gray-200 p-3">
-//             <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-//               Hidden
-//             </p>
-//             <div className="space-y-1.5">
-//               {plan.hiddenCharacterIds.length > 0 ? (
-//                 plan.hiddenCharacterIds.map((id) => (
-//                   <p key={id} className="text-xs font-medium text-gray-800">
-//                     {findCharacterName(characters, id)}
-//                   </p>
-//                 ))
-//               ) : (
-//                 <p className="text-xs text-gray-400">None</p>
-//               )}
-//             </div>
-//           </div>
-//         </div>
-
-//         {plan.notesToUser && (
-//           <div className="rounded-xl bg-white border border-gray-200 p-3">
-//             <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-//               Notes
-//             </p>
-//             <p className="text-xs text-gray-700 leading-relaxed">{plan.notesToUser}</p>
-//           </div>
-//         )}
-
-//         <div className="rounded-xl bg-white border border-gray-200 p-3">
-//           {/* <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold mb-2">
-//             Gemini redraw prompt
-//           </p> */}
-//           <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">
-//             {plan.recommendedPrompt}
-//           </p>
-//         </div>
-
-//         <button
-//           onClick={onUsePlan}
-//           disabled={isUsingPlan}
-//           className="w-full bg-purple-600 text-white px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-colors disabled:opacity-50 text-sm"
-//         >
-//           {isUsingPlan ? (
-//             <Loader2 className="w-4 h-4 animate-spin" />
-//           ) : (
-//             <Sparkles className="w-4 h-4" />
-//           )}
-//           Use this redraw plan
-//         </button>
-//       </div>
-//     </div>
-//   );
-// }
-
 
 function PlanPreview({
   plan,
@@ -341,6 +208,26 @@ function ContextSummary({
             </div>
             <p className="text-xs text-gray-700 leading-relaxed">
               {context.sceneSummary}
+            </p>
+          </div>
+        )}
+
+        {/* ✅ Art director brief from buildSpreadPrompts */}
+        {context.illustrationBrief && (
+          <div className="rounded-xl bg-white border border-purple-100 p-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Brush className="w-3.5 h-3.5 text-purple-600" />
+              <p className="text-[11px] uppercase tracking-wide text-gray-500 font-bold">
+                Art director brief
+              </p>
+              {context.mood && (
+                <span className="ml-auto text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full capitalize">
+                  {context.mood}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-700 leading-relaxed">
+              {context.illustrationBrief}
             </p>
           </div>
         )}
@@ -499,11 +386,10 @@ export default function RedrawStrategistModal({
   isUsingPlan = false,
   onResetConversation,
   title = "Talk through this redraw!",
-  isLoadingContext
+  isLoadingContext,
 }: {
   isOpen: boolean;
   onClose: () => void;
-
   messages: StrategistMessage[];
   onSendMessage: (payload: SendPayload) => Promise<void> | void;
   isSending?: boolean;
@@ -512,7 +398,7 @@ export default function RedrawStrategistModal({
   isUsingPlan?: boolean;
   onResetConversation?: () => void;
   context: RedrawStrategistContext | null;
-isLoadingContext?: boolean;
+  isLoadingContext?: boolean;
   title?: string;
 }) {
   const [draft, setDraft] = useState("");
@@ -540,7 +426,7 @@ isLoadingContext?: boolean;
     (label: string) => `Looking at ${label} — what caught your eye?`,
     (label: string) => `${label}, got it. What's bothering you?`,
   ];
-  
+
   const starterText = useMemo(() => {
     if (!context?.spreadLabel) {
       return "Just pulling up this spread…";
@@ -618,137 +504,137 @@ isLoadingContext?: boolean;
             </button>
           </div>
         </div>
+
         {(!context || isLoadingContext) ? (
-  <div className="flex-1 min-h-0 flex items-center justify-center bg-white">
-    <div className="flex flex-col items-center gap-3 px-6 text-center">
-      <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
-      <div>
-        <p className="text-sm font-semibold text-gray-900">
-          Loading redraw strategist…
-        </p>
-        <p className="text-xs text-gray-500 mt-1">
-          Pulling in this spread, character references, and story context.
-        </p>
-      </div>
-    </div>
-  </div>
-) : (
-  <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)]">
-    <div className="border-r border-gray-100 overflow-y-auto p-4 min-h-0 bg-white">
-      <ContextSummary context={context} />
-    </div>
-
-    <div className="flex flex-col min-h-0 bg-white">
-            <div
-              ref={scrollRef}
-              className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0"
-            >
-              {!hasMessages && (
-                <div className="rounded-2xl border border-purple-200 bg-purple-50/60 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
-                      <Sparkles className="w-4.5 h-4.5 text-purple-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">
-                        Redraw strategist ready
-                      </p>
-                      <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                        {starterText}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {messages.map((message) => {
-                const isAssistant = message.role === "assistant";
-
-                return (
-                  <div
-                    key={message.id}
-                    className={classNames(
-                      "flex",
-                      isAssistant ? "justify-start" : "justify-end"
-                    )}
-                  >
-                    <div
-                      className={classNames(
-                        "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap",
-                        isAssistant
-                          ? "bg-gray-100 text-gray-800 border border-gray-200"
-                          : "bg-purple-600 text-white"
-                      )}
-                    >
-                       {isAssistant ? sanitiseAssistantMessage(message.content) : message.content}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {isSending && (
-                <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-2xl px-4 py-3 text-sm bg-gray-100 text-gray-800 border border-gray-200 inline-flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
-                    Thinking through the redraw…
-                  </div>
-                </div>
-              )}
-
-              <AnimatePresence>
-              {plan && onUsePlan && context && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 12 }}
-                  >
-                    <PlanPreview
-                      plan={plan}
-                      characters={context.characters}
-                      onUsePlan={() => onUsePlan(plan)}
-                      isUsingPlan={isUsingPlan}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
+          <div className="flex-1 min-h-0 flex items-center justify-center bg-white">
+            <div className="flex flex-col items-center gap-3 px-6 text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  Loading redraw strategist…
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Pulling in this spread, character references, and story context.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)]">
+            <div className="border-r border-gray-100 overflow-y-auto p-4 min-h-0 bg-white">
+              <ContextSummary context={context} />
             </div>
 
-            <div className="border-t border-gray-100 p-4 flex-shrink-0 bg-white">
-              <div className="rounded-2xl border border-gray-200 focus-within:border-purple-300 focus-within:ring-2 focus-within:ring-purple-100 transition-all bg-white">
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  disabled={isSending || !context || isLoadingContext}
-                  rows={4}
-                  className="w-full px-4 py-3 rounded-t-2xl resize-none text-sm focus:outline-none"
-                  placeholder="e.g. Sophia doesn’t look like herself, the adults on the right are too similar, and Grandma needs to be more obvious…"
-                />
+            <div className="flex flex-col min-h-0 bg-white">
+              <div
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0"
+              >
+                {!hasMessages && (
+                  <div className="rounded-2xl border border-purple-200 bg-purple-50/60 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
+                        <Sparkles className="w-4 h-4 text-purple-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          Redraw strategist ready
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                          {starterText}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-                <div className="px-3 pb-3 flex items-center justify-between gap-3">
-                  <p className="text-[11px] text-gray-500 leading-relaxed">
-                    Ask for identity fixes, cast simplification, clearer composition, or whether this should become two linked single pages.
-                  </p>
+                {messages.map((message) => {
+                  const isAssistant = message.role === "assistant";
 
-                  <button
-                    onClick={handleSend}
-                    disabled={!draft.trim() || isSending || !context || isLoadingContext}
-                    className="flex-shrink-0 inline-flex items-center gap-2 bg-purple-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-purple-700 transition-colors disabled:opacity-50 text-sm"
-                  >
-                    {isSending ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4" />
-                    )}
-                    Send
-                  </button>
+                  return (
+                    <div
+                      key={message.id}
+                      className={classNames(
+                        "flex",
+                        isAssistant ? "justify-start" : "justify-end"
+                      )}
+                    >
+                      <div
+                        className={classNames(
+                          "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap",
+                          isAssistant
+                            ? "bg-gray-100 text-gray-800 border border-gray-200"
+                            : "bg-purple-600 text-white"
+                        )}
+                      >
+                        {isAssistant ? sanitiseAssistantMessage(message.content) : message.content}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {isSending && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[85%] rounded-2xl px-4 py-3 text-sm bg-gray-100 text-gray-800 border border-gray-200 inline-flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
+                      Thinking through the redraw…
+                    </div>
+                  </div>
+                )}
+
+                <AnimatePresence>
+                  {plan && onUsePlan && context && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 12 }}
+                    >
+                      <PlanPreview
+                        plan={plan}
+                        characters={context.characters}
+                        onUsePlan={() => onUsePlan(plan)}
+                        isUsingPlan={isUsingPlan}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              <div className="border-t border-gray-100 p-4 flex-shrink-0 bg-white">
+                <div className="rounded-2xl border border-gray-200 focus-within:border-purple-300 focus-within:ring-2 focus-within:ring-purple-100 transition-all bg-white">
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    disabled={isSending || !context || isLoadingContext}
+                    rows={4}
+                    className="w-full px-4 py-3 rounded-t-2xl resize-none text-sm focus:outline-none"
+                    placeholder="e.g. Oscar doesn't look like himself, his face changes between spreads — can we fix the identity and keep the bathroom setting?"
+                  />
+
+                  <div className="px-3 pb-3 flex items-center justify-between gap-3">
+                    <p className="text-[11px] text-gray-500 leading-relaxed">
+                      Ask for identity fixes, cast simplification, clearer composition, or whether this should become two linked single pages.
+                    </p>
+
+                    <button
+                      onClick={handleSend}
+                      disabled={!draft.trim() || isSending || !context || isLoadingContext}
+                      className="flex-shrink-0 inline-flex items-center gap-2 bg-purple-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-purple-700 transition-colors disabled:opacity-50 text-sm"
+                    >
+                      {isSending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4" />
+                      )}
+                      Send
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
         )}
       </motion.div>
-      
     </div>
   );
 }

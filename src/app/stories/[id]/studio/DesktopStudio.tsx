@@ -60,6 +60,9 @@ type SpreadReferencesResponse = {
     id: string;
     spreadIndex: number;
     sceneSummary: string | null;
+    illustrationPrompt: string | null;  // ✅ locked art director prompt
+    mood: string | null;                // ✅ intended mood
+    compositionNotes: string[];         // ✅ framing instructions
   };
   assignedCharacters: {
     characterId: string;
@@ -606,8 +609,6 @@ export default function DesktopStudio({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
 
-  // const [redrawTarget, setRedrawTarget] = useState<Spread | null>(null);
-  // const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [regeneratingSpreads, setRegeneratingSpreads] = useState<Set<string>>(
     new Set()
   );
@@ -685,7 +686,7 @@ export default function DesktopStudio({
 
   useEffect(() => {
     if (!isPaid) return;
-  
+
     if (completedCount === 0 && !isGenerating) {
       setIsGenerating(true);
       setIsPolling(true);
@@ -796,6 +797,8 @@ export default function DesktopStudio({
         ? `Pages ${spread.left.pageNumber}–${spread.right.pageNumber}`
         : `Page ${spread.left.pageNumber}`,
       sceneSummary: data.spread?.sceneSummary ?? null,
+      illustrationBrief: data.spread?.illustrationPrompt ?? null, // ✅ locked art director prompt
+      mood: data.spread?.mood ?? null,                            // ✅ intended mood
       leftPageText: spread.left.text ?? null,
       rightPageText: spread.right?.text ?? null,
       currentSpreadImageUrl: spread.left.imageUrl ?? null,
@@ -815,7 +818,7 @@ export default function DesktopStudio({
       primaryLocationId?: string | null;
       includedLocationIds?: string[];
       outfitOverrides?: Record<string, string>;
-      strategistPlan?: {                          // ← ADD
+      strategistPlan?: {
         featuredCharacterIds: string[];
         backgroundCharacterIds: string[];
         hiddenCharacterIds: string[];
@@ -826,7 +829,7 @@ export default function DesktopStudio({
   ) {
     const pageIds = [spread.left.id];
     if (spread.right) pageIds.push(spread.right.id);
-  
+
     const res = await fetch(`/api/stories/${story.id}/spreads/regenerate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -839,10 +842,9 @@ export default function DesktopStudio({
         primaryLocationId: options?.primaryLocationId ?? null,
         includedLocationIds: options?.includedLocationIds ?? [],
         freshStart: options?.freshStart ?? true,
-        strategistPlan: options?.strategistPlan ?? null,   // ← ADD
+        strategistPlan: options?.strategistPlan ?? null,
       }),
     });
-
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -874,8 +876,6 @@ export default function DesktopStudio({
         setPendingFocusMode(mode);
         return true;
       }
-
-   
 
       if (mode === "redraw") {
         await openStrategistForSpread(spread);
@@ -917,7 +917,6 @@ export default function DesktopStudio({
     }
   }
 
-
   function resetStrategistState() {
     setStrategistMessages([]);
     setStrategistPlan(null);
@@ -942,17 +941,17 @@ export default function DesktopStudio({
     setStrategistPlan(null);
     setIsStrategistOpen(true);
     setIsOpeningStrategist(true);
-  
+
     try {
       const context = await buildStrategistContext(spread, initialFeaturedCharacterIds);
-  
+
       setStrategistContext(context);
       setStrategistMessages([
         {
           id: `assistant-${Date.now()}`,
           role: "assistant",
           content:
-            "I’ve reviewed this spread and the loaded references. Tell me what feels off, and I’ll turn it into a stronger redraw plan for Gemini.",
+            "I've reviewed this spread and the loaded references. Tell me what feels off, and I'll turn it into a stronger redraw plan for Gemini.",
         },
       ]);
     } catch (err: any) {
@@ -970,8 +969,6 @@ export default function DesktopStudio({
     setStrategistMessages(payload.messages);
     setIsSendingStrategistMessage(true);
 
-    console.log("STrategist messages", payload  )
-
     try {
       const res = await fetch(`/api/stories/${story.id}/spreads/strategist`, {
         method: "POST",
@@ -983,10 +980,7 @@ export default function DesktopStudio({
         }),
       });
 
-      console.log("res", res)
-
       const data = await res.json().catch(() => ({}));
-      console.log("DATA", data)
 
       if (!res.ok) {
         throw new Error(data.error || "Failed to continue strategist chat");
@@ -1003,9 +997,9 @@ export default function DesktopStudio({
 
   async function handleUseStrategistPlan(plan: RedrawPlan) {
     if (!strategistTarget) return;
-  
+
     setIsApplyingStrategistPlan(true);
-  
+
     try {
       if (
         plan.executionMode === "single_spread_identity_repair" ||
@@ -1021,23 +1015,22 @@ export default function DesktopStudio({
             outfitOverrides: plan.outfitOverrides ?? {},
           },
         });
-  
+
         closeStrategist();
         setFocusSelectedCharacterIds(null);
         return;
       }
-  
+
       if (plan.executionMode === "split_into_two_single_pages") {
         if (!strategistTarget.right) {
           throw new Error("Split plan requires a spread with both left and right pages");
         }
-  
-        // Left page only — its own prompt and character list
+
         const leftOnlySpread: Spread = {
           ...strategistTarget,
           right: null,
         };
-  
+
         await startRegenerationForSpread(leftOnlySpread, {
           freshStart: false,
           strategistPlan: {
@@ -1048,15 +1041,14 @@ export default function DesktopStudio({
             outfitOverrides: plan.outfitOverrides ?? {},
           },
         });
-  
-        // Right page only — promote it to "left" so the worker treats it as a solo page
+
         const rightOnlySpread: Spread = {
           id: `spread-${strategistTarget.right.id}`,
           spreadId: strategistTarget.spreadId,
           left: strategistTarget.right,
           right: null,
         };
-  
+
         await startRegenerationForSpread(rightOnlySpread, {
           freshStart: false,
           strategistPlan: {
@@ -1067,12 +1059,12 @@ export default function DesktopStudio({
             outfitOverrides: plan.outfitOverrides ?? {},
           },
         });
-  
+
         closeStrategist();
         setFocusSelectedCharacterIds(null);
         return;
       }
-  
+
       throw new Error("Unknown redraw execution mode");
     } catch (err: any) {
       alert(err.message || "Failed to use redraw plan");
@@ -1158,12 +1150,6 @@ export default function DesktopStudio({
     }
   }
 
-  // const redrawLabel = redrawTarget
-  //   ? redrawTarget.right
-  //     ? `Pages ${redrawTarget.left.pageNumber}–${redrawTarget.right.pageNumber}`
-  //     : `Page ${redrawTarget.left.pageNumber}`
-  //   : "";
-
   const focusLabel = focusTarget
     ? focusTarget.right
       ? `Pages ${focusTarget.left.pageNumber}–${focusTarget.right.pageNumber}`
@@ -1196,26 +1182,8 @@ export default function DesktopStudio({
 
   return (
     <div className="min-h-screen bg-gray-50 pb-40">
-      {/* <AnimatePresence>
-        {redrawTarget && (
-          <RedrawModal
-            isOpen
-            onClose={() => {
-              setRedrawTarget(null);
-              setFocusSelectedCharacterIds(null);
-            }}
-            onSubmit={handleRedrawSpread}
-            isSubmitting={isSubmittingFeedback}
-            storyId={story.id}
-            spreadId={redrawTarget.spreadId ?? ""}
-            spreadLabel={redrawLabel}
-            initialIncludedCharacterIds={focusSelectedCharacterIds ?? undefined}
-          />
-        )}
-      </AnimatePresence> */}
-
       <AnimatePresence>
-      {isStrategistOpen && strategistTarget && (
+        {isStrategistOpen && strategistTarget && (
           <RedrawStrategistModal
             isOpen
             onClose={closeStrategist}
@@ -1233,7 +1201,7 @@ export default function DesktopStudio({
                   id: `assistant-${Date.now()}`,
                   role: "assistant",
                   content:
-                    "I’ve reviewed this spread and the loaded references. Tell me what feels off, and I’ll turn it into a stronger redraw plan for Gemini.",
+                    "I've reviewed this spread and the loaded references. Tell me what feels off, and I'll turn it into a stronger redraw plan for Gemini.",
                 },
               ]);
               setStrategistPlan(null);
