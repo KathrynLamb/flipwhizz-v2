@@ -6,7 +6,10 @@ import { storyEditSessions, storyEditMessages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
+export const maxDuration = 30; // web search adds latency
+
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+const MODEL = "claude-sonnet-4-6"; // ✅ updated — sonnet-4-20250514 retires June 15
 
 export async function POST(
   request: NextRequest,
@@ -81,6 +84,11 @@ YOUR ROLE:
 - Keep responses conversational and brief. 2-3 sentences usually. Don't write essays.
 - You're DISCUSSING changes, not making them. The parent clicks "Apply changes" when ready.
 
+WEB SEARCH:
+- You have access to web search. Use it whenever the parent asks about real-world information: football fixtures, match results, league tables, player names, managers, current events, or anything that might have changed recently.
+- Search proactively rather than saying you don't know. If they ask about "the 2025-26 Championship season", search for it — don't cite a knowledge cutoff.
+- After searching, incorporate the accurate details naturally into your suggestions.
+
 IMPORTANT:
 - If the parent reveals something about their child (learning phonics, starting school, a fear, a preference), acknowledge it naturally. This information will help make this story — and future stories — better for their child.
 - Never be precious about the draft. The parent's vision matters more than yours.
@@ -92,12 +100,20 @@ IMPORTANT:
     ];
 
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: MODEL,
       max_tokens: 600,
       system: systemPrompt,
+      // ✅ web search — lets Claude look up real fixtures, managers, players etc
+      tools: [
+        {
+          type: "web_search_20250305" as any,
+          name: "web_search",
+        },
+      ],
       messages: messages as any,
     });
 
+    // Extract text blocks only — web search tool_use/tool_result blocks are filtered out
     const reply = response.content
       .filter((block) => block.type === "text")
       .map((block) => (block as any).text)
