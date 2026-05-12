@@ -21,9 +21,6 @@ const sql = postgres(process.env.DATABASE_URL);
 
 const STORIES = [
   { id: "c677bc66-8c11-43c2-b665-0efe69d2b9ed", title: "The Thirsty Dinosaur" },
-  { id: "b1029f6d-8ebd-46fc-862d-3bf9ac613093", title: "Bicu Stefan's Words" },
-  { id: "0f9ab06c-37e7-4288-b724-b02005d8acc9", title: "Olivia's Tiny Seahorse Secret" },
-  { id: "f326e97b-6401-4ed3-8fdd-280087691332", title: "Oscar's Color-Mixing Garden" },
 ];
 
 const POLL_INTERVAL_MS = 15_000;

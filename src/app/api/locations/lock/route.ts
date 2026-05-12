@@ -5,6 +5,7 @@ import { locations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { generateLocationPortraitFromDescription } from "@/lib/locations/generateLocationPortrait";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -22,6 +23,8 @@ export async function POST(req: Request) {
       id: locations.id,
       userId: locations.userId,
       locked: locations.locked,
+      portraitImageUrl: locations.portraitImageUrl,
+      referenceImageUrl: locations.referenceImageUrl,
     })
     .from(locations)
     .where(eq(locations.id, locationId))
@@ -36,6 +39,24 @@ export async function POST(req: Request) {
   }
 
   const newLocked = !location.locked;
+
+  // When locking: auto-generate a portrait if none exists
+  // (reference image takes priority — only generate from description if both are missing)
+  if (newLocked && !location.portraitImageUrl && !location.referenceImageUrl) {
+    try {
+      console.log(
+        `🏞️ No portrait for location ${locationId} — auto-generating from description`
+      );
+      await generateLocationPortraitFromDescription(locationId);
+      console.log(`✅ Auto-generated portrait for location ${locationId}`);
+    } catch (err) {
+      // Log but don't block the lock — illustrator will handle missing location refs gracefully
+      console.error(
+        `⚠️ Failed to auto-generate portrait for location ${locationId}:`,
+        err
+      );
+    }
+  }
 
   await db
     .update(locations)
