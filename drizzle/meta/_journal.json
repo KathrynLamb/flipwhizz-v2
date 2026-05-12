@@ -484,6 +484,13 @@
       "when": 1777297805265,
       "tag": "0068_premium_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1778585227368,
+      "tag": "0069_happy_sharon_carter",
+      "breakpoints": true
     }
   ]
 }
