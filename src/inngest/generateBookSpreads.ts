@@ -1,3 +1,10 @@
+// src/inngest/generateBookSpreads.ts
+//
+// Changes from previous version:
+// 1. loadSpreadRecord now also loads story_spread_scene
+// 2. generateSingleSpread hard-fails if scene record is missing (no more fallback)
+// 3. Gemini prompt uses illustrationPrompt, compositionNotes, mood, doNotInclude, negativePrompt
+
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { eq, inArray, asc, desc, or, sql, and } from "drizzle-orm";
@@ -13,6 +20,7 @@ import {
   spreadCharacterOutfits,
   characterStoryOutfits,
   storySpreadPresence,
+  storySpreadScene,
 } from "@/db/schema";
 import { db } from "@/db";
 import { v2 as cloudinary } from "cloudinary";
@@ -164,12 +172,6 @@ function uniqueIds(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
 
-type OutfitRef = {
-  characterId: string;
-  outfitKey: string;
-  outfitDescription: string;
-};
-
 type CharacterRef = {
   id: string;
   name: string;
@@ -190,11 +192,16 @@ type SpreadPresenceCharacter = {
   reason?: string | null;
 };
 
+/* -------------------------------------------------------------------------- */
+/*                            loadSpreadRecord                                */
+/* Now returns scene record alongside spread metadata                         */
+/* -------------------------------------------------------------------------- */
+
 async function loadSpreadRecord(
   leftPageId: string,
   rightPageId: string | null | undefined
 ) {
-  return db
+  const spread = await db
     .select({
       spreadId: storySpreads.id,
       sceneSummary: storySpreads.sceneSummary,
@@ -211,6 +218,15 @@ async function loadSpreadRecord(
     .orderBy(desc(storySpreads.createdAt))
     .limit(1)
     .then((r) => r[0]);
+
+  if (!spread) return null;
+
+  // Load the scene record written by buildSpreadPrompts
+  const scene = await db.query.storySpreadScene.findFirst({
+    where: eq(storySpreadScene.spreadId, spread.spreadId),
+  });
+
+  return { ...spread, scene: scene ?? null };
 }
 
 async function loadFeaturedAndBackgroundCharacterIds(
@@ -331,12 +347,80 @@ export const generateBookSpreads = inngest.createFunction(
     assertNonEmpty(storyId, "storyId");
 
     /* ------------------------------------------------------------------ */
-    /* PREFLIGHT: Auto-generate portraits for any featured character       */
-    /* missing one rather than hard-blocking the whole pipeline            */
+    /* PREFLIGHT 1: Verify story_spread_scene records exist for all spreads */
+    /* ------------------------------------------------------------------ */
+
+    await step.run("preflight-scene-records", async () => {
+      const spreads = await db
+        .select({ id: storySpreads.id, spreadIndex: storySpreads.spreadIndex })
+        .from(storySpreads)
+        .where(eq(storySpreads.storyId, storyId));
+
+      if (spreads.length === 0) {
+        throw new Error(
+          `Generate blocked: no spreads found for story ${storyId}. Run build-spreads first.`
+        );
+      }
+
+      const sceneRecords = await db
+        .select({ spreadId: storySpreadScene.spreadId })
+        .from(storySpreadScene)
+        .where(
+          inArray(
+            storySpreadScene.spreadId,
+            spreads.map((s) => s.id)
+          )
+        );
+
+      const missingCount = spreads.length - sceneRecords.length;
+
+      if (missingCount > 0) {
+        const missingSpreadIds = spreads
+          .filter((s) => !sceneRecords.some((sc) => sc.spreadId === s.id))
+          .map((s) => s.spreadIndex);
+
+        throw new Error(
+          `Generate blocked: ${missingCount} spread(s) are missing story_spread_scene records ` +
+            `(indexes: ${missingSpreadIds.join(", ")}). ` +
+            `Run build-spread-prompts before generating illustrations.`
+        );
+      }
+
+      // Also check for empty prompts
+      const sceneDetails = await db
+        .select({
+          spreadId: storySpreadScene.spreadId,
+          illustrationPrompt: storySpreadScene.illustrationPrompt,
+        })
+        .from(storySpreadScene)
+        .where(
+          inArray(
+            storySpreadScene.spreadId,
+            spreads.map((s) => s.id)
+          )
+        );
+
+      const emptyPrompts = sceneDetails.filter(
+        (s) => !s.illustrationPrompt || s.illustrationPrompt.trim().length < 10
+      );
+
+      if (emptyPrompts.length > 0) {
+        throw new Error(
+          `Generate blocked: ${emptyPrompts.length} spread(s) have empty illustration prompts. ` +
+            `Re-run build-spread-prompts.`
+        );
+      }
+
+      console.log(
+        `✅ Scene preflight passed: all ${spreads.length} spreads have locked illustration prompts`
+      );
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* PREFLIGHT 2: Auto-generate portraits for any character missing one  */
     /* ------------------------------------------------------------------ */
 
     await step.run("check-and-generate-character-portraits", async () => {
-      // Collect all featured character IDs across all spreads
       const spreadPresenceRows = await db
         .select({ characters: storySpreadPresence.characters })
         .from(storySpreadPresence)
@@ -357,7 +441,6 @@ export const generateBookSpreads = inngest.createFunction(
         }
       }
 
-      // Fall back to all story characters if spread presence is empty
       if (featuredIds.size === 0) {
         const storyChars = await db
           .select({ characterId: storyCharacters.characterId })
@@ -370,7 +453,6 @@ export const generateBookSpreads = inngest.createFunction(
         throw new Error("Generate blocked: no characters found for this story");
       }
 
-      // Find characters missing all image types
       const charRecords = await db
         .select({
           id: characters.id,
@@ -389,18 +471,15 @@ export const generateBookSpreads = inngest.createFunction(
 
       if (missingPortrait.length > 0) {
         console.log(
-          `🖼️ Auto-generating portraits for ${missingPortrait.length} character(s) missing images: ` +
+          `🖼️ Auto-generating portraits for ${missingPortrait.length} character(s): ` +
             missingPortrait.map((c) => c.name).join(", ")
         );
 
         for (const char of missingPortrait) {
           try {
-            console.log(`  🎨 Generating portrait for "${char.name}"...`);
             await generatePortraitFromDescription(char.id);
             console.log(`  ✅ Portrait generated for "${char.name}"`);
           } catch (err) {
-            // Log but don't throw — the spread worker will error per-spread
-            // rather than blocking the whole book
             console.error(
               `  ❌ Failed to auto-generate portrait for "${char.name}":`,
               err
@@ -409,12 +488,10 @@ export const generateBookSpreads = inngest.createFunction(
         }
       }
 
-      const withImage = charRecords.filter(
-        (c) => c.portraitImageUrl || c.referenceImageUrl || c.fullBodyImageUrl
-      ).length;
-
-      // Count newly generated portraits too
-      const totalWithImage = withImage + missingPortrait.length;
+      const totalWithImage =
+        charRecords.filter(
+          (c) => c.portraitImageUrl || c.referenceImageUrl || c.fullBodyImageUrl
+        ).length + missingPortrait.length;
 
       if (totalWithImage === 0) {
         throw new Error(
@@ -423,12 +500,12 @@ export const generateBookSpreads = inngest.createFunction(
       }
 
       console.log(
-        `✅ Character preflight complete: ${totalWithImage}/${charRecords.length} characters have images`
+        `✅ Portrait preflight: ${totalWithImage}/${charRecords.length} characters have images`
       );
     });
 
     /* ------------------------------------------------------------------ */
-    /* Load pages and dispatch spread workers                              */
+    /* Dispatch spread workers                                             */
     /* ------------------------------------------------------------------ */
 
     const pages = await db.query.storyPages.findMany({
@@ -457,7 +534,7 @@ export const generateBookSpreads = inngest.createFunction(
 
         if (featuredIds.length > MAX_FEATURED_CHARACTERS) {
           console.warn(
-            `⚠️ Skipping spread ${pageLabel}: ${featuredIds.length} featured characters`
+            `⚠️ Skipping spread ${pageLabel}: ${featuredIds.length} featured characters exceeds limit`
           );
           skippedForFocus.push(pageLabel);
           continue;
@@ -549,7 +626,21 @@ export const generateSingleSpread = inngest.createFunction(
       }
 
       const spread = await loadSpreadRecord(leftPageId, rightPageId);
-      if (!spread) throw new Error(`No spread plan for ${pageLabel}`);
+      if (!spread) throw new Error(`No spread record found for pages ${pageLabel}`);
+
+      /* ---------------------------------------------------------------- */
+      /* HARD FAIL if scene record is missing                              */
+      /* There is no fallback. Every spread must have a locked prompt.     */
+      /* ---------------------------------------------------------------- */
+
+      if (!spread.scene && !hasPlan) {
+        throw new Error(
+          `Cannot generate spread ${pageLabel}: no story_spread_scene record found for spreadId ${spread.spreadId}. ` +
+            `Run build-spread-prompts before generating illustrations.`
+        );
+      }
+
+      const scene = spread.scene;
 
       // ── Resolve characters ──
       let featuredCharacterIds: string[] = [];
@@ -586,9 +677,12 @@ export const generateSingleSpread = inngest.createFunction(
         backgroundCharacterIds = resolved.backgroundIds;
       }
 
+      // If still empty after all resolution, hard fail — no blind generation
       if (featuredCharacterIds.length === 0) {
-        featuredCharacterIds = await loadPageCharacterIds(spreadPageIds);
-        backgroundCharacterIds = [];
+        throw new Error(
+          `Cannot generate spread ${pageLabel}: no featured characters resolved from presence, ` +
+            `overrides, or plan. Check story_spread_presence records.`
+        );
       }
 
       featuredCharacterIds = uniqueIds(featuredCharacterIds);
@@ -646,6 +740,12 @@ export const generateSingleSpread = inngest.createFunction(
               .then((rows) => rows.map((r) => r.name))
           : [];
 
+      // Merge doNotInclude from scene record with hiddenNames from plan
+      const doNotIncludeNames = uniqueIds([
+        ...hiddenNames,
+        ...((scene?.doNotInclude as string[]) ?? []),
+      ]);
+
       // ── Resolve location ──
       let locationRef: null | {
         name: string;
@@ -695,22 +795,19 @@ export const generateSingleSpread = inngest.createFunction(
         }
       }
 
-      console.log(`🎯 Strategist plan: ${hasPlan ? "YES" : "no (legacy path)"}`);
-      console.log("🗺️ Location:", locationRef ? locationRef.name : "NONE");
-      console.log(
-        `👥 Featured characters (${featuredCharacterIds.length}):`,
-        featuredRefs.map((c) => c.name)
-      );
-      console.log(
-        `👥 Background characters (${backgroundNames.length}):`,
-        backgroundNames
-      );
+      console.log(`🎨 Scene: "${scene?.mood ?? "no mood"}" | ${scene?.sceneSummary?.slice(0, 80) ?? "no summary"}`);
+      console.log(`🗺️ Location: ${locationRef ? locationRef.name : "NONE"}`);
+      console.log(`👥 Featured (${featuredRefs.length}):`, featuredRefs.map((c) => c.name));
+      console.log(`👥 Background (${backgroundNames.length}):`, backgroundNames);
+      if (doNotIncludeNames.length > 0) {
+        console.log(`🚫 Excluded:`, doNotIncludeNames);
+      }
 
       // ── Build Gemini prompt ──
       const parts: any[] = [];
-
       const missingPortraits: string[] = [];
 
+      // 1. CHARACTER PORTRAITS — images first
       for (const c of featuredRefs) {
         if (!c.portraitUrl || isDataUrl(c.portraitUrl)) {
           missingPortraits.push(c.name);
@@ -758,6 +855,7 @@ export const generateSingleSpread = inngest.createFunction(
         );
       }
 
+      // 2. STYLE REFERENCE
       if (styleRefUrl && !isDataUrl(styleRefUrl)) {
         try {
           parts.push(await getImagePart(styleRefUrl));
@@ -769,6 +867,7 @@ export const generateSingleSpread = inngest.createFunction(
         }
       }
 
+      // 3. LOCATION REFERENCE
       if (locationRef) {
         try {
           parts.push(await getImagePart(locationRef.imageUrl));
@@ -780,6 +879,7 @@ export const generateSingleSpread = inngest.createFunction(
         }
       }
 
+      // 4. EXISTING SPREAD (for revisions)
       if (existingSpreadImageUrl && !isDataUrl(existingSpreadImageUrl)) {
         try {
           parts.push(await getImagePart(existingSpreadImageUrl));
@@ -791,6 +891,7 @@ export const generateSingleSpread = inngest.createFunction(
         }
       }
 
+      // 5. LAYOUT TEMPLATE
       try {
         parts.push(await getImagePart(SPREAD_TEMPLATE_PATH));
         parts.push({
@@ -800,15 +901,17 @@ export const generateSingleSpread = inngest.createFunction(
         console.warn("⚠️ Template failed:", err);
       }
 
+      // 6. SCENE INSTRUCTION
       if (hasPlan && strategistPlan!.recommendedPrompt) {
+        // Strategist plan path (manual revision flow) — unchanged
         const backgroundSection =
           backgroundNames.length > 0
-            ? `\nBACKGROUND CHARACTERS (name mention only, NO portrait sent — draw as smaller, less detailed figures):\n${backgroundNames.join(", ")}.`
+            ? `\nBACKGROUND CHARACTERS (no portrait sent — draw as smaller, less detailed figures):\n${backgroundNames.join(", ")}.`
             : "";
 
         const hiddenSection =
-          hiddenNames.length > 0
-            ? `\nDO NOT INCLUDE these characters in this illustration: ${hiddenNames.join(", ")}.`
+          doNotIncludeNames.length > 0
+            ? `\nDO NOT INCLUDE these characters in this illustration: ${doNotIncludeNames.join(", ")}.`
             : "";
 
         parts.push({
@@ -819,7 +922,6 @@ One continuous 16:9 landscape. Left half = left page, right half = right page.
 HIGHEST PRIORITY:
 - Preserve the identity of every FEATURED character exactly
 - Do not redesign, simplify, substitute, or genericise featured characters
-- Match their face, body, colours, markings, hair/fur shape, and signature features closely
 - Only ${featuredRefs.length} character(s) should be drawn with full detail and accurate likeness: ${featuredRefs.map((c) => c.name).join(", ")}
 
 STYLE:
@@ -842,6 +944,30 @@ AVOID: ${geminiAvoidBlock}${feedback ? `\nADDITIONAL FEEDBACK: ${feedback}` : ""
           `.trim(),
         });
       } else {
+        // Standard path — use locked scene record from buildSpreadPrompts
+        const compositionBlock =
+          scene && (scene.compositionNotes as string[])?.length > 0
+            ? `\nCOMPOSITION:\n${(scene.compositionNotes as string[]).map((n) => `- ${n}`).join("\n")}`
+            : "";
+
+        const backgroundSection =
+          backgroundNames.length > 0
+            ? `\nBACKGROUND CHARACTERS (no portrait sent — draw as smaller, less detailed figures):\n${backgroundNames.join(", ")}.`
+            : "";
+
+        const doNotIncludeSection =
+          doNotIncludeNames.length > 0
+            ? `\nDO NOT INCLUDE these characters in this illustration: ${doNotIncludeNames.join(", ")}.`
+            : "";
+
+        // Merge scene negative prompt with style guide avoid block
+        const fullAvoidBlock = [
+          scene?.negativePrompt,
+          geminiAvoidBlock,
+        ]
+          .filter(Boolean)
+          .join(", ");
+
         parts.push({
           text: `
 CREATE A DOUBLE-PAGE SPREAD ILLUSTRATION.
@@ -854,15 +980,13 @@ HIGHEST PRIORITY:
 
 STYLE:
 ${geminiStyleBlock}
+${scene?.mood ? `MOOD: ${scene.mood}` : ""}
 
-SCENE:
-${spread.sceneSummary ?? "Illustrate the story text below."}
-
-${
-  backgroundNames.length > 0
-    ? `BACKGROUND CHARACTERS:\nThese characters may appear as smaller or less detailed background cameos only: ${backgroundNames.join(", ")}. Do not let them replace or dilute the featured characters.`
-    : ""
-}
+SCENE DIRECTION:
+${scene!.illustrationPrompt}
+${compositionBlock}
+${backgroundSection}
+${doNotIncludeSection}
 
 LEFT PAGE TEXT (upper-left area):
 ${left?.text ?? ""}
@@ -872,7 +996,7 @@ ${right?.text ?? ""}
 
 Hand-letter text into the illustration. Large, high-contrast, child-friendly. ${typographyBlock}
 Keep text well inside safe zones. Outer edges will be trimmed.
-AVOID: ${geminiAvoidBlock}${feedback ? `\nFEEDBACK: ${feedback}` : ""}
+AVOID: ${fullAvoidBlock}${feedback ? `\nFEEDBACK: ${feedback}` : ""}
           `.trim(),
         });
       }

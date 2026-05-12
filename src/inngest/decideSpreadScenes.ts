@@ -726,7 +726,6 @@ Rules:
     /* ------------------------------------------------------------------ */
     /* Mark workflow complete                                              */
     /* ------------------------------------------------------------------ */
-
     await step.run("mark-complete", async () => {
       await db
         .update(storyWorkflowProgress)
@@ -736,9 +735,11 @@ Rules:
           updatedAt: new Date(),
         })
         .where(eq(storyWorkflowProgress.storyId, storyId));
-
+ 
+      console.log("✅ [decide-scenes-v5] Complete — triggering build-spread-prompts");
+ 
       await inngest.send({
-        name: "story/generate-spreads",
+        name: "story/build-spread-prompts",
         data: { storyId },
       });
     });
