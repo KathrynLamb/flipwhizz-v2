@@ -1,131 +1,202 @@
-
-
+// src/app/chat/ChatClient.tsx
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Send } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
+import {
+  Send,
+  Sparkles,
+  Loader2,
+  Zap,
+  BookOpen,
+  Globe2,
+  AlertCircle,
+  RotateCcw,
+} from "lucide-react";
+
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
+interface WorldContext {
+  id: string;
+  name: string;
+  description: string | null;
+  bookNumber: number;
+  readerName: string | null;
+  themes: string[];
+  characters: Array<{ name: string }>;
+}
+
 export default function ChatPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = useMemo(() => searchParams.get("project"), [searchParams]);
-  const [storyCreating, setStoryCreating] = useState(false);
-  const [storyId, setStoryId] = useState<string | null>(null);
+  const worldIdParam = useMemo(() => searchParams.get("worldId"), [searchParams]);
+  const bookNumberParam = useMemo(() => searchParams.get("bookNumber"), [searchParams]);
+
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(true);
+  const [storyCreating, setStoryCreating] = useState(false);
+  const [storyId, setStoryId] = useState<string | null>(null);
+  const [worldContext, setWorldContext] = useState<WorldContext | null>(null);
+  const [creationError, setCreationError] = useState(false); // ✅ error state
+
+  const readerIdParam = useMemo(() => searchParams.get("readerId"), [searchParams]);
+  const [readerContext, setReaderContext] = useState<{ name: string; age?: string; interests?: string[] } | null>(null);
+
+  useEffect(() => {
+    async function loadReader() {
+      if (!readerIdParam) return;
+      try {
+        const res = await fetch(`/api/readers/${readerIdParam}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setReaderContext({
+          name: data.name,
+          age: data.age,
+          interests: data.interests,
+        });
+      } catch {}
+    }
+    loadReader();
+  }, [readerIdParam]);
+
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll on new message
+  // Guard to prevent double-triggering story creation
+  const creationTriggeredRef = useRef(false);
+
+  // Load world context if worldId is in the URL
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, loading]);
+    async function loadWorldContext() {
+      if (!worldIdParam) return;
+      try {
+        const res = await fetch(`/api/worlds/${worldIdParam}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setWorldContext({
+          id: data.id,
+          name: data.name,
+          description: data.description,
+          bookNumber: Number(bookNumberParam) || 1,
+          readerName: data.readers?.[0]?.reader?.name ?? null,
+          themes: (data.themes as string[]) ?? [],
+          characters: (data.characters as Array<{ name: string }>) ?? [],
+        });
+      } catch {
+        // World not found — continue without context
+      }
+    }
+    loadWorldContext();
+  }, [worldIdParam, bookNumberParam]);
+
+  async function waitForPagesAndNavigate(nextStoryId: string) {
+    // Try a few quick polls first
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const res = await fetch(`/api/stories/${nextStoryId}/pages`, { cache: "no-store" });
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          window.location.href = `/stories/${nextStoryId}/pages`;
+          return;
+        }
+      } catch {}
+      await new Promise(r => setTimeout(r, 800));
+    }
+    // Navigate regardless — don't leave mobile hanging
+    window.location.href = `/stories/${nextStoryId}/pages`;
+  }
 
   useEffect(() => {
-    async function loadChat() {
+    async function initializeStudio() {
       if (!projectId) return;
-      const res = await fetch(`/api/chat/history?projectId=${projectId}`);
-      const data = await res.json();
-      if (data.sessionId) {
-        setMessages(data.messages || []);
+
+      try {
+        const chatRes = await fetch(`/api/chat/history?projectId=${projectId}`, {
+          cache: "no-store",
+        });
+        const chatData = await chatRes.json();
+
+        if (chatData.messages) {
+          setMessages(chatData.messages);
+        }
+
+        const storyRes = await fetch(`/api/stories/by-project?projectId=${projectId}`, {
+          cache: "no-store",
+        });
+        const storyData = await storyRes.json();
+
+        if (storyData.storyId) {
+          setStoryId(storyData.storyId);
+          await waitForPagesAndNavigate(storyData.storyId);
+          return;
+        }
+      } catch (err) {
+        console.error("Studio sync failed:", err);
+      } finally {
+        setIsSyncing(false);
       }
     }
-    loadChat();
-  }, [projectId]);
+
+    initializeStudio();
+  }, [projectId, router]);
 
   useEffect(() => {
-    async function loadExistingStory() {
-      if (!projectId) return;
-      const res = await fetch(`/api/stories/by-project?projectId=${projectId}`);
-      const data = await res.json();
-      if (data.storyId) {
-        setStoryId(data.storyId);
-      }
-    }
-    loadExistingStory();
-  }, [projectId]);
-
-  // Auto-navigate when story is ready
-useEffect(() => {
-  if (!storyId) return;
-  
-  let cancelled = false;
-  let pollCount = 0;
-  const maxPolls = 60; // 3 minutes max (60 * 3 seconds)
-
-  const interval = setInterval(async () => {
-    if (cancelled || pollCount >= maxPolls) {
-      clearInterval(interval);
-      return;
+    if (projectId && messages.length > 0) {
+      localStorage.setItem(`chat_backup_${projectId}`, JSON.stringify(messages));
     }
 
-    pollCount++;
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  }, [messages, projectId]);
 
-    try {
-      const res = await fetch(`/api/stories/${storyId}`, {
-        cache: "no-store",
-      });
-
-      if (!res.ok) return;
-
-      const story = await res.json();
-
-      // Check if pages are ready
-      if (story.status === "pages_ready" || story.status === "complete") {
-        clearInterval(interval);
-        // Navigate to the story pages
-        window.location.href = `/stories/${storyId}/pages`;
-      }
-    } catch (err) {
-      console.warn("Polling error:", err);
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
     }
-  }, 3000); // Poll every 3 seconds
-
-  return () => {
-    cancelled = true;
-    clearInterval(interval);
-  };
-}, [storyId]);
+  }, [input]);
 
   async function createStoryFromChat() {
-    if (!projectId || storyCreating) return;
+    if (!projectId || storyCreating || storyId) return;
+    if (creationTriggeredRef.current) return;
+    creationTriggeredRef.current = true;
+
     setStoryCreating(true);
+    setCreationError(false); // ✅ clear any previous error
 
     try {
       const res = await fetch("/api/stories/create-from-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({
+          projectId,
+          ...(worldIdParam && { worldId: worldIdParam }),
+        }),
       });
 
       const data = await res.json();
+
       if (data.storyId) {
         setStoryId(data.storyId);
+        await waitForPagesAndNavigate(data.storyId);
       } else {
-        console.error("Story creation returned:", data);
+        console.error("No storyId returned from create-from-chat", data);
+        creationTriggeredRef.current = false;
+        setCreationError(true); // ✅ show error
       }
     } catch (err) {
       console.error("Story creation failed:", err);
+      creationTriggeredRef.current = false;
+      setCreationError(true); // ✅ show error
     } finally {
       setStoryCreating(false);
     }
-  }
-
-  if (!projectId) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-violet-50 via-pink-50 to-orange-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 text-center">
-          <div className="text-6xl mb-4">📚</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Oops! No Project Found
-          </h2>
-          <p className="text-gray-600">
-            Please start from a project page to begin crafting your story.
-          </p>
-        </div>
-      </div>
-    );
   }
 
   async function sendMessage() {
@@ -139,6 +210,10 @@ useEffect(() => {
     setInput("");
     setLoading(true);
 
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -147,277 +222,421 @@ useEffect(() => {
           message: text,
           history: nextHistory,
           projectId,
+          ...(worldIdParam && { worldId: worldIdParam }),
+          ...(readerIdParam && { readerId: readerIdParam }),
         }),
       });
 
       const data = await res.json();
-      const assistantMessage: ChatMsg = {
-        role: "assistant",
-        content: data.reply ?? "(no reply)",
-      };
 
-      setMessages((m) => [...m, assistantMessage]);
-    } catch (err) {
-      console.error(err);
+      const assistantReply =
+        data.reply ?? "Hmm, let me think about that again...";
+
       setMessages((m) => [
         ...m,
-        {
-          role: "assistant",
-          content: "⚠️ Sorry — something went wrong. Please try again.",
-        },
+        { role: "assistant", content: assistantReply },
       ]);
+
+      // Auto-trigger story creation when Claude signals readiness
+      if (data.readyToGenerate && !storyId && !storyCreating) {
+        setTimeout(() => {
+          void createStoryFromChat();
+        }, 1500);
+      }
+    } catch (err) {
+      console.error(err);
     } finally {
       setLoading(false);
     }
   }
 
-  function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+  if (!projectId) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+      </div>
+    );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-pink-50 to-orange-50">
-      {/* Elegant Header */}
-      <div className="bg-white/80 backdrop-blur-xl border-b border-gray-200/50 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center text-white text-xl shadow-lg">
-                ✨
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-gray-900">
-                  Story Builder
-                </h1>
-                <p className="text-xs text-gray-500">
-                  Creating magic, one detail at a time
-                </p>
-              </div>
-            </div>
-            <div>
+  // Derive display values
+  const isWorldBook = !!worldContext;
+  const bookNumber = worldContext?.bookNumber ?? 1;
+  const readerName = worldContext?.readerName;
+  const worldName = worldContext?.name;
 
-            {storyId && (
-                  <a
-                    href={`/stories/${storyId}`}
-                    className="flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all text-center"
-                  >
-                    <span className="flex items-center justify-center gap-2">
-                      <span>📖</span>
-                      Open Your Book
-                    </span>
-                  </a>
-                )}
-            </div>
-            <div className="hidden sm:flex items-center gap-2">
-              <div className="px-3 py-1.5 bg-gradient-to-r from-violet-100 to-pink-100 rounded-full">
-                <span className="text-xs font-semibold bg-gradient-to-r from-violet-600 to-pink-600 bg-clip-text text-transparent">
-                  Auto-saving
+  return (
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
+      {/* Top Bar */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200/50">
+        <div className="px-4 py-3 flex items-center justify-between min-h-[64px]">
+          {/* Left */}
+          <button
+            onClick={() => router.push("/projects")}
+            className="flex items-center active:opacity-60 transition-opacity min-h-[44px]"
+            aria-label="Back to library"
+          >
+            <Image
+              src="/Flipwhizz_logo_NEW.png"
+              alt="FlipWhizz"
+              width={150}
+              height={150}
+              className="h-auto w-[136px] sm:w-[150px]"
+            />
+          </button>
+
+          {/* Center — world context or sync status */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none max-w-[50vw] overflow-hidden">
+            {isSyncing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
+                <span className="text-sm font-semibold text-gray-600">Syncing...</span>
+              </>
+            ) : isWorldBook ? (
+              <div className="flex items-center gap-2">
+                <Globe2 className="w-4 h-4 text-[#7B5EA7]" />
+                <span className="text-sm font-semibold text-gray-700 hidden sm:inline">
+                  {worldName} — Book {bookNumber}
+                </span>
+                <span className="text-sm font-semibold text-gray-700 sm:hidden">
+                  Book {bookNumber}
                 </span>
               </div>
-            </div>
+            ) : null}
           </div>
+
+          {/* Right CTA — only show after 3 messages */}
+          {messages.length >= 3 && !storyId && (
+            <div className="flex flex-col items-end gap-0.5">
+              <button
+                onClick={createStoryFromChat}
+                disabled={storyCreating}
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-lg transition-transform active:scale-[0.98] disabled:opacity-60"
+                style={{
+                  background: "#D94590",
+                  boxShadow: "0 8px 28px rgba(217,69,144,0.25)",
+                }}
+              >
+                {storyCreating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="hidden sm:inline">Creating...</span>
+                  </>
+                ) : (
+                  <>
+                    <BookOpen className="w-4 h-4" />
+                    <span className="hidden sm:inline">
+                      {isWorldBook ? `Create Book ${bookNumber}` : "Create My Book"}
+                    </span>
+                    <span className="sm:hidden">Create</span>
+                  </>
+                )}
+              </button>
+              <span className="text-[10px] text-gray-400 hidden sm:block pr-1">
+                first draft · keep chatting to refine
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Main Chat Container */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-32">
-        <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
-          {/* Messages Area */}
-          <div className="h-[calc(100vh-280px)] sm:h-[600px] overflow-y-auto px-4 sm:px-6 py-6 space-y-4">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center px-4">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-400 via-pink-400 to-orange-400 flex items-center justify-center text-4xl mb-6 shadow-xl animate-pulse">
-                  📖
-                </div>
-                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3 max-w-xl">
-                  Let's create something magical together
-                </h2>
-                <p className="text-gray-600 text-base sm:text-lg mb-8 max-w-md leading-relaxed">
-                  Tell me about the little one this story is for. Their name,
-                  age, what makes them laugh, what they love...
-                </p>
-
-                {/* Example prompts */}
-                <div className="flex flex-wrap gap-2 justify-center max-w-xl">
-                  {[
-                    "My daughter Emma loves unicorns and baking...",
-                    "Make it funny like Roald Dahl",
-                    "Include our dog Max as a hero",
-                    "Set it in a magical forest",
-                  ].map((prompt, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setInput(prompt)}
-                      className="px-4 py-2 bg-gradient-to-r from-violet-50 to-pink-50 hover:from-violet-100 hover:to-pink-100 rounded-full text-sm text-gray-700 border border-violet-200/50 transition-all hover:shadow-md hover:scale-105"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                }`}
+      {/* Messages */}
+      <div className="h-[calc(100vh-64px-140px)] mt-[64px] pt-4 overflow-y-auto px-4">
+        <div className="max-w-2xl mx-auto pt-4 pb-4">
+          <AnimatePresence>
+            {messages.length === 0 && !isSyncing && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="text-center py-16 px-4 space-y-6"
               >
+                {/* Icon */}
                 <div
-                  className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-5 py-3.5 shadow-sm ${
-                    msg.role === "user"
-                      ? "bg-gradient-to-br from-violet-500 to-pink-500 text-white"
-                      : "bg-gray-50 border border-gray-200 text-gray-900"
-                  }`}
+                  className="w-20 h-20 mx-auto rounded-3xl flex items-center justify-center shadow-lg"
+                  style={{
+                    background: isWorldBook
+                      ? "linear-gradient(135deg, #7B5EA7, #D94590)"
+                      : "linear-gradient(135deg, #A855F7, #EC4899)",
+                  }}
                 >
-                  <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap">
-                    {msg.content}
-                  </p>
+                  {isWorldBook ? (
+                    <Globe2 className="w-10 h-10 text-white" />
+                  ) : (
+                    <Sparkles className="w-10 h-10 text-white" />
+                  )}
                 </div>
-              </div>
+
+                {/* Heading — personalised for world context */}
+                <div className="space-y-3">
+                  {isWorldBook ? (
+                    <>
+                      <h1 className="text-3xl sm:text-4xl font-black text-gray-900">
+                        {readerName
+                          ? `${readerName}'s next adventure`
+                          : `Book ${bookNumber} awaits`}
+                      </h1>
+                      <p className="text-[17px] text-gray-600 leading-relaxed max-w-md mx-auto">
+                        {worldContext?.description
+                          ? `Back in ${worldName} — ${worldContext.description.toLowerCase()}`
+                          : `Continuing the story in ${worldName}. What happens next?`}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h1 className="text-4xl font-black text-gray-900">
+                        Let&apos;s Create Magic! ✨
+                      </h1>
+                      <p className="text-[17px] text-gray-600 leading-relaxed max-w-sm mx-auto">
+                        Tell me about your character, their world, or the adventure you want to go on
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                {isWorldBook && (
+                  <div className="space-y-2">
+                    <div
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium"
+                      style={{ background: "rgba(123,94,167,0.08)", color: "#7B5EA7" }}
+                    >
+                      <Globe2 className="w-4 h-4" />
+                      Characters & world carry forward from{" "}
+                      {bookNumber > 1 ? `Book ${bookNumber - 1}` : "this world"}
+                    </div>
+
+                    {worldContext.characters.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 justify-center">
+                        {worldContext.characters.map((c) => (
+                          <span
+                            key={c.name}
+                            className="px-3 py-1 rounded-full text-xs font-semibold"
+                            style={{ background: "rgba(123,94,167,0.1)", color: "#7B5EA7" }}
+                          >
+                            {c.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Prompt suggestions — context-aware */}
+                <div className="flex flex-wrap gap-2 justify-center pt-4 overflow-hidden">
+                  {isWorldBook
+                    ? [
+                        { emoji: "🌍", label: "Explore somewhere new", text: "Let's explore somewhere completely new this time" },
+                        { emoji: "🤝", label: "New friend", text: "I'd love a story about making a new friend" },
+                        { emoji: "🎉", label: "Celebration", text: "Something about a big celebration or festival" },
+                      ].map((prompt) => (
+                        <button
+                          key={prompt.label}
+                          onClick={() => setInput(prompt.text)}
+                          className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
+                        >
+                          {prompt.emoji} {prompt.label}
+                        </button>
+                      ))
+                    : [
+                        { emoji: "🐉", label: "Brave Dragon", text: "A brave dragon who's afraid of heights" },
+                        { emoji: "🌳", label: "Magical Forest", text: "A magical forest where trees can talk" },
+                        { emoji: "🐬", label: "Ocean Quest", text: "An underwater adventure with friendly dolphins" },
+                      ].map((prompt) => (
+                        <button
+                          key={prompt.label}
+                          onClick={() => setInput(prompt.text)}
+                          className="px-4 py-2.5 bg-white border-2 border-gray-200 rounded-full text-sm font-semibold text-gray-700 active:scale-95 transition-transform"
+                        >
+                          {prompt.emoji} {prompt.label}
+                        </button>
+                      ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="space-y-3">
+            {messages.map((msg, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                {msg.role === "user" ? (
+                  <div className="max-w-[85%]">
+                    <div className="bg-purple-500 text-white px-5 py-3 rounded-[20px] rounded-tr-[4px] shadow-sm">
+                      <p className="text-[16px] leading-[1.4] font-normal whitespace-pre-wrap break-words">
+                        {msg.content}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-w-[85%]">
+                    <div className="flex gap-2 items-end">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center flex-shrink-0 shadow-sm">
+                        <Sparkles className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="bg-white px-5 py-3 rounded-[20px] rounded-bl-[4px] shadow-sm border border-gray-100">
+                        <p className="text-[16px] leading-[1.4] text-gray-900 font-normal whitespace-pre-wrap break-words">
+                          {msg.content}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
             ))}
 
             {loading && (
-              <div className="flex justify-start">
-                <div className="max-w-[75%] rounded-2xl px-5 py-3.5 bg-gray-50 border border-gray-200">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex items-end gap-2"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center shadow-sm">
+                  <Sparkles className="w-4 h-4 text-white" />
+                </div>
+                <div className="bg-white px-5 py-3 rounded-[20px] rounded-bl-[4px] shadow-sm border border-gray-100 flex gap-1.5">
+                  <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0 }} className="w-2 h-2 bg-gray-400 rounded-full" />
+                  <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.1 }} className="w-2 h-2 bg-gray-400 rounded-full" />
+                  <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }} className="w-2 h-2 bg-gray-400 rounded-full" />
+                </div>
+              </motion.div>
+            )}
+
+            {/* Story creation in progress */}
+            {storyCreating && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-end gap-2"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 flex items-center justify-center shadow-sm">
+                  <BookOpen className="w-4 h-4 text-white" />
+                </div>
+                <div className="bg-gradient-to-br from-fuchsia-50 to-pink-50 border border-fuchsia-200 px-5 py-3 rounded-[20px] rounded-bl-[4px] shadow-sm">
                   <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
-                      <div className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" />
-                      <div className="w-2 h-2 bg-pink-400 rounded-full animate-bounce delay-100" />
-                      <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce delay-200" />
-                    </div>
-                    <span className="text-sm text-gray-500">
-                      Crafting response...
-                    </span>
+                    <Loader2 className="w-4 h-4 animate-spin text-[#D94590]" />
+                    <p className="text-[16px] leading-[1.4] text-gray-900 font-semibold">
+                      Writing your story…
+                    </p>
                   </div>
                 </div>
-              </div>
+              </motion.div>
+            )}
+
+            {/* ✅ Error state with retry */}
+            {creationError && !storyCreating && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-end gap-2"
+              >
+                <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                  <AlertCircle className="w-4 h-4 text-red-500" />
+                </div>
+                <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-[20px] rounded-bl-[4px] shadow-sm flex items-center gap-3">
+                  <p className="text-[15px] text-red-800 font-medium leading-snug">
+                    Something went wrong creating your story.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setCreationError(false);
+                      void createStoryFromChat();
+                    }}
+                    className="flex items-center gap-1.5 flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-bold text-white active:scale-95 transition-transform"
+                    style={{ background: "#D94590" }}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Try again
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {messages.length === 4 && !storyId && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex justify-center py-1"
+              >
+                <div className="px-4 py-2 rounded-full text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200">
+                  ✨ Ready to see a first draft? Hit <span className="font-bold text-[#D94590]">Create Book {bookNumber}</span> — or keep chatting to add more detail
+                </div>
+              </motion.div>
             )}
 
             <div ref={bottomRef} />
           </div>
-
-          {/* Input Area */}
-          <div className="border-t border-gray-200 bg-gray-50/50 px-4 sm:px-6 py-4">
-            <div className="flex gap-3 items-end">
-              <div className="flex-1 relative">
-                <textarea
-                  className="w-full rounded-2xl border-2 border-gray-200 bg-white px-4 py-3 text-sm sm:text-base resize-none focus:outline-none focus:border-violet-300 focus:ring-4 focus:ring-violet-100 transition-all"
-                  placeholder="Share your ideas..."
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKey}
-                  rows={1}
-                  style={{
-                    minHeight: "44px",
-                    maxHeight: "120px",
-                  }}
-                />
-              </div>
-              <button
-                onClick={sendMessage}
-                disabled={loading || !input.trim()}
-                className="shrink-0 w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-500 to-pink-500 hover:from-violet-600 hover:to-pink-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
-              >
-                {/* <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2.5}
-                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                  />
-                </svg> */}
-                <Send className='' />
-              </button>
-            </div>
-
-            {/* Action Buttons */}
-            {messages.length > 2 && (
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  onClick={createStoryFromChat}
-                  disabled={storyCreating}
-                  className="flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-700 hover:to-pink-700 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {storyCreating ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Creating magic...
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center gap-2">
-                      <span>✨</span>
-                      Create Story Book
-                    </span>
-                  )}
-                </button>
-
-                {storyId && (
-                  <a
-                    href={`/stories/${storyId}`}
-                    className="flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all text-center"
-                  >
-                    <span className="flex items-center justify-center gap-2">
-                      <span>📖</span>
-                      Open Your Book
-                    </span>
-                  </a>
-                )}
-              </div>
-            )}
-
-            {/* Helpful tip */}
-            <div className="mt-4 text-center">
-              <p className="text-xs text-gray-500">
-                💡 Tip: The more details you share, the more magical the story
-                becomes
-              </p>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Floating encouragement for mobile */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white to-transparent px-4 pb-6 pt-8 pointer-events-none sm:hidden">
-        <div className="max-w-4xl mx-auto text-center">
-          <p className="text-xs text-gray-600 font-medium">
-            You're building something your child will treasure forever ✨
-          </p>
+      {/* Input Area */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border-t border-gray-200/50">
+        <div className="px-4 py-3">
+          <div className="max-w-2xl mx-auto">
+            {messages.length > 0 && messages.length < 3 && (
+              <div className="mb-2 px-1">
+                <div
+                  className="flex items-center gap-2 text-xs font-semibold"
+                  style={{ color: "#D94590" }}
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>
+                    {3 - messages.length} more message{3 - messages.length !== 1 ? "s" : ""} to unlock book creation
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-end gap-2">
+              <div className="flex-1 bg-gray-100 rounded-[20px] min-h-[44px] flex items-center px-4 py-2">
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                  placeholder={
+                    storyCreating
+                      ? "Writing your story…"
+                      : isWorldBook
+                        ? `What happens next in ${worldName}...`
+                        : "Message"
+                  }
+                  disabled={storyCreating}
+                  className="w-full max-h-[100px] bg-transparent border-0 focus:ring-0 focus:outline-none text-[16px] text-gray-900 placeholder:text-gray-500 resize-none font-normal disabled:cursor-not-allowed disabled:opacity-60"
+                  rows={1}
+                  style={{ lineHeight: "1.4" }}
+                />
+              </div>
+
+              <button
+                onClick={sendMessage}
+                disabled={!input.trim() || loading || storyCreating}
+                className="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center transition-all duration-200 active:scale-90"
+                style={{
+                  background: input.trim() && !storyCreating ? "#D94590" : "#E5E7EB",
+                  color: input.trim() && !storyCreating ? "white" : "#9CA3AF",
+                  boxShadow: input.trim() && !storyCreating ? "0 3px 12px rgba(217,69,144,0.3)" : "none",
+                }}
+              >
+                {loading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Send className="w-5 h-5" style={{ transform: "translateX(1px)" }} />
+                )}
+              </button>
+            </div>
+          </div>
         </div>
+        <div className="h-[env(safe-area-inset-bottom)]" />
       </div>
     </div>
   );
 }
-
-// Add to your globals.css:
-/*
-@keyframes bounce {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
-}
-
-.animate-bounce {
-  animation: bounce 1s infinite;
-}
-
-.delay-100 {
-  animation-delay: 0.1s;
-}
-
-.delay-200 {
-  animation-delay: 0.2s;
-}
-*/

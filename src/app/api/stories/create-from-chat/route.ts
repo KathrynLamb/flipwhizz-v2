@@ -1,5 +1,5 @@
 // src/app/api/stories/create-from-chat/route.ts
-
+export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
