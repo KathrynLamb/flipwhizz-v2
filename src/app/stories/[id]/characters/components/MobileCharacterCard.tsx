@@ -131,8 +131,8 @@ export function MobileCharacterCard({
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [validating, setValidating] = useState(false);         // NEW
-  const [uploadError, setUploadError] = useState<string | null>(null); // NEW
+  const [validating, setValidating] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [showOutfitChoice, setShowOutfitChoice] = useState(false);
@@ -212,7 +212,6 @@ export function MobileCharacterCard({
         const validation = validationRes.ok ? await validationRes.json() : { valid: true };
 
         if (!validation.valid) {
-          // Rejected — show inline error, don't write to DB
           if (isMounted.current) {
             setUploadError(
               validation.message ||
@@ -221,8 +220,6 @@ export function MobileCharacterCard({
                   : "Photo not suitable — try a clear solo photo")
             );
           }
-          // Note: we intentionally leave the Firebase upload in place but don't
-          // reference it from the DB. It will be cleaned up by Firebase TTL rules.
           return;
         }
 
@@ -261,18 +258,21 @@ export function MobileCharacterCard({
     shouldLockAfter = false
   ) {
     if (locked) return;
-  
+
     const hasReferenceLikeImage = !!char.referenceImageUrl;
-  
-    if (hasReferenceLikeImage && !char.portraitImageUrl && !outfitMode) {
+
+    // Only show the outfit choice when the user explicitly taps "AI Portrait"
+    // (outfitMode is undefined AND shouldLockAfter is false).
+    // The smart lock flow passes shouldLockAfter=true — auto-select and proceed.
+    if (hasReferenceLikeImage && !char.portraitImageUrl && !outfitMode && !shouldLockAfter) {
       setPendingLockAfterGenerate(shouldLockAfter);
       setShowOutfitChoice(true);
       return;
     }
-  
+
     setShowOutfitChoice(false);
     setUploading(true);
-  
+
     try {
       const res = await fetch("/api/characters/use-ai-image", {
         method: "POST",
@@ -282,18 +282,18 @@ export function MobileCharacterCard({
           outfitMode,
         }),
       });
-  
+
       if (!res.ok) throw new Error();
-  
+
       const data = await res.json();
-  
+
       if (isMounted.current && data.url) {
         setImageUrl(data.url);
         setChar((prev) => ({ ...prev, portraitImageUrl: data.url }));
       }
-  
+
       onUpdate?.();
-  
+
       if (shouldLockAfter) {
         await doLock();
       }
@@ -309,7 +309,6 @@ export function MobileCharacterCard({
       }
     }
   }
-  
 
   /* ── Smart lock flow ── */
 
@@ -396,7 +395,11 @@ export function MobileCharacterCard({
   }
 
   async function doGenerateAndLock() {
-    await generatePortrait(undefined, true);
+    // ✅ Auto-select "story" outfit mode when a reference image exists so the
+    // smart lock flow never stalls waiting for the outfit choice modal.
+    // The explicit "AI Portrait" button still shows the choice.
+    const mode = char.referenceImageUrl ? "story" : undefined;
+    await generatePortrait(mode, true);
   }
 
   async function doLock() {
@@ -436,18 +439,26 @@ export function MobileCharacterCard({
 
   /* ── Swipe handling ── */
   async function handleDragEnd(_: any, info: PanInfo) {
-    console.log("🎴 Drag end:", { offsetX: info.offset.x, velocityX: info.velocity.x });
-
     setIsDragging(false);
     const THRESHOLD = 70;
     const VELOCITY = 400;
-  
+
     const swipedRight = info.offset.x > THRESHOLD || info.velocity.x > VELOCITY;
     const swipedLeft = info.offset.x < -THRESHOLD || info.velocity.x < -VELOCITY;
-  
+
     if (swipedRight) {
+      // If already generating, allow swiping to next card — generation continues in background
+      if (lockPhase === "generating") {
+        await controls.start({
+          x: 650, rotate: 20, opacity: 0,
+          transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] },
+        });
+        onSwiped?.(char.id);
+        return;
+      }
+
       const hasPortrait = !!char.portraitImageUrl;
-      
+
       if (hasPortrait) {
         await controls.start({
           x: 650, rotate: 20, opacity: 0,
@@ -465,7 +476,7 @@ export function MobileCharacterCard({
       }
       return;
     }
-  
+
     if (swipedLeft) {
       await controls.start({ x: -60, rotate: -4, transition: { duration: 0.12 } });
       await controls.start({ x: 0, rotate: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
@@ -473,7 +484,7 @@ export function MobileCharacterCard({
       setEditing(true);
       return;
     }
-  
+
     await controls.start({ x: 0, rotate: 0, opacity: 1, transition: { type: "spring", stiffness: 400, damping: 30 } });
   }
 
@@ -503,6 +514,7 @@ export function MobileCharacterCard({
 
   /* ── Derived UI flags ── */
 
+  // ✅ isProcessing no longer blocks dragging — only conflicts and locking do
   const isProcessing = lockPhase === "analyzing" || lockPhase === "generating" || lockPhase === "locking";
   const showConflictUI = lockPhase === "conflicts";
   const allConflictsResolved = conflicts.length > 0 && conflicts.every(c => resolutions[c.field]);
@@ -512,7 +524,8 @@ export function MobileCharacterCard({
   return (
     <motion.div
       animate={controls}
-      drag={lockPhase === "idle" && !editing ? "x" : false}
+      // ✅ Allow dragging during "generating" — user can swipe to next card while portrait is created
+      drag={lockPhase !== "conflicts" && lockPhase !== "locking" && !editing ? "x" : false}
       dragConstraints={{ left: 0, right: 0 }}
       dragDirectionLock
       dragElastic={0.12}
@@ -566,7 +579,7 @@ export function MobileCharacterCard({
             </div>
           )}
 
-          {/* Upload / AI Portrait buttons */}
+          {/* Upload / AI Portrait buttons — hidden during processing */}
           {!uploading && !validating && !isProcessing && !showConflictUI && !isDragging && (
             <>
               <div className="absolute bottom-14 left-3 flex gap-1.5 z-10">
@@ -656,7 +669,7 @@ export function MobileCharacterCard({
             </div>
           )}
 
-          {/* Validating overlay — NEW */}
+          {/* Validating overlay */}
           {validating && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm">
               <div className="flex flex-col items-center gap-2 px-4 py-3 rounded-2xl bg-black/30 backdrop-blur-sm">
@@ -666,28 +679,25 @@ export function MobileCharacterCard({
             </div>
           )}
 
-          {/* Smart lock processing overlay */}
+          {/* ✅ Processing state — small badge so user can still see card and swipe to next */}
           {isProcessing && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-              <div className="flex flex-col items-center gap-3 px-6 py-5 rounded-2xl bg-white/95 shadow-2xl max-w-[260px]">
-                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                  style={{ background: lockPhase === "generating" ? "linear-gradient(135deg, #B05CE6, #D45DA0)" : "linear-gradient(135deg, #43B89C, #2FA482)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
-                  {lockPhase === "analyzing" && <Eye className="w-5 h-5 text-white" />}
-                  {lockPhase === "generating" && <Sparkles className="w-5 h-5 text-white" />}
-                  {lockPhase === "locking" && <Lock className="w-5 h-5 text-white" />}
-                </motion.div>
-                <p className="text-sm font-bold text-center" style={{ color: "#2D2235" }}>
-                  {lockPhase === "analyzing" && "Checking photo…"}
-                  {lockPhase === "generating" && "Creating portrait…"}
-                  {lockPhase === "locking" && "Locking in…"}
-                </p>
-                <p className="text-[11px] text-center" style={{ color: "#7B6E90" }}>
-                  {lockPhase === "analyzing" && "Comparing photo with story description"}
-                  {lockPhase === "generating" && "This takes about 15 seconds"}
-                  {lockPhase === "locking" && "Almost done"}
-                </p>
-              </div>
+            <div
+              className="absolute bottom-14 right-3 z-30 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full shadow-lg"
+              style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)" }}
+            >
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+              >
+                {lockPhase === "analyzing" && <Eye className="w-3 h-3 text-white" />}
+                {lockPhase === "generating" && <Sparkles className="w-3 h-3 text-white" />}
+                {lockPhase === "locking" && <Lock className="w-3 h-3 text-white" />}
+              </motion.div>
+              <span className="text-[10px] font-bold text-white">
+                {lockPhase === "analyzing" && "Checking photo…"}
+                {lockPhase === "generating" && "Creating portrait…"}
+                {lockPhase === "locking" && "Locking…"}
+              </span>
             </div>
           )}
 
@@ -766,7 +776,7 @@ export function MobileCharacterCard({
           {!showConflictUI && (
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
 
-              {/* Upload error — NEW */}
+              {/* Upload error */}
               <AnimatePresence>
                 {uploadError && (
                   <motion.div
@@ -927,11 +937,24 @@ export function MobileCharacterCard({
                     onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); dragControls.start(e); }}>
                     <div className="w-8 h-1.5 rounded-full" style={{ background: "rgba(180,150,210,0.2)" }} />
                     <span className="text-[11px] font-semibold" style={{ color: "#A897BD" }}>
-                      {locked ? "✓ locked" : "← edit · lock →"}
+                      {locked ? "✓ locked" : lockPhase === "generating" ? "← swipe to next →" : "← edit · lock →"}
                     </span>
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Bottom bar hint during generating — still show so user knows they can swipe */}
+          {isProcessing && lockPhase === "generating" && (
+            <div className="flex-shrink-0 px-4 pb-4 pt-1">
+              <div className="flex-1 rounded-2xl flex items-center justify-center gap-2 py-3"
+                style={{ background: "white", border: "1px solid rgba(180,150,210,0.12)" }}>
+                <div className="w-8 h-1.5 rounded-full" style={{ background: "rgba(180,150,210,0.2)" }} />
+                <span className="text-[11px] font-semibold" style={{ color: "#A897BD" }}>
+                  Swipe right to move on, portrait saves when ready
+                </span>
+              </div>
             </div>
           )}
         </div>
