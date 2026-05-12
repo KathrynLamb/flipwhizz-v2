@@ -4,18 +4,15 @@ import { inngest } from "@/inngest/client";
 
 // Core narrative
 import { globalRewriteJob } from "@/inngest/functions";
-import { ensureWorld } from "@/inngest/ensureWorld"; // ✅ NEW IMPORT
+import { ensureWorld } from "@/inngest/ensureWorld";
 
 import { decideScenes } from "@/inngest/decideSpreadScenes";
+import { buildSpreadPrompts } from "@/inngest/buildSpreadPrompts";
 
 // Visuals
 import { generateStyleSample } from "@/inngest/generateStyle";
 import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateSpreadImages.phaseB";
 import { reviseSingleSpread } from "@/inngest/reviseSingleSpread";
-// import { generateCoverSpreadPhaseB } from "@/inngest/generateCoverSpread.phaseB";
-// In your inngest setup file (e.g. src/inngest/index.ts or wherever functions are registered)
-// import { generateCoverSpreadV5 } from "./generateCoverSpread.v5";
-// Remove or comment out: import { generateCoverSpreadPhaseB } from "./generateCoverSpread.phaseB";
 import { buildSpreads } from "@/inngest/buildSpreads";
 import { analyseReferencePhoto } from "@/inngest/analyseReferencePhoto";
 import { generateCoverSpreadV5 } from "@/inngest/generateCoverSpread.v5";
@@ -26,16 +23,17 @@ export const { GET, POST, PUT } = serve({
   functions: [
     // Core pipeline
     globalRewriteJob,
-    ensureWorld,        // ✅ CHANGED: was extractWorldJob
+    ensureWorld,
     buildSpreads,
     decideScenes,
+    buildSpreadPrompts,     // ✅ NEW: art director phase
 
     // Visuals
     generateStyleSample,
-    generateBookSpreads,    // ✅ ADDED: Orchestrator
-    generateSingleSpread,   // ✅ Worker
+    generateBookSpreads,
+    generateSingleSpread,
     reviseSingleSpread,
     generateCoverSpreadV5,
-    analyseReferencePhoto
+    analyseReferencePhoto,
   ],
 });
