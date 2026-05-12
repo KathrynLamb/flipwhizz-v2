@@ -17,6 +17,8 @@ import {
   storyStyleGuide,
   storyWorkflowProgress,
 } from "@/db/schema";
+// Note: storyWorkflowProgress must have promptsBuilt + promptsBuiltAt columns.
+// Run migration_prompts_built.sql and add the fields to schema.ts before deploying.
 import { eq, inArray, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { v4 as uuid } from "uuid";
@@ -555,14 +557,24 @@ ${spreadContexts.join("\n\n---\n\n")}
     });
 
     /* ------------------------------------------------------------------ */
-    /* Trigger generation                                                  */
+    /* Mark complete + trigger generation                                  */
     /* ------------------------------------------------------------------ */
 
     await step.run("trigger-generation", async () => {
+      await db
+        .update(storyWorkflowProgress)
+        .set({
+          promptsBuilt: true,
+          promptsBuiltAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(storyWorkflowProgress.storyId, storyId));
+
       await inngest.send({
         name: "story/generate-spreads",
         data: { storyId },
       });
+
       console.log("🚀 Triggered story/generate-spreads");
     });
 

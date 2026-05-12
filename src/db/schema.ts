@@ -931,6 +931,12 @@ export const storyWorkflowProgress = pgTable("story_workflow_progress", {
   outfitsAssigned: boolean("outfits_assigned").notNull().default(false),
   outfitsAssignedAt: timestamp("outfits_assigned_at"),
 
+  /* ========== Phase 5: Spread Prompt Building ========== */
+ 
+    promptsBuilt: boolean("prompts_built").notNull().default(false),
+    promptsBuiltAt: timestamp("prompts_built_at"),
+   
+
   /* ========== Overall Status ========== */
 
   worldComplete: boolean("world_complete").notNull().default(false),
