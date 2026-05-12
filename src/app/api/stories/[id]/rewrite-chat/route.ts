@@ -2,8 +2,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
-import { storyEditSessions, storyEditMessages } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import {
+  storyEditSessions,
+  storyEditMessages,
+  chatSessions,
+  chatMessages,
+  stories,
+} from "@/db/schema";
+import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
 export const maxDuration = 30; // web search adds latency
@@ -66,33 +72,67 @@ export async function POST(
       createdAt: new Date(),
     });
 
-    // ── Build system prompt ──
+    // ── Load original creation chat for background context ──
+    // The parent told the creation AI about their child, the story, characters etc.
+    // We inject this so the co-author never has to ask again.
+    let creationChatSummary = "";
+    try {
+      const story = await db.query.stories.findFirst({
+        where: eq(stories.id, storyId),
+        columns: { projectId: true },
+      });
+
+      if (story?.projectId) {
+        const creationSession = await db.query.chatSessions.findFirst({
+          where: eq(chatSessions.projectId, story.projectId),
+        });
+
+        if (creationSession) {
+          const originalMessages = await db
+            .select({ role: chatMessages.role, content: chatMessages.content })
+            .from(chatMessages)
+            .where(eq(chatMessages.sessionId, creationSession.id))
+            .orderBy(asc(chatMessages.createdAt));
+
+          if (originalMessages.length > 0) {
+            creationChatSummary =
+              "\n\nORIGINAL CREATION CONVERSATION (what the parent told us before the first draft):\n" +
+              originalMessages
+                .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+                .join("\n\n") +
+              "\n\nUse this as background. Never ask for information already shared here.";
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Could not load creation chat context:", err);
+    }
     const spreadContext = currentSpread?.pages?.length
       ? `\nCURRENT SPREAD (Pages ${currentSpread.pages[0]?.pageNumber ?? "?"}–${currentSpread.pages[1]?.pageNumber ?? "?"}):\nLEFT: ${currentSpread.pages[0]?.text || "(blank)"}\nRIGHT: ${currentSpread.pages[1]?.text || "(blank)"}`
       : "";
 
-    const systemPrompt = `You are a collaborative children's book co-author working with a parent on "${storyContext.title}".
+    const systemPrompt = `You are a co-author chat assistant helping a parent refine their children's book "${storyContext.title}".
+${spreadContext}${creationChatSummary}
 
-You've already shared your initial thoughts on the draft. Now you're here to help refine it — whatever the parent needs.
-${spreadContext}
+RESPONSE LENGTH — HARD RULE:
+1-3 sentences maximum. Never more. No lists. No bullet points. No headers. Just a short, direct conversational reply.
+
+NEVER WRITE PAGE CONTENT IN CHAT:
+Never write rewritten pages, revised text, or story content in your reply. The rewrite happens when the parent clicks "Apply Changes" — not here. If you've figured out what to change, confirm it in one sentence and stop. Example: "Got it — I'll swap Burnley for Sunderland throughout and update the manager to Kim Hellberg." That's it. Don't write it out.
 
 YOUR ROLE:
-- You can discuss ANY aspect of the story: a single word, a character name, the tone of the entire book, educational goals, pronouns, reading level, plot changes, pacing — anything.
-- Follow the parent's lead. If they want to change one word, help with that. If they want to rebuild the story around phonics, help with that too.
-- Ask clarifying questions when the request is broad. "Make it funnier" → "What kind of funny? Silly slapstick, or dry wit? More funny dialogue, or funny situations?"
-- Be specific in your suggestions. Don't say "I could make it more engaging" — say "I could add a moment where Bodi accidentally sits on the map and everyone has to peel it off her fur."
-- Keep responses conversational and brief. 2-3 sentences usually. Don't write essays.
-- You're DISCUSSING changes, not making them. The parent clicks "Apply changes" when ready.
+- Discuss changes conversationally. One question if needed, one confirmation when ready.
+- If the request is clear, confirm what you'll do and stop.
+- If the request is broad, ask ONE clarifying question only.
+- Never ask for information already shared in the original creation conversation above.
 
 WEB SEARCH:
-- You have access to web search. Use it whenever the parent asks about real-world information: football fixtures, match results, league tables, player names, managers, current events, or anything that might have changed recently.
-- Search proactively rather than saying you don't know. If they ask about "the 2025-26 Championship season", search for it — don't cite a knowledge cutoff.
-- After searching, incorporate the accurate details naturally into your suggestions.
+- Search for real-world facts when needed (fixtures, results, managers, players).
+- After searching, use what you found in a single brief confirmation. Don't list everything you found.
 
 IMPORTANT:
-- If the parent reveals something about their child (learning phonics, starting school, a fear, a preference), acknowledge it naturally. This information will help make this story — and future stories — better for their child.
-- Never be precious about the draft. The parent's vision matters more than yours.
-- If asked about something you're unsure of, be honest rather than confident.`;
+- Never be precious about the draft.
+- If the parent reveals something new about their child, acknowledge it in one sentence.`;
 
     const messages = [
       ...conversationHistory,
@@ -101,7 +141,7 @@ IMPORTANT:
 
     const response = await client.messages.create({
       model: MODEL,
-      max_tokens: 600,
+      max_tokens: 300, // short chat replies only — rewrites happen via Apply Changes
       system: systemPrompt,
       // ✅ web search — lets Claude look up real fixtures, managers, players etc
       tools: [
