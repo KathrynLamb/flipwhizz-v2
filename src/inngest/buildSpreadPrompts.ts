@@ -4,21 +4,24 @@
 // Claude acts as art director: reads assigned characters + locations + page text,
 // writes a locked illustration brief per spread into story_spread_scene.
 // generateBookSpreads hard-fails if this record is missing.
+//
+// FIX: Auto-populates story_spread_presence when rows are missing entirely,
+// instead of silently passing the guard and producing characterless scene records.
 
 import { inngest } from "@/inngest/client";
 import { db } from "@/db";
 import {
+  stories,
   storySpreads,
   storyPages,
   storySpreadPresence,
   storySpreadScene,
   characters,
   locations,
+  worldCharacters,
   storyStyleGuide,
   storyWorkflowProgress,
 } from "@/db/schema";
-// Note: storyWorkflowProgress must have promptsBuilt + promptsBuiltAt columns.
-// Run migration_prompts_built.sql and add the fields to schema.ts before deploying.
 import { eq, inArray, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { v4 as uuid } from "uuid";
@@ -216,10 +219,10 @@ export const buildSpreadPrompts = inngest.createFunction(
     const pageText = new Map(pages.map((p) => [p.id, p.text ?? ""]));
 
     /* ------------------------------------------------------------------ */
-    /* Load spread presence (characters + locations per spread)            */
+    /* Load spread presence — auto-populate if entirely missing           */
     /* ------------------------------------------------------------------ */
 
-    const presenceRows = await step.run("load-spread-presence", async () => {
+    let presenceRows = await step.run("load-spread-presence", async () => {
       return db.query.storySpreadPresence.findMany({
         where: inArray(
           storySpreadPresence.spreadId,
@@ -228,11 +231,90 @@ export const buildSpreadPrompts = inngest.createFunction(
       });
     });
 
-    // SAFEGUARD: Check for empty presence before bothering Claude
+    // SAFEGUARD: If no presence rows exist at all, auto-populate from world characters.
+    // This handles stories where decideSpreadScenes never ran or failed silently before
+    // the fan-out fired. Without this, buildSpreadPrompts writes scene records with no
+    // character context, and generateSingleSpread hard-fails on every spread.
+    if (presenceRows.length === 0) {
+      console.warn(
+        `⚠️ [build-spread-prompts] No story_spread_presence rows found for story ${storyId}. ` +
+          `Auto-populating all world characters as primary across all spreads.`
+      );
+
+      presenceRows = await step.run("auto-populate-presence", async () => {
+        const storyRecord = await db.query.stories.findFirst({
+          where: eq(stories.id, storyId),
+          columns: { worldId: true },
+        });
+
+        if (!storyRecord?.worldId) {
+          throw new Error(
+            `Cannot auto-populate presence: story ${storyId} has no worldId`
+          );
+        }
+
+        const worldCharRows = await db.query.worldCharacters.findMany({
+          where: eq(worldCharacters.worldId, storyRecord.worldId),
+        });
+
+        if (worldCharRows.length === 0) {
+          throw new Error(
+            `Cannot auto-populate presence: no world characters found for worldId ${storyRecord.worldId}`
+          );
+        }
+
+        const defaultCharacters: SpreadPresenceCharacter[] = worldCharRows.map(
+          (wc) => ({
+            characterId: wc.characterId,
+            role: "primary",
+          })
+        );
+
+        console.log(
+          `  ↳ Auto-populating ${spreads.length} spreads with ${defaultCharacters.length} characters: ` +
+            defaultCharacters.map((c) => c.characterId).join(", ")
+        );
+
+        for (const spread of spreads) {
+          await db
+            .insert(storySpreadPresence)
+            .values({
+              id: uuid(),
+              spreadId: spread.id,
+              characters: defaultCharacters,
+              locations: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .onConflictDoNothing();
+        }
+
+        // Reload to confirm writes
+        const reloaded = await db.query.storySpreadPresence.findMany({
+          where: inArray(
+            storySpreadPresence.spreadId,
+            spreads.map((s) => s.id)
+          ),
+        });
+
+        if (reloaded.length === 0) {
+          throw new Error(
+            `Auto-populate presence failed: still no rows after insert for story ${storyId}`
+          );
+        }
+
+        console.log(
+          `  ✅ Auto-populated ${reloaded.length}/${spreads.length} presence rows`
+        );
+        return reloaded;
+      });
+    }
+
+    // SAFEGUARD: Check for partially empty presence (rows exist but no characters)
     const emptyPresence = presenceRows.filter(
       (r) => !r.characters || (r.characters as SpreadPresenceCharacter[]).length === 0
     );
-    if (emptyPresence.length === spreads.length) {
+    if (emptyPresence.length === presenceRows.length) {
       throw new Error(
         `Cannot build prompts: all ${spreads.length} spreads have empty character presence. ` +
           `Run decide-spread-scenes first.`
@@ -376,7 +458,9 @@ IMPORTANT RULES:
         .filter((c) => c.role === "primary")
         .map((c) => {
           const char = charById.get(c.characterId);
-          return char ? `${char.name} (${char.species !== "human" ? char.breed || char.species : "human"})` : c.characterId;
+          return char
+            ? `${char.name} (${char.species !== "human" ? char.breed || char.species : "human"})`
+            : c.characterId;
         });
 
       const backgroundChars = chars
@@ -517,7 +601,9 @@ ${spreadContexts.join("\n\n---\n\n")}
             },
           });
 
-        console.log(`  ✅ Spread ${brief.spreadIndex}: "${brief.mood}" — ${brief.illustrationPrompt.slice(0, 80)}...`);
+        console.log(
+          `  ✅ Spread ${brief.spreadIndex}: "${brief.mood}" — ${brief.illustrationPrompt.slice(0, 80)}...`
+        );
       }
 
       console.log(`✅ All ${(rawToolInput as ToolInput).spreads.length} scene records saved`);
@@ -553,7 +639,9 @@ ${spreadContexts.join("\n\n---\n\n")}
         );
       }
 
-      console.log(`✅ Scene validation passed: ${sceneRows.length}/${spreads.length} spreads have locked prompts`);
+      console.log(
+        `✅ Scene validation passed: ${sceneRows.length}/${spreads.length} spreads have locked prompts`
+      );
     });
 
     /* ------------------------------------------------------------------ */
