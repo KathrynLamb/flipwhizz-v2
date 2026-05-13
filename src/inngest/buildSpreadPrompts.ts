@@ -11,14 +11,13 @@
 import { inngest } from "@/inngest/client";
 import { db } from "@/db";
 import {
-  stories,
   storySpreads,
   storyPages,
   storySpreadPresence,
   storySpreadScene,
   characters,
+  storyCharacters,
   locations,
-  worldCharacters,
   storyStyleGuide,
   storyWorkflowProgress,
 } from "@/db/schema";
@@ -242,30 +241,19 @@ export const buildSpreadPrompts = inngest.createFunction(
       );
 
       presenceRows = await step.run("auto-populate-presence", async () => {
-        const storyRecord = await db.query.stories.findFirst({
-          where: eq(stories.id, storyId),
-          columns: { worldId: true },
+        const storyCharRows = await db.query.storyCharacters.findMany({
+          where: eq(storyCharacters.storyId, storyId),
         });
 
-        if (!storyRecord?.worldId) {
+        if (storyCharRows.length === 0) {
           throw new Error(
-            `Cannot auto-populate presence: story ${storyId} has no worldId`
+            `Cannot auto-populate presence: no storyCharacters found for story ${storyId}`
           );
         }
 
-        const worldCharRows = await db.query.worldCharacters.findMany({
-          where: eq(worldCharacters.worldId, storyRecord.worldId),
-        });
-
-        if (worldCharRows.length === 0) {
-          throw new Error(
-            `Cannot auto-populate presence: no world characters found for worldId ${storyRecord.worldId}`
-          );
-        }
-
-        const defaultCharacters: SpreadPresenceCharacter[] = worldCharRows.map(
-          (wc) => ({
-            characterId: wc.characterId,
+        const defaultCharacters: SpreadPresenceCharacter[] = storyCharRows.map(
+          (sc) => ({
+            characterId: sc.characterId,
             role: "primary",
           })
         );
