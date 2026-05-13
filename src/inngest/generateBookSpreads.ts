@@ -348,9 +348,10 @@ export const generateBookSpreads = inngest.createFunction(
 
     /* ------------------------------------------------------------------ */
     /* PREFLIGHT 1: Verify story_spread_scene records exist for all spreads */
+    /* Auto-triggers build-spread-prompts if missing rather than hard failing */
     /* ------------------------------------------------------------------ */
 
-    await step.run("preflight-scene-records", async () => {
+    const preflightResult = await step.run("preflight-scene-records", async () => {
       const spreads = await db
         .select({ id: storySpreads.id, spreadIndex: storySpreads.spreadIndex })
         .from(storySpreads)
@@ -375,18 +376,19 @@ export const generateBookSpreads = inngest.createFunction(
       const missingCount = spreads.length - sceneRecords.length;
 
       if (missingCount > 0) {
-        const missingSpreadIds = spreads
-          .filter((s) => !sceneRecords.some((sc) => sc.spreadId === s.id))
-          .map((s) => s.spreadIndex);
-
-        throw new Error(
-          `Generate blocked: ${missingCount} spread(s) are missing story_spread_scene records ` +
-            `(indexes: ${missingSpreadIds.join(", ")}). ` +
-            `Run build-spread-prompts before generating illustrations.`
+        // Auto-trigger build-spread-prompts instead of hard failing.
+        // Handles all stories mid-pipeline before buildSpreadPrompts existed.
+        console.log(
+          `⚠️ ${missingCount} spread(s) missing scene records — auto-triggering build-spread-prompts for ${storyId}`
         );
+        await inngest.send({
+          name: "story/build-spread-prompts",
+          data: { storyId },
+        });
+        return { deferred: true, reason: "missing_scene_records" };
       }
 
-      // Also check for empty prompts
+      // Check for empty prompts
       const sceneDetails = await db
         .select({
           spreadId: storySpreadScene.spreadId,
@@ -405,16 +407,26 @@ export const generateBookSpreads = inngest.createFunction(
       );
 
       if (emptyPrompts.length > 0) {
-        throw new Error(
-          `Generate blocked: ${emptyPrompts.length} spread(s) have empty illustration prompts. ` +
-            `Re-run build-spread-prompts.`
+        console.log(
+          `⚠️ ${emptyPrompts.length} spread(s) have empty prompts — auto-triggering build-spread-prompts for ${storyId}`
         );
+        await inngest.send({
+          name: "story/build-spread-prompts",
+          data: { storyId },
+        });
+        return { deferred: true, reason: "empty_prompts" };
       }
 
       console.log(
         `✅ Scene preflight passed: all ${spreads.length} spreads have locked illustration prompts`
       );
+      return { deferred: false };
     });
+
+    // If deferred, build-spread-prompts will chain back into generate-spreads when done
+    if (preflightResult.deferred) {
+      return { status: "deferred_to_build_spread_prompts", storyId };
+    }
 
     /* ------------------------------------------------------------------ */
     /* PREFLIGHT 2: Auto-generate portraits for any character missing one  */
