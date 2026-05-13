@@ -4,6 +4,8 @@
 // 1. loadSpreadRecord now also loads story_spread_scene
 // 2. generateSingleSpread hard-fails if scene record is missing (no more fallback)
 // 3. Gemini prompt uses illustrationPrompt, compositionNotes, mood, doNotInclude, negativePrompt
+// 4. FIX: Portrait check falls back to referenceUrl / fullBodyUrl before failing,
+//    consistent with the preflight check in generateBookSpreads orchestrator.
 
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
@@ -376,8 +378,6 @@ export const generateBookSpreads = inngest.createFunction(
       const missingCount = spreads.length - sceneRecords.length;
 
       if (missingCount > 0) {
-        // Auto-trigger build-spread-prompts instead of hard failing.
-        // Handles all stories mid-pipeline before buildSpreadPrompts existed.
         console.log(
           `⚠️ ${missingCount} spread(s) missing scene records — auto-triggering build-spread-prompts for ${storyId}`
         );
@@ -423,7 +423,6 @@ export const generateBookSpreads = inngest.createFunction(
       return { deferred: false };
     });
 
-    // If deferred, build-spread-prompts will chain back into generate-spreads when done
     if (preflightResult.deferred) {
       return { status: "deferred_to_build_spread_prompts", storyId };
     }
@@ -820,14 +819,18 @@ export const generateSingleSpread = inngest.createFunction(
       const missingPortraits: string[] = [];
 
       // 1. CHARACTER PORTRAITS — images first
+      // FIX: Fall back to referenceUrl / fullBodyUrl if portraitUrl is missing,
+      // consistent with the preflight check in generateBookSpreads orchestrator.
       for (const c of featuredRefs) {
-        if (!c.portraitUrl || isDataUrl(c.portraitUrl)) {
+        const charImageUrl = c.portraitUrl || c.referenceUrl || c.fullBodyUrl;
+
+        if (!charImageUrl || isDataUrl(charImageUrl)) {
           missingPortraits.push(c.name);
           continue;
         }
 
         try {
-          parts.push(await getImagePart(c.portraitUrl));
+          parts.push(await getImagePart(charImageUrl));
         } catch (err) {
           missingPortraits.push(`${c.name} (fetch failed)`);
           continue;
@@ -915,7 +918,7 @@ export const generateSingleSpread = inngest.createFunction(
 
       // 6. SCENE INSTRUCTION
       if (hasPlan && strategistPlan!.recommendedPrompt) {
-        // Strategist plan path (manual revision flow) — unchanged
+        // Strategist plan path (manual revision flow)
         const backgroundSection =
           backgroundNames.length > 0
             ? `\nBACKGROUND CHARACTERS (no portrait sent — draw as smaller, less detailed figures):\n${backgroundNames.join(", ")}.`
@@ -972,11 +975,7 @@ AVOID: ${geminiAvoidBlock}${feedback ? `\nADDITIONAL FEEDBACK: ${feedback}` : ""
             ? `\nDO NOT INCLUDE these characters in this illustration: ${doNotIncludeNames.join(", ")}.`
             : "";
 
-        // Merge scene negative prompt with style guide avoid block
-        const fullAvoidBlock = [
-          scene?.negativePrompt,
-          geminiAvoidBlock,
-        ]
+        const fullAvoidBlock = [scene?.negativePrompt, geminiAvoidBlock]
           .filter(Boolean)
           .join(", ");
 
