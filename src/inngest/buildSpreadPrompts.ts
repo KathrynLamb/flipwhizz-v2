@@ -230,14 +230,20 @@ export const buildSpreadPrompts = inngest.createFunction(
       });
     });
 
-    // SAFEGUARD: If no presence rows exist at all, auto-populate from world characters.
-    // This handles stories where decideSpreadScenes never ran or failed silently before
-    // the fan-out fired. Without this, buildSpreadPrompts writes scene records with no
-    // character context, and generateSingleSpread hard-fails on every spread.
-    if (presenceRows.length === 0) {
+    // SAFEGUARD: Auto-populate presence if rows are missing entirely OR all rows have
+    // empty characters arrays. Covers two failure modes:
+    //   1. decideSpreadScenes never ran → zero rows
+    //   2. decideSpreadScenes ran but wrote empty arrays → rows exist but useless
+    const allEmpty =
+      presenceRows.length === 0 ||
+      presenceRows.every(
+        (r) => !r.characters || (r.characters as SpreadPresenceCharacter[]).length === 0
+      );
+
+    if (allEmpty) {
       console.warn(
-        `⚠️ [build-spread-prompts] No story_spread_presence rows found for story ${storyId}. ` +
-          `Auto-populating all world characters as primary across all spreads.`
+        `⚠️ [build-spread-prompts] Presence rows missing or all empty for story ${storyId}. ` +
+          `Auto-populating all story characters as primary across all spreads.`
       );
 
       presenceRows = await step.run("auto-populate-presence", async () => {
@@ -274,7 +280,13 @@ export const buildSpreadPrompts = inngest.createFunction(
               createdAt: new Date(),
               updatedAt: new Date(),
             })
-            .onConflictDoNothing();
+            .onConflictDoUpdate({
+              target: storySpreadPresence.spreadId,
+              set: {
+                characters: defaultCharacters,
+                updatedAt: new Date(),
+              },
+            });
         }
 
         // Reload to confirm writes
@@ -285,9 +297,13 @@ export const buildSpreadPrompts = inngest.createFunction(
           ),
         });
 
-        if (reloaded.length === 0) {
+        const stillEmpty = reloaded.filter(
+          (r) => !r.characters || (r.characters as SpreadPresenceCharacter[]).length === 0
+        );
+
+        if (reloaded.length === 0 || stillEmpty.length === reloaded.length) {
           throw new Error(
-            `Auto-populate presence failed: still no rows after insert for story ${storyId}`
+            `Auto-populate presence failed: rows still empty after upsert for story ${storyId}`
           );
         }
 
@@ -298,16 +314,10 @@ export const buildSpreadPrompts = inngest.createFunction(
       });
     }
 
-    // SAFEGUARD: Check for partially empty presence (rows exist but no characters)
+    // SAFEGUARD: Warn if some (but not all) spreads still have empty presence
     const emptyPresence = presenceRows.filter(
       (r) => !r.characters || (r.characters as SpreadPresenceCharacter[]).length === 0
     );
-    if (emptyPresence.length === presenceRows.length) {
-      throw new Error(
-        `Cannot build prompts: all ${spreads.length} spreads have empty character presence. ` +
-          `Run decide-spread-scenes first.`
-      );
-    }
     if (emptyPresence.length > 0) {
       console.warn(
         `⚠️ ${emptyPresence.length} spread(s) have empty character presence — will use text-only direction`
