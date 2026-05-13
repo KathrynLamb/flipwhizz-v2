@@ -32,6 +32,8 @@ import { v4 as uuid } from "uuid";
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 const MODEL = "claude-sonnet-4-20250514";
 
+const MAX_PRIMARY_CHARACTERS = 3;
+
 /* -------------------------------------------------------------------------- */
 /*                               TOOL SCHEMA                                  */
 /* -------------------------------------------------------------------------- */
@@ -256,11 +258,10 @@ export const buildSpreadPrompts = inngest.createFunction(
             `Cannot auto-populate presence: no storyCharacters found for story ${storyId}`
           );
         }
-
         const defaultCharacters: SpreadPresenceCharacter[] = storyCharRows.map(
-          (sc) => ({
+          (sc, index) => ({
             characterId: sc.characterId,
-            role: "primary",
+            role: index < MAX_PRIMARY_CHARACTERS ? "primary" : "background",
           })
         );
 
