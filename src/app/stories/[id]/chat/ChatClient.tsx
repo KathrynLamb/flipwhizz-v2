@@ -42,7 +42,7 @@ export default function ChatPage() {
   const [storyCreating, setStoryCreating] = useState(false);
   const [storyId, setStoryId] = useState<string | null>(null);
   const [worldContext, setWorldContext] = useState<WorldContext | null>(null);
-  const [creationError, setCreationError] = useState(false); // ✅ error state
+  const [creationError, setCreationError] = useState(false);
 
   const readerIdParam = useMemo(() => searchParams.get("readerId"), [searchParams]);
   const [readerContext, setReaderContext] = useState<{ name: string; age?: string; interests?: string[] } | null>(null);
@@ -94,22 +94,57 @@ export default function ChatPage() {
     loadWorldContext();
   }, [worldIdParam, bookNumberParam]);
 
-  async function waitForPagesAndNavigate(nextStoryId: string) {
-    // Try a few quick polls first
-    for (let attempt = 0; attempt < 5; attempt++) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // PERSISTENT POLL: once storyId is set, keep polling /api/stories/:id/pages
+  // until at least one page exists, then client-side navigate.
+  // Max 2 minutes (60 × 2 s). No page refresh required.
+  // ─────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!storyId) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 60; // 2 min
+    const INTERVAL_MS = 2000;
+
+    async function poll() {
+      if (cancelled) return;
+      if (attempts >= MAX_ATTEMPTS) {
+        // Give up quietly — user is still on the chat page
+        console.warn("[poll] Timed out waiting for pages on story", storyId);
+        return;
+      }
+
+      attempts++;
+
       try {
-        const res = await fetch(`/api/stories/${nextStoryId}/pages`, { cache: "no-store" });
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          window.location.href = `/stories/${nextStoryId}/pages`;
-          return;
+        const res = await fetch(`/api/stories/${storyId}/pages`, {
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            if (!cancelled) {
+              router.push(`/stories/${storyId}/pages`);
+            }
+            return;
+          }
         }
-      } catch {}
-      await new Promise(r => setTimeout(r, 800));
+      } catch {
+        // Network blip — keep trying
+      }
+
+      if (!cancelled) {
+        setTimeout(poll, INTERVAL_MS);
+      }
     }
-    // Navigate regardless — don't leave mobile hanging
-    window.location.href = `/stories/${nextStoryId}/pages`;
-  }
+
+    poll();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [storyId, router]);
 
   useEffect(() => {
     async function initializeStudio() {
@@ -131,9 +166,8 @@ export default function ChatPage() {
         const storyData = await storyRes.json();
 
         if (storyData.storyId) {
+          // Setting storyId triggers the persistent poll above
           setStoryId(storyData.storyId);
-          await waitForPagesAndNavigate(storyData.storyId);
-          return;
         }
       } catch (err) {
         console.error("Studio sync failed:", err);
@@ -143,7 +177,7 @@ export default function ChatPage() {
     }
 
     initializeStudio();
-  }, [projectId, router]);
+  }, [projectId]);
 
   useEffect(() => {
     if (projectId && messages.length > 0) {
@@ -168,7 +202,7 @@ export default function ChatPage() {
     creationTriggeredRef.current = true;
 
     setStoryCreating(true);
-    setCreationError(false); // ✅ clear any previous error
+    setCreationError(false);
 
     try {
       const res = await fetch("/api/stories/create-from-chat", {
@@ -183,17 +217,17 @@ export default function ChatPage() {
       const data = await res.json();
 
       if (data.storyId) {
+        // Setting storyId kicks off the persistent poll — no manual navigation needed
         setStoryId(data.storyId);
-        await waitForPagesAndNavigate(data.storyId);
       } else {
         console.error("No storyId returned from create-from-chat", data);
         creationTriggeredRef.current = false;
-        setCreationError(true); // ✅ show error
+        setCreationError(true);
       }
     } catch (err) {
       console.error("Story creation failed:", err);
       creationTriggeredRef.current = false;
-      setCreationError(true); // ✅ show error
+      setCreationError(true);
     } finally {
       setStoryCreating(false);
     }
@@ -336,6 +370,16 @@ export default function ChatPage() {
               </span>
             </div>
           )}
+
+          {/* Waiting indicator — shown after story created, while polling */}
+          {storyId && !storyCreating && (
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-[#D94590]" />
+              <span className="text-sm font-semibold text-[#D94590] hidden sm:inline">
+                Generating…
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -366,7 +410,7 @@ export default function ChatPage() {
                   )}
                 </div>
 
-                {/* Heading — personalised for world context */}
+                {/* Heading */}
                 <div className="space-y-3">
                   {isWorldBook ? (
                     <>
@@ -420,7 +464,7 @@ export default function ChatPage() {
                   </div>
                 )}
 
-                {/* Prompt suggestions — context-aware */}
+                {/* Prompt suggestions */}
                 <div className="flex flex-wrap gap-2 justify-center pt-4 overflow-hidden">
                   {isWorldBook
                     ? [
@@ -526,7 +570,28 @@ export default function ChatPage() {
               </motion.div>
             )}
 
-            {/* ✅ Error state with retry */}
+            {/* Waiting for generation after story created */}
+            {storyId && !storyCreating && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-end gap-2"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 flex items-center justify-center shadow-sm">
+                  <Sparkles className="w-4 h-4 text-white" />
+                </div>
+                <div className="bg-gradient-to-br from-fuchsia-50 to-pink-50 border border-fuchsia-200 px-5 py-3 rounded-[20px] rounded-bl-[4px] shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#D94590]" />
+                    <p className="text-[16px] leading-[1.4] text-gray-900 font-semibold">
+                      Illustrating your story… you'll be taken there automatically ✨
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Error state with retry */}
             {creationError && !storyCreating && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
@@ -605,11 +670,13 @@ export default function ChatPage() {
                   placeholder={
                     storyCreating
                       ? "Writing your story…"
-                      : isWorldBook
-                        ? `What happens next in ${worldName}...`
-                        : "Message"
+                      : storyId
+                        ? "Illustrating… you'll be redirected automatically"
+                        : isWorldBook
+                          ? `What happens next in ${worldName}...`
+                          : "Message"
                   }
-                  disabled={storyCreating}
+                  disabled={storyCreating || !!storyId}
                   className="w-full max-h-[100px] bg-transparent border-0 focus:ring-0 focus:outline-none text-[16px] text-gray-900 placeholder:text-gray-500 resize-none font-normal disabled:cursor-not-allowed disabled:opacity-60"
                   rows={1}
                   style={{ lineHeight: "1.4" }}
@@ -618,12 +685,12 @@ export default function ChatPage() {
 
               <button
                 onClick={sendMessage}
-                disabled={!input.trim() || loading || storyCreating}
+                disabled={!input.trim() || loading || storyCreating || !!storyId}
                 className="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center transition-all duration-200 active:scale-90"
                 style={{
-                  background: input.trim() && !storyCreating ? "#D94590" : "#E5E7EB",
-                  color: input.trim() && !storyCreating ? "white" : "#9CA3AF",
-                  boxShadow: input.trim() && !storyCreating ? "0 3px 12px rgba(217,69,144,0.3)" : "none",
+                  background: input.trim() && !storyCreating && !storyId ? "#D94590" : "#E5E7EB",
+                  color: input.trim() && !storyCreating && !storyId ? "white" : "#9CA3AF",
+                  boxShadow: input.trim() && !storyCreating && !storyId ? "0 3px 12px rgba(217,69,144,0.3)" : "none",
                 }}
               >
                 {loading ? (
