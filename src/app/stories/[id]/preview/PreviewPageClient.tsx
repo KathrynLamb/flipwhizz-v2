@@ -288,6 +288,19 @@ function GenerationPanel({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showImageLightbox, setShowImageLightbox] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [buildingPrompts, setBuildingPrompts] = useState(false);
+const [buildRetryAt, setBuildRetryAt] = useState<number | null>(null);
+
+useEffect(() => {
+  if (!buildRetryAt) return;
+  const ms = buildRetryAt - Date.now();
+  const timer = setTimeout(() => {
+    setBuildingPrompts(false);
+    setBuildRetryAt(null);
+    handleQuickGenerate();
+  }, Math.max(ms, 0));
+  return () => clearTimeout(timer);
+}, [buildRetryAt]);
 
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -354,6 +367,13 @@ function GenerationPanel({
           pageLabel: spread.pageLabel,
         }),
       });
+      if (res.status === 202) {
+        const data = await res.json();
+        setBuildingPrompts(true);
+        setBuildRetryAt(Date.now() + (data.retryAfter ?? 35) * 1000);
+        setStatus("queued");
+        return;
+      }
       if (!res.ok) throw new Error((await res.text()) || "Request failed");
       const { jobId: id, styleWarning: sw } = await res.json();
       setJobId(id);
@@ -490,9 +510,19 @@ function GenerationPanel({
                     <Sparkles className="w-6 h-6 text-violet-400 animate-pulse" />
                   </div>
                   <p className="text-sm font-medium text-gray-500">
-                    {status === "queued"
+                    {/* {status === "queued"
                       ? "Queued for generation…"
-                      : "Illustrating your spread…"}
+                      : "Illustrating your spread…"} */}
+
+{busy && (
+  <p className="text-sm font-medium text-gray-500">
+    {buildingPrompts
+      ? "Preparing your story — will retry automatically…"
+      : status === "queued"
+      ? "Queued for generation…"
+      : "Illustrating your spread…"}
+  </p>
+)}
                   </p>
                   <div className="flex gap-1 mt-1">
                     {[0, 1, 2].map((i) => (
