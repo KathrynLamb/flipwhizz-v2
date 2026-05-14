@@ -21,9 +21,7 @@ cloudinary.config({
 
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const IMAGE_MODEL = "gemini-3-pro-image-preview";
-// const TEXT_MODEL = "gemini-2.5-flash-preview-05-20";
 const TEXT_MODEL = "gemini-2.5-flash";
-
 
 type ColorPalette = {
   primary?: string;
@@ -69,6 +67,10 @@ type LinkedStory = {
   colorPalette: unknown;
   sampleIllustrationUrl: string | null;
 } | null;
+
+/* ------------------------------------------------------------------ */
+/* UTILITIES                                                           */
+/* ------------------------------------------------------------------ */
 
 function stripCodeFences(input: string) {
   return input
@@ -119,26 +121,24 @@ async function getImagePart(url: string) {
     const headerType = res.headers.get("content-type")?.toLowerCase() || "";
     const lower = url.toLowerCase();
 
-    const mimeType =
-      headerType.startsWith("image/")
-        ? headerType
-        : lower.endsWith(".png")
-          ? "image/png"
-          : lower.endsWith(".webp")
-            ? "image/webp"
-            : "image/jpeg";
+    const mimeType = headerType.startsWith("image/")
+      ? headerType
+      : lower.endsWith(".png")
+      ? "image/png"
+      : lower.endsWith(".webp")
+      ? "image/webp"
+      : "image/jpeg";
 
-    return {
-      inlineData: {
-        data: buffer.toString("base64"),
-        mimeType,
-      },
-    };
+    return { inlineData: { data: buffer.toString("base64"), mimeType } };
   } catch (e) {
     console.error("❌ Failed to load image:", url, e);
     return null;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* STYLE BLOCK                                                         */
+/* ------------------------------------------------------------------ */
 
 function buildStyleBlock(style: {
   userNotes?: string | null;
@@ -192,6 +192,10 @@ function buildStyleBlock(style: {
     avoidBlock: avoidParts.join(", "),
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* DB HELPERS                                                          */
+/* ------------------------------------------------------------------ */
 
 async function getLinkedStory(characterId: string): Promise<LinkedStory> {
   const row = await db
@@ -249,6 +253,73 @@ async function getDefaultOutfit(storyId: string, characterId: string) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* ANIMAL OUTFIT SYNC                                                  */
+/* Animals don't have "outfits" — their outfit record should describe  */
+/* their coat/markings/collar, derived from the appearance field.      */
+/* This prevents stale outfit text (e.g. "golden retriever coat")      */
+/* from overriding the correct appearance in the prompt.               */
+/* ------------------------------------------------------------------ */
+
+async function syncAnimalOutfitFromAppearance(args: {
+  storyId: string;
+  characterId: string;
+  appearance: string;
+  defaultOutfit: { outfitKey: string; outfitDescription: string } | null;
+}): Promise<string | null> {
+  try {
+    const response = await gemini.models.generateContent({
+      model: TEXT_MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `Extract ONLY the physical coat/fur description and any collar or accessories from this animal appearance text.
+Write one concise sentence of 20-40 words. Do not invent anything not mentioned.
+Do not include species, breed, body shape, or personality.
+
+APPEARANCE:
+${args.appearance}`,
+            },
+          ],
+        },
+      ],
+      config: { temperature: 0.1 },
+    });
+
+    const coatDesc = compactSentence(firstTextFromResponse(response));
+    if (!coatDesc || coatDesc.length < 10) return null;
+
+    // Update all outfits for this character in this story
+    await db
+      .update(characterStoryOutfits)
+      .set({ outfitDescription: coatDesc })
+      .where(
+        and(
+          eq(characterStoryOutfits.storyId, args.storyId),
+          eq(characterStoryOutfits.characterId, args.characterId)
+        )
+      );
+
+    // Update spread outfit assignments too
+    await db
+      .update(spreadCharacterOutfits)
+      .set({ outfitDescription: coatDesc })
+      .where(eq(spreadCharacterOutfits.characterId, args.characterId));
+
+    console.log("✅ Animal outfit synced to appearance:", coatDesc);
+    return coatDesc;
+  } catch (err) {
+    console.warn("⚠️ Failed to sync animal outfit description:", err);
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* HUMAN VISION ANALYSIS (unchanged)                                   */
+/* ------------------------------------------------------------------ */
+
 async function analyzeReferencePhoto(
   imagePart: any,
   characterName: string
@@ -296,9 +367,7 @@ Rules:
         ],
       },
     ],
-    config: {
-      temperature: 0.2,
-    },
+    config: { temperature: 0.2 },
   });
 
   const text = firstTextFromResponse(response);
@@ -395,9 +464,7 @@ Instructions:
         ],
       },
     ],
-    config: {
-      temperature: 0.2,
-    },
+    config: { temperature: 0.2 },
   });
 
   const text = firstTextFromResponse(response);
@@ -423,6 +490,12 @@ Instructions:
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* PROMPT BUILDER                                                      */
+/* isAnimal switches reference instruction to coat-colour-hardened     */
+/* version that explicitly blocks breed substitution by Gemini.        */
+/* ------------------------------------------------------------------ */
+
 function buildStrongPrompt(args: {
   characterName: string;
   resolvedAppearance: string;
@@ -431,6 +504,7 @@ function buildStrongPrompt(args: {
   styleBlock: string;
   avoidBlock: string;
   hasReference: boolean;
+  isAnimal: boolean;
   useStoryOutfit: boolean;
   defaultOutfit: { outfitKey: string; outfitDescription: string } | null;
 }) {
@@ -440,18 +514,38 @@ function buildStrongPrompt(args: {
 
   const outfitInstruction =
     args.useStoryOutfit && args.defaultOutfit
-      ? `OUTFIT:\nUse this outfit exactly: ${args.defaultOutfit.outfitDescription}\nThis overrides any clothing visible in the reference photo.\n`
+      ? `COAT / OUTFIT:\nMatch this exactly: ${args.defaultOutfit.outfitDescription}\n${
+          args.isAnimal
+            ? "This describes the animal's actual coat, markings, and accessories — do not substitute.\n"
+            : "This overrides any clothing visible in the reference photo.\n"
+        }`
       : "";
 
-  const referenceInstruction = args.hasReference
-    ? `REFERENCE PRIORITY:
+  let referenceInstruction = "";
+  if (args.hasReference) {
+    if (args.isAnimal) {
+      // Hardened colour-lock instruction for animals.
+      // Gemini has a strong prior towards golden retrievers / typical friendly dogs.
+      // We have to be explicit that coat colour is non-negotiable.
+      referenceInstruction = `ANIMAL REFERENCE — NON-NEGOTIABLE IDENTITY REQUIREMENTS:
+- The uploaded photo is the ONLY source of truth for this animal's appearance
+- COAT COLOUR: reproduce EXACTLY what is in the photo — if the photo shows BLACK fur, the illustration MUST show BLACK fur. Not brown, not golden, not cream. BLACK.
+- Match precisely: breed type, coat colour, coat pattern, all markings, ear shape, tail style, body proportions, eye colour
+- This is a SPECIFIC real animal — do NOT substitute a generic, differently-coloured, or idealised version
+- A golden retriever is NOT an acceptable substitute for a black and white dog
+- A brown dog is NOT an acceptable substitute for a black dog
+- Render as a warm storybook illustration — but the coat colour must match the photo exactly
+`;
+    } else {
+      referenceInstruction = `REFERENCE PRIORITY:
 - The uploaded reference photo is the PRIMARY identity anchor for this character
 - Keep the same overall facial structure, age impression, hair colour and shape, eye colour, skin tone, smile/expression energy, and general build
 - Stay very close to the reference person's recognisable traits while rendering them as a storybook illustration
 - Do not drift to a generic face
 - Keep the result stylised, painterly, and non-photorealistic
-`
-    : "";
+`;
+    }
+  }
 
   return `Generate a CHARACTER PORTRAIT for a children's book illustration.
 
@@ -479,6 +573,10 @@ ${referenceInstruction}REQUIREMENTS:
 - No text, labels, logos, or watermark
 - Strong character consistency suitable for reuse across future pages`.trim();
 }
+
+/* ------------------------------------------------------------------ */
+/* OUTFIT FROM REFERENCE PHOTO (humans only)                          */
+/* ------------------------------------------------------------------ */
 
 async function describeOutfitFromReference(imagePart: any) {
   const response = await gemini.models.generateContent({
@@ -571,6 +669,10 @@ async function updateOutfitFromReferencePhoto(args: {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* GEMINI IMAGE GENERATION                                            */
+/* ------------------------------------------------------------------ */
+
 async function generatePortrait(args: {
   parts: any[];
   fallbackTextPrompt?: string;
@@ -588,30 +690,16 @@ async function generatePortrait(args: {
         responseModalities: ["IMAGE"],
         imageConfig: { aspectRatio: "1:1", imageSize: "1K" },
         safetySettings: [
-          {
-            category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-            threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-          },
-          {
-            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-            threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-          },
-          {
-            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-            threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-          },
-          {
-            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-            threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-          },
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
         ],
       },
     });
 
     const candidate = response?.candidates?.[0];
-    const imgPart = candidate?.content?.parts?.find(
-      (p: any) => p.inlineData?.data
-    );
+    const imgPart = candidate?.content?.parts?.find((p: any) => p.inlineData?.data);
 
     lastFinishReason = candidate?.finishReason ?? "unknown";
     lastBlockReason = response?.promptFeedback?.blockReason ?? "";
@@ -624,25 +712,18 @@ async function generatePortrait(args: {
 
     console.log(
       `Gemini image attempt ${attempt}:`,
-      JSON.stringify(
-        {
-          finishReason: lastFinishReason,
-          promptFeedback: response?.promptFeedback,
-          safetyRatings: candidate?.safetyRatings,
-          partTypes: candidate?.content?.parts?.map((p: any) =>
-            p.text ? `text:${p.text.substring(0, 60)}` : p.inlineData ? "image" : "unknown"
-          ),
-        },
-        null,
-        2
-      )
+      JSON.stringify({
+        finishReason: lastFinishReason,
+        promptFeedback: response?.promptFeedback,
+        safetyRatings: candidate?.safetyRatings,
+        partTypes: candidate?.content?.parts?.map((p: any) =>
+          p.text ? `text:${p.text.substring(0, 60)}` : p.inlineData ? "image" : "unknown"
+        ),
+      }, null, 2)
     );
 
     if (imgPart?.inlineData?.data) {
-      image = {
-        data: imgPart.inlineData.data,
-        mimeType: imgPart.inlineData.mimeType ?? "image/jpeg",
-      };
+      image = { data: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType ?? "image/jpeg" };
       return { image, finishReason: lastFinishReason, blockReason: lastBlockReason };
     }
 
@@ -655,13 +736,12 @@ async function generatePortrait(args: {
     await new Promise((r) => setTimeout(r, 1200 * attempt));
   }
 
-  return {
-    image: null,
-    finishReason: lastFinishReason,
-    blockReason: lastBlockReason,
-    lastText,
-  };
+  return { image: null, finishReason: lastFinishReason, blockReason: lastBlockReason, lastText };
 }
+
+/* ------------------------------------------------------------------ */
+/* POST HANDLER                                                        */
+/* ------------------------------------------------------------------ */
 
 export async function POST(req: Request) {
   try {
@@ -671,10 +751,7 @@ export async function POST(req: Request) {
     };
 
     if (!characterId) {
-      return NextResponse.json(
-        { error: "Character ID is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Character ID is required" }, { status: 400 });
     }
 
     const character = await db.query.characters.findFirst({
@@ -682,53 +759,83 @@ export async function POST(req: Request) {
     });
 
     if (!character) {
-      return NextResponse.json(
-        { error: "Character not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Character not found" }, { status: 404 });
     }
 
+    // ── Detect animal early — drives branching throughout ──
+    const isAnimal = !!(character.species && character.species !== "human");
+
     const linkedStory = await getLinkedStory(characterId);
-    const defaultOutfit = linkedStory?.storyId
+    let defaultOutfit = linkedStory?.storyId
       ? await getDefaultOutfit(linkedStory.storyId, characterId)
       : null;
 
     const { styleBlock, avoidBlock } = buildStyleBlock(linkedStory ?? {});
     const hasReference = !!character.referenceImageUrl;
-    const useStoryOutfit =
-      !hasReference || outfitMode === "story" || outfitMode === undefined;
+    const useStoryOutfit = !hasReference || outfitMode === "story" || outfitMode === undefined;
 
-      let photoAnalysis: PhotoAnalysis | null = null;
-      let resolvedAppearance = compactSentence(character.appearance);
-      let resolvedDescription = compactSentence(character.description);
-      let referenceImagePart: any | null = null;
-      let shouldBlockDirectReference = false;
-      let canUseDirectReferenceImage = false;
-      
-      if (hasReference && character.referenceImageUrl) {
-        referenceImagePart = await getImagePart(character.referenceImageUrl);
-      
-        if (referenceImagePart) {
-          photoAnalysis = await analyzeReferencePhoto(
-            referenceImagePart,
-            character.name
-          );
-      
+    let photoAnalysis: PhotoAnalysis | null = null;
+    let resolvedAppearance = compactSentence(character.appearance);
+    let resolvedDescription = compactSentence(character.description);
+    let referenceImagePart: any | null = null;
+    let shouldBlockDirectReference = false;
+    let canUseDirectReferenceImage = false;
+
+    if (hasReference && character.referenceImageUrl) {
+      referenceImagePart = await getImagePart(character.referenceImageUrl);
+
+      if (referenceImagePart) {
+        if (isAnimal) {
+          // ── ANIMAL PATH ──
+          // Skip analyzeReferencePhoto and mergeCharacterText entirely.
+          // Those functions are built for humans — they extract hair/eyes/skinTone
+          // which are meaningless for animals, and mergeCharacterText can silently
+          // overwrite the correct coat colour with stale outfit text.
+          //
+          // Instead: use the reference image directly + stored appearance as-is.
+          // The appearance field already has the correct coat description.
+          canUseDirectReferenceImage = true;
+          shouldBlockDirectReference = false;
+          // resolvedAppearance stays as character.appearance — already accurate
+
+          console.log("🐾 Animal character — skipping vision analysis pipeline, using reference photo directly");
+
+          // Sync outfit description to match actual appearance.
+          // Outfit was extracted from the story before any reference photo was analysed,
+          // so it may describe the wrong animal entirely (e.g. "golden retriever coat"
+          // instead of "black and white Border Collie coat").
+          // We rewrite it from the appearance field every time portrait is generated.
+          if (character.appearance && linkedStory?.storyId) {
+            const synced = await syncAnimalOutfitFromAppearance({
+              storyId: linkedStory.storyId,
+              characterId,
+              appearance: character.appearance,
+              defaultOutfit,
+            });
+
+            // Use the freshly synced description for this generation
+            if (synced && defaultOutfit) {
+              defaultOutfit = { ...defaultOutfit, outfitDescription: synced };
+            } else if (synced) {
+              defaultOutfit = { outfitKey: "default", outfitDescription: synced };
+            }
+          }
+        } else {
+          // ── HUMAN PATH — existing logic unchanged ──
+          photoAnalysis = await analyzeReferencePhoto(referenceImagePart, character.name);
+
           console.log("🧠 Photo analysis:", photoAnalysis);
-      
+
           shouldBlockDirectReference =
             photoAnalysis?.referenceKind === "possibly_public_figure" ||
             photoAnalysis?.referenceKind === "fictional_character_or_brand";
-      
+
           if (shouldBlockDirectReference) {
-            console.warn(
-              "⚠️ Reference looks like a public figure or branded character — falling back to traits-only generation"
-            );
+            console.warn("⚠️ Reference looks like a public figure or branded character — falling back to traits-only generation");
           }
-      
-          canUseDirectReferenceImage =
-            !!referenceImagePart && !shouldBlockDirectReference;
-      
+
+          canUseDirectReferenceImage = !!referenceImagePart && !shouldBlockDirectReference;
+
           if (photoAnalysis) {
             const merged = await mergeCharacterText({
               currentAppearance: character.appearance,
@@ -738,12 +845,13 @@ export async function POST(req: Request) {
               outfitMode,
               defaultOutfit,
             });
-      
+
             resolvedAppearance = merged.appearance;
             resolvedDescription = merged.description;
           }
         }
       }
+    }
 
     if (!resolvedAppearance) {
       resolvedAppearance = uniqueStrings([
@@ -767,8 +875,8 @@ export async function POST(req: Request) {
       personalityTraits: character.personalityTraits,
       styleBlock,
       avoidBlock,
-      // hasReference: !!referenceImagePart,
       hasReference: canUseDirectReferenceImage,
+      isAnimal,
       useStoryOutfit,
       defaultOutfit,
     });
@@ -781,10 +889,12 @@ export async function POST(req: Request) {
       styleBlock,
       avoidBlock,
       hasReference: false,
+      isAnimal,
       useStoryOutfit,
       defaultOutfit,
     });
 
+    // ── Build parts ──
     const parts: any[] = [];
 
     if (
@@ -804,20 +914,22 @@ This image defines the illustration style. Match its brushwork, line quality, co
       console.log("🎨 No style reference image — using prompt style only");
     }
 
-
-
-if (canUseDirectReferenceImage) {
-  parts.push(referenceImagePart);
-  parts.push({
-    text: `↑ CHARACTER REFERENCE PHOTO ↑
+    if (canUseDirectReferenceImage) {
+      parts.push(referenceImagePart);
+      parts.push({
+        text: isAnimal
+          ? `↑ ANIMAL REFERENCE PHOTO ↑
+This photo shows the EXACT animal to illustrate. Match the coat colour, coat pattern, markings, and overall look precisely.
+Do not substitute a different breed, colour, or generic dog. Render as storybook illustration but coat colour is non-negotiable.`
+          : `↑ CHARACTER REFERENCE PHOTO ↑
 Use this image as the primary identity anchor for the character's face, hair, eyes, skin tone, age impression, smile, and overall look.
 Stay very close to these traits while rendering the result as a stylised children's-book illustration.
 Do not drift into a generic face and do not make it photorealistic.`,
-  });
-  console.log("📎 Character reference image attached");
-} else if (referenceImagePart && shouldBlockDirectReference) {
-  console.log("🚫 Skipping direct reference image attachment due to public-figure / branded-character detection");
-}
+      });
+      console.log(`📎 ${isAnimal ? "Animal" : "Character"} reference image attached`);
+    } else if (referenceImagePart && shouldBlockDirectReference) {
+      console.log("🚫 Skipping direct reference image attachment due to public-figure / branded-character detection");
+    }
 
     parts.push({ text: prompt });
 
@@ -863,11 +975,9 @@ Do not drift into a generic face and do not make it photorealistic.`,
     const imageUrl = uploadResult.secure_url;
     console.log("✅ Portrait uploaded:", imageUrl);
 
-    if (
-      outfitMode === "reference" &&
-      referenceImagePart &&
-      linkedStory?.storyId
-    ) {
+    // For humans in reference mode, update outfit from the photo
+    // For animals, outfit was already synced from appearance above
+    if (!isAnimal && outfitMode === "reference" && referenceImagePart && linkedStory?.storyId) {
       await updateOutfitFromReferencePhoto({
         storyId: linkedStory.storyId,
         characterId,
@@ -876,19 +986,18 @@ Do not drift into a generic face and do not make it photorealistic.`,
       });
     }
 
-    const nextAppearance =
-      compactSentence(resolvedAppearance) || compactSentence(character.appearance);
-    const nextDescription =
-      compactSentence(resolvedDescription) || compactSentence(character.description);
+    const nextAppearance = compactSentence(resolvedAppearance) || compactSentence(character.appearance);
+    const nextDescription = compactSentence(resolvedDescription) || compactSentence(character.description);
 
-      await db
+    await db
       .update(characters)
       .set({
         portraitImageUrl: imageUrl,
         appearance: nextAppearance || character.appearance,
         description: nextDescription || character.description,
-        // Stamp how this portrait was generated — used to detect stale portraits
-        // when a reference photo is added after a description-only portrait was made
+        // Stamp how this portrait was generated.
+        // 'description_only' → portrait was made without a reference photo.
+        // If a reference is later added, the card shows a stale-portrait warning.
         portraitSource: canUseDirectReferenceImage ? "reference_photo" : "description_only",
         updatedAt: new Date(),
       })
@@ -902,6 +1011,7 @@ Do not drift into a generic face and do not make it photorealistic.`,
       usedReference: canUseDirectReferenceImage,
       usedTraitsOnlyFallback: shouldBlockDirectReference,
       usedStoryOutfit: useStoryOutfit,
+      isAnimal,
     });
   } catch (error) {
     console.error("Generate Character Image Error:", error);
