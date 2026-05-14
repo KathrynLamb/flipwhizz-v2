@@ -456,6 +456,8 @@ export function MobileCharacterCard({
               onUpload={() => triggerUpload(false)}
               onChangePhoto={() => triggerUpload(locked)}
               onGeneratePortrait={() => generatePortrait()}
+              hasReference={!!(char.referenceImageUrl || char.fullBodyImageUrl)}
+              onOpenDrawer={() => setDrawerOpen(true)}
             />
 
             {/* Swipe overlays */}
@@ -629,12 +631,14 @@ export function MobileCharacterCard({
 
 function ImageZone({
   char, grad, imageState, isDragging, isBackgroundTask, badgeLabel,
-  locked, onUpload, onChangePhoto, onGeneratePortrait,
+  locked, onUpload, onChangePhoto, onGeneratePortrait, hasReference, onOpenDrawer,
 }: {
   char: Character; grad: { from: string; to: string };
   imageState: "empty" | "reference" | "portrait";
   isDragging: boolean; isBackgroundTask: boolean; badgeLabel: string;
   locked: boolean; onUpload: () => void; onChangePhoto: () => void; onGeneratePortrait: () => void;
+  hasReference: boolean;
+onOpenDrawer: () => void;
 }) {
   const displayImage = bestImage(char);
   const isAnimal = char.species && char.species !== "human";
@@ -699,14 +703,34 @@ function ImageZone({
         </>
       )}
 
-      {/* State C — has portrait */}
-      {imageState === "portrait" && !isDragging && !isBackgroundTask && !locked && (
-        <button onClick={(e) => { e.stopPropagation(); onChangePhoto(); }}
-          className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full active:scale-95 transition-transform"
-          style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.75)" }}>
-          Change
+  {/* State C — has portrait */}
+{imageState === "portrait" && !isDragging && !isBackgroundTask && !locked && (
+  <>
+    <button onClick={(e) => { e.stopPropagation(); onChangePhoto(); }}
+      className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full active:scale-95 transition-transform"
+      style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.75)" }}>
+      Change
+    </button>
+
+    {/* Stale portrait warning — portrait was generated without the reference photo */}
+    {(char as any).portraitSource === "description_only" && hasReference && (
+      <div className="absolute bottom-14 left-4 right-4 z-30">
+        <button
+          onClick={(e) => { e.stopPropagation(); onOpenDrawer(); }}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-2xl text-[11px] font-semibold active:scale-[0.97] transition-transform"
+          style={{
+            background: "rgba(217,119,6,0.85)",
+            backdropFilter: "blur(8px)",
+            color: "white",
+          }}
+        >
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+          Portrait doesn't use your photo — tap Edit to regenerate
         </button>
-      )}
+      </div>
+    )}
+  </>
+)}
 
       {/* Processing badge — non-blocking */}
       {isBackgroundTask && badgeLabel && (

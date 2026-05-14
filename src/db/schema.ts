@@ -207,6 +207,8 @@ export const characters = pgTable("characters", {
 
   // Reference images (URLs, not base64)
   portraitImageUrl: text("portrait_image_url"),
+  portraitSource: varchar("portrait_source", { length: 20 }),
+
   fullBodyImageUrl: text("full_body_image_url"),
   referenceImageUrl: text("reference_image_url"),
 

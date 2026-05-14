@@ -881,12 +881,15 @@ Do not drift into a generic face and do not make it photorealistic.`,
     const nextDescription =
       compactSentence(resolvedDescription) || compactSentence(character.description);
 
-    await db
+      await db
       .update(characters)
       .set({
         portraitImageUrl: imageUrl,
         appearance: nextAppearance || character.appearance,
         description: nextDescription || character.description,
+        // Stamp how this portrait was generated — used to detect stale portraits
+        // when a reference photo is added after a description-only portrait was made
+        portraitSource: canUseDirectReferenceImage ? "reference_photo" : "description_only",
         updatedAt: new Date(),
       })
       .where(eq(characters.id, characterId));
