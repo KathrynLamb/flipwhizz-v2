@@ -163,6 +163,7 @@ export const ensureWorld = inngest.createFunction(
           const res = await client.messages.create({
             model: MODEL,
             max_tokens: 2000,
+            // ── CHANGE: added personalityTraits field ──
             system: `Extract ALL characters from this story. Return ONLY this JSON:
 {
   "characters": [
@@ -172,7 +173,8 @@ export const ensureWorld = inngest.createFunction(
       "breed": null,
       "description": "personality, traits, behavior",
       "appearance": "detailed physical description for illustration",
-      "role": "main/supporting/minor"
+      "role": "main/supporting/minor",
+      "personalityTraits": "3-5 comma-separated single-word traits derived from how the character behaves in the story. E.g. 'curious, gentle, brave'. Omit (null) if insufficient story evidence."
     }
   ]
 }
@@ -206,6 +208,8 @@ export const ensureWorld = inngest.createFunction(
                 breed: cap(c.breed, 100),
                 description: cap(c.description, 500),
                 appearance: cap(c.appearance, 500),
+                // ── CHANGE: persist personalityTraits ──
+                personalityTraits: cap(c.personalityTraits, 200),
                 createdAt: new Date(),
                 updatedAt: new Date(),
               });
@@ -1105,7 +1109,6 @@ Rules:
             err
           );
 
-          // Fallback: assign first available outfit for each character
           parsedAssignments = spreadContext.map((spread) => ({
             spreadIndex: spread.spreadIndex,
             characters: (spread.characterNames ?? [])

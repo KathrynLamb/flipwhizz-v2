@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Send, Loader2, ChevronLeft, ChevronRight, PenLine } from 'lucide-react';
+import { Check, Send, Loader2, ChevronLeft, ChevronRight, PenLine, ArrowRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import MobileStoryLayout from '@/app/stories/components/MobileStoryLayout';
 import StoryFooter from '@/app/stories/[id]/pages/components/StoryFooter';
@@ -192,7 +192,6 @@ export default function StoryReaderClient({
       const instruction = conversationHistory
         .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
         .join('\n\n');
-    
 
       const res = await fetch(`/api/stories/${id}/global-rewrite`, {
         method: 'POST',
@@ -217,20 +216,17 @@ export default function StoryReaderClient({
 
   const handleConfirmStory = async () => {
     try {
-      // Lock the story
       const res = await fetch(`/api/stories/${id}/lock`, { method: "POST" });
       const data = await res.json();
-  
-      // Mark story as confirmed
+
       await fetch(`/api/stories/${id}/confirm`, { method: "POST" }).catch(() => {});
-  
-      // Always mark "write" as complete
+
       await fetch(`/api/stories/${id}/complete-step`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ step: "write" }),
       }).catch(() => {});
-  
+
       if (data.alreadyConfirmed) {
         const storyRes = await fetch(`/api/stories/${id}`, { cache: "no-store" });
         if (storyRes.ok) {
@@ -242,8 +238,7 @@ export default function StoryReaderClient({
         }
         return;
       }
-  
-      // First time — trigger extraction
+
       fetch(`/api/stories/${id}/ensure-world`, { method: "POST" }).catch(() => {});
       router.push(`/stories/${id}/extract`);
     } catch {
@@ -302,20 +297,28 @@ export default function StoryReaderClient({
       </div>
 
       {/* Desktop layout */}
-      <div className="hidden md:block min-h-screen relative" style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}>
+      <div
+        className="hidden md:block min-h-screen relative"
+        style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}
+      >
         {/* ── Background ── */}
-        <div className="fixed inset-0 -z-10" style={{
-          background: `
-            radial-gradient(ellipse 80% 60% at 20% 10%, rgba(232, 190, 255, 0.35) 0%, transparent 60%),
-            radial-gradient(ellipse 70% 50% at 85% 80%, rgba(255, 182, 210, 0.3) 0%, transparent 55%),
-            radial-gradient(ellipse 50% 40% at 50% 50%, rgba(200, 210, 255, 0.2) 0%, transparent 50%),
-            #F9F5FF
-          `,
-        }}>
-          {/* Subtle pattern overlay */}
-          <div className="absolute inset-0 opacity-50" style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c4b5d4' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-          }} />
+        <div
+          className="fixed inset-0 -z-10"
+          style={{
+            background: `
+              radial-gradient(ellipse 80% 60% at 20% 10%, rgba(232, 190, 255, 0.35) 0%, transparent 60%),
+              radial-gradient(ellipse 70% 50% at 85% 80%, rgba(255, 182, 210, 0.3) 0%, transparent 55%),
+              radial-gradient(ellipse 50% 40% at 50% 50%, rgba(200, 210, 255, 0.2) 0%, transparent 50%),
+              #F9F5FF
+            `,
+          }}
+        >
+          <div
+            className="absolute inset-0 opacity-50"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c4b5d4' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+            }}
+          />
         </div>
 
         {/* ── Header ── */}
@@ -329,8 +332,23 @@ export default function StoryReaderClient({
         {/* ── Main Content ── */}
         <div className="max-w-[1320px] mx-auto px-6 lg:px-8 py-9 pb-28">
           <div className="grid lg:grid-cols-[1fr_390px] gap-8 items-start">
+
             {/* BOOK AREA */}
             <div className="flex flex-col gap-5 sticky top-24 self-start">
+              {/* Orientation hint */}
+              <div className="flex items-center gap-2 px-1">
+                <span className="text-xs font-medium" style={{ color: '#A897BD' }}>
+                  Use the arrows to read through your story
+                </span>
+                <div
+                  className="h-px flex-1"
+                  style={{ background: 'rgba(180,150,210,0.15)' }}
+                />
+                <span className="text-xs font-medium" style={{ color: '#A897BD' }}>
+                  {spreads.length} spreads
+                </span>
+              </div>
+
               {/* Book spread */}
               <div style={{ perspective: '1200px' }}>
                 <AnimatePresence mode="wait" custom={pageDirection}>
@@ -354,12 +372,20 @@ export default function StoryReaderClient({
                     }}
                   >
                     {/* Spine effect */}
-                    <div className="absolute left-1/2 top-0 bottom-0 w-px -translate-x-1/2 z-[3]" style={{
-                      background: 'linear-gradient(to bottom, transparent, rgba(180,150,210,0.2) 20%, rgba(180,150,210,0.2) 80%, transparent)',
-                    }} />
-                    <div className="absolute left-1/2 -translate-x-3 top-0 bottom-0 w-6 z-[2]" style={{
-                      background: 'linear-gradient(to right, transparent, rgba(100,60,140,0.015) 30%, rgba(100,60,140,0.03) 50%, rgba(100,60,140,0.015) 70%, transparent)',
-                    }} />
+                    <div
+                      className="absolute left-1/2 top-0 bottom-0 w-px -translate-x-1/2 z-[3]"
+                      style={{
+                        background:
+                          'linear-gradient(to bottom, transparent, rgba(180,150,210,0.2) 20%, rgba(180,150,210,0.2) 80%, transparent)',
+                      }}
+                    />
+                    <div
+                      className="absolute left-1/2 -translate-x-3 top-0 bottom-0 w-6 z-[2]"
+                      style={{
+                        background:
+                          'linear-gradient(to right, transparent, rgba(100,60,140,0.015) 30%, rgba(100,60,140,0.03) 50%, rgba(100,60,140,0.015) 70%, transparent)',
+                      }}
+                    />
 
                     <PageCard page={currentSpread[0]} />
                     <PageCard page={currentSpread[1]} />
@@ -393,9 +419,10 @@ export default function StoryReaderClient({
                       className="h-1.5 rounded-full border-0 p-0 transition-all"
                       style={{
                         width: i === spreadIndex ? 26 : 6,
-                        background: i === spreadIndex
-                          ? 'linear-gradient(135deg, #C77DFF, #E07ABA)'
-                          : 'rgba(180,150,210,0.25)',
+                        background:
+                          i === spreadIndex
+                            ? 'linear-gradient(135deg, #C77DFF, #E07ABA)'
+                            : 'rgba(180,150,210,0.25)',
                         cursor: 'pointer',
                       }}
                     />
@@ -416,7 +443,8 @@ export default function StoryReaderClient({
                 </button>
 
                 <span className="text-xs font-medium ml-1" style={{ color: '#A897BD' }}>
-                  Pages {currentSpread[0]?.pageNumber ?? ''}–{currentSpread[1]?.pageNumber ?? ''}
+                  Pages {currentSpread[0]?.pageNumber ?? ''}–
+                  {currentSpread[1]?.pageNumber ?? ''}
                 </span>
               </div>
             </div>
@@ -466,36 +494,42 @@ export default function StoryReaderClient({
           </div>
         </div>
 
-        {/* ── Footer ── */}
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t" style={{
-          background: 'rgba(255,255,255,0.85)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderColor: 'rgba(180,150,210,0.12)',
-        }}>
+        {/* ── Footer — removed duplicate confirm, replaced with progress indicator only ── */}
+        <div
+          className="fixed bottom-0 left-0 right-0 z-50 border-t"
+          style={{
+            background: 'rgba(255,255,255,0.85)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            borderColor: 'rgba(180,150,210,0.12)',
+          }}
+        >
           <div className="max-w-[1320px] mx-auto px-6 lg:px-8 py-3.5 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-xs font-medium" style={{ color: '#A897BD' }}>Step 1 of 3</span>
-              <div className="w-44 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(180,150,210,0.15)' }}>
-                <div className="h-full rounded-full" style={{
-                  width: '33%',
-                  background: 'linear-gradient(90deg, #C77DFF, #E07ABA)',
-                }} />
+              <span className="text-xs font-medium" style={{ color: '#A897BD' }}>
+                Step 1 of 3
+              </span>
+              <div
+                className="w-44 h-1 rounded-full overflow-hidden"
+                style={{ background: 'rgba(180,150,210,0.15)' }}
+              >
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: '33%',
+                    background: 'linear-gradient(90deg, #C77DFF, #E07ABA)',
+                  }}
+                />
               </div>
-              <span className="text-xs font-medium" style={{ color: '#A897BD' }}>Review</span>
+              <span className="text-xs font-medium" style={{ color: '#A897BD' }}>
+                Review your story
+              </span>
             </div>
 
-            <button
-              onClick={handleConfirmStory}
-              className="flex items-center gap-2 px-7 py-3 rounded-[14px] border-0 text-sm font-bold text-white cursor-pointer transition-all hover:-translate-y-px active:scale-[0.98]"
-              style={{
-                background: 'linear-gradient(135deg, #B05CE6, #D45DA0)',
-                boxShadow: '0 4px 16px rgba(176,92,230,0.2)',
-              }}
-            >
-              <Check className="w-4 h-4" />
-              Confirm & Continue
-            </button>
+            {/* Subtle nudge — not a duplicate CTA */}
+            <p className="text-xs" style={{ color: '#C7B8DA' }}>
+              Happy with it? Use the <span className="font-semibold" style={{ color: '#B05CE6' }}>Continue</span> button in the panel →
+            </p>
           </div>
         </div>
       </div>
@@ -530,7 +564,10 @@ function PageCard({ page }: { page?: StoryPage }) {
           </p>
         </>
       ) : (
-        <div className="h-full flex items-center justify-center italic" style={{ color: '#C7B8DA' }}>
+        <div
+          className="h-full flex items-center justify-center italic"
+          style={{ color: '#C7B8DA' }}
+        >
           Blank page
         </div>
       )}
@@ -540,6 +577,8 @@ function PageCard({ page }: { page?: StoryPage }) {
 
 /* ======================================================
    AUTHOR NOTE CARD
+   FIX: Card is now a flex column with fixed height.
+   The body scrolls; the action buttons are always pinned.
 ====================================================== */
 
 function AuthorNoteCard({
@@ -562,7 +601,8 @@ function AuthorNoteCard({
         style={{
           background: 'white',
           borderColor: 'rgba(180,150,210,0.12)',
-          boxShadow: '0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)',
+          boxShadow:
+            '0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)',
           minHeight: 200,
         }}
       >
@@ -573,43 +613,66 @@ function AuthorNoteCard({
 
   return (
     <div
-      className="rounded-[22px] border overflow-hidden"
+      className="rounded-[22px] border overflow-hidden flex flex-col"
       style={{
         background: 'white',
         borderColor: 'rgba(180,150,210,0.12)',
-        boxShadow: '0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)',
+        boxShadow:
+          '0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)',
+        // Constrain total height so actions are always visible without scrolling
+        maxHeight: 'calc(100vh - 220px)',
       }}
     >
-      {/* Header */}
+      {/* ── Header — fixed ── */}
       <div
-        className="px-6 py-4 flex items-center gap-3 border-b"
+        className="px-6 py-4 flex items-center justify-between border-b flex-shrink-0"
         style={{ borderColor: 'rgba(180,150,210,0.1)' }}
       >
-        <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg, #E8D5FF, #FFD5E5)' }}
+        <div className="flex items-center gap-3">
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #E8D5FF, #FFD5E5)' }}
+          >
+            ✨
+          </div>
+          <div>
+            <h3 className="text-[15px] font-bold" style={{ color: '#2D2235' }}>
+              Your Co-Author
+            </h3>
+            <p className="text-[11px] mt-px" style={{ color: '#A897BD' }}>
+              Read through, then confirm or refine below
+            </p>
+          </div>
+        </div>
+
+        {/* Always-visible edit nudge in header */}
+        <button
+          onClick={onEdit}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:border-[#C77DFF] hover:text-[#7B5EA7] flex-shrink-0"
+          style={{
+            borderColor: 'rgba(180,150,210,0.2)',
+            color: '#A897BD',
+            background: 'transparent',
+            fontFamily: 'inherit',
+          }}
         >
-          ✨
-        </div>
-        <div>
-          <h3 className="text-[15px] font-bold" style={{ color: '#2D2235' }}>
-            Your Co-Author
-          </h3>
-          <p className="text-[11px] mt-px" style={{ color: '#A897BD' }}>
-            Notes on the first draft
-          </p>
-        </div>
+          <PenLine className="w-3 h-3" />
+          Refine
+        </button>
       </div>
 
-      {/* Body */}
-      <div className="px-6 py-5">
+      {/* ── Scrollable body ── */}
+      <div className="flex-1 overflow-y-auto px-6 py-5 min-h-0">
         <p className="text-sm leading-[1.7] mb-5" style={{ color: '#5A4D6B' }}>
           {letter.opening}
         </p>
 
         {/* What I focused on */}
         <div className="flex items-center gap-2 mb-2.5">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#B05CE6' }} />
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: '#B05CE6' }}
+          />
           <span
             className="text-[10px] font-bold uppercase"
             style={{ color: '#6B5C80', letterSpacing: '0.12em' }}
@@ -689,9 +752,11 @@ function AuthorNoteCard({
         </p>
       </div>
 
-      {/* Actions */}
-      <div className="px-6 pb-6 flex flex-col gap-2.5">
-
+      {/* ── Actions — always pinned at bottom, never scrolled away ── */}
+      <div
+        className="px-6 pb-6 pt-4 flex flex-col gap-2.5 border-t flex-shrink-0"
+        style={{ borderColor: 'rgba(180,150,210,0.08)' }}
+      >
         <button
           onClick={onEdit}
           className="w-full py-3.5 rounded-[14px] border text-sm font-semibold cursor-pointer flex items-center justify-center gap-2 transition-all hover:border-[#C77DFF] hover:bg-[rgba(199,125,255,0.04)]"
@@ -715,11 +780,15 @@ function AuthorNoteCard({
             fontFamily: 'inherit',
           }}
         >
-          <div className="absolute inset-0 rounded-[inherit]" style={{
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.15), transparent)',
-          }} />
+          <div
+            className="absolute inset-0 rounded-[inherit]"
+            style={{
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.15), transparent)',
+            }}
+          />
           <Check className="w-4 h-4 relative z-10" />
           <span className="relative z-10">Happy with this — continue</span>
+          <ArrowRight className="w-4 h-4 relative z-10 opacity-60" />
         </button>
       </div>
     </div>
@@ -757,7 +826,9 @@ function ChatPanel({
       style={{
         background: 'white',
         borderColor: 'rgba(180,150,210,0.12)',
-        boxShadow: '0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)',
+        boxShadow:
+          '0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)',
+        maxHeight: 'calc(100vh - 220px)',
       }}
     >
       {/* Header */}
@@ -797,8 +868,8 @@ function ChatPanel({
 
       {/* Messages */}
       <div
-        className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2.5"
-        style={{ height: 320 }}
+        className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2.5 min-h-0"
+        style={{ minHeight: 200 }}
       >
         {messages.map((m, i) => (
           <motion.div
@@ -933,7 +1004,6 @@ function FormattedMessage({
   return (
     <div className="space-y-1">
       {content.split('\n').map((line, idx) => {
-        // Bold text
         if (line.includes('**')) {
           const parts = line.split('**');
           return (
@@ -950,7 +1020,6 @@ function FormattedMessage({
             </div>
           );
         }
-        // Italic text
         if (line.startsWith('*') && line.endsWith('*') && !line.startsWith('**')) {
           return (
             <div key={idx} className="italic opacity-80">
@@ -958,7 +1027,6 @@ function FormattedMessage({
             </div>
           );
         }
-        // Bullet points
         if (line.trim().startsWith('•')) {
           return (
             <div key={idx} className="flex gap-2 ml-1">
@@ -967,7 +1035,6 @@ function FormattedMessage({
             </div>
           );
         }
-        // Empty lines
         if (!line.trim()) {
           return <div key={idx} className="h-2" />;
         }
