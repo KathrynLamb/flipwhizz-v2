@@ -127,8 +127,12 @@ export function MobileLocationCard({
   function triggerUpload(unlockFirst = false) {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/jpeg,image/png,image/webp,image/heic";
+    input.accept = "image/*";
+    input.style.cssText = "position:fixed;top:-100px;left:-100px;opacity:0;";
+    document.body.appendChild(input); // ← prevents GC on mobile Safari/Chrome
+  
     input.onchange = async (e) => {
+      document.body.removeChild(input); // cleanup
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
       setUploadError(null);
@@ -170,6 +174,9 @@ export function MobileLocationCard({
       } catch { if (isMounted.current) setUploadError("Upload failed — please try again"); }
       finally { if (isMounted.current) { setIsUploading(false); setIsValidating(false); } }
     };
+    input.addEventListener("cancel", () => {
+      document.body.removeChild(input);
+    });
     input.click();
   }
 
