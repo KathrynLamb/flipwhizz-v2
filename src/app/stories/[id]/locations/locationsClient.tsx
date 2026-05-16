@@ -10,10 +10,11 @@ import {
   ChevronRight,
   Loader2,
 } from 'lucide-react';
-import { MobileLocationStack } from '@/app/stories/[id]/locations/components/MobileLocationStack';
+// import { MobileLocationStack } from '@/app/stories/[id]/locations/components/MobileLocationStack';
 import type { StepKey } from '@/lib/storySteps';
 import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
 import LocationCard from '@/app/stories/[id]/locations/components/LocationCard';
+import { MobileLocationStack } from '@/app/stories/[id]/locations/components/MobileLocationStack';
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
