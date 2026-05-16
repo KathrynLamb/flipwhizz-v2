@@ -197,14 +197,18 @@ export function MobileCharacterCard({
   function triggerUpload(unlockFirst = false) {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/jpeg,image/png,image/webp,image/heic";
+    input.accept = "image/*";
+    input.style.cssText = "position:fixed;top:-100px;left:-100px;opacity:0;";
+    document.body.appendChild(input);
+  
     input.onchange = async (e) => {
+      document.body.removeChild(input);
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
-
+  
       setUploadError(null);
       setIsUploading(true);
-
+  
       try {
         if (unlockFirst) {
           await fetch("/api/characters/unlock", {
@@ -214,28 +218,28 @@ export function MobileCharacterCard({
           });
           if (isMounted.current) setLocked(false);
         }
-
+  
         let uploadFile = file;
         if (/\.heic$/i.test(file.name) || /\.heif$/i.test(file.name) || file.type === "image/heic") {
           const heic2any = (await import("heic2any")).default;
           const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
           uploadFile = new File([blob as Blob], file.name.replace(/\.heic$/i, ".jpg"), { type: "image/jpeg" });
         }
-
+  
         const path = `story-references/${storyId}/${crypto.randomUUID()}-${uploadFile.name}`;
         const sRef = storageRef(storage, path);
         await uploadBytes(sRef, uploadFile, { contentType: uploadFile.type });
         const publicUrl = await getDownloadURL(sRef);
-
+  
         if (isMounted.current) { setIsUploading(false); setIsValidating(true); }
-
+  
         const validationRes = await fetch("/api/characters/validate-reference", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ imageUrl: publicUrl, characterName: char.name }),
         });
         const validation = validationRes.ok ? await validationRes.json() : { valid: true };
-
+  
         if (!validation.valid) {
           if (isMounted.current) setUploadError(
             validation.issue === "group_photo"
@@ -244,25 +248,28 @@ export function MobileCharacterCard({
           );
           return;
         }
-
+  
         const res = await fetch("/api/characters/upload-reference", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ characterId: char.id, imageUrl: publicUrl, storagePath: path }),
         });
-
+  
         if (res.ok && isMounted.current) {
           const data = await res.json();
           setChar((prev) => ({ ...prev, referenceImageUrl: data.url }));
         }
-        // Always call onUpdate — works even if card was swiped away
         onUpdate?.();
+        // Auto-generate portrait immediately after upload — no extra tap needed
+        generatePortrait("story");
       } catch {
         if (isMounted.current) setUploadError("Upload failed — please try again");
       } finally {
         if (isMounted.current) { setIsUploading(false); setIsValidating(false); }
       }
     };
+  
+    input.addEventListener("cancel", () => document.body.removeChild(input));
     input.click();
   }
 
@@ -681,27 +688,13 @@ onOpenDrawer: () => void;
       )}
 
       {/* State B — has reference, needs portrait */}
-      {imageState === "reference" && !isDragging && !isBackgroundTask && !locked && (
-        <>
-          <div className="absolute inset-x-0 bottom-0 h-32 pointer-events-none"
-            style={{ background: "linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%)" }} />
-          <button onClick={(e) => { e.stopPropagation(); onChangePhoto(); }}
-            className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full active:scale-95 transition-transform"
-            style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.8)" }}>
-            Change
-          </button>
-          <div className="absolute bottom-12 left-4 right-4 z-20">
-            <button onClick={(e) => { e.stopPropagation(); onGeneratePortrait(); }}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[13px] font-bold text-white active:scale-[0.97] transition-transform"
-              style={{ background: "linear-gradient(135deg, #F59E0B, #EF4444)", boxShadow: "0 4px 20px rgba(239,68,68,0.3)" }}>
-              <Sparkles className="w-4 h-4" /> Create book portrait
-            </button>
-            <p className="text-center text-white/60 text-[10px] mt-1.5">
-              Illustrated art from this photo · choose outfit in Edit ↙
-            </p>
-          </div>
-        </>
-      )}
+{imageState === "reference" && !isDragging && !isBackgroundTask && !locked && (
+  <button onClick={(e) => { e.stopPropagation(); onChangePhoto(); }}
+    className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full active:scale-95 transition-transform"
+    style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.8)" }}>
+    Change photo
+  </button>
+)}
 
   {/* State C — has portrait */}
 {imageState === "portrait" && !isDragging && !isBackgroundTask && !locked && (

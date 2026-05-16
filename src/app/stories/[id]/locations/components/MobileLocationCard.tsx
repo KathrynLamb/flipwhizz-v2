@@ -171,6 +171,8 @@ export function MobileLocationCard({
           setLoc((prev) => ({ ...prev, referenceImageUrl: data.url }));
         }
         onUpdate?.();
+        // Auto-generate illustration immediately
+        generatePortrait("reference");
       } catch { if (isMounted.current) setUploadError("Upload failed — please try again"); }
       finally { if (isMounted.current) { setIsUploading(false); setIsValidating(false); } }
     };
@@ -336,23 +338,11 @@ export function MobileLocationCard({
 
             {/* ── STATE B: has reference, needs illustration ── */}
             {imageState === "reference" && !isDragging && !isBackgroundTask && !locked && (
-              <>
-                <button onClick={(e) => { e.stopPropagation(); triggerUpload(locked); }}
-                  className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full"
-                  style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.8)" }}>
-                  Change photo
-                </button>
-                <div className="absolute bottom-12 left-4 right-4 z-20">
-                  <button onClick={(e) => { e.stopPropagation(); generatePortrait("reference"); }}
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[13px] font-bold text-white active:scale-[0.97] transition-transform"
-                    style={{ background: "linear-gradient(135deg, #F59E0B, #EF4444)", boxShadow: "0 4px 20px rgba(239,68,68,0.3)" }}>
-                    <Sparkles className="w-4 h-4" /> Illustrate this photo in book style
-                  </button>
-                  <p className="text-center text-white/60 text-[10px] mt-1.5">
-                    Or generate from scratch in Edit ↙
-                  </p>
-                </div>
-              </>
+              <button onClick={(e) => { e.stopPropagation(); triggerUpload(locked); }}
+                className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full active:scale-95 transition-transform"
+                style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.8)" }}>
+                Change photo
+              </button>
             )}
 
             {/* ── STATE C: has portrait ── */}
