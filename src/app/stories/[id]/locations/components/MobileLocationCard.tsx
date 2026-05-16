@@ -198,7 +198,7 @@ export function MobileLocationCard({
   
       // Outside try/finally — runs after finally completes, only if upload worked
       if (uploadSucceeded && isMounted.current) {
-        generatePortrait("reference");
+        generatePortrait("reference", false, unlockFirst);
       }
     };
   
@@ -207,8 +207,8 @@ export function MobileLocationCard({
   }
 
   /* ── Generate ── */
-  async function generatePortrait(mode?: "reference" | "description", shouldLockAfter = false) {
-    if (locked) return;
+  async function generatePortrait(mode?: "reference" | "description", shouldLockAfter = false, force = false) {
+    if (locked && !force) return;
     setPhase("generating");
     try {
       const res = await fetch("/api/locations/use-ai-image", {

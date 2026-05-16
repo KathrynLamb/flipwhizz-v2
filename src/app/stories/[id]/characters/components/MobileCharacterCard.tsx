@@ -272,7 +272,7 @@ export function MobileCharacterCard({
   
       // Outside try/finally — runs after finally completes, only if upload worked
       if (uploadSucceeded && isMounted.current) {
-        generatePortrait("story");
+        generatePortrait("story", false, unlockFirst); // force=true if we just unlocked
       }
     };
   
@@ -285,8 +285,8 @@ export function MobileCharacterCard({
   /* outfitMode exposed for DetailDrawer Portrait section to use      */
   /* ---------------------------------------------------------------- */
 
-  async function generatePortrait(outfitMode?: "story" | "reference", shouldLockAfter = false) {
-    if (locked) return;
+  async function generatePortrait(outfitMode?: "story" | "reference", shouldLockAfter = false, force = false) {
+    if (locked && !force) return;
     // Default to 'story' when reference exists, undefined (description-only) when not
     const resolvedMode: "story" | undefined = outfitMode ?? (char.referenceImageUrl ? "story" : undefined);
     setLockPhase("generating");
