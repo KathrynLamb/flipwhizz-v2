@@ -129,56 +129,80 @@ export function MobileLocationCard({
     input.type = "file";
     input.accept = "image/*";
     input.style.cssText = "position:fixed;top:-100px;left:-100px;opacity:0;";
-    document.body.appendChild(input); // ← prevents GC on mobile Safari/Chrome
+    document.body.appendChild(input);
   
     input.onchange = async (e) => {
-      document.body.removeChild(input); // cleanup
+      document.body.removeChild(input);
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
+  
       setUploadError(null);
       setIsUploading(true);
+  
+      let uploadSucceeded = false;
+  
       try {
         if (unlockFirst) {
-          await fetch("/api/locations/unlock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId: loc.id }) });
+          await fetch("/api/locations/unlock", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ locationId: loc.id }),
+          });
           if (isMounted.current) setLocked(false);
         }
+  
         let uploadFile = file;
         if (/\.heic$/i.test(file.name) || file.type === "image/heic") {
           const heic2any = (await import("heic2any")).default;
           const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
           uploadFile = new File([blob as Blob], file.name.replace(/\.heic$/i, ".jpg"), { type: "image/jpeg" });
         }
+  
         const path = `story-references/${storyId}/locations/${crypto.randomUUID()}-${uploadFile.name}`;
         const sRef = storageRef(storage, path);
         await uploadBytes(sRef, uploadFile, { contentType: uploadFile.type });
         const publicUrl = await getDownloadURL(sRef);
+  
         if (isMounted.current) { setIsUploading(false); setIsValidating(true); }
+  
         const validationRes = await fetch("/api/locations/validate-reference", {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ imageUrl: publicUrl, locationName: loc.name }),
         }).catch(() => null);
         const validation = validationRes?.ok ? await validationRes.json() : { valid: true };
+  
         if (!validation.valid) {
           if (isMounted.current) setUploadError(validation.message || "Photo not suitable — try a clear location photo");
           return;
         }
+  
         const res = await fetch("/api/locations/upload-reference", {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ locationId: loc.id, imageUrl: publicUrl, storagePath: path }),
         });
+  
         if (res.ok && isMounted.current) {
           const data = await res.json();
           setLoc((prev) => ({ ...prev, referenceImageUrl: data.url }));
+          uploadSucceeded = true;
         }
+  
         onUpdate?.();
-        // Auto-generate illustration immediately
+      } catch {
+        if (isMounted.current) setUploadError("Upload failed — please try again");
+      } finally {
+        if (isMounted.current) { setIsUploading(false); setIsValidating(false); }
+      }
+  
+      // Outside try/finally — runs after finally completes, only if upload worked
+      if (uploadSucceeded && isMounted.current) {
         generatePortrait("reference");
-      } catch { if (isMounted.current) setUploadError("Upload failed — please try again"); }
-      finally { if (isMounted.current) { setIsUploading(false); setIsValidating(false); } }
+      }
     };
-    input.addEventListener("cancel", () => {
-      document.body.removeChild(input);
-    });
+  
+    input.addEventListener("cancel", () => document.body.removeChild(input));
     input.click();
   }
 

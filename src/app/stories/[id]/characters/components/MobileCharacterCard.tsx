@@ -209,6 +209,8 @@ export function MobileCharacterCard({
       setUploadError(null);
       setIsUploading(true);
   
+      let uploadSucceeded = false;
+  
       try {
         if (unlockFirst) {
           await fetch("/api/characters/unlock", {
@@ -258,14 +260,19 @@ export function MobileCharacterCard({
         if (res.ok && isMounted.current) {
           const data = await res.json();
           setChar((prev) => ({ ...prev, referenceImageUrl: data.url }));
+          uploadSucceeded = true;
         }
+  
         onUpdate?.();
-        // Auto-generate portrait immediately after upload — no extra tap needed
-        generatePortrait("story");
       } catch {
         if (isMounted.current) setUploadError("Upload failed — please try again");
       } finally {
         if (isMounted.current) { setIsUploading(false); setIsValidating(false); }
+      }
+  
+      // Outside try/finally — runs after finally completes, only if upload worked
+      if (uploadSucceeded && isMounted.current) {
+        generatePortrait("story");
       }
     };
   
