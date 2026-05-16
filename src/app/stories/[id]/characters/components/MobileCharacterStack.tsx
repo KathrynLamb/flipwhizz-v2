@@ -217,6 +217,22 @@ export default function MobileCharacterStack({
 
   if (localChars.length === 0) return null;
 
+  useEffect(() => {
+    const lock = async () => {
+      try {
+        await (screen.orientation as any).lock("portrait");
+      } catch {
+        // Not supported on all browsers — fail silently
+      }
+    };
+    lock();
+  
+    return () => {
+      try {
+        screen.orientation.unlock();
+      } catch {}
+    };
+  }, []);
   return (
     <div className="relative w-full mx-auto max-w-md" style={{ height: "calc(100vh - 200px)", minHeight: "480px" }}>
       <AnimatePresence initial={false}>
