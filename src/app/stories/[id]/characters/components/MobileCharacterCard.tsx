@@ -99,12 +99,18 @@ export function MobileCharacterCard({
   index,
   onSwiped,
   onUpdate,
+  isExternallyGenerating,
+  onGenerationStart,
+  onGenerationEnd
 }: {
   storyId: string;
   character: Character;
   index: number;
   onSwiped?: (id: string) => void;
   onUpdate?: () => void;
+  isExternallyGenerating?: boolean;  // ← new
+  onGenerationStart?: (id: string) => void;  // ← new
+  onGenerationEnd?: (id: string) => void;  // ← new
 }) {
   const grad = CARD_GRADIENTS[index % CARD_GRADIENTS.length];
 
@@ -178,15 +184,19 @@ export function MobileCharacterCard({
   }, [char.portraitImageUrl, char.referenceImageUrl, char.fullBodyImageUrl]);
 
   // Any task running in background — shows badge but does NOT block swipe
-  const isBackgroundTask = isUploading || isValidating || lockPhase === "analyzing" || lockPhase === "generating";
-  const isLocking = lockPhase === "locking";
+  const isBackgroundTask = 
+  isUploading || 
+  isValidating || 
+  lockPhase === "analyzing" || 
+  lockPhase === "generating" ||
+  isExternallyGenerating;  // ← shows badge when returning to card  const isLocking = lockPhase === "locking";
   const showConflictUI = lockPhase === "conflicts";
 
   function badgeLabel(): string {
     if (isUploading) return "Uploading photo… swipe to continue";
     if (isValidating) return "Checking photo… swipe to continue";
     if (lockPhase === "analyzing") return "Analysing photo…";
-    if (lockPhase === "generating") return "Creating portrait… swipe to continue";
+    if (lockPhase === "generating" || isExternallyGenerating) return "Creating portrait… swipe to continue";
     return "";
   }
 
@@ -294,7 +304,8 @@ export function MobileCharacterCard({
   /* ---------------------------------------------------------------- */
 
   async function generatePortrait(outfitMode?: "story" | "reference", shouldLockAfter = false, force = false) {
-    // if (locked && !force) return;
+    setLockPhase("generating");
+    onGenerationStart?.(char.id);  // ← tell stack we started
     // Default to 'story' when reference exists, undefined (description-only) when not
     const resolvedMode: "story" | undefined = outfitMode ?? (char.referenceImageUrl ? "story" : undefined);
     setLockPhase("generating");
@@ -310,13 +321,14 @@ export function MobileCharacterCard({
 
       if (isMounted.current && data.url) setChar((prev) => ({ ...prev, portraitImageUrl: data.url }));
       onUpdate?.();
-
+      onGenerationEnd?.(char.id); 
       if (shouldLockAfter && isMounted.current) {
         await doLock();
       } else if (isMounted.current) {
         setLockPhase("idle");
       }
     } catch {
+      onGenerationEnd?.(char.id); 
       if (isMounted.current) { setLockError("Portrait generation failed"); setLockPhase("idle"); }
     }
   }
