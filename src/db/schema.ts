@@ -362,6 +362,7 @@ export const locations = pgTable("locations", {
   lockedAt: timestamp("locked_at"),
 
   portraitImageUrl: text("portrait_image_url"),
+  portraitSource: varchar("portrait_source", { length: 20 }),
   referenceImageUrl: text("reference_image_url"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

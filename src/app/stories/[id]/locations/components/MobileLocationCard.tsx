@@ -1,1201 +1,788 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+// MobileLocationCard.tsx — v2, parity with MobileCharacterCard v2
+//
+// Differences from character card (intentional):
+// • No species / breed / personalityTraits
+// • No outfit system — drawer portrait section has two simple buttons
+// • No conflict resolution UI
+// • No animal detection
+// • Reference photo prompt says "LOCATION REFERENCE" not face/character
+// • Lock = confirm location is correct, not "cast locked"
+
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   motion,
   useMotionValue,
   useTransform,
   useAnimationControls,
-  PanInfo,
   AnimatePresence,
-  useDragControls,
+  type PanInfo,
 } from "framer-motion";
 import {
-  Lock,
-  Loader2,
-  X,
-  Check,
-  Sparkles,
-  Upload,
-  PenLine,
-  MapPin,
-  ArrowLeft,
-  ImageIcon,
-  Eye,
+  Lock, Unlock, Loader2, X, Check, Sparkles, Camera,
+  AlertTriangle, RotateCcw, PenLine, MapPin, ChevronDown,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebaseClient";
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                               */
 /* ------------------------------------------------------------------ */
 
-type Location = {
+export type Location = {
   id: string;
   name: string;
   description: string | null;
   referenceImageUrl: string | null;
   portraitImageUrl: string | null;
   locked: boolean;
+  portraitSource?: string | null; // 'reference_photo' | 'description_only' | null
 };
 
-type SwipeAction = "lock" | "edit";
+/* ------------------------------------------------------------------ */
+/* CONSTANTS                                                           */
+/* ------------------------------------------------------------------ */
 
-const LOCATION_ACCENTS = [
+const CARD_GRADIENTS = [
   { from: "#f59e0b", to: "#ef4444" },
   { from: "#ec4899", to: "#8b5cf6" },
   { from: "#8b5cf6", to: "#06b6d4" },
   { from: "#06b6d4", to: "#10b981" },
   { from: "#84cc16", to: "#06b6d4" },
   { from: "#f59e0b", to: "#ec4899" },
-  { from: "#d946ef", to: "#ec4899" },
-  { from: "#14b8a6", to: "#06b6d4" },
 ];
 
 const LOCATION_EMOJIS = ["🏰", "🌳", "🏔️", "🏖️", "🌆", "🎪", "🏡", "🌋"];
 
+const FONT = "'Bricolage Grotesque', system-ui, sans-serif";
+const SWIPE_HINT_KEY = "fw_location_swipe_hint_v1";
+
+type GeneratingPhase = "idle" | "generating" | "locking" | "done";
+
 /* ------------------------------------------------------------------ */
-/* MOBILE CARD                                                         */
+/* MAIN CARD                                                           */
 /* ------------------------------------------------------------------ */
 
 export function MobileLocationCard({
+  storyId,
   location,
   index,
-  storyId,
-  onDelete,
-  onLockToggle,
   onSwiped,
+  onUpdate,
 }: {
+  storyId: string;
   location: Location;
   index: number;
-  storyId: string;
-  onDelete?: (id: string) => void;
-  onLockToggle?: (id: string, locked: boolean) => void;
-  onSwiped?: (id: string, action: SwipeAction) => void;
+  onSwiped?: (id: string) => void;
+  onUpdate?: () => void;
 }) {
-  const router = useRouter();
-  const accent = LOCATION_ACCENTS[index % LOCATION_ACCENTS.length];
+  const grad = CARD_GRADIENTS[index % CARD_GRADIENTS.length];
   const emoji = LOCATION_EMOJIS[index % LOCATION_EMOJIS.length];
 
+  const [loc, setLoc] = useState(location);
   const [locked, setLocked] = useState(location.locked);
-  const [uploading, setUploading] = useState(false);
-  const [showEdit, setShowEdit] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<GeneratingPhase>("idle");
+  const [lockError, setLockError] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-
-  const imageUrl = location.portraitImageUrl || location.referenceImageUrl;
+  const [mounted, setMounted] = useState(false);
 
   const controls = useAnimationControls();
-  const dragControls = useDragControls();
-
   const x = useMotionValue(0);
-  const rotate = useTransform(x, [-250, 0, 250], [-18, 0, 18]);
-  const editOpacity = useTransform(x, [-150, -35, 0], [1, 0.35, 0]);
-  const lockOpacity = useTransform(x, [0, 35, 150], [0, 0.35, 1]);
+  const rotate = useTransform(x, [-250, 0, 250], [-12, 0, 12]);
+  const editOpacity = useTransform(x, [-120, -30, 0], [1, 0.3, 0]);
+  const lockOpacity = useTransform(x, [0, 30, 120], [0, 0.3, 1]);
 
-  const isMountedRef = useRef(true);
-
+  const isMounted = useRef(true);
   useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
+    setMounted(true);
+    return () => { isMounted.current = false; };
   }, []);
 
-  /* ── Always lock, never toggle ── */
-  async function lockLocation(): Promise<boolean> {
-    if (locked) return true;
-    try {
-      const res = await fetch("/api/locations/lock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locationId: location.id }),
-      });
-      if (!res.ok) return false;
-      setLocked(true);
-      onLockToggle?.(location.id, true);
-      return true;
-    } catch {
-      return false;
-    }
+  useEffect(() => {
+    setLoc(location);
+    setLocked(location.locked);
+  }, [location]);
+
+  // One-time swipe hint (first card only)
+  useEffect(() => {
+    if (index !== 0 || typeof window === "undefined") return;
+    if (localStorage.getItem(SWIPE_HINT_KEY)) return;
+
+    const timer = setTimeout(async () => {
+      if (!isMounted.current) return;
+      await controls.start({ x: 28, rotate: 3, transition: { duration: 0.35, ease: "easeOut" } });
+      await controls.start({ x: 0, rotate: 0, transition: { duration: 0.25, ease: "easeIn" } });
+      await new Promise((r) => setTimeout(r, 120));
+      await controls.start({ x: -28, rotate: -3, transition: { duration: 0.35, ease: "easeOut" } });
+      await controls.start({ x: 0, rotate: 0, transition: { type: "spring", stiffness: 400, damping: 28 } });
+      localStorage.setItem(SWIPE_HINT_KEY, "1");
+    }, 900);
+
+    return () => clearTimeout(timer);
+  }, [index, controls]);
+
+  /* ── Derived ── */
+  const imageState: "empty" | "reference" | "portrait" = useMemo(() => {
+    if (loc.portraitImageUrl) return "portrait";
+    if (loc.referenceImageUrl) return "reference";
+    return "empty";
+  }, [loc.portraitImageUrl, loc.referenceImageUrl]);
+
+  const hasReference = !!loc.referenceImageUrl;
+
+  // Background tasks — card stays swipeable during all of these
+  const isBackgroundTask = isUploading || isValidating || phase === "generating";
+  const isLocking = phase === "locking";
+
+  // Stale portrait: was generated without a reference, but reference now exists
+  const hasStalePortrait =
+    imageState === "portrait" &&
+    hasReference &&
+    loc.portraitSource === "description_only";
+
+  function badgeLabel(): string {
+    if (isUploading) return "Uploading photo… swipe to continue";
+    if (isValidating) return "Checking photo… swipe to continue";
+    if (phase === "generating") return "Creating illustration… swipe to continue";
+    return "";
   }
 
-  async function unlockLocation(): Promise<boolean> {
-    if (!locked) return true;
-    try {
-      const res = await fetch("/api/locations/unlock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locationId: location.id }),
-      });
-      if (!res.ok) return false;
-      setLocked(false);
-      onLockToggle?.(location.id, false);
-      return true;
-    } catch {
-      return false;
-    }
+  /* ---------------------------------------------------------------- */
+  /* UPLOAD                                                           */
+  /* ---------------------------------------------------------------- */
+
+  function triggerUpload(unlockFirst = false) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/png,image/webp,image/heic";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      setUploadError(null);
+      setIsUploading(true);
+
+      try {
+        if (unlockFirst) {
+          await fetch("/api/locations/unlock", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ locationId: loc.id }),
+          });
+          if (isMounted.current) setLocked(false);
+        }
+
+        let uploadFile = file;
+        if (/\.heic$/i.test(file.name) || file.type === "image/heic") {
+          const heic2any = (await import("heic2any")).default;
+          const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
+          uploadFile = new File([blob as Blob], file.name.replace(/\.heic$/i, ".jpg"), { type: "image/jpeg" });
+        }
+
+        const path = `story-references/${storyId}/locations/${crypto.randomUUID()}-${uploadFile.name}`;
+        const sRef = storageRef(storage, path);
+        await uploadBytes(sRef, uploadFile, { contentType: uploadFile.type });
+        const publicUrl = await getDownloadURL(sRef);
+
+        if (isMounted.current) { setIsUploading(false); setIsValidating(true); }
+
+        // Basic validation — check it's a location not a face
+        const validationRes = await fetch("/api/locations/validate-reference", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl: publicUrl, locationName: loc.name }),
+        }).catch(() => null);
+
+        const validation = validationRes?.ok ? await validationRes.json() : { valid: true };
+
+        if (!validation.valid) {
+          if (isMounted.current) setUploadError(validation.message || "Photo not suitable — try a clear location photo");
+          return;
+        }
+
+        const res = await fetch("/api/locations/upload-reference", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ locationId: loc.id, imageUrl: publicUrl, storagePath: path }),
+        });
+
+        if (res.ok && isMounted.current) {
+          const data = await res.json();
+          setLoc((prev) => ({ ...prev, referenceImageUrl: data.url }));
+        }
+        onUpdate?.();
+      } catch {
+        if (isMounted.current) setUploadError("Upload failed — please try again");
+      } finally {
+        if (isMounted.current) { setIsUploading(false); setIsValidating(false); }
+      }
+    };
+    input.click();
   }
 
-  async function uploadToFirebase(file: File) {
-    const path = `story-references/${storyId}/${crypto.randomUUID()}-${file.name}`;
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file, { contentType: file.type });
-    const publicUrl = await getDownloadURL(storageRef);
-    return { publicUrl, path };
-  }
+  /* ---------------------------------------------------------------- */
+  /* PORTRAIT GENERATION                                              */
+  /* mode: 'reference' = anchor to uploaded photo                     */
+  /* mode: 'description' = generate from text only                   */
+  /* ---------------------------------------------------------------- */
 
-  async function uploadReference(file: File) {
+  async function generatePortrait(mode?: "reference" | "description", shouldLockAfter = false) {
     if (locked) return;
-    setUploading(true);
-    try {
-      const { publicUrl, path } = await uploadToFirebase(file);
+    setPhase("generating");
 
-      const res = await fetch("/api/locations/upload-reference", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          locationId: location.id,
-          imageUrl: publicUrl,
-          storagePath: path,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error || "Failed to save reference image");
-      }
-
-      if (isMountedRef.current) {
-        // Update local image immediately so the card shows it
-      }
-
-      router.refresh();
-    } catch (err) {
-      console.error("Photo upload failed:", err);
-      if (isMountedRef.current) {
-        alert("Photo upload failed. Please try again.");
-      }
-    } finally {
-      if (isMountedRef.current) setUploading(false);
-    }
-  }
-
-  async function useAiImage() {
-    if (locked) return;
-    setUploading(true);
     try {
       const res = await fetch("/api/locations/use-ai-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locationId: location.id }),
+        body: JSON.stringify({
+          locationId: loc.id,
+          mode: mode ?? (hasReference ? "reference" : "description"),
+        }),
       });
-      if (res.ok) router.refresh();
-    } finally {
-      if (isMountedRef.current) setUploading(false);
-    }
-  }
+      if (!res.ok) throw new Error();
+      const data = await res.json();
 
-  async function throwCardRight() {
-    if (!locked) {
-      // Lock first, then animate away
-      const success = await lockLocation();
-      if (!success) return;
-    }
-    // If already locked, just advance (keep)
-
-    await controls.start({
-      x: 650,
-      rotate: 28,
-      opacity: 0,
-      transition: { duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] },
-    });
-
-    onSwiped?.(location.id, "lock");
-  }
-
-  async function handleSwipeLeft() {
-    if (locked) {
-      // Unlock the location
-      const success = await unlockLocation();
-      // Bounce card back either way
-      await controls.start({
-        x: -80,
-        rotate: -6,
-        transition: { duration: 0.15, ease: "easeOut" },
-      });
-      await controls.start({
-        x: 0,
-        rotate: 0,
-        opacity: 1,
-        transition: { type: "spring", stiffness: 420, damping: 32, mass: 0.85 },
-      });
-      if (!success) {
-        alert("Failed to unlock. Please try again.");
+      if (isMounted.current && data.url) {
+        setLoc((prev) => ({
+          ...prev,
+          portraitImageUrl: data.url,
+          portraitSource: data.usedReference ? "reference_photo" : "description_only",
+        }));
       }
-    } else {
-      // Open edit sheet
-      await openEditViaSwipe();
+      onUpdate?.();
+
+      if (shouldLockAfter && isMounted.current) {
+        await doLock();
+      } else if (isMounted.current) {
+        setPhase("idle");
+      }
+    } catch {
+      if (isMounted.current) { setLockError("Portrait generation failed"); setPhase("idle"); }
     }
   }
 
-  async function openEditViaSwipe() {
-    await controls.start({
-      x: -80,
-      rotate: -6,
-      transition: { duration: 0.15, ease: "easeOut" },
-    });
+  /* ---------------------------------------------------------------- */
+  /* LOCK                                                             */
+  /* ---------------------------------------------------------------- */
 
-    await controls.start({
-      x: 0,
-      rotate: 0,
-      opacity: 1,
-      transition: { type: "spring", stiffness: 420, damping: 32, mass: 0.85 },
-    });
+  async function startLock() {
+    if (locked || phase !== "idle") return;
+    setLockError(null);
 
-    setShowEdit(true);
+    // If portrait exists, just lock
+    if (loc.portraitImageUrl) { await doLock(); return; }
+
+    // No portrait — generate then lock
+    await generatePortrait(hasReference ? "reference" : "description", true);
   }
 
-  async function snapBack() {
-    await controls.start({
-      x: 0,
-      rotate: 0,
-      opacity: 1,
-      transition: { type: "spring", stiffness: 420, damping: 32, mass: 0.85 },
-    });
+  async function doLock() {
+    setPhase("locking");
+    try {
+      const res = await fetch("/api/locations/lock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locationId: loc.id }),
+      });
+      if (!res.ok) throw new Error();
+      if (isMounted.current) { setLocked(true); setPhase("done"); }
+      await controls.start({ x: 650, rotate: 20, opacity: 0, transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] } });
+      onSwiped?.(loc.id);
+    } catch {
+      if (isMounted.current) { setLockError("Failed to lock — tap retry"); setPhase("idle"); }
+    }
   }
 
-  async function handleDragEnd(_event: any, info: PanInfo) {
+  /* ---------------------------------------------------------------- */
+  /* DRAG / SWIPE                                                     */
+  /* Blocked only by: locking, drawer open                            */
+  /* All background tasks stay swipeable                              */
+  /* ---------------------------------------------------------------- */
+
+  async function handleDragEnd(_: any, info: PanInfo) {
     setIsDragging(false);
+    const THRESHOLD = 70;
+    const VELOCITY = 400;
 
-    const SWIPE_DISTANCE = 120;
-    const SWIPE_VELOCITY = 650;
+    const swipedRight = info.offset.x > THRESHOLD || info.velocity.x > VELOCITY;
+    const swipedLeft = info.offset.x < -THRESHOLD || info.velocity.x < -VELOCITY;
 
-    const swipedRight =
-      info.offset.x > SWIPE_DISTANCE || info.velocity.x > SWIPE_VELOCITY;
-    const swipedLeft =
-      info.offset.x < -SWIPE_DISTANCE || info.velocity.x < -SWIPE_VELOCITY;
+    if (swipedRight) {
+      // Background tasks: swipe away, task finishes in background
+      if (isUploading || isValidating || phase === "generating") {
+        await controls.start({ x: 650, rotate: 20, opacity: 0, transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] } });
+        onSwiped?.(loc.id);
+        return;
+      }
+      // Has portrait: lock and fly
+      if (loc.portraitImageUrl) {
+        await controls.start({ x: 650, rotate: 20, opacity: 0, transition: { duration: 0.3 } });
+        fetch("/api/locations/lock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ locationId: loc.id }),
+        }).then(() => { if (isMounted.current) setLocked(true); });
+        onSwiped?.(loc.id);
+        return;
+      }
+      // No portrait: bounce back and start lock (which will generate)
+      await controls.start({ x: 0, rotate: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
+      startLock();
+      return;
+    }
 
-    if (swipedRight) return throwCardRight();
-    if (swipedLeft) return handleSwipeLeft();
-    return snapBack();
+    if (swipedLeft) {
+      await controls.start({ x: -60, rotate: -4, transition: { duration: 0.12 } });
+      await controls.start({ x: 0, rotate: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
+      setDrawerOpen(true);
+      return;
+    }
+
+    await controls.start({ x: 0, rotate: 0, opacity: 1, transition: { type: "spring", stiffness: 400, damping: 30 } });
   }
 
-  const descriptionPreview = location.description
-    ? location.description.length > 120
-      ? location.description.slice(0, 120) + "…"
-      : location.description
-    : null;
+  const dragDisabled = phase === "locking" || drawerOpen;
+  const displayImage = loc.portraitImageUrl || loc.referenceImageUrl;
+
+  /* ---------------------------------------------------------------- */
+  /* RENDER                                                           */
+  /* ---------------------------------------------------------------- */
 
   return (
     <>
       <motion.div
         animate={controls}
-        drag="x"
-        dragControls={dragControls}
-        dragListener={false}
+        drag={dragDisabled ? false : "x"}
+        dragConstraints={{ left: 0, right: 0 }}
         dragDirectionLock
-        dragElastic={0.14}
+        dragElastic={0.12}
         dragMomentum={false}
         onDragStart={() => setIsDragging(true)}
         onDragEnd={handleDragEnd}
-        style={{ x, rotate }}
+        style={{ x, rotate, fontFamily: FONT, touchAction: "none" }}
         className="w-full h-full select-none"
       >
-        <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white isolate flex flex-col">
-          {/* ── Image area (top portion) ── */}
-          <div className="relative w-full" style={{ flex: "0 0 55%" }}>
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={location.name}
-                className="w-full h-full object-cover"
-                draggable={false}
-              />
+        <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white flex flex-col">
+
+          {/* IMAGE ZONE (55%) */}
+          <div className="relative flex-shrink-0 overflow-hidden" style={{ height: "55%" }}>
+            {/* Background */}
+            {displayImage ? (
+              <img src={displayImage} alt={loc.name} className="w-full h-full object-cover" draggable={false} />
             ) : (
-              <div
-                className="w-full h-full flex items-center justify-center relative"
-                style={{
-                  background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
-                }}
-              >
-                <span className="text-9xl font-black text-white/20 select-none">
-                  {location.name.charAt(0)}
+              <div className="w-full h-full flex items-center justify-center relative"
+                style={{ background: `linear-gradient(135deg, ${grad.from}, ${grad.to})` }}>
+                <span className="font-black text-white/10 select-none" style={{ fontSize: "clamp(5rem, 22vw, 8rem)" }}>
+                  {loc.name.charAt(0)}
                 </span>
                 <motion.div
-                  animate={{ y: [0, -20, 0] }}
-                  transition={{
-                    duration: 3,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                  className="absolute text-8xl opacity-30"
-                >
+                  animate={{ y: [0, -16, 0] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute text-7xl opacity-20 pointer-events-none">
                   {emoji}
                 </motion.div>
               </div>
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+
+            {/* Gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-transparent pointer-events-none" />
 
             {/* Swipe overlays */}
-            <motion.div
-              style={{ opacity: editOpacity }}
-              className="absolute inset-0 z-20 pointer-events-none"
-            >
-              <div
-                className="absolute top-10 left-6 px-5 py-2.5 rounded-2xl rotate-[-20deg]"
-                style={{
-                  background: locked
-                    ? "rgba(239,68,68,0.92)"
-                    : "rgba(176,92,230,0.92)",
-                  border: "3px solid white",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
-                }}
-              >
-                <span className="text-white font-extrabold text-2xl tracking-wide">
-                  {locked ? "UNLOCK" : "EDIT"}
-                </span>
+            <motion.div style={{ opacity: editOpacity }} className="absolute inset-0 z-20 pointer-events-none">
+              <div className="absolute top-8 left-5 px-4 py-2 rounded-2xl"
+                style={{ background: "rgba(176,92,230,0.92)", border: "3px solid white", transform: "rotate(-18deg)", boxShadow: "0 6px 20px rgba(0,0,0,0.25)" }}>
+                <span className="text-white font-extrabold text-xl tracking-wide">EDIT</span>
+              </div>
+            </motion.div>
+            <motion.div style={{ opacity: lockOpacity }} className="absolute inset-0 z-20 pointer-events-none">
+              <div className="absolute top-8 right-5 px-4 py-2 rounded-2xl"
+                style={{ background: "rgba(16,185,129,0.92)", border: "3px solid white", transform: "rotate(18deg)", boxShadow: "0 6px 20px rgba(0,0,0,0.25)" }}>
+                <span className="text-white font-extrabold text-xl tracking-wide">LOCK ✓</span>
               </div>
             </motion.div>
 
-            <motion.div
-              style={{ opacity: lockOpacity }}
-              className="absolute inset-0 z-20 pointer-events-none"
-            >
-              <div
-                className="absolute top-10 right-6 px-5 py-2.5 rounded-2xl rotate-[20deg]"
-                style={{
-                  background: locked
-                    ? "rgba(67,184,156,0.92)"
-                    : "rgba(16,185,129,0.92)",
-                  border: "3px solid white",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
-                }}
-              >
-                <span className="text-white font-extrabold text-2xl tracking-wide">
-                  {locked ? "KEEP ✓" : "LOCK ✓"}
-                </span>
-              </div>
-            </motion.div>
-
-            {/* Locked badge */}
-            {locked && (
-              <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600 text-white shadow-lg">
-                <Lock className="w-3 h-3" />
-                Locked
-              </div>
-            )}
-
-            {/* Upload buttons */}
-            {!locked && !uploading && !isDragging && (
-              <div className="absolute top-4 left-4 z-10 flex gap-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const input = document.createElement("input");
-                    input.type = "file";
-                    input.accept = "image/*";
-                    input.onchange = async (ev) => {
-                      const file = (ev.target as HTMLInputElement).files?.[0];
-                      if (!file) return;
-                      await uploadReference(file);
-                    };
-                    input.click();
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/90 text-stone-900 shadow-lg backdrop-blur-sm active:scale-95 transition-transform"
-                >
-                  <Upload className="w-3 h-3" /> Photo
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    useAiImage();
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600 text-white shadow-lg active:scale-95 transition-transform"
-                >
-                  <Sparkles className="w-3 h-3" /> AI
-                </button>
-              </div>
-            )}
-
-            {/* Uploading overlay */}
-            {uploading && (
-              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/45 pointer-events-none">
-                <div className="flex flex-col items-center gap-2 rounded-2xl px-4 py-3 bg-black/35 backdrop-blur-sm">
-                  <Loader2 className="w-8 h-8 text-white animate-spin" />
-                  <span className="text-sm font-semibold text-white">
-                    Processing…
-                  </span>
+            {/* State A — no image */}
+            {imageState === "empty" && !isDragging && !isBackgroundTask && (
+              <div className="absolute inset-0 flex items-center justify-center p-5 z-10">
+                <div className="w-full rounded-2xl p-4 text-center"
+                  style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.25)" }}>
+                  <p className="text-white font-bold text-sm mb-0.5">{loc.name} needs an image</p>
+                  <p className="text-white/70 text-[11px] mb-3">A photo or AI illustration sets the scene</p>
+                  <div className="flex gap-2">
+                    <button onClick={(e) => { e.stopPropagation(); triggerUpload(); }}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 transition-transform"
+                      style={{ background: "rgba(255,255,255,0.92)", color: "#2D2235" }}>
+                      <Camera className="w-3.5 h-3.5" /> Add photo
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); generatePortrait("description"); }}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold text-white active:scale-95 transition-transform"
+                      style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.9), rgba(217,70,239,0.9))", border: "1px solid rgba(255,255,255,0.2)" }}>
+                      <Sparkles className="w-3.5 h-3.5" /> AI illustrate
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Name overlay at bottom of image */}
-            <div className="absolute bottom-0 left-0 right-0 z-10 px-5 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
-                  <MapPin className="w-4 h-4 text-stone-900" />
+            {/* State B — reference photo, needs illustration */}
+            {imageState === "reference" && !isDragging && !isBackgroundTask && !locked && (
+              <>
+                <button onClick={(e) => { e.stopPropagation(); triggerUpload(locked); }}
+                  className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full active:scale-95 transition-transform"
+                  style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.8)" }}>
+                  Change
+                </button>
+                <div className="absolute bottom-12 left-4 right-4 z-20">
+                  <button onClick={(e) => { e.stopPropagation(); generatePortrait("reference"); }}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[13px] font-bold text-white active:scale-[0.97] transition-transform"
+                    style={{ background: "linear-gradient(135deg, #F59E0B, #EF4444)", boxShadow: "0 4px 20px rgba(239,68,68,0.3)" }}>
+                    <Sparkles className="w-4 h-4" /> Create book illustration
+                  </button>
+                  <p className="text-center text-white/60 text-[10px] mt-1.5">
+                    Styled art from this photo · or generate from scratch in Edit ↙
+                  </p>
                 </div>
-                <h2 className="text-3xl font-bold text-white drop-shadow-lg">
-                  {location.name}
-                </h2>
+              </>
+            )}
+
+            {/* State C — has portrait */}
+            {imageState === "portrait" && !isDragging && !isBackgroundTask && !locked && (
+              <>
+                <button onClick={(e) => { e.stopPropagation(); triggerUpload(locked); }}
+                  className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full active:scale-95 transition-transform"
+                  style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.75)" }}>
+                  Change
+                </button>
+                {/* Stale portrait warning */}
+                {hasStalePortrait && (
+                  <div className="absolute bottom-14 left-4 right-4 z-30">
+                    <button onClick={(e) => { e.stopPropagation(); setDrawerOpen(true); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-2xl text-[11px] font-semibold active:scale-[0.97] transition-transform"
+                      style={{ background: "rgba(217,119,6,0.85)", backdropFilter: "blur(8px)", color: "white" }}>
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                      Illustration doesn't use your photo — tap Edit to regenerate
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Processing badge — non-blocking */}
+            {isBackgroundTask && badgeLabel() && (
+              <div className="absolute bottom-14 left-4 z-30 flex items-center gap-2 px-3 py-2 rounded-full"
+                style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)" }}>
+                <Loader2 className="w-3.5 h-3.5 text-white animate-spin flex-shrink-0" />
+                <span className="text-[11px] font-semibold text-white">{badgeLabel()}</span>
               </div>
+            )}
+
+            {/* Name overlay */}
+            <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-3 pt-8 pointer-events-none"
+              style={{ background: "linear-gradient(to top, rgba(0,0,0,0.65) 0%, transparent 100%)" }}>
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-white/70 flex-shrink-0" />
+                <h2 className="text-2xl font-extrabold text-white leading-tight drop-shadow-lg">{loc.name}</h2>
+              </div>
+            </div>
+
+            {/* Status badge */}
+            <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold"
+              style={{
+                background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)",
+                color: locked ? "#2FA482" : imageState === "portrait" ? "#2FA482" : imageState === "reference" ? "#8B5CF6" : "#D97706",
+              }}>
+              {locked && <Lock className="w-2.5 h-2.5" />}
+              {locked ? "Locked" : imageState === "portrait" ? "Ready" : imageState === "reference" ? "Add illustration" : "Add image"}
             </div>
           </div>
 
-          {/* ── Info area (bottom portion with description) ── */}
-          <div
-            className="flex-1 overflow-y-auto px-5 py-4 space-y-3"
-            style={{ background: "#FDFBFF" }}
-          >
-            {descriptionPreview ? (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <Eye
-                    className="w-3.5 h-3.5 flex-shrink-0"
-                    style={{ color: "#8b5cf6" }}
-                  />
-                  <span
-                    className="text-[11px] font-bold uppercase tracking-wider"
-                    style={{ color: "#A897BD" }}
-                  >
-                    Description
-                  </span>
-                </div>
-                <p
-                  className="text-[13px] leading-relaxed"
-                  style={{ color: "#5A4D6B" }}
-                >
-                  {descriptionPreview}
-                </p>
-              </div>
-            ) : (
-              <p
-                className="text-[13px] leading-relaxed italic"
-                style={{ color: "#A897BD" }}
-              >
-                No description yet — swipe left or tap edit to add one.
-              </p>
-            )}
-          </div>
+          {/* BODY (45%) */}
+          <div className="flex-1 flex flex-col min-h-0" style={{ background: "#FDFBFF" }}>
+            <div className="flex-1 px-4 pt-3 pb-1 flex flex-col justify-center min-h-0 overflow-hidden">
 
-          {/* ── Drag handle + edit button row ── */}
-          {!showEdit && (
-            <div
-              className="flex-shrink-0 px-5 pb-5 pt-2 flex items-center gap-3"
-              style={{ background: "#FDFBFF" }}
-            >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowEdit(true);
-                }}
-                className="w-12 h-12 rounded-2xl flex items-center justify-center active:scale-95 transition-transform flex-shrink-0"
-                style={{
-                  background: "rgba(139,92,246,0.08)",
-                  border: "1.5px solid rgba(139,92,246,0.15)",
-                  color: "#8b5cf6",
-                }}
-              >
-                <PenLine className="w-5 h-5" />
+              {/* Upload error */}
+              <AnimatePresence>
+                {uploadError && (
+                  <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                    className="flex items-start gap-2 px-3 py-2 rounded-xl text-[11px] font-semibold mb-2"
+                    style={{ background: "rgba(217,119,6,0.07)", color: "#B45309", border: "1px solid rgba(217,119,6,0.18)" }}>
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                    <span className="flex-1">{uploadError}</span>
+                    <button onClick={() => setUploadError(null)}><X className="w-3.5 h-3.5 opacity-50" /></button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Lock error */}
+              {lockError && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-semibold mb-2"
+                  style={{ background: "rgba(233,30,99,0.06)", color: "#E91E63", border: "1px solid rgba(233,30,99,0.15)" }}>
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                  {lockError}
+                  <button onClick={() => { setLockError(null); startLock(); }} className="ml-auto flex items-center gap-1">
+                    <RotateCcw className="w-3 h-3" /> Retry
+                  </button>
+                </div>
+              )}
+
+              {/* Description preview */}
+              {loc.description && (
+                <p className="text-[12px] leading-relaxed line-clamp-2" style={{ color: "#5A4D6B" }}>{loc.description}</p>
+              )}
+
+              <button onClick={() => setDrawerOpen(true)}
+                className="mt-1.5 self-start flex items-center gap-1 text-[10px] font-semibold"
+                style={{ color: "#B8A5D0", background: "none", border: "none", cursor: "pointer" }}>
+                <ChevronDown className="w-3 h-3" /> See full details
               </button>
+            </div>
 
-              <div
-                className="flex-1 rounded-2xl bg-white border flex items-center justify-center gap-2 py-3 cursor-grab active:cursor-grabbing"
-                style={{
-                  borderColor: "rgba(180,150,210,0.15)",
-                  touchAction: "none",
-                }}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsDragging(true);
-                  dragControls.start(e);
-                }}
-              >
-                <div className="w-10 h-1.5 rounded-full bg-stone-200" />
-                <span
-                  className="text-xs font-semibold"
-                  style={{ color: "#A897BD" }}
-                >
-                  {uploading
-                    ? "Processing…"
-                    : locked
-                      ? "← unlock · keep →"
-                      : "← edit · lock →"}
-                </span>
+            {/* ACTION BAR */}
+            <div className="flex-shrink-0 px-4 pb-5 pt-2">
+              <div className="flex items-center justify-between mb-2.5 px-1">
+                <span className="text-[10px] font-medium" style={{ color: "rgba(180,150,210,0.5)" }}>← swipe to edit</span>
+                <div className="flex gap-1.5">{[0,1,2].map(i => <div key={i} className="w-1 h-1 rounded-full" style={{ background: "rgba(180,150,210,0.25)" }} />)}</div>
+                <span className="text-[10px] font-medium" style={{ color: "rgba(180,150,210,0.5)" }}>lock in →</span>
+              </div>
+
+              <div className="flex gap-2.5">
+                <button onClick={() => setDrawerOpen(true)}
+                  className="flex items-center justify-center gap-1.5 rounded-2xl text-[12px] font-semibold active:scale-95 transition-transform"
+                  style={{ width: "36%", padding: "12px 0", background: "rgba(139,92,246,0.07)", border: "1.5px solid rgba(139,92,246,0.12)", color: "#8B5CF6" }}>
+                  <PenLine className="w-4 h-4" /> Edit
+                </button>
+
+                <button onClick={locked ? undefined : startLock}
+                  disabled={isLocking || phase === "generating"}
+                  className="flex items-center justify-center gap-2 rounded-2xl text-[13px] font-bold text-white active:scale-[0.97] transition-transform disabled:opacity-60"
+                  style={{
+                    flex: 1, padding: "12px 0",
+                    background: locked ? "#E8F5F0" : "linear-gradient(135deg, #8B5CF6, #D946EF)",
+                    color: locked ? "#2FA482" : "white",
+                    border: locked ? "1.5px solid rgba(67,184,156,0.2)" : "none",
+                    boxShadow: locked ? "none" : "0 4px 16px rgba(139,92,246,0.25)",
+                  }}>
+                  {isLocking ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : locked ? <><Check className="w-4 h-4" /> Locked</>
+                    : phase === "generating" ? <><Loader2 className="w-4 h-4 animate-spin" /> Working…</>
+                    : <><Lock className="w-4 h-4" /> Lock In</>}
+                </button>
+
+                {locked && (
+                  <button onClick={() => {
+                    fetch("/api/locations/unlock", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ locationId: loc.id }),
+                    }).then(() => { if (isMounted.current) setLocked(false); });
+                  }}
+                    className="flex items-center justify-center rounded-2xl text-[11px] font-semibold active:scale-95 transition-transform"
+                    style={{ width: "36%", padding: "12px 0", background: "white", border: "1.5px solid rgba(67,184,156,0.2)", color: "#6B9E8A" }}>
+                    <Unlock className="w-3.5 h-3.5 mr-1" /> Unlock
+                  </button>
+                )}
               </div>
             </div>
-          )}
+          </div>
         </div>
       </motion.div>
 
-      {/* Edit sheet — portalled to body to escape stacking context */}
-      {typeof document !== "undefined" &&
-        createPortal(
-          <AnimatePresence>
-            {showEdit && (
-              <MobileLocationEditSheet
-                location={location}
-                storyId={storyId}
-                accent={accent}
-                locked={locked}
-                onUploadReference={uploadReference}
-                onUseAiImage={useAiImage}
-                uploading={uploading}
-                onClose={() => setShowEdit(false)}
-                onSave={() => {
-                  setShowEdit(false);
-                  router.refresh();
-                }}
-              />
-            )}
-          </AnimatePresence>,
-          document.body
-        )}
+      {/* DRAWER PORTAL */}
+      {mounted && createPortal(
+        <LocationDrawer
+          open={drawerOpen}
+          loc={loc}
+          imageState={imageState}
+          hasReference={hasReference}
+          isGenerating={phase === "generating"}
+          onClose={() => setDrawerOpen(false)}
+          onSaved={(updates) => { setLoc((prev) => ({ ...prev, ...updates })); onUpdate?.(); }}
+          onGeneratePortrait={(mode) => { setDrawerOpen(false); generatePortrait(mode); }}
+        />,
+        document.body
+      )}
     </>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* MOBILE EDIT SHEET                                                    */
+/* LOCATION DRAWER                                                     */
 /* ------------------------------------------------------------------ */
 
-function MobileLocationEditSheet({
-  location,
-  storyId,
-  accent,
-  locked,
-  onUploadReference,
-  onUseAiImage,
-  uploading,
-  onClose,
-  onSave,
+function LocationDrawer({
+  open, loc, imageState, hasReference, isGenerating,
+  onClose, onSaved, onGeneratePortrait,
 }: {
-  location: Location;
-  storyId: string;
-  accent: { from: string; to: string };
-  locked: boolean;
-  onUploadReference: (file: File) => Promise<void>;
-  onUseAiImage: () => Promise<void>;
-  uploading: boolean;
+  open: boolean;
+  loc: Location;
+  imageState: "empty" | "reference" | "portrait";
+  hasReference: boolean;
+  isGenerating: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSaved: (updates: Partial<Location>) => void;
+  onGeneratePortrait: (mode?: "reference" | "description") => void;
 }) {
+  const [name, setName] = useState(loc.name);
+  const [description, setDescription] = useState(loc.description || "");
   const [saving, setSaving] = useState(false);
-  const [description, setDescription] = useState(location.description || "");
 
-  const imageUrl = location.portraitImageUrl || location.referenceImageUrl;
-  const isDirty = description.trim() !== (location.description || "").trim();
+  useEffect(() => {
+    setName(loc.name);
+    setDescription(loc.description || "");
+  }, [loc]);
 
   async function handleSave() {
     setSaving(true);
     try {
-      const res = await fetch("/api/locations/update", {
-        method: "POST",
+      await fetch(`/api/locations/${loc.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locationId: location.id, description }),
+        body: JSON.stringify({ name, description }),
       });
-      if (res.ok) onSave();
-      else throw new Error("Failed to save");
-    } catch {
-      alert("Failed to save changes. Please try again.");
-    } finally {
-      setSaving(false);
-    }
+      onSaved({ name, description });
+      onClose();
+    } finally { setSaving(false); }
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center"
-      style={{
-        background: "rgba(20,8,40,0.55)",
-        backdropFilter: "blur(4px)",
-      }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <motion.div
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
-        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-h-[92vh] flex flex-col"
-        style={{
-          background: "#F9F5FF",
-          borderRadius: "24px 24px 0 0",
-          fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
-        }}
-      >
-        {/* Drag handle */}
-        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
-          <div
-            className="w-10 h-1 rounded-full"
-            style={{ background: "rgba(180,150,210,0.25)" }}
-          />
-        </div>
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div key="bd" className="fixed inset-0 z-[99]" style={{ background: "rgba(0,0,0,0.5)" }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
 
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 z-10 w-9 h-9 rounded-xl flex items-center justify-center"
-          style={{
-            background: imageUrl
-              ? "rgba(0,0,0,0.35)"
-              : "rgba(180,150,210,0.08)",
-            backdropFilter: "blur(8px)",
-            border: "none",
-            color: imageUrl ? "white" : "#8B7BA0",
-          }}
-        >
-          <X className="w-5 h-5" />
-        </button>
+          <motion.div key="sh" className="fixed bottom-0 left-0 right-0 z-[100] rounded-t-3xl overflow-hidden flex flex-col"
+            style={{ background: "white", maxHeight: "88vh", fontFamily: FONT, boxShadow: "0 -8px 40px rgba(100,60,140,0.15)" }}
+            initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}>
 
-        {/* Hero */}
-        <div
-          className="relative flex-shrink-0 overflow-hidden"
-          style={{ borderRadius: "20px 20px 0 0" }}
-        >
-          {imageUrl ? (
-            <div
-              className="relative w-full"
-              style={{ aspectRatio: "4 / 3", maxHeight: 260 }}
-            >
-              <img
-                src={imageUrl}
-                alt={location.name}
-                className="w-full h-full object-cover"
-                draggable={false}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 px-5 pb-4">
-                <div className="flex items-center gap-2.5">
-                  <MapPin className="w-5 h-5 text-white/80" />
-                  <h3 className="text-2xl font-extrabold text-white drop-shadow-lg">
-                    {location.name}
-                  </h3>
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
+              <div className="w-10 h-1 rounded-full" style={{ background: "rgba(180,150,210,0.25)" }} />
+            </div>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pb-3 flex-shrink-0 border-b" style={{ borderColor: "rgba(180,150,210,0.1)" }}>
+              <div>
+                <h3 className="text-base font-extrabold" style={{ color: "#2D2235" }}>{loc.name}</h3>
+                <p className="text-[11px]" style={{ color: "#A897BD" }}>Edit details · illustration options</p>
+              </div>
+              <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center"
+                style={{ background: "rgba(180,150,210,0.1)", color: "#8B7BA0" }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+
+              {/* ILLUSTRATION SECTION */}
+              {!loc.locked && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase mb-2.5" style={{ color: "#A897BD", letterSpacing: "0.08em" }}>
+                    ✨ Illustration
+                  </p>
+
+                  {/* Current illustration thumbnail */}
+                  {loc.portraitImageUrl && (
+                    <div className="flex items-center gap-3 mb-3 p-2.5 rounded-2xl"
+                      style={{ background: "rgba(180,150,210,0.05)", border: "1px solid rgba(180,150,210,0.1)" }}>
+                      <img src={loc.portraitImageUrl} alt={loc.name}
+                        className="w-12 h-12 rounded-xl object-cover flex-shrink-0"
+                        style={{ border: "1.5px solid rgba(180,150,210,0.15)" }} />
+                      <div>
+                        <p className="text-[12px] font-semibold" style={{ color: "#2D2235" }}>Current illustration</p>
+                        <p className="text-[10px]" style={{ color: "#A897BD" }}>Regenerate below to change</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    {/* Generate from description — always available */}
+                    <button onClick={() => onGeneratePortrait("description")} disabled={isGenerating}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-white active:scale-[0.97] transition-transform disabled:opacity-50"
+                      style={{ background: "linear-gradient(135deg, #8B5CF6, #D946EF)", boxShadow: "0 3px 14px rgba(139,92,246,0.2)" }}>
+                      {isGenerating ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /> : <Sparkles className="w-4 h-4 flex-shrink-0" />}
+                      <div className="text-left">
+                        <span className="text-[13px] font-bold block">
+                          {imageState === "empty" ? "Generate from description"
+                            : loc.portraitImageUrl ? "Regenerate · from description"
+                            : "Create illustration · from description"}
+                        </span>
+                        <span className="text-[10px] opacity-75">AI designs the scene from the story</span>
+                      </div>
+                    </button>
+
+                    {/* Generate from reference photo — only if has reference */}
+                    {hasReference && (
+                      <button onClick={() => onGeneratePortrait("reference")} disabled={isGenerating}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl active:scale-[0.97] transition-transform disabled:opacity-50"
+                        style={{ background: "white", border: "1.5px solid rgba(180,150,210,0.2)", color: "#6B5C80" }}>
+                        <Camera className="w-4 h-4 flex-shrink-0" />
+                        <div className="text-left">
+                          <span className="text-[13px] font-semibold block">
+                            {loc.portraitImageUrl ? "Regenerate · from reference photo" : "Create illustration · from reference photo"}
+                          </span>
+                          <span className="text-[10px] opacity-60">Styled art based on the uploaded photo</span>
+                        </div>
+                      </button>
+                    )}
+                  </div>
                 </div>
+              )}
+
+              <div style={{ height: 1, background: "rgba(180,150,210,0.1)" }} />
+
+              {/* Name */}
+              <div>
+                <div className="flex items-baseline gap-2 mb-1.5">
+                  <label className="text-[11px] font-bold" style={{ color: "#6B5C80" }}>Name</label>
+                </div>
+                <input value={name} onChange={(e) => setName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-[13px] outline-none"
+                  style={{ border: "1.5px solid rgba(180,150,210,0.18)", background: "#FDFBFF", color: "#2D2235", fontFamily: FONT }} />
+              </div>
+
+              {/* Description */}
+              <div>
+                <div className="flex items-baseline gap-2 mb-1.5">
+                  <label className="text-[11px] font-bold" style={{ color: "#6B5C80" }}>Description</label>
+                  <span className="text-[10px]" style={{ color: "#B8A5D0" }}>Setting, atmosphere, key features</span>
+                </div>
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-[13px] outline-none resize-none"
+                  style={{ border: "1.5px solid rgba(180,150,210,0.18)", background: "#FDFBFF", color: "#2D2235", fontFamily: FONT }}
+                  placeholder="A cosy living room with warm lighting…" />
+              </div>
+
+              <div style={{ height: "env(safe-area-inset-bottom, 8px)" }} />
+            </div>
+
+            {/* Save bar */}
+            <div className="flex-shrink-0 px-5 py-4 border-t"
+              style={{ borderColor: "rgba(180,150,210,0.1)", background: "rgba(253,251,255,0.95)", backdropFilter: "blur(12px)" }}>
+              <div className="flex gap-2.5">
+                <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-[13px] font-semibold"
+                  style={{ border: "1.5px solid rgba(180,150,210,0.15)", background: "white", color: "#6B5C80" }}>
+                  Cancel
+                </button>
+                <button onClick={handleSave} disabled={saving}
+                  className="flex-[2] py-3 rounded-2xl text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                  style={{ background: "linear-gradient(135deg, #8B5CF6, #D946EF)", boxShadow: "0 4px 16px rgba(139,92,246,0.2)" }}>
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  {saving ? "Saving…" : "Save changes"}
+                </button>
               </div>
             </div>
-          ) : (
-            <div
-              className="relative w-full flex items-end"
-              style={{
-                background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
-                height: 140,
-              }}
-            >
-              <span
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-8xl font-black select-none"
-                style={{ color: "rgba(255,255,255,0.15)" }}
-              >
-                {location.name.charAt(0)}
-              </span>
-              <div className="relative px-5 pb-4">
-                <div className="flex items-center gap-2.5">
-                  <MapPin className="w-5 h-5 text-white/80" />
-                  <h3 className="text-2xl font-extrabold text-white drop-shadow-lg">
-                    {location.name}
-                  </h3>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Scrollable edit fields */}
-        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
-          {/* Reference image section */}
-          {!locked && (
-            <div>
-              <label
-                className="flex items-center gap-2 mb-2 text-[11px] font-bold uppercase tracking-widest"
-                style={{ color: "#A897BD" }}
-              >
-                <span className="text-base">🖼️</span> Reference Image
-              </label>
-
-              {uploading ? (
-                <div
-                  className="flex items-center justify-center gap-2 py-4 rounded-2xl"
-                  style={{
-                    background: "rgba(139,92,246,0.04)",
-                    border: "2px dashed rgba(139,92,246,0.2)",
-                  }}
-                >
-                  <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#8b5cf6" }} />
-                  <span className="text-sm font-semibold" style={{ color: "#8b5cf6" }}>
-                    Uploading…
-                  </span>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      const input = document.createElement("input");
-                      input.type = "file";
-                      input.accept = "image/*";
-                      input.onchange = async (ev) => {
-                        const file = (ev.target as HTMLInputElement).files?.[0];
-                        if (!file) return;
-                        await onUploadReference(file);
-                      };
-                      input.click();
-                    }}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold active:scale-[0.98] transition-all"
-                    style={{
-                      background: "white",
-                      border: "2px solid rgba(180,150,210,0.15)",
-                      color: "#5A4D6B",
-                    }}
-                  >
-                    <Upload className="w-4 h-4" /> Upload Photo
-                  </button>
-                  <button
-                    onClick={() => onUseAiImage()}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white active:scale-[0.98] transition-all"
-                    style={{
-                      background: "linear-gradient(135deg, #8b5cf6, #d946ef)",
-                      boxShadow: "0 2px 8px rgba(139,92,246,0.2)",
-                      border: "none",
-                    }}
-                  >
-                    <Sparkles className="w-4 h-4" /> Generate AI
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div>
-            <label
-              className="flex items-center gap-2 mb-2 text-[11px] font-bold uppercase tracking-widest"
-              style={{ color: "#A897BD" }}
-            >
-              <span className="text-base">📝</span> Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={6}
-              placeholder="Describe this location's atmosphere, key features, and significance..."
-              className="w-full rounded-2xl px-4 py-3.5 text-[15px] leading-relaxed outline-none resize-none transition-all"
-              style={{
-                border: "2px solid rgba(180,150,210,0.15)",
-                background: "white",
-                color: "#2D2235",
-                fontFamily: "inherit",
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Save bar */}
-        <div
-          className="flex-shrink-0 px-5 pt-3 pb-8"
-          style={{
-            background: "rgba(249,245,255,0.95)",
-            backdropFilter: "blur(8px)",
-            borderTop: "1px solid rgba(180,150,210,0.1)",
-          }}
-        >
-          <button
-            onClick={handleSave}
-            disabled={saving || !isDirty}
-            className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-40"
-            style={{
-              background: "linear-gradient(135deg, #8b5cf6, #d946ef)",
-              boxShadow: "0 4px 16px rgba(139,92,246,0.25)",
-              border: "none",
-              fontFamily: "inherit",
-            }}
-          >
-            {saving ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" /> Saving…
-              </>
-            ) : (
-              <>
-                <Check className="w-5 h-5" /> Save Changes
-              </>
-            )}
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* END-OF-STACK CARD                                                    */
-/* ------------------------------------------------------------------ */
-
-function EndOfStackCard({
-  storyId,
-  locations,
-  onGoBack,
-}: {
-  storyId: string;
-  locations: Location[];
-  onGoBack: () => void;
-}) {
-  const router = useRouter();
-  const [confirming, setConfirming] = useState(false);
-
-  const allLocked = locations.every((l) => l.locked);
-  const allHaveReference = locations.every(
-    (l) => l.portraitImageUrl || l.referenceImageUrl
-  );
-  const lockedCount = locations.filter((l) => l.locked).length;
-  const refCount = locations.filter(
-    (l) => l.portraitImageUrl || l.referenceImageUrl
-  ).length;
-
-  const canProceed = allLocked && allHaveReference;
-
-  async function handleConfirmAndContinue() {
-    setConfirming(true);
-    try {
-      await fetch(`/api/stories/${storyId}/confirm-locations`, {
-        method: "POST",
-      });
-      await fetch(`/api/stories/${storyId}/complete-step`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step: "locations" }),
-      });
-      router.push(`/stories/${storyId}/preview`);
-    } catch {
-      setConfirming(false);
-    }
-  }
-
-  return (
-    <div className="w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white flex flex-col items-center justify-center px-8 py-10 text-center">
-      <div
-        className="w-20 h-20 rounded-3xl flex items-center justify-center mb-6"
-        style={{
-          background: canProceed
-            ? "linear-gradient(135deg, #43B89C, #2FA482)"
-            : "linear-gradient(135deg, #8b5cf6, #d946ef)",
-          boxShadow: canProceed
-            ? "0 8px 28px rgba(67,184,156,0.3)"
-            : "0 8px 28px rgba(139,92,246,0.3)",
-        }}
-      >
-        {canProceed ? (
-          <Eye className="w-9 h-9 text-white" />
-        ) : (
-          <ArrowLeft className="w-9 h-9 text-white" />
-        )}
-      </div>
-
-      {canProceed ? (
-        <>
-          <h2
-            className="text-2xl font-extrabold mb-2"
-            style={{ color: "#2D2235" }}
-          >
-            All Set! 🗺️
-          </h2>
-          <p
-            className="text-sm mb-3 leading-relaxed max-w-xs"
-            style={{ color: "#7B6E90" }}
-          >
-            Every location is locked with a reference image. Ready to preview
-            your story.
-          </p>
-
-          <div className="flex gap-2 mb-8">
-            <span
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
-              style={{ background: "rgba(67,184,156,0.1)", color: "#2FA482" }}
-            >
-              <Lock className="w-3 h-3" /> {lockedCount}/{locations.length}{" "}
-              locked
-            </span>
-            <span
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
-              style={{ background: "rgba(67,184,156,0.1)", color: "#2FA482" }}
-            >
-              <ImageIcon className="w-3 h-3" /> {refCount}/{locations.length}{" "}
-              images
-            </span>
-          </div>
-
-          <button
-            onClick={handleConfirmAndContinue}
-            disabled={confirming}
-            className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-40 mb-3"
-            style={{
-              background: "linear-gradient(135deg, #43B89C, #2FA482)",
-              boxShadow: "0 6px 24px rgba(67,184,156,0.25)",
-              border: "none",
-            }}
-          >
-            {confirming ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" /> Confirming…
-              </>
-            ) : (
-              <>
-                <Eye className="w-5 h-5" /> Confirm & Go to Preview
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={onGoBack}
-            className="text-sm font-semibold py-2 active:scale-95 transition-transform"
-            style={{ color: "#A897BD" }}
-          >
-            ← Go back through stack
-          </button>
-        </>
-      ) : (
-        <>
-          <h2
-            className="text-2xl font-extrabold mb-2"
-            style={{ color: "#2D2235" }}
-          >
-            Almost There!
-          </h2>
-          <p
-            className="text-sm mb-3 leading-relaxed max-w-xs"
-            style={{ color: "#7B6E90" }}
-          >
-            Some locations still need attention before you can continue.
-          </p>
-
-          <div className="flex flex-col gap-2 mb-8 w-full max-w-xs">
-            <div
-              className="flex items-center gap-2.5 px-4 py-3 rounded-2xl"
-              style={{
-                background: allLocked
-                  ? "rgba(67,184,156,0.06)"
-                  : "rgba(255,179,71,0.08)",
-                border: allLocked
-                  ? "1.5px solid rgba(67,184,156,0.15)"
-                  : "1.5px solid rgba(255,179,71,0.2)",
-              }}
-            >
-              <Lock
-                className="w-4 h-4 flex-shrink-0"
-                style={{ color: allLocked ? "#2FA482" : "#FFB347" }}
-              />
-              <span
-                className="text-sm font-semibold"
-                style={{ color: allLocked ? "#2FA482" : "#C08030" }}
-              >
-                {lockedCount}/{locations.length} locked
-              </span>
-              {allLocked && (
-                <Check
-                  className="w-4 h-4 ml-auto"
-                  style={{ color: "#2FA482" }}
-                />
-              )}
-            </div>
-
-            <div
-              className="flex items-center gap-2.5 px-4 py-3 rounded-2xl"
-              style={{
-                background: allHaveReference
-                  ? "rgba(67,184,156,0.06)"
-                  : "rgba(255,179,71,0.08)",
-                border: allHaveReference
-                  ? "1.5px solid rgba(67,184,156,0.15)"
-                  : "1.5px solid rgba(255,179,71,0.2)",
-              }}
-            >
-              <ImageIcon
-                className="w-4 h-4 flex-shrink-0"
-                style={{ color: allHaveReference ? "#2FA482" : "#FFB347" }}
-              />
-              <span
-                className="text-sm font-semibold"
-                style={{ color: allHaveReference ? "#2FA482" : "#C08030" }}
-              >
-                {refCount}/{locations.length} have images
-              </span>
-              {allHaveReference && (
-                <Check
-                  className="w-4 h-4 ml-auto"
-                  style={{ color: "#2FA482" }}
-                />
-              )}
-            </div>
-          </div>
-
-          <button
-            onClick={onGoBack}
-            className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-all mb-3"
-            style={{
-              background: "linear-gradient(135deg, #8b5cf6, #d946ef)",
-              boxShadow: "0 6px 24px rgba(139,92,246,0.25)",
-              border: "none",
-            }}
-          >
-            <ArrowLeft className="w-5 h-5" /> Go Back Through Stack
-          </button>
+          </motion.div>
         </>
       )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* STACK CONTAINER                                                      */
-/* ------------------------------------------------------------------ */
-
-export function MobileLocationStack({
-  storyId,
-  locations,
-  onDelete,
-  onLockToggle,
-}: {
-  storyId: string;
-  locations: Location[];
-  onDelete?: (id: string) => void;
-  onLockToggle?: (id: string, locked: boolean) => void;
-}) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [localLocs, setLocalLocs] = useState(locations);
-
-  useEffect(() => {
-    setLocalLocs(locations);
-  }, [locations]);
-
-  const isAtEnd = currentIndex >= localLocs.length;
-  const safeIndex = Math.min(currentIndex, Math.max(0, localLocs.length - 1));
-  const visibleCards = isAtEnd
-    ? []
-    : localLocs.slice(safeIndex, safeIndex + 3);
-
-  if (localLocs.length === 0) return null;
-
-  return (
-    <div
-      className="relative w-full mx-auto max-w-md"
-      style={{ height: "calc(100vh - 280px)", minHeight: "500px" }}
-    >
-      <AnimatePresence initial={false}>
-        {isAtEnd && (
-          <motion.div
-            key="end-card"
-            className="absolute inset-0"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.3 }}
-          >
-            <EndOfStackCard
-              storyId={storyId}
-              locations={localLocs}
-              onGoBack={() => setCurrentIndex(0)}
-            />
-          </motion.div>
-        )}
-
-        {visibleCards.map((loc, idx) => {
-          const isTop = idx === 0;
-
-          return (
-            <motion.div
-              key={loc.id}
-              className="absolute inset-0"
-              style={{
-                zIndex: 10 - idx,
-                pointerEvents: isTop ? "auto" : "none",
-                isolation: "isolate",
-              }}
-              initial={{ scale: 1 - idx * 0.03, y: -idx * 8, opacity: 0 }}
-              animate={{
-                scale: 1 - idx * 0.03,
-                y: -idx * 8,
-                opacity: isTop ? 1 : 0.75,
-              }}
-              exit={{ opacity: 0 }}
-              transition={{ type: "spring", stiffness: 320, damping: 26 }}
-            >
-              {isTop ? (
-                <MobileLocationCard
-                  location={loc}
-                  storyId={storyId}
-                  index={safeIndex + idx}
-                  onDelete={onDelete}
-                  onLockToggle={(id, locked) => {
-                    setLocalLocs((prev) =>
-                      prev.map((l) =>
-                        l.id === id ? { ...l, locked } : l
-                      )
-                    );
-                    onLockToggle?.(id, locked);
-                  }}
-                  onSwiped={(id, action) => {
-                    if (action === "lock") {
-                      setCurrentIndex((prev) => prev + 1);
-                    }
-                  }}
-                />
-              ) : (
-                <LocationPreview location={loc} index={safeIndex + idx} />
-              )}
-            </motion.div>
-          );
-        })}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* PREVIEW CARD                                                         */
-/* ------------------------------------------------------------------ */
-
-function LocationPreview({
-  location,
-  index,
-}: {
-  location: Location;
-  index: number;
-}) {
-  const accent = LOCATION_ACCENTS[index % LOCATION_ACCENTS.length];
-  const emoji = LOCATION_EMOJIS[index % LOCATION_EMOJIS.length];
-  const imageUrl = location.portraitImageUrl || location.referenceImageUrl;
-
-  return (
-    <div
-      className="w-full h-full rounded-3xl overflow-hidden shadow-2xl"
-      style={{
-        background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
-      }}
-    >
-      {imageUrl ? (
-        <img
-          src={imageUrl}
-          alt={location.name}
-          className="w-full h-full object-cover"
-          draggable={false}
-        />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center relative">
-          <span className="text-9xl font-black text-white/20 select-none">
-            {location.name.charAt(0)}
-          </span>
-          <motion.div
-            animate={{ y: [0, -20, 0] }}
-            transition={{
-              duration: 3,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-            className="absolute text-8xl opacity-30"
-          >
-            {emoji}
-          </motion.div>
-        </div>
-      )}
-    </div>
+    </AnimatePresence>
   );
 }
