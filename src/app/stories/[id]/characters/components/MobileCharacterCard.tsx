@@ -212,14 +212,14 @@ export function MobileCharacterCard({
       let uploadSucceeded = false;
   
       try {
-        if (unlockFirst) {
-          await fetch("/api/characters/unlock", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ characterId: char.id }),
-          });
-          if (isMounted.current) setLocked(false);
-        }
+        // if (unlockFirst) {
+        //   await fetch("/api/characters/unlock", {
+        //     method: "POST",
+        //     headers: { "Content-Type": "application/json" },
+        //     body: JSON.stringify({ characterId: char.id }),
+        //   });
+        //   if (isMounted.current) setLocked(false);
+        // }
   
         let uploadFile = file;
         if (/\.heic$/i.test(file.name) || /\.heif$/i.test(file.name) || file.type === "image/heic") {
@@ -272,7 +272,15 @@ export function MobileCharacterCard({
   
       // Outside try/finally — runs after finally completes, only if upload worked
       if (uploadSucceeded && isMounted.current) {
-        generatePortrait("story", false, unlockFirst); // force=true if we just unlocked
+        // Unlock silently if locked, then generate
+        if (locked) {
+          fetch("/api/characters/unlock", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ characterId: char.id }),
+          }).then(() => { if (isMounted.current) setLocked(false); });
+        }
+        generatePortrait("story");
       }
     };
   
@@ -286,7 +294,7 @@ export function MobileCharacterCard({
   /* ---------------------------------------------------------------- */
 
   async function generatePortrait(outfitMode?: "story" | "reference", shouldLockAfter = false, force = false) {
-    if (locked && !force) return;
+    // if (locked && !force) return;
     // Default to 'story' when reference exists, undefined (description-only) when not
     const resolvedMode: "story" | undefined = outfitMode ?? (char.referenceImageUrl ? "story" : undefined);
     setLockPhase("generating");
@@ -889,7 +897,7 @@ function DetailDrawer({
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
 
               {/* ── PORTRAIT SECTION ── */}
-              {!char.locked && (
+
                 <div>
                   <p className="text-[10px] font-bold uppercase mb-2.5" style={{ color: "#A897BD", letterSpacing: "0.08em" }}>
                     ✨ Portrait
@@ -941,7 +949,7 @@ function DetailDrawer({
                     )}
                   </div>
                 </div>
-              )}
+      
 
               <div style={{ height: 1, background: "rgba(180,150,210,0.1)" }} />
 
