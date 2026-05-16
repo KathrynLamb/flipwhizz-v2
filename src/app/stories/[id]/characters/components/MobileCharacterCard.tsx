@@ -189,7 +189,9 @@ export function MobileCharacterCard({
   isValidating || 
   lockPhase === "analyzing" || 
   lockPhase === "generating" ||
-  isExternallyGenerating;  // ← shows badge when returning to card  const isLocking = lockPhase === "locking";
+  isExternallyGenerating;
+
+const isLocking = lockPhase === "locking";
   const showConflictUI = lockPhase === "conflicts";
 
   function badgeLabel(): string {
@@ -308,7 +310,7 @@ export function MobileCharacterCard({
     onGenerationStart?.(char.id);  // ← tell stack we started
     // Default to 'story' when reference exists, undefined (description-only) when not
     const resolvedMode: "story" | undefined = outfitMode ?? (char.referenceImageUrl ? "story" : undefined);
-    setLockPhase("generating");
+
 
     try {
       const res = await fetch("/api/characters/use-ai-image", {

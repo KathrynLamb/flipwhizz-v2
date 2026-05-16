@@ -270,8 +270,8 @@ export default function MobileCharacterStack({
                     setLocalChars(prev => prev.map(c => c.id === id ? { ...c, locked: true } : c));
                     setCurrentIndex(prev => prev + 1);
                   }}
-                  isExternallyGenerating={generatingIds.has(loc.id)}
-                  onGenerationStart={(id) => setGeneratingIds(prev => new Set(prev).add(id))}
+                  isExternallyGenerating={generatingIds.has(char.id)}             
+                       onGenerationStart={(id) => setGeneratingIds(prev => new Set(prev).add(id))}
                   onGenerationEnd={(id) => setGeneratingIds(prev => { const n = new Set(prev); n.delete(id); return n; })}
                 />
               ) : (
