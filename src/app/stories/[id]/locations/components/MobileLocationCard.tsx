@@ -1,28 +1,17 @@
 "use client";
 
-// MobileLocationCard.tsx — v2, parity with MobileCharacterCard v2
-//
-// Differences from character card (intentional):
-// • No species / breed / personalityTraits
-// • No outfit system — drawer portrait section has two simple buttons
-// • No conflict resolution UI
-// • No animal detection
-// • Reference photo prompt says "LOCATION REFERENCE" not face/character
-// • Lock = confirm location is correct, not "cast locked"
+// MobileLocationCard.tsx — v2
+// Clear two-path UX: upload photo (AI illustrates it) vs generate from description
 
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
-  motion,
-  useMotionValue,
-  useTransform,
-  useAnimationControls,
-  AnimatePresence,
-  type PanInfo,
+  motion, useMotionValue, useTransform, useAnimationControls,
+  AnimatePresence, type PanInfo,
 } from "framer-motion";
 import {
   Lock, Unlock, Loader2, X, Check, Sparkles, Camera,
-  AlertTriangle, RotateCcw, PenLine, MapPin, ChevronDown,
+  AlertTriangle, RotateCcw, PenLine, MapPin, ChevronDown, ArrowRight,
 } from "lucide-react";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebaseClient";
@@ -38,7 +27,7 @@ export type Location = {
   referenceImageUrl: string | null;
   portraitImageUrl: string | null;
   locked: boolean;
-  portraitSource?: string | null; // 'reference_photo' | 'description_only' | null
+  portraitSource?: string | null;
 };
 
 /* ------------------------------------------------------------------ */
@@ -53,13 +42,11 @@ const CARD_GRADIENTS = [
   { from: "#84cc16", to: "#06b6d4" },
   { from: "#f59e0b", to: "#ec4899" },
 ];
-
 const LOCATION_EMOJIS = ["🏰", "🌳", "🏔️", "🏖️", "🌆", "🎪", "🏡", "🌋"];
-
 const FONT = "'Bricolage Grotesque', system-ui, sans-serif";
 const SWIPE_HINT_KEY = "fw_location_swipe_hint_v1";
 
-type GeneratingPhase = "idle" | "generating" | "locking" | "done";
+type Phase = "idle" | "generating" | "locking" | "done";
 
 /* ------------------------------------------------------------------ */
 /* MAIN CARD                                                           */
@@ -86,7 +73,7 @@ export function MobileLocationCard({
   const [isUploading, setIsUploading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<GeneratingPhase>("idle");
+  const [phase, setPhase] = useState<Phase>("idle");
   const [lockError, setLockError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -99,21 +86,13 @@ export function MobileLocationCard({
   const lockOpacity = useTransform(x, [0, 30, 120], [0, 0.3, 1]);
 
   const isMounted = useRef(true);
-  useEffect(() => {
-    setMounted(true);
-    return () => { isMounted.current = false; };
-  }, []);
+  useEffect(() => { setMounted(true); return () => { isMounted.current = false; }; }, []);
+  useEffect(() => { setLoc(location); setLocked(location.locked); }, [location]);
 
-  useEffect(() => {
-    setLoc(location);
-    setLocked(location.locked);
-  }, [location]);
-
-  // One-time swipe hint (first card only)
+  // One-time swipe hint
   useEffect(() => {
     if (index !== 0 || typeof window === "undefined") return;
     if (localStorage.getItem(SWIPE_HINT_KEY)) return;
-
     const timer = setTimeout(async () => {
       if (!isMounted.current) return;
       await controls.start({ x: 28, rotate: 3, transition: { duration: 0.35, ease: "easeOut" } });
@@ -123,11 +102,9 @@ export function MobileLocationCard({
       await controls.start({ x: 0, rotate: 0, transition: { type: "spring", stiffness: 400, damping: 28 } });
       localStorage.setItem(SWIPE_HINT_KEY, "1");
     }, 900);
-
     return () => clearTimeout(timer);
   }, [index, controls]);
 
-  /* ── Derived ── */
   const imageState: "empty" | "reference" | "portrait" = useMemo(() => {
     if (loc.portraitImageUrl) return "portrait";
     if (loc.referenceImageUrl) return "reference";
@@ -135,16 +112,9 @@ export function MobileLocationCard({
   }, [loc.portraitImageUrl, loc.referenceImageUrl]);
 
   const hasReference = !!loc.referenceImageUrl;
-
-  // Background tasks — card stays swipeable during all of these
   const isBackgroundTask = isUploading || isValidating || phase === "generating";
   const isLocking = phase === "locking";
-
-  // Stale portrait: was generated without a reference, but reference now exists
-  const hasStalePortrait =
-    imageState === "portrait" &&
-    hasReference &&
-    loc.portraitSource === "description_only";
+  const hasStalePortrait = imageState === "portrait" && hasReference && loc.portraitSource === "description_only";
 
   function badgeLabel(): string {
     if (isUploading) return "Uploading photo… swipe to continue";
@@ -153,10 +123,7 @@ export function MobileLocationCard({
     return "";
   }
 
-  /* ---------------------------------------------------------------- */
-  /* UPLOAD                                                           */
-  /* ---------------------------------------------------------------- */
-
+  /* ── Upload ── */
   function triggerUpload(unlockFirst = false) {
     const input = document.createElement("input");
     input.type = "file";
@@ -164,121 +131,73 @@ export function MobileLocationCard({
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
-
       setUploadError(null);
       setIsUploading(true);
-
       try {
         if (unlockFirst) {
-          await fetch("/api/locations/unlock", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ locationId: loc.id }),
-          });
+          await fetch("/api/locations/unlock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId: loc.id }) });
           if (isMounted.current) setLocked(false);
         }
-
         let uploadFile = file;
         if (/\.heic$/i.test(file.name) || file.type === "image/heic") {
           const heic2any = (await import("heic2any")).default;
           const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
           uploadFile = new File([blob as Blob], file.name.replace(/\.heic$/i, ".jpg"), { type: "image/jpeg" });
         }
-
         const path = `story-references/${storyId}/locations/${crypto.randomUUID()}-${uploadFile.name}`;
         const sRef = storageRef(storage, path);
         await uploadBytes(sRef, uploadFile, { contentType: uploadFile.type });
         const publicUrl = await getDownloadURL(sRef);
-
         if (isMounted.current) { setIsUploading(false); setIsValidating(true); }
-
-        // Basic validation — check it's a location not a face
         const validationRes = await fetch("/api/locations/validate-reference", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ imageUrl: publicUrl, locationName: loc.name }),
         }).catch(() => null);
-
         const validation = validationRes?.ok ? await validationRes.json() : { valid: true };
-
         if (!validation.valid) {
           if (isMounted.current) setUploadError(validation.message || "Photo not suitable — try a clear location photo");
           return;
         }
-
         const res = await fetch("/api/locations/upload-reference", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ locationId: loc.id, imageUrl: publicUrl, storagePath: path }),
         });
-
         if (res.ok && isMounted.current) {
           const data = await res.json();
           setLoc((prev) => ({ ...prev, referenceImageUrl: data.url }));
         }
         onUpdate?.();
-      } catch {
-        if (isMounted.current) setUploadError("Upload failed — please try again");
-      } finally {
-        if (isMounted.current) { setIsUploading(false); setIsValidating(false); }
-      }
+      } catch { if (isMounted.current) setUploadError("Upload failed — please try again"); }
+      finally { if (isMounted.current) { setIsUploading(false); setIsValidating(false); } }
     };
     input.click();
   }
 
-  /* ---------------------------------------------------------------- */
-  /* PORTRAIT GENERATION                                              */
-  /* mode: 'reference' = anchor to uploaded photo                     */
-  /* mode: 'description' = generate from text only                   */
-  /* ---------------------------------------------------------------- */
-
+  /* ── Generate ── */
   async function generatePortrait(mode?: "reference" | "description", shouldLockAfter = false) {
     if (locked) return;
     setPhase("generating");
-
     try {
       const res = await fetch("/api/locations/use-ai-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          locationId: loc.id,
-          mode: mode ?? (hasReference ? "reference" : "description"),
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locationId: loc.id, mode: mode ?? (hasReference ? "reference" : "description") }),
       });
       if (!res.ok) throw new Error();
       const data = await res.json();
-
       if (isMounted.current && data.url) {
-        setLoc((prev) => ({
-          ...prev,
-          portraitImageUrl: data.url,
-          portraitSource: data.usedReference ? "reference_photo" : "description_only",
-        }));
+        setLoc((prev) => ({ ...prev, portraitImageUrl: data.url, portraitSource: data.usedReference ? "reference_photo" : "description_only" }));
       }
       onUpdate?.();
-
-      if (shouldLockAfter && isMounted.current) {
-        await doLock();
-      } else if (isMounted.current) {
-        setPhase("idle");
-      }
-    } catch {
-      if (isMounted.current) { setLockError("Portrait generation failed"); setPhase("idle"); }
-    }
+      if (shouldLockAfter && isMounted.current) { await doLock(); }
+      else if (isMounted.current) { setPhase("idle"); }
+    } catch { if (isMounted.current) { setLockError("Illustration failed"); setPhase("idle"); } }
   }
 
-  /* ---------------------------------------------------------------- */
-  /* LOCK                                                             */
-  /* ---------------------------------------------------------------- */
-
+  /* ── Lock ── */
   async function startLock() {
     if (locked || phase !== "idle") return;
     setLockError(null);
-
-    // If portrait exists, just lock
     if (loc.portraitImageUrl) { await doLock(); return; }
-
-    // No portrait — generate then lock
     await generatePortrait(hasReference ? "reference" : "description", true);
   }
 
@@ -286,117 +205,80 @@ export function MobileLocationCard({
     setPhase("locking");
     try {
       const res = await fetch("/api/locations/lock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ locationId: loc.id }),
       });
       if (!res.ok) throw new Error();
       if (isMounted.current) { setLocked(true); setPhase("done"); }
       await controls.start({ x: 650, rotate: 20, opacity: 0, transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] } });
       onSwiped?.(loc.id);
-    } catch {
-      if (isMounted.current) { setLockError("Failed to lock — tap retry"); setPhase("idle"); }
-    }
+    } catch { if (isMounted.current) { setLockError("Failed to lock — tap retry"); setPhase("idle"); } }
   }
 
-  /* ---------------------------------------------------------------- */
-  /* DRAG / SWIPE                                                     */
-  /* Blocked only by: locking, drawer open                            */
-  /* All background tasks stay swipeable                              */
-  /* ---------------------------------------------------------------- */
-
+  /* ── Drag ── */
   async function handleDragEnd(_: any, info: PanInfo) {
     setIsDragging(false);
-    const THRESHOLD = 70;
-    const VELOCITY = 400;
+    const T = 70, V = 400;
+    const right = info.offset.x > T || info.velocity.x > V;
+    const left = info.offset.x < -T || info.velocity.x < -V;
 
-    const swipedRight = info.offset.x > THRESHOLD || info.velocity.x > VELOCITY;
-    const swipedLeft = info.offset.x < -THRESHOLD || info.velocity.x < -VELOCITY;
-
-    if (swipedRight) {
-      // Background tasks: swipe away, task finishes in background
+    if (right) {
       if (isUploading || isValidating || phase === "generating") {
-        await controls.start({ x: 650, rotate: 20, opacity: 0, transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] } });
-        onSwiped?.(loc.id);
-        return;
+        await controls.start({ x: 650, rotate: 20, opacity: 0, transition: { duration: 0.3 } });
+        onSwiped?.(loc.id); return;
       }
-      // Has portrait: lock and fly
       if (loc.portraitImageUrl) {
         await controls.start({ x: 650, rotate: 20, opacity: 0, transition: { duration: 0.3 } });
-        fetch("/api/locations/lock", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ locationId: loc.id }),
-        }).then(() => { if (isMounted.current) setLocked(true); });
-        onSwiped?.(loc.id);
-        return;
+        fetch("/api/locations/lock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId: loc.id }) })
+          .then(() => { if (isMounted.current) setLocked(true); });
+        onSwiped?.(loc.id); return;
       }
-      // No portrait: bounce back and start lock (which will generate)
       await controls.start({ x: 0, rotate: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
-      startLock();
-      return;
+      startLock(); return;
     }
-
-    if (swipedLeft) {
+    if (left) {
       await controls.start({ x: -60, rotate: -4, transition: { duration: 0.12 } });
       await controls.start({ x: 0, rotate: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
-      setDrawerOpen(true);
-      return;
+      setDrawerOpen(true); return;
     }
-
     await controls.start({ x: 0, rotate: 0, opacity: 1, transition: { type: "spring", stiffness: 400, damping: 30 } });
   }
 
   const dragDisabled = phase === "locking" || drawerOpen;
   const displayImage = loc.portraitImageUrl || loc.referenceImageUrl;
 
-  /* ---------------------------------------------------------------- */
-  /* RENDER                                                           */
-  /* ---------------------------------------------------------------- */
-
   return (
     <>
       <motion.div
-        animate={controls}
-        drag={dragDisabled ? false : "x"}
-        dragConstraints={{ left: 0, right: 0 }}
-        dragDirectionLock
-        dragElastic={0.12}
-        dragMomentum={false}
-        onDragStart={() => setIsDragging(true)}
-        onDragEnd={handleDragEnd}
+        animate={controls} drag={dragDisabled ? false : "x"}
+        dragConstraints={{ left: 0, right: 0 }} dragDirectionLock dragElastic={0.12} dragMomentum={false}
+        onDragStart={() => setIsDragging(true)} onDragEnd={handleDragEnd}
         style={{ x, rotate, fontFamily: FONT, touchAction: "none" }}
-        className="w-full h-full select-none"
-      >
+        className="w-full h-full select-none">
+
         <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl bg-white flex flex-col">
 
-          {/* IMAGE ZONE (55%) */}
+          {/* IMAGE ZONE */}
           <div className="relative flex-shrink-0 overflow-hidden" style={{ height: "55%" }}>
+
             {/* Background */}
             {displayImage ? (
               <img src={displayImage} alt={loc.name} className="w-full h-full object-cover" draggable={false} />
             ) : (
               <div className="w-full h-full flex items-center justify-center relative"
                 style={{ background: `linear-gradient(135deg, ${grad.from}, ${grad.to})` }}>
-                <span className="font-black text-white/10 select-none" style={{ fontSize: "clamp(5rem, 22vw, 8rem)" }}>
-                  {loc.name.charAt(0)}
-                </span>
-                <motion.div
-                  animate={{ y: [0, -16, 0] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                  className="absolute text-7xl opacity-20 pointer-events-none">
-                  {emoji}
-                </motion.div>
+                <span className="font-black text-white/10 select-none" style={{ fontSize: "clamp(5rem, 22vw, 8rem)" }}>{loc.name.charAt(0)}</span>
+                <motion.div animate={{ y: [0, -16, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute text-7xl opacity-20 pointer-events-none">{emoji}</motion.div>
               </div>
             )}
 
-            {/* Gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-transparent pointer-events-none" />
 
             {/* Swipe overlays */}
             <motion.div style={{ opacity: editOpacity }} className="absolute inset-0 z-20 pointer-events-none">
               <div className="absolute top-8 left-5 px-4 py-2 rounded-2xl"
-                style={{ background: "rgba(176,92,230,0.92)", border: "3px solid white", transform: "rotate(-18deg)", boxShadow: "0 6px 20px rgba(0,0,0,0.25)" }}>
+                style={{ background: "rgba(139,92,246,0.92)", border: "3px solid white", transform: "rotate(-18deg)", boxShadow: "0 6px 20px rgba(0,0,0,0.25)" }}>
                 <span className="text-white font-extrabold text-xl tracking-wide">EDIT</span>
               </div>
             </motion.div>
@@ -407,59 +289,73 @@ export function MobileLocationCard({
               </div>
             </motion.div>
 
-            {/* State A — no image */}
+            {/* ── STATE A: no image — explain both paths clearly ── */}
             {imageState === "empty" && !isDragging && !isBackgroundTask && (
-              <div className="absolute inset-0 flex items-center justify-center p-5 z-10">
-                <div className="w-full rounded-2xl p-4 text-center"
-                  style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.25)" }}>
-                  <p className="text-white font-bold text-sm mb-0.5">{loc.name} needs an image</p>
-                  <p className="text-white/70 text-[11px] mb-3">A photo or AI illustration sets the scene</p>
-                  <div className="flex gap-2">
-                    <button onClick={(e) => { e.stopPropagation(); triggerUpload(); }}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 transition-transform"
-                      style={{ background: "rgba(255,255,255,0.92)", color: "#2D2235" }}>
-                      <Camera className="w-3.5 h-3.5" /> Add photo
-                    </button>
-                    <button onClick={(e) => { e.stopPropagation(); generatePortrait("description"); }}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold text-white active:scale-95 transition-transform"
-                      style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.9), rgba(217,70,239,0.9))", border: "1px solid rgba(255,255,255,0.2)" }}>
-                      <Sparkles className="w-3.5 h-3.5" /> AI illustrate
-                    </button>
-                  </div>
+              <div className="absolute inset-0 flex flex-col justify-end p-4 z-10">
+                <div className="rounded-2xl overflow-hidden"
+                  style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(14px)", border: "1px solid rgba(255,255,255,0.22)" }}>
+
+                  {/* Option 1: Upload photo */}
+                  <button onClick={(e) => { e.stopPropagation(); triggerUpload(); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-white/10 transition-colors"
+                    style={{ borderBottom: "1px solid rgba(255,255,255,0.15)" }}>
+                    <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: "rgba(255,255,255,0.9)" }}>
+                      <Camera className="w-4 h-4" style={{ color: "#8B5CF6" }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-bold text-white leading-tight">Upload a photo</p>
+                      <p className="text-[10px] text-white/65 leading-snug mt-0.5">AI illustrates it in your book's style</p>
+                    </div>
+                    <ArrowRight className="w-3.5 h-3.5 text-white/50 flex-shrink-0" />
+                  </button>
+
+                  {/* Option 2: Generate from description */}
+                  <button onClick={(e) => { e.stopPropagation(); generatePortrait("description"); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-white/10 transition-colors">
+                    <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.85), rgba(217,70,239,0.85))" }}>
+                      <Sparkles className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-bold text-white leading-tight">Generate from description</p>
+                      <p className="text-[10px] text-white/65 leading-snug mt-0.5">No photo needed — AI imagines the scene</p>
+                    </div>
+                    <ArrowRight className="w-3.5 h-3.5 text-white/50 flex-shrink-0" />
+                  </button>
                 </div>
               </div>
             )}
 
-            {/* State B — reference photo, needs illustration */}
+            {/* ── STATE B: has reference, needs illustration ── */}
             {imageState === "reference" && !isDragging && !isBackgroundTask && !locked && (
               <>
                 <button onClick={(e) => { e.stopPropagation(); triggerUpload(locked); }}
-                  className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full active:scale-95 transition-transform"
+                  className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full"
                   style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.8)" }}>
-                  Change
+                  Change photo
                 </button>
                 <div className="absolute bottom-12 left-4 right-4 z-20">
                   <button onClick={(e) => { e.stopPropagation(); generatePortrait("reference"); }}
                     className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[13px] font-bold text-white active:scale-[0.97] transition-transform"
                     style={{ background: "linear-gradient(135deg, #F59E0B, #EF4444)", boxShadow: "0 4px 20px rgba(239,68,68,0.3)" }}>
-                    <Sparkles className="w-4 h-4" /> Create book illustration
+                    <Sparkles className="w-4 h-4" /> Illustrate this photo in book style
                   </button>
                   <p className="text-center text-white/60 text-[10px] mt-1.5">
-                    Styled art from this photo · or generate from scratch in Edit ↙
+                    Or generate from scratch in Edit ↙
                   </p>
                 </div>
               </>
             )}
 
-            {/* State C — has portrait */}
+            {/* ── STATE C: has portrait ── */}
             {imageState === "portrait" && !isDragging && !isBackgroundTask && !locked && (
               <>
                 <button onClick={(e) => { e.stopPropagation(); triggerUpload(locked); }}
-                  className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full active:scale-95 transition-transform"
+                  className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full"
                   style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.75)" }}>
                   Change
                 </button>
-                {/* Stale portrait warning */}
                 {hasStalePortrait && (
                   <div className="absolute bottom-14 left-4 right-4 z-30">
                     <button onClick={(e) => { e.stopPropagation(); setDrawerOpen(true); }}
@@ -473,7 +369,7 @@ export function MobileLocationCard({
               </>
             )}
 
-            {/* Processing badge — non-blocking */}
+            {/* Processing badge */}
             {isBackgroundTask && badgeLabel() && (
               <div className="absolute bottom-14 left-4 z-30 flex items-center gap-2 px-3 py-2 rounded-full"
                 style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)" }}>
@@ -498,15 +394,14 @@ export function MobileLocationCard({
                 color: locked ? "#2FA482" : imageState === "portrait" ? "#2FA482" : imageState === "reference" ? "#8B5CF6" : "#D97706",
               }}>
               {locked && <Lock className="w-2.5 h-2.5" />}
-              {locked ? "Locked" : imageState === "portrait" ? "Ready" : imageState === "reference" ? "Add illustration" : "Add image"}
+              {locked ? "Locked" : imageState === "portrait" ? "Ready" : imageState === "reference" ? "Needs illustration" : "Needs image"}
             </div>
           </div>
 
-          {/* BODY (45%) */}
+          {/* BODY */}
           <div className="flex-1 flex flex-col min-h-0" style={{ background: "#FDFBFF" }}>
             <div className="flex-1 px-4 pt-3 pb-1 flex flex-col justify-center min-h-0 overflow-hidden">
 
-              {/* Upload error */}
               <AnimatePresence>
                 {uploadError && (
                   <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
@@ -519,7 +414,6 @@ export function MobileLocationCard({
                 )}
               </AnimatePresence>
 
-              {/* Lock error */}
               {lockError && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-semibold mb-2"
                   style={{ background: "rgba(233,30,99,0.06)", color: "#E91E63", border: "1px solid rgba(233,30,99,0.15)" }}>
@@ -531,7 +425,6 @@ export function MobileLocationCard({
                 </div>
               )}
 
-              {/* Description preview */}
               {loc.description && (
                 <p className="text-[12px] leading-relaxed line-clamp-2" style={{ color: "#5A4D6B" }}>{loc.description}</p>
               )}
@@ -543,7 +436,7 @@ export function MobileLocationCard({
               </button>
             </div>
 
-            {/* ACTION BAR */}
+            {/* Action bar */}
             <div className="flex-shrink-0 px-4 pb-5 pt-2">
               <div className="flex items-center justify-between mb-2.5 px-1">
                 <span className="text-[10px] font-medium" style={{ color: "rgba(180,150,210,0.5)" }}>← swipe to edit</span>
@@ -576,11 +469,8 @@ export function MobileLocationCard({
 
                 {locked && (
                   <button onClick={() => {
-                    fetch("/api/locations/unlock", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ locationId: loc.id }),
-                    }).then(() => { if (isMounted.current) setLocked(false); });
+                    fetch("/api/locations/unlock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId: loc.id }) })
+                      .then(() => { if (isMounted.current) setLocked(false); });
                   }}
                     className="flex items-center justify-center rounded-2xl text-[11px] font-semibold active:scale-95 transition-transform"
                     style={{ width: "36%", padding: "12px 0", background: "white", border: "1.5px solid rgba(67,184,156,0.2)", color: "#6B9E8A" }}>
@@ -593,13 +483,10 @@ export function MobileLocationCard({
         </div>
       </motion.div>
 
-      {/* DRAWER PORTAL */}
+      {/* DRAWER */}
       {mounted && createPortal(
         <LocationDrawer
-          open={drawerOpen}
-          loc={loc}
-          imageState={imageState}
-          hasReference={hasReference}
+          open={drawerOpen} loc={loc} imageState={imageState} hasReference={hasReference}
           isGenerating={phase === "generating"}
           onClose={() => setDrawerOpen(false)}
           onSaved={(updates) => { setLoc((prev) => ({ ...prev, ...updates })); onUpdate?.(); }}
@@ -612,19 +499,12 @@ export function MobileLocationCard({
 }
 
 /* ------------------------------------------------------------------ */
-/* LOCATION DRAWER                                                     */
+/* DRAWER                                                              */
 /* ------------------------------------------------------------------ */
 
-function LocationDrawer({
-  open, loc, imageState, hasReference, isGenerating,
-  onClose, onSaved, onGeneratePortrait,
-}: {
-  open: boolean;
-  loc: Location;
-  imageState: "empty" | "reference" | "portrait";
-  hasReference: boolean;
-  isGenerating: boolean;
-  onClose: () => void;
+function LocationDrawer({ open, loc, imageState, hasReference, isGenerating, onClose, onSaved, onGeneratePortrait }: {
+  open: boolean; loc: Location; imageState: "empty" | "reference" | "portrait";
+  hasReference: boolean; isGenerating: boolean; onClose: () => void;
   onSaved: (updates: Partial<Location>) => void;
   onGeneratePortrait: (mode?: "reference" | "description") => void;
 }) {
@@ -632,21 +512,16 @@ function LocationDrawer({
   const [description, setDescription] = useState(loc.description || "");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    setName(loc.name);
-    setDescription(loc.description || "");
-  }, [loc]);
+  useEffect(() => { setName(loc.name); setDescription(loc.description || ""); }, [loc]);
 
   async function handleSave() {
     setSaving(true);
     try {
       await fetch(`/api/locations/${loc.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, description }),
       });
-      onSaved({ name, description });
-      onClose();
+      onSaved({ name, description }); onClose();
     } finally { setSaving(false); }
   }
 
@@ -656,18 +531,15 @@ function LocationDrawer({
         <>
           <motion.div key="bd" className="fixed inset-0 z-[99]" style={{ background: "rgba(0,0,0,0.5)" }}
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
-
           <motion.div key="sh" className="fixed bottom-0 left-0 right-0 z-[100] rounded-t-3xl overflow-hidden flex flex-col"
             style={{ background: "white", maxHeight: "88vh", fontFamily: FONT, boxShadow: "0 -8px 40px rgba(100,60,140,0.15)" }}
             initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}>
 
-            {/* Handle */}
             <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
               <div className="w-10 h-1 rounded-full" style={{ background: "rgba(180,150,210,0.25)" }} />
             </div>
 
-            {/* Header */}
             <div className="flex items-center justify-between px-5 pb-3 flex-shrink-0 border-b" style={{ borderColor: "rgba(180,150,210,0.1)" }}>
               <div>
                 <h3 className="text-base font-extrabold" style={{ color: "#2D2235" }}>{loc.name}</h3>
@@ -679,22 +551,19 @@ function LocationDrawer({
               </button>
             </div>
 
-            {/* Content */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
 
-              {/* ILLUSTRATION SECTION */}
+              {/* Illustration section */}
               {!loc.locked && (
                 <div>
                   <p className="text-[10px] font-bold uppercase mb-2.5" style={{ color: "#A897BD", letterSpacing: "0.08em" }}>
                     ✨ Illustration
                   </p>
 
-                  {/* Current illustration thumbnail */}
                   {loc.portraitImageUrl && (
                     <div className="flex items-center gap-3 mb-3 p-2.5 rounded-2xl"
                       style={{ background: "rgba(180,150,210,0.05)", border: "1px solid rgba(180,150,210,0.1)" }}>
-                      <img src={loc.portraitImageUrl} alt={loc.name}
-                        className="w-12 h-12 rounded-xl object-cover flex-shrink-0"
+                      <img src={loc.portraitImageUrl} alt={loc.name} className="w-12 h-12 rounded-xl object-cover flex-shrink-0"
                         style={{ border: "1.5px solid rgba(180,150,210,0.15)" }} />
                       <div>
                         <p className="text-[12px] font-semibold" style={{ color: "#2D2235" }}>Current illustration</p>
@@ -704,22 +573,18 @@ function LocationDrawer({
                   )}
 
                   <div className="space-y-2">
-                    {/* Generate from description — always available */}
                     <button onClick={() => onGeneratePortrait("description")} disabled={isGenerating}
                       className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-white active:scale-[0.97] transition-transform disabled:opacity-50"
                       style={{ background: "linear-gradient(135deg, #8B5CF6, #D946EF)", boxShadow: "0 3px 14px rgba(139,92,246,0.2)" }}>
                       {isGenerating ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /> : <Sparkles className="w-4 h-4 flex-shrink-0" />}
                       <div className="text-left">
                         <span className="text-[13px] font-bold block">
-                          {imageState === "empty" ? "Generate from description"
-                            : loc.portraitImageUrl ? "Regenerate · from description"
-                            : "Create illustration · from description"}
+                          {imageState === "empty" ? "Generate from description" : loc.portraitImageUrl ? "Regenerate from description" : "Create from description"}
                         </span>
-                        <span className="text-[10px] opacity-75">AI designs the scene from the story</span>
+                        <span className="text-[10px] opacity-75">AI imagines the scene from story text</span>
                       </div>
                     </button>
 
-                    {/* Generate from reference photo — only if has reference */}
                     {hasReference && (
                       <button onClick={() => onGeneratePortrait("reference")} disabled={isGenerating}
                         className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl active:scale-[0.97] transition-transform disabled:opacity-50"
@@ -727,9 +592,9 @@ function LocationDrawer({
                         <Camera className="w-4 h-4 flex-shrink-0" />
                         <div className="text-left">
                           <span className="text-[13px] font-semibold block">
-                            {loc.portraitImageUrl ? "Regenerate · from reference photo" : "Create illustration · from reference photo"}
+                            {loc.portraitImageUrl ? "Regenerate from reference photo" : "Illustrate from reference photo"}
                           </span>
-                          <span className="text-[10px] opacity-60">Styled art based on the uploaded photo</span>
+                          <span className="text-[10px] opacity-60">Styled book art based on your uploaded photo</span>
                         </div>
                       </button>
                     )}
@@ -739,22 +604,16 @@ function LocationDrawer({
 
               <div style={{ height: 1, background: "rgba(180,150,210,0.1)" }} />
 
-              {/* Name */}
               <div>
-                <div className="flex items-baseline gap-2 mb-1.5">
-                  <label className="text-[11px] font-bold" style={{ color: "#6B5C80" }}>Name</label>
-                </div>
+                <label className="text-[11px] font-bold block mb-1.5" style={{ color: "#6B5C80" }}>Name</label>
                 <input value={name} onChange={(e) => setName(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl text-[13px] outline-none"
                   style={{ border: "1.5px solid rgba(180,150,210,0.18)", background: "#FDFBFF", color: "#2D2235", fontFamily: FONT }} />
               </div>
 
-              {/* Description */}
               <div>
-                <div className="flex items-baseline gap-2 mb-1.5">
-                  <label className="text-[11px] font-bold" style={{ color: "#6B5C80" }}>Description</label>
-                  <span className="text-[10px]" style={{ color: "#B8A5D0" }}>Setting, atmosphere, key features</span>
-                </div>
+                <label className="text-[11px] font-bold block mb-0.5" style={{ color: "#6B5C80" }}>Description</label>
+                <p className="text-[10px] mb-1.5" style={{ color: "#B8A5D0" }}>Setting, atmosphere, key features</p>
                 <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
                   className="w-full px-3.5 py-2.5 rounded-xl text-[13px] outline-none resize-none"
                   style={{ border: "1.5px solid rgba(180,150,210,0.18)", background: "#FDFBFF", color: "#2D2235", fontFamily: FONT }}
@@ -764,7 +623,6 @@ function LocationDrawer({
               <div style={{ height: "env(safe-area-inset-bottom, 8px)" }} />
             </div>
 
-            {/* Save bar */}
             <div className="flex-shrink-0 px-5 py-4 border-t"
               style={{ borderColor: "rgba(180,150,210,0.1)", background: "rgba(253,251,255,0.95)", backdropFilter: "blur(12px)" }}>
               <div className="flex gap-2.5">
