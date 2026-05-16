@@ -196,43 +196,58 @@ function CardPreview({ character, index }: { character: Character; index: number
 /* STACK CONTAINER                                                      */
 /* ------------------------------------------------------------------ */
 
-export default function MobileCharacterStack({
-  storyId,
-  characters,
-  onUpdate,
-}: {
-  storyId: string;
-  characters: Character[];
-  onUpdate?: () => void;
-}) {
+export default function MobileCharacterStack({ storyId, characters, onUpdate }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [localChars, setLocalChars] = useState(characters);
   const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
+  const [isLandscape, setIsLandscape] = useState(false);
 
+  // ALL useEffects together, before any returns
   useEffect(() => { setLocalChars(characters); }, [characters]);
 
-  const isAtEnd = currentIndex >= localChars.length;
-  const safeIndex = Math.min(currentIndex, Math.max(0, localChars.length - 1));
-  const visibleCards = isAtEnd ? [] : localChars.slice(safeIndex, safeIndex + 3);
-
-  if (localChars.length === 0) return null;
+  useEffect(() => {
+    function check() {
+      setIsLandscape(window.innerWidth > window.innerHeight);
+    }
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     const lock = async () => {
       try {
         await (screen.orientation as any).lock("portrait");
-      } catch {
-        // Not supported on all browsers — fail silently
-      }
-    };
-    lock();
-  
-    return () => {
-      try {
-        screen.orientation.unlock();
       } catch {}
     };
+    lock();
+    return () => {
+      try { screen.orientation.unlock(); } catch {}
+    };
   }, []);
+
+  // Derived — after all hooks
+  const isAtEnd = currentIndex >= localChars.length;
+  const safeIndex = Math.min(currentIndex, Math.max(0, localChars.length - 1));
+  const visibleCards = isAtEnd ? [] : localChars.slice(safeIndex, safeIndex + 3);
+
+  // Early returns AFTER all hooks
+  if (localChars.length === 0) return null;
+
+  if (isLandscape) {
+    return (
+      <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-white px-8 text-center"
+        style={{ fontFamily: FONT }}>
+        <div className="text-5xl mb-6">📱</div>
+        <h2 className="text-xl font-extrabold mb-2" style={{ color: "#2D2235" }}>
+          Please rotate your phone
+        </h2>
+        <p className="text-sm" style={{ color: "#7B6E90" }}>
+          This page works best in portrait mode
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="relative w-full mx-auto max-w-md" style={{ height: "calc(100vh - 200px)", minHeight: "480px" }}>
       <AnimatePresence initial={false}>
