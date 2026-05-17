@@ -421,11 +421,11 @@ const isLocking = lockPhase === "locking";
 
   async function handleDragEnd(_: any, info: PanInfo) {
     setIsDragging(false);
-    const THRESHOLD = 70;
-    const VELOCITY = 400;
+    const THRESHOLD = 100;
+    const VELOCITY = 500;
 
     const swipedRight = info.offset.x > THRESHOLD || info.velocity.x > VELOCITY;
-    const swipedLeft = info.offset.x < -THRESHOLD || info.velocity.x < -VELOCITY;
+    const swipedLeft = info.offset.x < -120 || info.velocity.x < -600;
 
     if (swipedRight) {
       // Background tasks: let user swipe away, task finishes in background
@@ -473,7 +473,6 @@ const isLocking = lockPhase === "locking";
         animate={controls}
         drag={dragDisabled ? false : "x"}
         dragConstraints={{ left: 0, right: 0 }}
-        dragDirectionLock
         dragElastic={0.12}
         dragMomentum={false}
         onDragStart={() => setIsDragging(true)}
