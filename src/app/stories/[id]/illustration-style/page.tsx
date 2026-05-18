@@ -53,6 +53,17 @@ export default async function IllustrationStylePage({ params }: Props) {
     redirect(`/stories/${storyId}/characters`);
   }
 
+  /* ── Already completed? Skip forward ── */
+const completedSteps = Array.isArray(story.completedSteps)
+? (story.completedSteps as string[])
+: [];
+
+if (completedSteps.includes("design")) {
+const { getNextStepHref } = await import("@/lib/storySteps");
+const { redirect } = await import("next/navigation");
+redirect(getNextStepHref(storyId, story));
+}
+
   /* ── Style guide ── */
   const sg = await db.query.storyStyleGuide.findFirst({
     where: eq(storyStyleGuide.storyId, storyId),
