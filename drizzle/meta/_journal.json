@@ -498,6 +498,13 @@
       "when": 1778940053077,
       "tag": "0070_sparkling_chamber",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1779117286443,
+      "tag": "0071_lethal_speed",
+      "breakpoints": true
     }
   ]
 }

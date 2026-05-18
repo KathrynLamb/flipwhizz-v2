@@ -9,15 +9,35 @@ import posthog from "posthog-js";
 
 const PINK = "#D94590";
 
+// ---------- tiny icon helpers ----------
+function EyeIcon({ open }: { open: boolean }) {
+  return open ? (
+    // eye-open
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ) : (
+    // eye-off
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
+      <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  );
+}
+
+// ---------- main component ----------
 export default function SignInForm() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/";
   const errorParam = searchParams.get("error");
 
-  const [mode, setMode] = useState<"signin" | "register">("signin");
+  const [mode, setMode] = useState<"signin" | "register" | "forgot">("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(
     errorParam === "CredentialsSignin"
@@ -28,6 +48,32 @@ export default function SignInForm() {
   );
   const [success, setSuccess] = useState("");
 
+  // ---- forgot password ----
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Something went wrong. Please try again.");
+      } else {
+        setSuccess("If that email is registered, you'll receive a reset link shortly.");
+      }
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ---- sign in / register ----
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -70,9 +116,6 @@ export default function SignInForm() {
           return;
         }
 
-        // Register route returns userId — use it as distinctId
-        // identify is also fired server-side in /api/auth/register, this
-        // aliases the client anonymous ID to the real user
         if (data.userId) {
           posthog.identify(data.userId, { email, name: name.trim() });
         }
@@ -92,10 +135,6 @@ export default function SignInForm() {
           return;
         }
 
-        // For sign-in we don't have the userId here — identify happens
-        // in the PostHogIdentifier component that runs after session loads.
-        // Just capture the event; the anonymous session will be aliased once
-        // the session-aware component calls posthog.identify().
         posthog.capture("user_signed_in", { method: "email" });
         window.location.href = callbackUrl;
       }
@@ -105,6 +144,95 @@ export default function SignInForm() {
     }
   };
 
+  // ---- helpers ----
+  const switchMode = (next: "signin" | "register" | "forgot") => {
+    setMode(next);
+    setError("");
+    setSuccess("");
+  };
+
+  // ---- forgot-password view ----
+  if (mode === "forgot") {
+    return (
+      <div
+        className="min-h-screen flex flex-col items-center justify-center px-6 py-12"
+        style={{ background: "#FEFCFA" }}
+      >
+        <div
+          className="w-full max-w-md rounded-[22px] bg-white px-8 py-10 lg:px-10 lg:py-12"
+          style={{
+            boxShadow: "0 12px 48px rgba(45,34,53,0.08), 0 0 0 1px rgba(45,34,53,0.04)",
+          }}
+        >
+          <div
+            className="mx-auto mb-6 h-1 w-32 rounded-full"
+            style={{ background: "linear-gradient(to right, #D94590, #7C3AED, #5EEAD4)" }}
+          />
+
+          <div className="flex justify-center mb-4">
+            <Link href="/">
+              <Image src="/Flipwhizz_logo_NEW.png" alt="FlipWhizz" width={160} height={160} />
+            </Link>
+          </div>
+
+          <h1 className="text-center font-serif text-2xl font-bold mb-1" style={{ color: "#2D2235" }}>
+            Reset your password
+          </h1>
+          <p className="text-center text-sm mb-8" style={{ color: "#6B5D52" }}>
+            Enter your email and we&apos;ll send you a link to reset your password.
+          </p>
+
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div>
+              <label htmlFor="forgot-email" className="block text-xs font-semibold mb-1.5 tracking-wide uppercase" style={{ color: "#6B5D52" }}>
+                Email
+              </label>
+              <input
+                id="forgot-email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 bg-white text-sm transition-all duration-200 focus:outline-none focus:border-[#D94590] focus:ring-2 focus:ring-[#D94590]/10"
+                style={{ color: "#2D2235" }}
+              />
+            </div>
+
+            {error && (
+              <p className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-xl">{error}</p>
+            )}
+            {success && (
+              <p className="text-sm text-emerald-700 bg-emerald-50 px-4 py-2.5 rounded-xl">{success}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 rounded-xl text-sm font-bold text-white tracking-wide transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+              style={{ background: PINK, boxShadow: "0 4px 16px rgba(217,69,144,0.3)" }}
+            >
+              {loading ? "Sending..." : "Send reset link"}
+            </button>
+          </form>
+
+          <p className="text-center text-sm mt-6" style={{ color: "#6B5D52" }}>
+            <button
+              onClick={() => switchMode("signin")}
+              className="font-semibold hover:underline"
+              style={{ color: PINK }}
+            >
+              ← Back to sign in
+            </button>
+          </p>
+        </div>
+
+        <p className="mt-6 text-xs" style={{ color: "#A89B8E" }}>FlipWhizz · Every story finds its way</p>
+      </div>
+    );
+  }
+
+  // ---- sign in / register view ----
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-6 py-12"
@@ -136,7 +264,7 @@ export default function SignInForm() {
         <p className="text-center text-sm mb-8" style={{ color: "#6B5D52" }}>
           {mode === "register"
             ? "Start creating beautiful stories for your little ones."
-            : "Sign in to continue creating\nbeautiful stories for your little ones."}
+            : "Sign in to continue creating beautiful stories for your little ones."}
         </p>
 
         {/* Google */}
@@ -193,18 +321,46 @@ export default function SignInForm() {
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-xs font-semibold mb-1.5 tracking-wide uppercase" style={{ color: "#6B5D52" }}>Password</label>
-            <input
-              id="password"
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={mode === "register" ? "At least 8 characters" : "Your password"}
-              className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 bg-white text-sm transition-all duration-200 focus:outline-none focus:border-[#D94590] focus:ring-2 focus:ring-[#D94590]/10"
-              style={{ color: "#2D2235" }}
-            />
+            {/* Label row: "Password" left, "Forgot password?" right (sign-in only) */}
+            <div className="flex items-center justify-between mb-1.5">
+              <label htmlFor="password" className="block text-xs font-semibold tracking-wide uppercase" style={{ color: "#6B5D52" }}>
+                Password
+              </label>
+              {mode === "signin" && (
+                <button
+                  type="button"
+                  onClick={() => switchMode("forgot")}
+                  className="text-xs font-semibold hover:underline"
+                  style={{ color: PINK }}
+                >
+                  Forgot password?
+                </button>
+              )}
+            </div>
+
+            {/* Password input + eye toggle */}
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={mode === "register" ? "At least 8 characters" : "Your password"}
+                className="w-full px-4 py-3 pr-11 rounded-xl border-2 border-gray-200 bg-white text-sm transition-all duration-200 focus:outline-none focus:border-[#D94590] focus:ring-2 focus:ring-[#D94590]/10"
+                style={{ color: "#2D2235" }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md transition-colors hover:bg-gray-100"
+                style={{ color: "#A89B8E" }}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                <EyeIcon open={showPassword} />
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -231,12 +387,12 @@ export default function SignInForm() {
           {mode === "signin" ? (
             <>
               Don&apos;t have an account?{" "}
-              <button onClick={() => { setMode("register"); setError(""); setSuccess(""); }} className="font-semibold hover:underline" style={{ color: PINK }}>Create one</button>
+              <button onClick={() => switchMode("register")} className="font-semibold hover:underline" style={{ color: PINK }}>Create one</button>
             </>
           ) : (
             <>
               Already have an account?{" "}
-              <button onClick={() => { setMode("signin"); setError(""); setSuccess(""); }} className="font-semibold hover:underline" style={{ color: PINK }}>Sign in</button>
+              <button onClick={() => switchMode("signin")} className="font-semibold hover:underline" style={{ color: PINK }}>Sign in</button>
             </>
           )}
         </p>
