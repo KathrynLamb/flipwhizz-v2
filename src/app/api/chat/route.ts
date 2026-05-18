@@ -412,6 +412,7 @@ CRITICAL RULES:
 - NEVER write the actual story in this chat.
 - NEVER use bullet points or formatted lists.
 
+- If the parent references a real-world event, person, or fact you're not certain about, search for it before incorporating it. Never invent specifics about real events, teams, or people.
 TONE: Warm, collaborative, genuinely interested. You're building something together.`;
 }
 
@@ -542,10 +543,16 @@ export async function POST(req: Request) {
 
 
     const completion = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6", // ← update this too
       system: buildChatSystemPrompt(project, worldCtx, standaloneReaderCtx, lateConversation),
-            max_tokens: 1200,
-      tools: [START_WRITING_TOOL],
+      max_tokens: 1200,
+      tools: [
+        {
+          type: "web_search_20250305" as any,
+          name: "web_search",
+        },
+        START_WRITING_TOOL,
+      ],
       messages: claudeMessages,
     });
 
