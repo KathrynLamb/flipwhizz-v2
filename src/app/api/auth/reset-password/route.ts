@@ -1,10 +1,11 @@
 // app/api/auth/reset-password/route.ts
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db"; // adjust
-import { users } from "@/lib/schema"; // adjust
-import { passwordResetTokens } from "@/lib/schema"; // adjust
+
 import { eq, and, gt, isNull } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { db } from "@/db";
+import { passwordResetTokens } from "@/db/schema";
+import { users } from "drizzle/schema";
 
 const MIN_PASSWORD_LENGTH = 8;
 
