@@ -15,11 +15,16 @@ export async function exportInteriorPDF(
   const page = await browser.newPage();
 
   const html = renderInteriorHTML(pages);
-
   await page.setContent(html, {
-    waitUntil: "networkidle0",
-    timeout: 60000,
+    waitUntil: 'domcontentloaded',
+    timeout: 120000,
   });
+  
+  // Wait for all images to finish loading
+  await page.waitForFunction(
+    () => Array.from(document.images).every(img => img.complete),
+    { timeout: 120000 }
+  );
 
   await page.pdf({
     path: outPath,
