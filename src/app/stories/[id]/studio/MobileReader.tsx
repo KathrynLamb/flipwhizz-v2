@@ -263,6 +263,10 @@ export default function MobileStudio({
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [regeneratingSpreads, setRegeneratingSpreads] = useState<Set<string>>(new Set());
 
+  const [spreadCharacterOverrides, setSpreadCharacterOverrides] = useState
+      <Record<string, string[]>
+    >({});
+
   const [index, setIndex] = useState(0);
   const [viewportWidth, setViewportWidth] = useState<number | null>(null);
   const x = useMotionValue(0);
@@ -432,6 +436,12 @@ export default function MobileStudio({
 
       setIsPolling(true);
       setRedrawTarget(null);
+
+      setSpreadCharacterOverrides((prev) => ({
+        ...prev,
+        [redrawTarget.id]: payload.includedCharacterIds,
+      }));
+
     } catch (err: any) {
       alert(err.message || "Failed to redraw spread");
     } finally {
@@ -552,6 +562,8 @@ useEffect(() => {
             storyId={story.id}
             spreadId={redrawTarget.spreadId ?? ""}
             spreadLabel={redrawLabel}
+            initialIncludedCharacterIds={spreadCharacterOverrides[redrawTarget.id]}  // ← add this
+
           />
         )}
       </AnimatePresence>

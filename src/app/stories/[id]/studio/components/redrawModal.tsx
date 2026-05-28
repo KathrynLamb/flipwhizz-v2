@@ -663,9 +663,11 @@ export default function RedrawModal({
         setRefs(data);
 
         setIncludedCharacterIds(
-          new Set(data.assignedCharacters.map((c) => c.characterId))
+          initialIncludedCharacterIds && initialIncludedCharacterIds.length > 0
+            ? new Set(initialIncludedCharacterIds)
+            : new Set(data.assignedCharacters.map((c) => c.characterId))
         );
-
+        
         const outfits: Record<string, string> = {};
         for (const c of data.assignedCharacters) {
           if (c.currentOutfitKey) {

@@ -26,6 +26,7 @@ import RedrawStrategistModal, {
   type RedrawStrategistContext,
   type StrategistMessage,
 } from "@/app/stories/[id]/studio/components/RedrawStrategistModal";
+
 /* ---------------------------------- Types --------------------------------- */
 
 type Page = {
@@ -60,9 +61,9 @@ type SpreadReferencesResponse = {
     id: string;
     spreadIndex: number;
     sceneSummary: string | null;
-    illustrationPrompt: string | null;  // ✅ locked art director prompt
-    mood: string | null;                // ✅ intended mood
-    compositionNotes: string[];         // ✅ framing instructions
+    illustrationPrompt: string | null;
+    mood: string | null;
+    compositionNotes: string[];
   };
   assignedCharacters: {
     characterId: string;
@@ -162,13 +163,11 @@ function SplitRedrawBanner({
     <div className="rounded-2xl border border-orange-200 bg-orange-50 px-5 py-4 flex items-start gap-3">
       <Users className="w-5 h-5 text-orange-600 mt-0.5" />
       <div className="flex-1">
-        <p className="text-sm font-bold text-orange-900">
-          Split redraw plan ready
-        </p>
+        <p className="text-sm font-bold text-orange-900">Split redraw plan ready</p>
         <p className="text-xs text-orange-800 mt-1 leading-relaxed">
-          The strategist judged this scene too crowded for one unified spread.
-          The plan has been captured as a two-page redraw concept, but your
-          current image worker still renders double-page spreads only.
+          The strategist judged this scene too crowded for one unified spread. The plan has been
+          captured as a two-page redraw concept, but your current image worker still renders
+          double-page spreads only.
         </p>
 
         <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -180,7 +179,6 @@ function SplitRedrawBanner({
               {plan.leftPagePrompt || "—"}
             </p>
           </div>
-
           <div className="rounded-xl bg-white border border-orange-200 p-3">
             <p className="text-[11px] uppercase tracking-wide text-orange-700 font-bold mb-1.5">
               Right page prompt
@@ -221,15 +219,10 @@ function CoverSpreadPreview({
       className="group relative bg-white rounded-2xl shadow-sm border border-gray-200/50 overflow-hidden"
     >
       <div className="relative w-full aspect-[2/1] bg-gradient-to-br from-gray-100 via-white to-gray-100">
-        <img
-          src={url}
-          alt="Book cover spread"
-          className="w-full h-full object-contain"
-        />
+        <img src={url} alt="Book cover spread" className="w-full h-full object-contain" />
         <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-bold text-white">
           Cover (Back · Spine · Front)
         </div>
-
         <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={onRedraw}
@@ -289,17 +282,11 @@ function SpreadCard({
                 <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
                 <Sparkles className="w-4 h-4 text-pink-500 absolute -top-1 -right-1 animate-pulse" />
               </div>
-              <p className="text-sm text-purple-600 font-medium">
-                Redrawing spread…
-              </p>
+              <p className="text-sm text-purple-600 font-medium">Redrawing spread…</p>
             </div>
           </div>
         ) : hasImage ? (
-          <img
-            src={spread.left.imageUrl!}
-            className="w-full h-full object-contain"
-            alt={pageLabel}
-          />
+          <img src={spread.left.imageUrl!} className="w-full h-full object-contain" alt={pageLabel} />
         ) : (
           <div className="flex h-full items-center justify-center text-gray-400">
             {isGeneratingAll ? (
@@ -376,8 +363,7 @@ function StudioActionCard({
         style={{
           background: "white",
           border: "1px solid rgba(180,150,210,0.12)",
-          boxShadow:
-            "0 2px 12px rgba(100,60,140,0.06), 0 8px 32px rgba(100,60,140,0.04)",
+          boxShadow: "0 2px 12px rgba(100,60,140,0.06), 0 8px 32px rgba(100,60,140,0.04)",
           fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
         }}
       >
@@ -404,13 +390,9 @@ function StudioActionCard({
             >
               All illustrations complete!
             </h3>
-            <p
-              className="text-sm leading-relaxed max-w-md"
-              style={{ color: "#7B6E90" }}
-            >
-              Your pages are looking great. Next up: design a cover to bring it
-              all together — you'll chat through your vision and we'll generate
-              it for you.
+            <p className="text-sm leading-relaxed max-w-md" style={{ color: "#7B6E90" }}>
+              Your pages are looking great. Next up: design a cover to bring it all together —
+              you'll chat through your vision and we'll generate it for you.
             </p>
           </div>
 
@@ -445,8 +427,7 @@ function StudioActionCard({
       style={{
         background: "white",
         border: "1px solid rgba(180,150,210,0.12)",
-        boxShadow:
-          "0 2px 12px rgba(100,60,140,0.06), 0 8px 32px rgba(100,60,140,0.04)",
+        boxShadow: "0 2px 12px rgba(100,60,140,0.06), 0 8px 32px rgba(100,60,140,0.04)",
         fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
       }}
     >
@@ -470,12 +451,9 @@ function StudioActionCard({
           >
             Your book is ready!
           </h3>
-          <p
-            className="text-sm leading-relaxed max-w-md"
-            style={{ color: "#7B6E90" }}
-          >
-            Illustrations and cover are complete. Export a print-ready PDF or
-            tweak the cover if you'd like changes.
+          <p className="text-sm leading-relaxed max-w-md" style={{ color: "#7B6E90" }}>
+            Illustrations and cover are complete. Export a print-ready PDF or tweak the cover if
+            you'd like changes.
           </p>
         </div>
 
@@ -609,48 +587,44 @@ export default function DesktopStudio({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
 
-  const [regeneratingSpreads, setRegeneratingSpreads] = useState<Set<string>>(
-    new Set()
-  );
+  const [regeneratingSpreads, setRegeneratingSpreads] = useState<Set<string>>(new Set());
 
+  // ── Redraw Modal (character/location/outfit editor) ──
+  const [redrawModalTarget, setRedrawModalTarget] = useState<Spread | null>(null);
+  const [isSubmittingRedrawModal, setIsSubmittingRedrawModal] = useState(false);
+
+  // ── Focus Scene Modal (large cast) ──
   const [focusTarget, setFocusTarget] = useState<Spread | null>(null);
   const [focusCharacters, setFocusCharacters] = useState<FocusCharacterOption[]>([]);
   const [focusSelectedCharacterIds, setFocusSelectedCharacterIds] = useState<string[] | null>(null);
   const [isSubmittingFocus, setIsSubmittingFocus] = useState(false);
-  const [pendingFocusMode, setPendingFocusMode] = useState<"generate" | "redraw" | null>(
-    null
-  );
+  const [pendingFocusMode, setPendingFocusMode] = useState<"generate" | "redraw" | null>(null);
 
   const [pendingSplitPlan, setPendingSplitPlan] = useState<RedrawPlan | null>(null);
 
+  // ── Strategist ──
   const [isOpeningStrategist, setIsOpeningStrategist] = useState(false);
-
   const [strategistTarget, setStrategistTarget] = useState<Spread | null>(null);
   const [isStrategistOpen, setIsStrategistOpen] = useState(false);
   const [isSendingStrategistMessage, setIsSendingStrategistMessage] = useState(false);
   const [isApplyingStrategistPlan, setIsApplyingStrategistPlan] = useState(false);
   const [strategistMessages, setStrategistMessages] = useState<StrategistMessage[]>([]);
   const [strategistPlan, setStrategistPlan] = useState<RedrawPlan | null>(null);
-  const [strategistContext, setStrategistContext] =
-    useState<RedrawStrategistContext | null>(null);
+  const [strategistContext, setStrategistContext] = useState<RedrawStrategistContext | null>(null);
 
-  const spreads = useMemo(
-    () => groupIntoSpreads(pages, dbSpreads),
-    [pages, dbSpreads]
-  );
+  const spreads = useMemo(() => groupIntoSpreads(pages, dbSpreads), [pages, dbSpreads]);
 
   const completedCount = pages.filter((p) => p.imageUrl).length;
   const totalCount = pages.length;
   const allGenerated = completedCount === totalCount;
   const isPaid = story.paymentStatus === "paid";
 
+  /* ── Polling ── */
   useEffect(() => {
     if (!isPolling) return;
 
     const interval = setInterval(async () => {
-      const res = await fetch(`/api/stories/${story.id}/pages`, {
-        cache: "no-store",
-      });
+      const res = await fetch(`/api/stories/${story.id}/pages`, { cache: "no-store" });
       if (!res.ok) return;
 
       const updatedPages: Page[] = await res.json();
@@ -672,10 +646,7 @@ export default function DesktopStudio({
         }
       }
 
-      if (
-        updatedPages.every((p) => p.imageUrl) &&
-        regeneratingSpreads.size === 0
-      ) {
+      if (updatedPages.every((p) => p.imageUrl) && regeneratingSpreads.size === 0) {
         setIsPolling(false);
         setIsGenerating(false);
       }
@@ -684,21 +655,21 @@ export default function DesktopStudio({
     return () => clearInterval(interval);
   }, [isPolling, story.id, regeneratingSpreads, dbSpreads]);
 
+  /* ── Auto-generate on paid ── */
   useEffect(() => {
     if (!isPaid) return;
 
     if (completedCount === 0 && !isGenerating) {
       setIsGenerating(true);
       setIsPolling(true);
-      fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" }).catch(
-        () => {}
-      );
+      fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" }).catch(() => {});
     } else if (completedCount > 0 && completedCount < totalCount && story.status === "generating") {
       setIsGenerating(true);
       setIsPolling(true);
     }
   }, [isPaid]);
 
+  /* ── Helpers ── */
   async function loadFocusCandidates(spread: Spread): Promise<FocusCharacterOption[] | null> {
     if (!spread.spreadId) return null;
 
@@ -707,38 +678,30 @@ export default function DesktopStudio({
       { cache: "no-store" }
     );
 
-    if (!res.ok) {
-      throw new Error("Failed to load spread references");
-    }
+    if (!res.ok) throw new Error("Failed to load spread references");
 
     const data: SpreadReferencesResponse = await res.json();
 
-    const assigned = (data.assignedCharacters ?? []).map((c) => ({
+    return (data.assignedCharacters ?? []).map((c) => ({
       characterId: c.characterId,
       name: c.name,
       imageUrl: bestCharacterImage(c),
       role: c.role,
     }));
-
-    return assigned;
   }
 
   async function buildStrategistContext(
     spread: Spread,
     initialFeaturedCharacterIds?: string[] | null
   ): Promise<RedrawStrategistContext> {
-    if (!spread.spreadId) {
-      throw new Error("Missing spread id");
-    }
+    if (!spread.spreadId) throw new Error("Missing spread id");
 
     const res = await fetch(
       `/api/stories/${story.id}/spreads/${spread.spreadId}/references`,
       { cache: "no-store" }
     );
 
-    if (!res.ok) {
-      throw new Error("Failed to load spread references");
-    }
+    if (!res.ok) throw new Error("Failed to load spread references");
 
     const data: SpreadReferencesResponse = await res.json();
 
@@ -756,8 +719,7 @@ export default function DesktopStudio({
             name: c.name,
             imageUrl: bestCharacterImage(c),
             role: c.role,
-            outfitKey:
-              "currentOutfitKey" in c ? c.currentOutfitKey ?? null : null,
+            outfitKey: "currentOutfitKey" in c ? c.currentOutfitKey ?? null : null,
           },
         ])
       ).values()
@@ -797,8 +759,8 @@ export default function DesktopStudio({
         ? `Pages ${spread.left.pageNumber}–${spread.right.pageNumber}`
         : `Page ${spread.left.pageNumber}`,
       sceneSummary: data.spread?.sceneSummary ?? null,
-      illustrationBrief: data.spread?.illustrationPrompt ?? null, // ✅ locked art director prompt
-      mood: data.spread?.mood ?? null,                            // ✅ intended mood
+      illustrationBrief: data.spread?.illustrationPrompt ?? null,
+      mood: data.spread?.mood ?? null,
       leftPageText: spread.left.text ?? null,
       rightPageText: spread.right?.text ?? null,
       currentSpreadImageUrl: spread.left.imageUrl ?? null,
@@ -854,18 +816,13 @@ export default function DesktopStudio({
     setRegeneratingSpreads((prev) => new Set(prev).add(spread.id));
 
     setPages((prev) =>
-      prev.map((p) =>
-        pageIds.includes(p.id) ? { ...p, imageUrl: null } : p
-      )
+      prev.map((p) => (pageIds.includes(p.id) ? { ...p, imageUrl: null } : p))
     );
 
     setIsPolling(true);
   }
 
-  async function maybeFocusSpread(
-    spread: Spread,
-    mode: "generate" | "redraw"
-  ) {
+  async function maybeFocusSpread(spread: Spread, mode: "generate" | "redraw") {
     try {
       const assigned = await loadFocusCandidates(spread);
 
@@ -877,9 +834,7 @@ export default function DesktopStudio({
         return true;
       }
 
-      if (mode === "redraw") {
-        await openStrategistForSpread(spread);
-      } else {
+      if (mode === "generate") {
         await startRegenerationForSpread(spread, { freshStart: true });
       }
 
@@ -896,18 +851,13 @@ export default function DesktopStudio({
     setIsPolling(true);
 
     try {
-      const res = await fetch(`/api/stories/${story.id}/generate-all`, {
-        method: "POST",
-      });
-
+      const res = await fetch(`/api/stories/${story.id}/generate-all`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to start generation");
 
       if (Array.isArray(data.spreadsSkippedForFocus) && data.spreadsSkippedForFocus.length > 0) {
         alert(
-          `Some spreads need scene focus before they can be generated: ${data.spreadsSkippedForFocus.join(
-            ", "
-          )}`
+          `Some spreads need scene focus before they can be generated: ${data.spreadsSkippedForFocus.join(", ")}`
         );
       }
     } catch (err: any) {
@@ -981,10 +931,7 @@ export default function DesktopStudio({
       });
 
       const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to continue strategist chat");
-      }
+      if (!res.ok) throw new Error(data.error || "Failed to continue strategist chat");
 
       setStrategistMessages((prev) => [...prev, data.assistantMessage]);
       setStrategistPlan(data.plan ?? null);
@@ -1026,10 +973,7 @@ export default function DesktopStudio({
           throw new Error("Split plan requires a spread with both left and right pages");
         }
 
-        const leftOnlySpread: Spread = {
-          ...strategistTarget,
-          right: null,
-        };
+        const leftOnlySpread: Spread = { ...strategistTarget, right: null };
 
         await startRegenerationForSpread(leftOnlySpread, {
           freshStart: false,
@@ -1077,8 +1021,36 @@ export default function DesktopStudio({
     await maybeFocusSpread(spread, "generate");
   }
 
-  async function handleRedrawClick(spread: Spread) {
-    await maybeFocusSpread(spread, "redraw");
+  // ── Opens RedrawModal directly; no more auto-routing to strategist ──
+  function handleRedrawClick(spread: Spread) {
+    setRedrawModalTarget(spread);
+  }
+
+  async function handleRedrawModalSubmit(payload: {
+    feedback: string;
+    includedCharacterIds: string[];
+    outfitOverrides: Record<string, string>;
+    primaryLocationId: string | null;
+    includedLocationIds: string[];
+    freshStart?: boolean;
+  }) {
+    if (!redrawModalTarget) return;
+    setIsSubmittingRedrawModal(true);
+    try {
+      await startRegenerationForSpread(redrawModalTarget, {
+        feedback: payload.feedback,
+        includedCharacterIds: payload.includedCharacterIds,
+        outfitOverrides: payload.outfitOverrides,
+        primaryLocationId: payload.primaryLocationId,
+        includedLocationIds: payload.includedLocationIds,
+        freshStart: payload.freshStart ?? false,
+      });
+      setRedrawModalTarget(null);
+    } catch (err: any) {
+      alert(err.message || "Failed to redraw spread");
+    } finally {
+      setIsSubmittingRedrawModal(false);
+    }
   }
 
   async function handleFocusSubmit(selection: FocusSceneSelection) {
@@ -1119,9 +1091,7 @@ export default function DesktopStudio({
     setIsExporting(true);
 
     try {
-      const res = await fetch(`/api/stories/${story.id}/export-complete`, {
-        method: "POST",
-      });
+      const res = await fetch(`/api/stories/${story.id}/export-complete`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error();
       window.open(data.url, "_blank");
@@ -1137,9 +1107,7 @@ export default function DesktopStudio({
     setIsOrdering(true);
 
     try {
-      const res = await fetch(`/api/stories/${story.id}/order-test`, {
-        method: "POST",
-      });
+      const res = await fetch(`/api/stories/${story.id}/order-test`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to place order");
       alert(`Order placed! Gelato order ID: ${data.gelatoOrderId}`);
@@ -1156,6 +1124,7 @@ export default function DesktopStudio({
       : `Page ${focusTarget.left.pageNumber}`
     : "";
 
+  /* ── Paywall ── */
   if (!isPaid) {
     const previewSpread = pages.find((p) => p.imageUrl);
 
@@ -1170,7 +1139,6 @@ export default function DesktopStudio({
           hasPages={pages.length > 0}
           coverSpreadUrl={story.coverSpreadUrl}
         />
-
         <StudioPaywall
           storyId={story.id}
           storyTitle={story.title}
@@ -1180,8 +1148,10 @@ export default function DesktopStudio({
     );
   }
 
+  /* ── Main ── */
   return (
     <div className="min-h-screen bg-gray-50 pb-40">
+      {/* Strategist */}
       <AnimatePresence>
         {isStrategistOpen && strategistTarget && (
           <RedrawStrategistModal
@@ -1210,6 +1180,26 @@ export default function DesktopStudio({
         )}
       </AnimatePresence>
 
+      {/* Redraw Modal */}
+      <AnimatePresence>
+        {redrawModalTarget && (
+          <RedrawModal
+            isOpen
+            onClose={() => setRedrawModalTarget(null)}
+            onSubmit={handleRedrawModalSubmit}
+            isSubmitting={isSubmittingRedrawModal}
+            storyId={story.id}
+            spreadId={redrawModalTarget.spreadId ?? ""}
+            spreadLabel={
+              redrawModalTarget.right
+                ? `Pages ${redrawModalTarget.left.pageNumber}–${redrawModalTarget.right.pageNumber}`
+                : `Page ${redrawModalTarget.left.pageNumber}`
+            }
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Focus Scene Modal */}
       <AnimatePresence>
         {focusTarget && (
           <FocusSceneModal
@@ -1285,20 +1275,6 @@ export default function DesktopStudio({
           />
         ))}
 
-        {focusTarget && (
-          <div className="rounded-2xl border border-purple-200 bg-purple-50 px-5 py-4 flex items-start gap-3">
-            <Users className="w-5 h-5 text-purple-600 mt-0.5" />
-            <div>
-              <p className="text-sm font-bold text-purple-900">
-                Focus this scene for better likeness
-              </p>
-              <p className="text-xs text-purple-700 mt-1">
-                This spread has a large cast. Choose up to 5 featured characters
-                to keep faces and outfits more consistent.
-              </p>
-            </div>
-          </div>
-        )}
         {pendingSplitPlan && (
           <SplitRedrawBanner
             plan={pendingSplitPlan}

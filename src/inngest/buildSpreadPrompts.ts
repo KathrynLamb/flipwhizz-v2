@@ -180,6 +180,8 @@ export const buildSpreadPrompts = inngest.createFunction(
   {
     id: "build-spread-prompts",
     retries: 2,
+    timeouts: { finish: "10m" },       // ← give Claude room to breathe
+    concurrency: { limit: 3 },          // ← max 3 stories at once
     triggers: [{ event: "story/build-spread-prompts" }],
   },
   async ({ event, step }) => {
