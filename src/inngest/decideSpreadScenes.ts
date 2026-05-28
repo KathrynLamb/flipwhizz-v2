@@ -290,6 +290,8 @@ export const decideScenes = inngest.createFunction(
   {
     id: "decide-scenes-v5",
     retries: 2,
+    timeouts: { finish: "10m" },
+    concurrency: { limit: 3 },
     triggers: [{ event: "story/decide-spread-scenes" }],
   },
   async ({ event, step }) => {
@@ -496,7 +498,7 @@ ${spreadText}
       console.log("🤖 Calling Claude with tool...");
       return client.messages.create({
         model: MODEL,
-        max_tokens: 2500,
+        max_tokens: 6000,
         tools: [decideSpreadScenesTool],
         tool_choice: { type: "tool", name: "decide_spread_scenes" },
         system: systemPrompt,
@@ -521,7 +523,7 @@ ${spreadText}
       const repairedResult = await step.run("repair-tool-output", async () => {
         return client.messages.create({
           model: MODEL,
-          max_tokens: 1500,
+          max_tokens: 6000,
           tools: [decideSpreadScenesTool],
           tool_choice: { type: "tool", name: "decide_spread_scenes" },
           system: `

@@ -63,6 +63,40 @@ const EMPTY_ADDRESS: ShippingAddress = {
   city: "", postCode: "", countryIsoCode: "GB", email: "", phone: "",
 };
 
+// Module-level so both PrintPage and AddressSheet can reference it
+const COUNTRIES = [
+  { code: "GB", label: "United Kingdom" },
+  { code: "US", label: "United States" },
+  { code: "CA", label: "Canada" },
+  { code: "AU", label: "Australia" },
+  { code: "DE", label: "Germany" },
+  { code: "FR", label: "France" },
+  { code: "NL", label: "Netherlands" },
+  { code: "IE", label: "Ireland" },
+  { code: "SE", label: "Sweden" },
+  { code: "NO", label: "Norway" },
+  { code: "DK", label: "Denmark" },
+  { code: "FI", label: "Finland" },
+  { code: "BE", label: "Belgium" },
+  { code: "CH", label: "Switzerland" },
+  { code: "AT", label: "Austria" },
+  { code: "IT", label: "Italy" },
+  { code: "ES", label: "Spain" },
+  { code: "PT", label: "Portugal" },
+  { code: "PL", label: "Poland" },
+  { code: "NZ", label: "New Zealand" },
+];
+
+function currencyToDefaultCountry(currency: string): string {
+  switch (currency) {
+    case "GBP": return "GB";
+    case "USD": return "US";
+    case "AUD": return "AU";
+    case "EUR": return "DE";
+    default: return "GB";
+  }
+}
+
 const UPGRADE_TIER_DEFS: { key: UpgradeTier; label: string; icon: typeof Package; description: string }[] = [
   { key: "print", label: "Softcover Book", icon: Printer, description: "Premium softcover, delivered to your door" },
   { key: "gift", label: "Hardcover Gift Edition", icon: Gift, description: "Deluxe hardcover keepsake, gift-ready" },
@@ -118,6 +152,8 @@ export default function PrintPage({ story, order, productType: initialProductTyp
   const isPhysical = productType === "print" || productType === "gift";
   const ProductIcon = getProductIcon(productType);
 
+  const defaultCountry = currencyToDefaultCountry(currency);
+
   const saveProductSelection = useCallback(async (newType: string) => {
     setUpgradeSavingProduct(true);
     try {
@@ -141,17 +177,17 @@ export default function PrintPage({ story, order, productType: initialProductTyp
     setIsDownloading(true);
     try {
       const res = await fetch(`/api/stories/${story.id}/export-home-print`, { method: "POST" });
-      if (!res.ok) { 
-        const data = await res.json().catch(() => ({})); 
-        throw new Error(data.error || "Failed to generate PDF"); 
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to generate PDF");
       }
       const blob = await res.blob();
-      
+
       // Upload to Cloudinary and save URL back to story
       const formData = new FormData();
       formData.append("file", blob, "book.pdf");
       formData.append("storyId", story.id);
-      
+
       try {
         await fetch(`/api/stories/${story.id}/save-pdf`, {
           method: "POST",
@@ -160,7 +196,7 @@ export default function PrintPage({ story, order, productType: initialProductTyp
       } catch (e) {
         console.error("save-pdf failed:", e);
       }
-      
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -171,10 +207,11 @@ export default function PrintPage({ story, order, productType: initialProductTyp
       a.download = `${safeName}-print-at-home.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) { 
-      alert(err instanceof Error ? err.message : "Failed to download PDF"); 
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to download PDF");
+    } finally {
+      setIsDownloading(false);
     }
-    finally { setIsDownloading(false); }
   }
 
   /* ----------------------------- PRINT AT HOME ----------------------------- */
@@ -211,7 +248,7 @@ export default function PrintPage({ story, order, productType: initialProductTyp
       });
       if (!orderRes.ok) { const data = await orderRes.json().catch(() => ({})); throw new Error(data.error || "Failed to place order"); }
       const orderData = await orderRes.json();
-      setCurrentOrder({ id: orderData.orderId ?? orderData.id ?? "", status: "submitted", gelatoOrderId: orderData.gelatoOrderId ?? null, gelatoStatus: orderData.gelatoStatus ?? "submitted", createdAt: new Date().toISOString() });
+      setCurrentOrder({ id: orderData.orderId ?? orderData.id ?? "", status: "submitted", gelatoOrderId: orderData.gelatoOrderId ?? null, gelatoStatus: orderData.gelatoStatus ?? "submitted", gelatoTrackingCode: null, gelatoTrackingUrl: null, gelatoMinDeliveryDate: null, gelatoMaxDeliveryDate: null, createdAt: new Date().toISOString() });
       setFlowStatus("success");
     } catch (err) { setErrorMessage(err instanceof Error ? err.message : "An unexpected error occurred"); setFlowStatus("error"); }
   }
@@ -293,7 +330,17 @@ export default function PrintPage({ story, order, productType: initialProductTyp
           <UpgradeSheet storyId={story.id} selectedTier={selectedUpgradeTier} onSelectTier={setSelectedUpgradeTier} onClose={() => setFlowStatus("idle")} onSuccess={handleUpgradeSuccess} saveProductSelection={saveProductSelection} processing={upgradeProcessing} setProcessing={setUpgradeProcessing} savingProduct={upgradeSavingProduct} currency={currency} />
         )}
       </AnimatePresence>
-      <AnimatePresence>{flowStatus === "address" && <AddressSheet onClose={() => setFlowStatus("idle")} onSubmit={handleOrder} isSubmitting={false} initialAddress={initialShippingAddress} />}</AnimatePresence>
+      <AnimatePresence>
+        {flowStatus === "address" && (
+          <AddressSheet
+            onClose={() => setFlowStatus("idle")}
+            onSubmit={handleOrder}
+            isSubmitting={false}
+            initialAddress={initialShippingAddress}
+            defaultCountry={defaultCountry}
+          />
+        )}
+      </AnimatePresence>
       <AnimatePresence>{flowStatus === "processing" && <ProcessingOverlay step={processingStep} />}</AnimatePresence>
       <AnimatePresence>{flowStatus === "success" && <SuccessOverlay onDone={() => setFlowStatus("idle")} />}</AnimatePresence>
       <AnimatePresence>{flowStatus === "error" && <ErrorOverlay message={errorMessage} onRetry={handleRetry} onClose={() => setFlowStatus("idle")} />}</AnimatePresence>
@@ -322,21 +369,17 @@ function UpgradeSheet({ storyId, selectedTier, onSelectTier, onClose, onSuccess,
   const fullCents = getPriceCents(selectedTier, currency);
   const digitalCents = getPriceCents("digital", currency);
 
-  // Apply promo to upgrade price
   const finalCents = promoState?.valid ? promoState.discountedCents : upgradeCents;
 
   async function validatePromo(code: string) {
     setPromoLoading(true); setPromoError("");
     try {
-      // Validate against the UPGRADE price, not the full price
-      // We use the target product type for discount resolution
       const res = await fetch("/api/promo/validate", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, productType: selectedTier, currency }),
       });
       const data = await res.json();
       if (data.valid) {
-        // Recalculate discount against upgrade price, not full price
         const discountPercent = data.discountPercent;
         const isFree = data.isFree;
         const discounted = isFree ? 0 : Math.round(upgradeCents * (1 - discountPercent / 100));
@@ -355,7 +398,6 @@ function UpgradeSheet({ storyId, selectedTier, onSelectTier, onClose, onSuccess,
 
   function clearPromo() { setPromoState(null); setPromoInput(""); setPromoError(""); }
 
-  // Re-validate promo when tier changes
   useEffect(() => {
     if (promoState?.valid) validatePromo(promoState.code);
   }, [selectedTier]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -453,93 +495,90 @@ function UpgradeSheet({ storyId, selectedTier, onSelectTier, onClose, onSuccess,
           {promoError && <p className="text-[11px] mt-1.5 font-semibold" style={{ color: "#E91E63" }}>{promoError}</p>}
         </div>
 
-        {/* PayPal */}
-{/* PayPal or Free Checkout */}
-<div className="px-6 py-5">
-  {(processing || savingProduct) && (
-    <div className="flex items-center justify-center gap-2 py-8">
-      <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#B05CE6" }} />
-      <span className="text-sm font-semibold" style={{ color: "#6B5C80" }}>
-        {savingProduct ? "Saving upgrade selection…" : "Processing…"}
-      </span>
-    </div>
-  )}
+        {/* PayPal or Free Checkout */}
+        <div className="px-6 py-5">
+          {(processing || savingProduct) && (
+            <div className="flex items-center justify-center gap-2 py-8">
+              <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#B05CE6" }} />
+              <span className="text-sm font-semibold" style={{ color: "#6B5C80" }}>
+                {savingProduct ? "Saving upgrade selection…" : "Processing…"}
+              </span>
+            </div>
+          )}
 
-  {!processing && !savingProduct && finalCents === 0 ? (
-    // FREE BYPASS — no PayPal needed
-    <button
-      onClick={async () => {
-        setProcessing(true);
-        try {
-          await saveProductSelection(selectedTier);
-          const res = await fetch("/api/paypal/capture-free", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              storyId,
-              productType: selectedTier,
-              promoCode: promoState?.valid ? promoState.code : undefined,
-            }),
-          });
-          const result = await res.json();
-          if (!res.ok || !result.success) throw new Error(result?.error || "Failed to process free order");
-          onSuccess();
-        } catch (err: any) {
-          alert(err?.message || "Something went wrong.");
-        } finally {
-          setProcessing(false);
-        }
-      }}
-      className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
-      style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", border: "none", fontFamily: FONT }}
-    >
-      <Check className="w-5 h-5" />
-      Get it free
-    </button>
-  ) : (
-    // PAYPAL NORMAL FLOW
-    <div style={{ display: processing || savingProduct ? "none" : "block" }}>
-      <PayPalScriptProvider options={{ clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!, currency, intent: "capture" }}>
-        <PayPalButtons
-          key={`${selectedTier}-${currency}-${promoState?.code ?? "none"}`}
-          style={{ layout: "vertical", color: "gold", shape: "rect", label: "pay", height: 48 }}
-          createOrder={async () => {
-            await saveProductSelection(selectedTier);
-            const res = await fetch("/api/paypal/order", {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                storyId, price: (finalCents / 100).toFixed(2), currency,
-                upgradeFrom: "digital",
-                promoCode: promoState?.valid ? promoState.code : undefined,
-              }),
-            });
-            const data = await res.json();
-            if (!res.ok || !data.orderID) throw new Error(data?.error || "Failed to create upgrade order");
-            return data.orderID;
-          }}
-          onApprove={async (data) => {
-            setProcessing(true);
-            try {
-              const res = await fetch("/api/paypal/capture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderID: data.orderID }) });
-              const result = await res.json();
-              if (!res.ok || !result.success) throw new Error(result?.error || "Payment capture failed.");
-              onSuccess();
-            } catch (err: any) { alert(err?.message || "Payment processed but something went wrong."); }
-            finally { setProcessing(false); }
-          }}
-          onError={(err) => { console.error("PayPal upgrade error:", err); setProcessing(false); saveProductSelection("digital").catch(() => {}); alert("Payment failed. Please try again."); }}
-          onCancel={() => { setProcessing(false); saveProductSelection("digital").catch(() => {}); }}
-        />
-      </PayPalScriptProvider>
-    </div>
-  )}
+          {!processing && !savingProduct && finalCents === 0 ? (
+            <button
+              onClick={async () => {
+                setProcessing(true);
+                try {
+                  await saveProductSelection(selectedTier);
+                  const res = await fetch("/api/paypal/capture-free", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      storyId,
+                      productType: selectedTier,
+                      promoCode: promoState?.valid ? promoState.code : undefined,
+                    }),
+                  });
+                  const result = await res.json();
+                  if (!res.ok || !result.success) throw new Error(result?.error || "Failed to process free order");
+                  onSuccess();
+                } catch (err: any) {
+                  alert(err?.message || "Something went wrong.");
+                } finally {
+                  setProcessing(false);
+                }
+              }}
+              className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", border: "none", fontFamily: FONT }}
+            >
+              <Check className="w-5 h-5" />
+              Get it free
+            </button>
+          ) : (
+            <div style={{ display: processing || savingProduct ? "none" : "block" }}>
+              <PayPalScriptProvider options={{ clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!, currency, intent: "capture" }}>
+                <PayPalButtons
+                  key={`${selectedTier}-${currency}-${promoState?.code ?? "none"}`}
+                  style={{ layout: "vertical", color: "gold", shape: "rect", label: "pay", height: 48 }}
+                  createOrder={async () => {
+                    await saveProductSelection(selectedTier);
+                    const res = await fetch("/api/paypal/order", {
+                      method: "POST", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        storyId, price: (finalCents / 100).toFixed(2), currency,
+                        upgradeFrom: "digital",
+                        promoCode: promoState?.valid ? promoState.code : undefined,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.orderID) throw new Error(data?.error || "Failed to create upgrade order");
+                    return data.orderID;
+                  }}
+                  onApprove={async (data) => {
+                    setProcessing(true);
+                    try {
+                      const res = await fetch("/api/paypal/capture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderID: data.orderID }) });
+                      const result = await res.json();
+                      if (!res.ok || !result.success) throw new Error(result?.error || "Payment capture failed.");
+                      onSuccess();
+                    } catch (err: any) { alert(err?.message || "Payment processed but something went wrong."); }
+                    finally { setProcessing(false); }
+                  }}
+                  onError={(err) => { console.error("PayPal upgrade error:", err); setProcessing(false); saveProductSelection("digital").catch(() => {}); alert("Payment failed. Please try again."); }}
+                  onCancel={() => { setProcessing(false); saveProductSelection("digital").catch(() => {}); }}
+                />
+              </PayPalScriptProvider>
+            </div>
+          )}
 
-  <div className="flex justify-center gap-3 mt-4">
-    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(180,150,210,0.06)", color: "#8B7BA0", border: "1px solid rgba(180,150,210,0.1)" }}>
-      <Lock className="w-3 h-3" /> Secure payment
-    </span>
-  </div>
-</div>
+          <div className="flex justify-center gap-3 mt-4">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(180,150,210,0.06)", color: "#8B7BA0", border: "1px solid rgba(180,150,210,0.1)" }}>
+              <Lock className="w-3 h-3" /> Secure payment
+            </span>
+          </div>
+        </div>
       </motion.div>
     </div>
   );
@@ -578,27 +617,25 @@ function OrderStatusCard({ order }: { order: Order }) {
           done={s === "delivered"}
         />
 
-        {/* Tracking link */}
         {order.gelatoTrackingUrl && (
           <a
-          href={order.gelatoTrackingUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
-          style={{
-            background: "rgba(67,184,156,0.06)",
-            border: "1px solid rgba(67,184,156,0.15)",
-            color: "#2FA482",
-            textDecoration: "none",
-          }}
-        >
-          <Truck className="w-3.5 h-3.5" />
-          Track your delivery
-          <ArrowUpRight className="w-3 h-3 ml-auto opacity-60" />
-        </a>
-      )}
+            href={order.gelatoTrackingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+            style={{
+              background: "rgba(67,184,156,0.06)",
+              border: "1px solid rgba(67,184,156,0.15)",
+              color: "#2FA482",
+              textDecoration: "none",
+            }}
+          >
+            <Truck className="w-3.5 h-3.5" />
+            Track your delivery
+            <ArrowUpRight className="w-3 h-3 ml-auto opacity-60" />
+          </a>
+        )}
 
-        {/* Delivery estimate */}
         {order.gelatoMinDeliveryDate && order.gelatoMaxDeliveryDate && (
           <div className="flex items-center gap-2 pt-1">
             <Clock className="w-3 h-3 flex-shrink-0" style={{ color: "#A897BD" }} />
@@ -656,51 +693,117 @@ function getStatusConfig(status: string) {
 }
 
 function StatusDot({ active, done }: { active: boolean; done: boolean }) {
-  return <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: done ? "rgba(67,184,156,0.15)" : active ? "rgba(176,92,230,0.12)" : "rgba(180,150,210,0.08)", border: done ? "2px solid #43B89C" : active ? "2px solid #B05CE6" : "2px solid rgba(180,150,210,0.15)" }}>
-    {done && <Check className="w-3 h-3" style={{ color: "#2FA482" }} />}
-    {active && !done && <div className="w-2 h-2 rounded-full" style={{ background: "#B05CE6" }} />}
-  </div>;
+  return (
+    <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: done ? "rgba(67,184,156,0.15)" : active ? "rgba(176,92,230,0.12)" : "rgba(180,150,210,0.08)", border: done ? "2px solid #43B89C" : active ? "2px solid #B05CE6" : "2px solid rgba(180,150,210,0.15)" }}>
+      {done && <Check className="w-3 h-3" style={{ color: "#2FA482" }} />}
+      {active && !done && <div className="w-2 h-2 rounded-full" style={{ background: "#B05CE6" }} />}
+    </div>
+  );
 }
-
-
 
 /* -------------------------------------------------------------------------- */
 /*  ADDRESS SHEET                                                              */
 /* -------------------------------------------------------------------------- */
 
-function AddressSheet({ onClose, onSubmit, isSubmitting, initialAddress }: { onClose: () => void; onSubmit: (address: ShippingAddress) => void; isSubmitting: boolean; initialAddress?: ShippingAddress | null }) {
-  const [address, setAddress] = useState<ShippingAddress>(initialAddress ?? EMPTY_ADDRESS);
+function AddressSheet({ onClose, onSubmit, isSubmitting, initialAddress, defaultCountry }: {
+  onClose: () => void;
+  onSubmit: (address: ShippingAddress) => void;
+  isSubmitting: boolean;
+  initialAddress?: ShippingAddress | null;
+  defaultCountry?: string;
+}) {
+  const [address, setAddress] = useState<ShippingAddress>(
+    initialAddress ?? { ...EMPTY_ADDRESS, countryIsoCode: defaultCountry ?? "GB" }
+  );
   const [errors, setErrors] = useState<Partial<Record<keyof ShippingAddress, string>>>({});
-  function update(field: keyof ShippingAddress, value: string) { setAddress((prev) => ({ ...prev, [field]: value })); if (errors[field]) setErrors((prev) => { const next = { ...prev }; delete next[field]; return next; }); }
+
+  function update(field: keyof ShippingAddress, value: string) {
+    setAddress((prev) => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors((prev) => { const next = { ...prev }; delete next[field]; return next; });
+  }
+
   function validate(): boolean {
     const e: Partial<Record<keyof ShippingAddress, string>> = {};
-    if (!address.firstName.trim()) e.firstName = "Required"; if (!address.lastName.trim()) e.lastName = "Required";
-    if (!address.addressLine1.trim()) e.addressLine1 = "Required"; if (!address.city.trim()) e.city = "Required";
-    if (!address.postCode.trim()) e.postCode = "Required"; if (!address.email.trim()) e.email = "Required";
+    if (!address.firstName.trim()) e.firstName = "Required";
+    if (!address.lastName.trim()) e.lastName = "Required";
+    if (!address.addressLine1.trim()) e.addressLine1 = "Required";
+    if (!address.city.trim()) e.city = "Required";
+    if (!address.postCode.trim()) e.postCode = "Required";
+    if (!address.email.trim()) e.email = "Required";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address.email)) e.email = "Invalid email";
-    setErrors(e); return Object.keys(e).length === 0;
+    setErrors(e);
+    return Object.keys(e).length === 0;
   }
+
   function handleSubmit() { if (validate()) onSubmit(address); }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end" style={{ background: "rgba(20,8,40,0.6)", backdropFilter: "blur(6px)" }} onClick={(e) => e.target === e.currentTarget && !isSubmitting && onClose()}>
       <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }} className="w-full max-h-[92vh] overflow-y-auto" style={{ background: "white", borderRadius: "24px 24px 0 0", fontFamily: FONT }}>
-        <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-white z-10" style={{ borderRadius: "24px 24px 0 0" }}><div className="w-10 h-1 rounded-full" style={{ background: "rgba(180,150,210,0.25)" }} /></div>
+        <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-white z-10" style={{ borderRadius: "24px 24px 0 0" }}>
+          <div className="w-10 h-1 rounded-full" style={{ background: "rgba(180,150,210,0.25)" }} />
+        </div>
         <div className="flex items-center justify-between px-6 py-4 sticky top-5 bg-white z-10" style={{ borderBottom: "1px solid rgba(180,150,210,0.1)" }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, #B05CE6, #D946EF)" }}><Truck className="w-4 h-4 text-white" /></div>
-            <div><h3 className="text-base font-extrabold" style={{ color: "#2D2235" }}>Shipping Address</h3><p className="text-[11px]" style={{ color: "#8B7BA0" }}>Where should we send your book?</p></div>
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, #B05CE6, #D946EF)" }}>
+              <Truck className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold" style={{ color: "#2D2235" }}>Shipping Address</h3>
+              <p className="text-[11px]" style={{ color: "#8B7BA0" }}>Where should we send your book?</p>
+            </div>
           </div>
-          <button onClick={onClose} disabled={isSubmitting} className="p-1.5 rounded-full disabled:opacity-30" style={{ background: "rgba(180,150,210,0.08)", border: "none", color: "#8B7BA0" }}><X className="w-5 h-5" /></button>
+          <button onClick={onClose} disabled={isSubmitting} className="p-1.5 rounded-full disabled:opacity-30" style={{ background: "rgba(180,150,210,0.08)", border: "none", color: "#8B7BA0" }}>
+            <X className="w-5 h-5" />
+          </button>
         </div>
+
         <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="flex gap-3"><InputField label="First name" value={address.firstName} onChange={(v) => update("firstName", v)} error={errors.firstName} disabled={isSubmitting} /><InputField label="Last name" value={address.lastName} onChange={(v) => update("lastName", v)} error={errors.lastName} disabled={isSubmitting} /></div>
+          {/* Country */}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: "#8B7BA0", fontFamily: FONT }}>
+              Country
+            </label>
+            <select
+              value={address.countryIsoCode}
+              onChange={(e) => update("countryIsoCode", e.target.value)}
+              disabled={isSubmitting}
+              className="w-full rounded-xl px-3.5 py-3 text-sm outline-none transition-all disabled:opacity-50"
+              style={{
+                border: "1.5px solid rgba(180,150,210,0.2)",
+                background: "#FDFBFF",
+                color: "#2D2235",
+                fontFamily: FONT,
+                appearance: "none",
+                WebkitAppearance: "none",
+              }}
+            >
+              {COUNTRIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex gap-3">
+            <InputField label="First name" value={address.firstName} onChange={(v) => update("firstName", v)} error={errors.firstName} disabled={isSubmitting} />
+            <InputField label="Last name" value={address.lastName} onChange={(v) => update("lastName", v)} error={errors.lastName} disabled={isSubmitting} />
+          </div>
           <InputField label="Address line 1" value={address.addressLine1} onChange={(v) => update("addressLine1", v)} error={errors.addressLine1} disabled={isSubmitting} />
           <InputField label="Address line 2 (optional)" value={address.addressLine2} onChange={(v) => update("addressLine2", v)} disabled={isSubmitting} />
-          <div className="flex gap-3"><InputField label="City" value={address.city} onChange={(v) => update("city", v)} error={errors.city} disabled={isSubmitting} /><InputField label="Postcode" value={address.postCode} onChange={(v) => update("postCode", v)} error={errors.postCode} disabled={isSubmitting} /></div>
+          <div className="flex gap-3">
+            <InputField label="City" value={address.city} onChange={(v) => update("city", v)} error={errors.city} disabled={isSubmitting} />
+            <InputField
+              label={address.countryIsoCode === "US" ? "ZIP code" : "Postcode"}
+              value={address.postCode}
+              onChange={(v) => update("postCode", v)}
+              error={errors.postCode}
+              disabled={isSubmitting}
+            />
+          </div>
           <InputField label="Email" value={address.email} onChange={(v) => update("email", v)} error={errors.email} disabled={isSubmitting} type="email" />
           <InputField label="Phone (optional)" value={address.phone} onChange={(v) => update("phone", v)} disabled={isSubmitting} type="tel" />
         </div>
+
         <div className="px-6 pb-10 pt-2">
           <button onClick={handleSubmit} disabled={isSubmitting} className="w-full py-4 rounded-2xl text-base font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform" style={{ background: "linear-gradient(135deg, #B05CE6, #E91E8C)", boxShadow: "0 4px 20px rgba(176,92,230,0.3)", border: "none", fontFamily: FONT }}>
             {isSubmitting ? (<><Loader2 className="w-5 h-5 animate-spin" />Creating your book…</>) : (<><BookOpen className="w-5 h-5" />Place Order</>)}
@@ -726,13 +829,48 @@ function InputField({ label, value, onChange, error, disabled, type = "text" }: 
 /* -------------------------------------------------------------------------- */
 
 function ProcessingOverlay({ step }: { step: string }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(20,8,40,0.7)", backdropFilter: "blur(8px)" }}><motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mx-8 p-8 rounded-3xl text-center" style={{ background: "white", maxWidth: 340 }}><div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ background: "linear-gradient(135deg, rgba(176,92,230,0.12), rgba(233,30,140,0.08))" }}><Loader2 className="w-8 h-8 animate-spin" style={{ color: "#B05CE6" }} /></div><h3 className="text-lg font-extrabold mb-2" style={{ color: "#2D2235", fontFamily: FONT }}>Creating your book</h3><p className="text-sm leading-relaxed" style={{ color: "#8B7BA0", fontFamily: FONT }}>{step}</p></motion.div></div>;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(20,8,40,0.7)", backdropFilter: "blur(8px)" }}>
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mx-8 p-8 rounded-3xl text-center" style={{ background: "white", maxWidth: 340 }}>
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ background: "linear-gradient(135deg, rgba(176,92,230,0.12), rgba(233,30,140,0.08))" }}>
+          <Loader2 className="w-8 h-8 animate-spin" style={{ color: "#B05CE6" }} />
+        </div>
+        <h3 className="text-lg font-extrabold mb-2" style={{ color: "#2D2235", fontFamily: FONT }}>Creating your book</h3>
+        <p className="text-sm leading-relaxed" style={{ color: "#8B7BA0", fontFamily: FONT }}>{step}</p>
+      </motion.div>
+    </div>
+  );
 }
 
 function SuccessOverlay({ onDone }: { onDone: () => void }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(20,8,40,0.7)", backdropFilter: "blur(8px)" }}><motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mx-8 p-8 rounded-3xl text-center" style={{ background: "white", maxWidth: 340 }}><div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5" style={{ background: "rgba(67,184,156,0.12)" }}><Check className="w-8 h-8" style={{ color: "#2FA482" }} /></div><h3 className="text-lg font-extrabold mb-2" style={{ color: "#2D2235", fontFamily: FONT }}>Order placed!</h3><p className="text-sm leading-relaxed mb-6" style={{ color: "#8B7BA0", fontFamily: FONT }}>Your book is being printed and will be shipped to you soon.</p><button onClick={onDone} className="w-full py-3.5 rounded-2xl text-sm font-bold text-white active:scale-[0.98] transition-transform" style={{ background: "linear-gradient(135deg, #B05CE6, #E91E8C)", boxShadow: "0 4px 16px rgba(176,92,230,0.3)", border: "none", fontFamily: FONT }}>Done</button></motion.div></div>;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(20,8,40,0.7)", backdropFilter: "blur(8px)" }}>
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mx-8 p-8 rounded-3xl text-center" style={{ background: "white", maxWidth: 340 }}>
+        <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5" style={{ background: "rgba(67,184,156,0.12)" }}>
+          <Check className="w-8 h-8" style={{ color: "#2FA482" }} />
+        </div>
+        <h3 className="text-lg font-extrabold mb-2" style={{ color: "#2D2235", fontFamily: FONT }}>Order placed!</h3>
+        <p className="text-sm leading-relaxed mb-6" style={{ color: "#8B7BA0", fontFamily: FONT }}>Your book is being printed and will be shipped to you soon.</p>
+        <button onClick={onDone} className="w-full py-3.5 rounded-2xl text-sm font-bold text-white active:scale-[0.98] transition-transform" style={{ background: "linear-gradient(135deg, #B05CE6, #E91E8C)", boxShadow: "0 4px 16px rgba(176,92,230,0.3)", border: "none", fontFamily: FONT }}>Done</button>
+      </motion.div>
+    </div>
+  );
 }
 
 function ErrorOverlay({ message, onRetry, onClose }: { message: string; onRetry: () => void; onClose: () => void }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(20,8,40,0.7)", backdropFilter: "blur(8px)" }}><motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mx-8 p-8 rounded-3xl text-center" style={{ background: "white", maxWidth: 340 }}><div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5" style={{ background: "rgba(233,30,99,0.08)" }}><AlertCircle className="w-8 h-8" style={{ color: "#E91E63" }} /></div><h3 className="text-lg font-extrabold mb-2" style={{ color: "#2D2235", fontFamily: FONT }}>Something went wrong</h3><p className="text-sm leading-relaxed mb-6" style={{ color: "#8B7BA0", fontFamily: FONT }}>{message}</p><div className="flex gap-3"><button onClick={onClose} className="flex-1 py-3.5 rounded-2xl text-sm font-semibold" style={{ background: "rgba(180,150,210,0.08)", color: "#6B5C80", border: "none", fontFamily: FONT }}>Cancel</button><button onClick={onRetry} className="flex-1 py-3.5 rounded-2xl text-sm font-bold text-white" style={{ background: "linear-gradient(135deg, #B05CE6, #E91E8C)", border: "none", fontFamily: FONT }}>Try Again</button></div></motion.div></div>;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(20,8,40,0.7)", backdropFilter: "blur(8px)" }}>
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mx-8 p-8 rounded-3xl text-center" style={{ background: "white", maxWidth: 340 }}>
+        <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5" style={{ background: "rgba(233,30,99,0.08)" }}>
+          <AlertCircle className="w-8 h-8" style={{ color: "#E91E63" }} />
+        </div>
+        <h3 className="text-lg font-extrabold mb-2" style={{ color: "#2D2235", fontFamily: FONT }}>Something went wrong</h3>
+        <p className="text-sm leading-relaxed mb-6" style={{ color: "#8B7BA0", fontFamily: FONT }}>{message}</p>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3.5 rounded-2xl text-sm font-semibold" style={{ background: "rgba(180,150,210,0.08)", color: "#6B5C80", border: "none", fontFamily: FONT }}>Cancel</button>
+          <button onClick={onRetry} className="flex-1 py-3.5 rounded-2xl text-sm font-bold text-white" style={{ background: "linear-gradient(135deg, #B05CE6, #E91E8C)", border: "none", fontFamily: FONT }}>Try Again</button>
+        </div>
+      </motion.div>
+    </div>
+  );
 }
