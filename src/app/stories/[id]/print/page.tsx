@@ -6,6 +6,8 @@ import { eq, desc } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import PrintPage from "./PrintPage";
 
+const POST_PAYMENT_STATUSES = new Set(["paid", "gifted", "failed"]);
+
 export default async function PrintRoute({
   params,
 }: {
@@ -19,8 +21,8 @@ export default async function PrintRoute({
 
   if (!story) return notFound();
 
-  // Must have paid to reach this page
-  if (story.paymentStatus !== "paid") {
+  // Must have completed checkout — includes failed Gelato orders (digital still valid)
+  if (!POST_PAYMENT_STATUSES.has(story.paymentStatus ?? "")) {
     redirect(`/stories/${id}/studio`);
   }
 
@@ -40,53 +42,53 @@ export default async function PrintRoute({
     where: eq(storyProducts.storyId, id),
   });
 
-  console.log('product ==>', product)
+  console.log("product ==>", product);
 
   return (
     <main className="min-h-screen" style={{ background: "#FDFBFF" }}>
-<PrintPage
-      story={{
-        id: story.id,
-        projectId: story.projectId,
-        title: story.title,
-        coverSpreadUrl: story.coverSpreadUrl,
-        pdfUrl: story.pdfUrl,
-        status: story.status,
-        paymentStatus: story.paymentStatus,
-        completedSteps: (story.completedSteps as string[]) ?? [],
-      }}
-      order={
-        latestOrder
-          ? {
-              id: latestOrder.id,
-              status: latestOrder.status,
-              gelatoOrderId: latestOrder.gelatoOrderId,
-              gelatoStatus: latestOrder.gelatoStatus,
-              gelatoTrackingCode: latestOrder.gelatoTrackingCode ?? null,
-              gelatoTrackingUrl: latestOrder.gelatoTrackingUrl ?? null,
-              gelatoMinDeliveryDate: latestOrder.gelatoMinDeliveryDate ?? null,
-              gelatoMaxDeliveryDate: latestOrder.gelatoMaxDeliveryDate ?? null,
-              createdAt: latestOrder.createdAt?.toISOString() ?? null,
-            }
-          : null
-      }
-      productType={product?.productType ?? "undecided"}
-      initialShippingAddress={
-        (product?.checkoutAddress as
-          | {
-              firstName: string;
-              lastName: string;
-              addressLine1: string;
-              addressLine2: string;
-              city: string;
-              postCode: string;
-              countryIsoCode: string;
-              email: string;
-              phone: string;
-            }
-          | null) ?? null
-      }
-    />
+      <PrintPage
+        story={{
+          id: story.id,
+          projectId: story.projectId,
+          title: story.title,
+          coverSpreadUrl: story.coverSpreadUrl,
+          pdfUrl: story.pdfUrl,
+          status: story.status,
+          paymentStatus: story.paymentStatus,
+          completedSteps: (story.completedSteps as string[]) ?? [],
+        }}
+        order={
+          latestOrder
+            ? {
+                id: latestOrder.id,
+                status: latestOrder.status,
+                gelatoOrderId: latestOrder.gelatoOrderId,
+                gelatoStatus: latestOrder.gelatoStatus,
+                gelatoTrackingCode: latestOrder.gelatoTrackingCode ?? null,
+                gelatoTrackingUrl: latestOrder.gelatoTrackingUrl ?? null,
+                gelatoMinDeliveryDate: latestOrder.gelatoMinDeliveryDate ?? null,
+                gelatoMaxDeliveryDate: latestOrder.gelatoMaxDeliveryDate ?? null,
+                createdAt: latestOrder.createdAt?.toISOString() ?? null,
+              }
+            : null
+        }
+        productType={product?.productType ?? "undecided"}
+        initialShippingAddress={
+          (product?.checkoutAddress as
+            | {
+                firstName: string;
+                lastName: string;
+                addressLine1: string;
+                addressLine2: string;
+                city: string;
+                postCode: string;
+                countryIsoCode: string;
+                email: string;
+                phone: string;
+              }
+            | null) ?? null
+        }
+      />
     </main>
   );
 }

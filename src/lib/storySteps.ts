@@ -87,6 +87,25 @@ type StoryRoutingFields = {
 };
 
 /* ======================================================
+   PAYMENT STATUS HELPER
+
+   "paid"    — PayPal succeeded, digital unlocked
+   "gifted"  — promo/free order, digital unlocked
+   "failed"  — PayPal succeeded but Gelato order failed;
+               digital is still valid, customer stays in
+               the post-pay flow and can retry printing
+====================================================== */
+
+function resolvePaymentStatus(story: StoryRoutingFields): string | null {
+  return story.payment_status ?? story.paymentStatus ?? null;
+}
+
+/** True for any status that means the customer has paid and is past the checkout step */
+function isPostPayment(status: string | null): boolean {
+  return status === "paid" || status === "gifted" || status === "failed";
+}
+
+/* ======================================================
    RESOLVE NEXT INCOMPLETE STEP
 ====================================================== */
 
@@ -95,7 +114,10 @@ export function getNextIncompleteStep(story: StoryRoutingFields): StepKey {
   const done = new Set<StepKey>(raw);
 
   if (story.story_confirmed ?? story.storyConfirmed) done.add("write");
-  if ((story.payment_status ?? story.paymentStatus) === "paid") done.add("pay");
+
+  // Mark pay as done for any post-payment status — including failed Gelato orders
+  if (isPostPayment(resolvePaymentStatus(story))) done.add("pay");
+
   if (story.cover_spread_url ?? story.coverSpreadUrl) done.add("cover");
 
   for (const step of STEP_ORDER) {
@@ -108,8 +130,8 @@ export function getNextIncompleteStep(story: StoryRoutingFields): StepKey {
 /* ======================================================
    PRIMARY ROUTING HELPER — use this everywhere
 
-   Paid stories always go to /book regardless of which
-   steps are technically "complete" in the DB.
+   Post-payment stories always go to /book regardless of
+   which steps are technically "complete" in the DB.
    All other stories route to the next incomplete step.
 ====================================================== */
 
@@ -117,8 +139,9 @@ export function getStoryHref(
   storyId: string,
   story: StoryRoutingFields
 ): string {
-  const isPaid = (story.payment_status ?? story.paymentStatus) === "paid";
-  if (isPaid) return `/stories/${storyId}/book`;
+  if (isPostPayment(resolvePaymentStatus(story))) {
+    return `/stories/${storyId}/book`;
+  }
   return getNextStepHref(storyId, story);
 }
 
