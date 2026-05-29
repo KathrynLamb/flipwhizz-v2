@@ -73,7 +73,7 @@ export async function createGelatoOrder(params: CreateOrderParams): Promise<Crea
       state: shippingAddress.state ?? "",
       postCode: shippingAddress.postCode,
       country: shippingAddress.countryIsoCode,
-      email: shippingAddress.email,
+      email: process.env.ADMIN_EMAIL ?? "katylamb2000@gmail.com",
       phone: shippingAddress.phone ?? "",
     },
   };

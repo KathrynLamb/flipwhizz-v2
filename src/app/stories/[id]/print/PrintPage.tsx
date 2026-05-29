@@ -40,6 +40,7 @@ type Order = {
 type ShippingAddress = {
   firstName: string; lastName: string; addressLine1: string; addressLine2: string;
   city: string; postCode: string; countryIsoCode: string; email: string; phone: string;
+  state?: string; 
 };
 
 type Props = {
@@ -61,6 +62,7 @@ const FONT = "'Bricolage Grotesque', system-ui, sans-serif";
 const EMPTY_ADDRESS: ShippingAddress = {
   firstName: "", lastName: "", addressLine1: "", addressLine2: "",
   city: "", postCode: "", countryIsoCode: "GB", email: "", phone: "",
+  state: "", 
 };
 
 // Module-level so both PrintPage and AddressSheet can reference it
@@ -731,6 +733,7 @@ function AddressSheet({ onClose, onSubmit, isSubmitting, initialAddress, default
     if (!address.postCode.trim()) e.postCode = "Required";
     if (!address.email.trim()) e.email = "Required";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address.email)) e.email = "Invalid email";
+    if (address.countryIsoCode === "US" && !address.state?.trim()) e.state = "Required for US addresses"; // ← here
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -800,6 +803,16 @@ function AddressSheet({ onClose, onSubmit, isSubmitting, initialAddress, default
               disabled={isSubmitting}
             />
           </div>
+          {/* After the city/postcode row */}
+          {address.countryIsoCode === "US" && (
+            <InputField
+              label="State"
+              value={address.state ?? ""}
+              onChange={(v) => update("state", v)}
+              error={errors.state}
+              disabled={isSubmitting}
+            />
+          )}
           <InputField label="Email" value={address.email} onChange={(v) => update("email", v)} error={errors.email} disabled={isSubmitting} type="email" />
           <InputField label="Phone (optional)" value={address.phone} onChange={(v) => update("phone", v)} disabled={isSubmitting} type="tel" />
         </div>
