@@ -75,7 +75,8 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
       pathname.includes("/book") ||
       pathname.includes("/review") ||
       pathname.includes("/reader") ||
-      pathname.includes("/order");
+      pathname.includes("/order") ||
+      pathname.includes("/print");
 
     // Only redirect if we can determine the pathname AND it's not allowed
     // If pathname is empty (header not set), skip the guard to avoid loops
