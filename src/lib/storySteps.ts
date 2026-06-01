@@ -142,6 +142,9 @@ export function getStoryHref(
   if (isPostPayment(resolvePaymentStatus(story))) {
     return `/stories/${storyId}/book`;
   }
+  if (story.cover_spread_url ?? story.coverSpreadUrl) {
+    return `/stories/${storyId}/book`;
+  }
   return getNextStepHref(storyId, story);
 }
 
