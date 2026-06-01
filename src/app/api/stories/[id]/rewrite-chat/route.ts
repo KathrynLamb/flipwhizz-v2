@@ -134,10 +134,10 @@ IMPORTANT:
 - Never be precious about the draft.
 - If the parent reveals something new about their child, acknowledge it in one sentence.`;
 
-    const messages = [
-      ...conversationHistory,
-      { role: "user", content: message },
-    ];
+const messages = [
+  ...conversationHistory.map(({ role, content }: { role: string; content: string }) => ({ role, content })),
+  { role: "user", content: message },
+];
 
     const response = await client.messages.create({
       model: MODEL,

@@ -233,6 +233,24 @@ function GeneratingCard() {
   );
 }
 
+
+function FailedCard() {
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      className="mx-2 my-1 rounded-2xl p-4 flex items-center gap-3"
+      style={{ background: "rgba(233,30,99,0.05)", border: "1px solid rgba(233,30,99,0.15)" }}>
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-lg"
+        style={{ background: "rgba(233,30,99,0.1)" }}>
+        ⚠️
+      </div>
+      <div>
+        <p className="text-sm font-bold" style={{ color: "#2D2235" }}>Generation failed</p>
+        <p className="text-[11px] mt-0.5" style={{ color: "#A897BD" }}>Tap Regenerate Cover to try again</p>
+      </div>
+    </motion.div>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /*  MAIN COMPONENT                                                             */
 /* -------------------------------------------------------------------------- */
@@ -268,6 +286,7 @@ export default function MobileCoverChat({
 
   const hasCovers          = !!localStory.coverSpreadUrl;
   const isGeneratingCovers = localStory.status === "generating_covers";
+  const coverFailed = localStory.status === "cover_failed";
 
   /* ── Lock portrait + kill bounce ── */
   useEffect(() => {
@@ -315,11 +334,17 @@ export default function MobileCoverChat({
           setLocalStory(prev => ({ ...prev, coverSpreadUrl: newUrl, status: "covers_complete" }));
           addAssistantMsg("Your cover is ready! Tap to see it full-size. Want any changes, or shall we go with this?");
           clearInterval(interval);
-        } else if (statusDone && !newUrl) {
+        } else if (newStatus === "cover_failed") {
           setLocalStory(prev => ({ ...prev, status: newStatus }));
-          addAssistantMsg("Cover generation finished but something went wrong — no image was created. Try generating again.");
+          addAssistantMsg(
+          "Cover generation failed — this usually means Gemini took too long processing the images. Hit Regenerate Cover to try again. If it keeps failing, try the chat to simplify the brief."
+          );
           clearInterval(interval);
-        } 
+          } else if (statusDone && !newUrl) {
+          setLocalStory(prev => ({ ...prev, status: newStatus }));
+          addAssistantMsg("Cover generation finished but something went wrong — no image was created. Try hitting Generate Cover again.");
+          clearInterval(interval);
+          }
         // else if (newUrl && pollCount >= 3) {
         //   knownCoverUrlRef.current = newUrl;
         //   setLocalStory(prev => ({ ...prev, coverSpreadUrl: newUrl, status: "covers_complete" }));
@@ -529,7 +554,8 @@ export default function MobileCoverChat({
             </div>
           )}
 
-          {isGeneratingCovers && <GeneratingCard />}
+        {isGeneratingCovers && <GeneratingCard />}
+          {coverFailed && !isGeneratingCovers && <FailedCard />}
 
           {hasCovers && !isGeneratingCovers && (
             <CoverThumbnail
@@ -547,7 +573,8 @@ export default function MobileCoverChat({
           className="flex-shrink-0 px-3 pt-2 space-y-2"
           style={{ borderTop: "1px solid rgba(180,150,210,0.1)", background: "rgba(255,255,255,0.97)", backdropFilter: "blur(16px)" }}
         >
-          {(stage === "ready" || hasCovers) && !isGeneratingCovers && (
+          
+          {(stage === "ready" || hasCovers || coverFailed) && !isGeneratingCovers && (
             <button onClick={handleGenerate} disabled={isLoading}
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-bold text-white disabled:opacity-40 active:scale-[0.98] transition-transform"
               style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", boxShadow: "0 4px 20px rgba(176,92,230,0.3)", border: "none" }}>

@@ -87,6 +87,7 @@ export default function StoryReaderClient({
   ====================================================== */
 
   useEffect(() => {
+    // Author letter
     fetch(`/api/stories/${id}/author-letter`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -105,8 +106,21 @@ export default function StoryReaderClient({
         }
       })
       .catch(console.error);
+  
+    // Edit session history
+    fetch(`/api/stories/${id}/edit-session`)
+      .then((res) => res.json())
+      .then((res) => {
+        if (res.messages?.length > 0) {
+          const clean = res.messages.map(({ role, content }: { role: string; content: string }) => ({ role, content }));
+          setMessages(res.messages); // keep full shape for display
+          setConversationHistory(clean); // stripped for API calls
+          setSidebarMode('chat');
+        }
+      
+      })
+      .catch(console.error);
   }, [id, title, pages]);
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);

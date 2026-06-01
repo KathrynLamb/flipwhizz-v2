@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle,
@@ -11,6 +11,7 @@ import {
   Loader2,
   Zap,
   Sparkles,
+  Paintbrush,
 } from 'lucide-react';
 import type { StepKey } from '@/lib/storySteps';
 import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
@@ -53,7 +54,6 @@ export type Character = {
 
 function FontLoader() {
   return (
-    // eslint-disable-next-line @next/next/no-page-custom-font
     <link
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,600;12..96,700;12..96,800&family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap"
       rel="stylesheet"
@@ -81,17 +81,25 @@ export default function CharactersClient({
   completedSteps?: StepKey[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const styleChanged = searchParams.get('styleChanged') === 'true';
+
   const [confirming, setConfirming] = useState(false);
   const [charactersLocal, setCharactersLocal] = useState(characters);
   const [isPurchased, setIsPurchased] = useState<boolean | null>(null);
   const [generatingAvatars, setGeneratingAvatars] = useState(false);
+
+  // Style-change auto-redraw state
+  const [styleRedrawing, setStyleRedrawing] = useState(false);
+  const [styleRedrawTotal, setStyleRedrawTotal] = useState(0);
+  const [styleRedrawDone, setStyleRedrawDone] = useState(0);
+  const styleRedrawFired = useRef(false);
 
   // Group photo state
   const [showGroupPhoto, setShowGroupPhoto] = useState(false);
   const [groupPhotoGenerating, setGroupPhotoGenerating] = useState(false);
   const [groupPhotoRemaining, setGroupPhotoRemaining] = useState(0);
 
-  console.log("Story confirmed", storyConfirmed)
   useEffect(() => {
     if (!storyId) return;
     let cancelled = false;
@@ -114,6 +122,42 @@ export default function CharactersClient({
     lock();
     return () => { try { (screen.orientation as any)?.unlock?.(); } catch {} };
   }, []);
+
+  /* ── Auto-redraw portraits when coming from style change ── */
+  useEffect(() => {
+    if (!styleChanged) return;
+    if (styleRedrawFired.current) return;
+    if (characters.length === 0) return;
+
+    styleRedrawFired.current = true;
+
+    const lockedChars = characters.filter((c) => c.locked);
+    if (lockedChars.length === 0) return;
+
+    setStyleRedrawing(true);
+    setStyleRedrawTotal(lockedChars.length);
+    setStyleRedrawDone(0);
+
+    // Fire sequentially to avoid hammering Gemini rate limits
+    const redrawAll = async () => {
+      for (const char of lockedChars) {
+        try {
+          await fetch('/api/characters/use-ai-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ characterId: char.id }),
+          });
+        } catch (err) {
+          console.warn(`⚠️ Failed to redraw portrait for ${char.name}:`, err);
+        }
+        setStyleRedrawDone((prev) => prev + 1);
+      }
+      setStyleRedrawing(false);
+      router.refresh();
+    };
+
+    redrawAll();
+  }, [styleChanged, characters]);
 
   async function generateAIAvatars() {
     if (!confirm('Generate AI portraits for all characters? This will use AI credits.')) return;
@@ -140,7 +184,6 @@ export default function CharactersClient({
 
       <div className="min-h-screen relative" style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}>
 
-        {/* Background */}
         <div className="fixed inset-0 -z-10" style={{
           background: `
             radial-gradient(ellipse 80% 60% at 20% 10%, rgba(232,190,255,0.3) 0%, transparent 60%),
@@ -179,6 +222,66 @@ export default function CharactersClient({
 
         <main className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
 
+          {/* ── Style-change redraw banner ── */}
+          <AnimatePresence>
+            {styleRedrawing && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="flex items-center gap-3 px-4 py-3.5 rounded-2xl mb-5"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(176,92,230,0.08), rgba(212,93,160,0.06))',
+                  border: '1.5px solid rgba(176,92,230,0.2)',
+                }}
+              >
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #B05CE6, #D45DA0)' }}
+                >
+                  <Paintbrush className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold" style={{ color: '#2D2235' }}>
+                    Redrawing portraits in your new style…
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: '#9B59D0' }}>
+                    {styleRedrawDone} of {styleRedrawTotal} done
+                  </p>
+                </div>
+                {/* Progress bar */}
+                <div className="w-24 h-1.5 rounded-full overflow-hidden flex-shrink-0" style={{ background: 'rgba(180,150,210,0.15)' }}>
+                  <motion.div
+                    className="h-full rounded-full"
+                    style={{ background: 'linear-gradient(90deg, #B05CE6, #D45DA0)' }}
+                    animate={{ width: `${styleRedrawTotal > 0 ? (styleRedrawDone / styleRedrawTotal) * 100 : 0}%` }}
+                    transition={{ duration: 0.4 }}
+                  />
+                </div>
+                <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: '#B05CE6' }} />
+              </motion.div>
+            )}
+
+            {/* Done banner — show briefly after redraw completes */}
+            {!styleRedrawing && styleRedrawDone > 0 && styleRedrawDone === styleRedrawTotal && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="flex items-center gap-3 px-4 py-3 rounded-2xl mb-5"
+                style={{
+                  background: 'rgba(67,184,156,0.08)',
+                  border: '1.5px solid rgba(67,184,156,0.2)',
+                }}
+              >
+                <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: '#2FA482' }} />
+                <p className="text-sm font-semibold" style={{ color: '#2D2235' }}>
+                  All portraits redrawn in the new style.
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Intro */}
           {totalCount > 0 && !storyConfirmed && (
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-6">
@@ -193,7 +296,6 @@ export default function CharactersClient({
                 Review each character's details and lock them in — they'll guide the illustrations throughout your book.
               </p>
 
-              {/* Lock counter */}
               <div className="flex items-center justify-center gap-3 mt-5">
                 <span className="text-xs font-semibold" style={{ color: '#8B7BA0' }}>{lockedCount} of {totalCount} locked</span>
                 <div className="w-40 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(180,150,210,0.15)' }}>
@@ -206,9 +308,7 @@ export default function CharactersClient({
             </motion.div>
           )}
 
-          {/* ── Group photo banner (mobile) ── */}
-          {/* {!storyConfirmed && !groupPhotoGenerating && (
-             */}
+          {/* Group photo banner (mobile) */}
           {storyConfirmed && !groupPhotoGenerating && (
             <div className="md:hidden mb-4">
               <button
@@ -233,7 +333,7 @@ export default function CharactersClient({
             </div>
           )}
 
-          {/* ── Group photo generating banner ── */}
+          {/* Group photo generating banner */}
           {groupPhotoGenerating && (
             <motion.div
               initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
@@ -254,7 +354,7 @@ export default function CharactersClient({
             </motion.div>
           )}
 
-          {/* ── Desktop: group photo button ── */}
+          {/* Desktop group photo button */}
           {storyConfirmed && (
             <div className="hidden md:flex justify-end mb-4">
               <button
@@ -274,7 +374,7 @@ export default function CharactersClient({
             </div>
           )}
 
-          {/* ── Mobile: Generate All ── */}
+          {/* Mobile Generate All */}
           {isPurchased && !allLocked && storyConfirmed && (
             <motion.button
               initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -400,7 +500,6 @@ export default function CharactersClient({
         </main>
       </div>
 
-      {/* Group photo modal — rendered outside main so it overlays everything */}
       {showGroupPhoto && (
         <GroupPhotoModal
           storyId={storyId}
@@ -408,10 +507,9 @@ export default function CharactersClient({
           onGeneratingStart={(charIds) => {
             setGroupPhotoRemaining(charIds.length);
             setGroupPhotoGenerating(true);
-            setShowGroupPhoto(false); // close modal, banner takes over
+            setShowGroupPhoto(false);
           }}
           onComplete={() => {
-            // Called per character — decrement counter and refresh
             setGroupPhotoRemaining((prev) => {
               const next = Math.max(0, prev - 1);
               if (next === 0) setGroupPhotoGenerating(false);

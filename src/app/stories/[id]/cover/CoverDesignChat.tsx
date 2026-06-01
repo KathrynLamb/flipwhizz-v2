@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { StepKey } from "@/lib/storySteps";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
 import MobileCoverChat from "./MobileCoverChat";
+import CoverReferencesPanel from "./CoverReferencesPanel";
 
 /* -------------------------------------------------------------------------- */
 /*  TYPES                                                                      */
@@ -140,6 +141,7 @@ function DesktopCoverChat({
 
   const hasCovers          = !!localStory.coverSpreadUrl;
   const isGeneratingCovers = localStory.status === "generating_covers";
+  const coverFailed = localStory.status === "cover_failed";
 
   useEffect(() => {
     if (!storyId) return;
@@ -168,17 +170,17 @@ function DesktopCoverChat({
           setLocalStory(prev => ({ ...prev, coverSpreadUrl: newUrl, status: "covers_complete" }));
           addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
           clearInterval(interval);
-        } else if (statusDone && !newUrl) {
+        } else if (newStatus === "cover_failed") {
+          setLocalStory(prev => ({ ...prev, status: newStatus }));
+          addAssistantMsg(
+          "Cover generation failed — this usually means Gemini took too long processing the images. Hit Regenerate Cover to try again. If it keeps failing, try the chat to simplify the brief."
+          );
+          clearInterval(interval);
+          } else if (statusDone && !newUrl) {
           setLocalStory(prev => ({ ...prev, status: newStatus }));
           addAssistantMsg("Cover generation finished but something went wrong — no image was created. Try hitting Generate Cover again.");
           clearInterval(interval);
-        } 
-        // else if (newUrl && pollCount >= 3) {
-        //   knownCoverUrlRef.current = newUrl;
-        //   setLocalStory(prev => ({ ...prev, coverSpreadUrl: newUrl, status: "covers_complete" }));
-        //   addAssistantMsg("Your cover is ready! Click the preview to see it full-size. Want any changes, or shall we go with this?");
-        //   clearInterval(interval);
-        // }
+          }
       } catch {}
     }, 3000);
     return () => clearInterval(interval);
@@ -267,7 +269,7 @@ function DesktopCoverChat({
   }
 
   async function handleGenerate() {
-    knownCoverUrlRef.current = localStory.coverSpreadUrl; // snapshot current before regenerating
+    knownCoverUrlRef.current = localStory.coverSpreadUrl;
     setLocalStory(s => ({ ...s, status: "generating_covers" }));
     setIsLoading(true);
     try {
@@ -363,7 +365,8 @@ function DesktopCoverChat({
                       <Send className="w-4 h-4" />
                     </button>
                   </div>
-                  {(stage === "ready" || hasCovers) && !isGeneratingCovers && (
+                  {(stage === "ready" || hasCovers  || coverFailed) && !isGeneratingCovers && (
+                    
                     <button onClick={handleGenerate} disabled={isLoading}
                       className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white disabled:opacity-40 active:scale-[0.98]"
                       style={{ background: "linear-gradient(135deg, #B05CE6, #D45DA0)", boxShadow: "0 4px 16px rgba(176,92,230,0.25)", border: "none", fontFamily: "inherit" }}>
@@ -380,8 +383,10 @@ function DesktopCoverChat({
               </div>
             </div>
 
-            {/* ── PREVIEW + PLAN ── */}
+            {/* ── PREVIEW + PLAN + REFERENCES ── */}
             <div className="lg:col-span-2 flex flex-col gap-4 min-h-0 overflow-y-auto scrollbar-hide">
+
+              {/* Cover Preview */}
               <div className="overflow-hidden rounded-[22px] flex-shrink-0" style={{ background: "white", border: "1px solid rgba(180,150,210,0.12)", boxShadow: "0 2px 12px rgba(100,60,140,0.06)" }}>
                 <div className="flex items-center gap-3 px-5 py-3" style={{ borderBottom: "1px solid rgba(180,150,210,0.08)", background: "rgba(249,245,255,0.5)" }}>
                   <Sparkles className="w-4 h-4" style={{ color: "#B05CE6" }} />
@@ -405,6 +410,18 @@ function DesktopCoverChat({
                         <Check className="w-4 h-4" /> Approve & Continue
                       </button>
                     </div>
+                                  ) : coverFailed ? (
+                                    <div className="flex flex-col items-center justify-center py-12 rounded-xl gap-3"
+                                      style={{ background: "rgba(233,30,99,0.04)", border: "1px solid rgba(233,30,99,0.15)" }}>
+                                      <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                                        style={{ background: "rgba(233,30,99,0.1)" }}>
+                                        <span className="text-lg">⚠️</span>
+                                      </div>
+                                      <p className="text-sm font-bold" style={{ color: "#2D2235" }}>Generation failed</p>
+                                      <p className="text-[11px] text-center max-w-[200px]" style={{ color: "#A897BD" }}>
+                                        Hit Regenerate Cover to try again
+                                      </p>
+                                    </div>
                   ) : isGeneratingCovers ? (
                     <div className="flex flex-col items-center justify-center py-12 rounded-xl" style={{ background: "rgba(249,245,255,0.5)", border: "1px solid rgba(180,150,210,0.1)" }}>
                       <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
@@ -424,6 +441,7 @@ function DesktopCoverChat({
                 </div>
               </div>
 
+              {/* Cover Plan */}
               {stage !== "greeting" && (
                 <div className="rounded-[22px] overflow-hidden flex-shrink-0" style={{ background: "white", border: "1px solid rgba(180,150,210,0.12)" }}>
                   <div className="px-5 py-3" style={{ borderBottom: "1px solid rgba(180,150,210,0.08)", background: "rgba(249,245,255,0.5)" }}>
@@ -448,6 +466,10 @@ function DesktopCoverChat({
                   </div>
                 </div>
               )}
+
+              {/* What Gemini Receives */}
+              <CoverReferencesPanel storyId={storyId} />
+
             </div>
           </div>
         </main>

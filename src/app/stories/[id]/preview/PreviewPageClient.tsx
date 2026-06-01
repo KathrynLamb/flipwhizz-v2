@@ -17,6 +17,7 @@ import {
   ChevronDown,
   AlertCircle,
   Lock,
+  Paintbrush,
 } from "lucide-react";
 import type { StepKey } from "@/lib/storySteps";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
@@ -173,7 +174,6 @@ function SpreadPicker({
             whileTap={{ scale: 0.98 }}
             className="text-left bg-white rounded-2xl shadow-sm border-2 border-gray-100 hover:border-violet-300 hover:shadow-md overflow-hidden transition-colors group"
           >
-            {/* Gradient banner */}
             <div
               className="relative h-20 w-full overflow-hidden"
               style={{
@@ -214,24 +214,16 @@ function SpreadPicker({
                   {spread.scene}
                 </p>
               ) : (
-                <p className="text-sm text-gray-300 italic">
-                  No scene summary
-                </p>
+                <p className="text-sm text-gray-300 italic">No scene summary</p>
               )}
 
-              {/* Characters + location row */}
               <div className="flex flex-wrap items-center gap-1.5">
                 {spread.characters.map((c, ci) => (
                   <span
                     key={c.id}
                     className="inline-flex items-center gap-1 text-[11px] font-medium bg-violet-50 text-violet-600 px-2 py-0.5 rounded-full"
                   >
-                    <Avatar
-                      name={c.name}
-                      imageUrl={c.imageUrl}
-                      size={14}
-                      index={ci}
-                    />
+                    <Avatar name={c.name} imageUrl={c.imageUrl} size={14} index={ci} />
                     {c.name}
                   </span>
                 ))}
@@ -243,7 +235,6 @@ function SpreadPicker({
                 )}
               </div>
 
-              {/* CTA hint */}
               <div className="flex items-center gap-1 text-violet-500 text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity pt-0.5">
                 Preview this spread
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -268,6 +259,7 @@ function GenerationPanel({
   onGenerated,
   onBack,
   onContinue,
+  onChangeStyle,
 }: {
   spread: SpreadOption;
   storyId: string;
@@ -276,6 +268,7 @@ function GenerationPanel({
   onGenerated?: () => void;
   onBack: () => void;
   onContinue: () => void;
+  onChangeStyle: () => void;
 }) {
   const [status, setStatus] = useState<GenerationStatus>("idle");
   const [resultImageUrl, setResultImageUrl] = useState<string | null>(
@@ -287,24 +280,24 @@ function GenerationPanel({
   const [showRedraw, setShowRedraw] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showImageLightbox, setShowImageLightbox] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const [buildingPrompts, setBuildingPrompts] = useState(false);
-const [buildRetryAt, setBuildRetryAt] = useState<number | null>(null);
+  const [buildRetryAt, setBuildRetryAt] = useState<number | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-useEffect(() => {
-  if (!buildRetryAt) return;
-  const ms = buildRetryAt - Date.now();
-  const timer = setTimeout(() => {
-    setBuildingPrompts(false);
-    setBuildRetryAt(null);
-    handleQuickGenerate();
-  }, Math.max(ms, 0));
-  return () => clearTimeout(timer);
-}, [buildRetryAt]);
+  useEffect(() => {
+    if (!buildRetryAt) return;
+    const ms = buildRetryAt - Date.now();
+    const timer = setTimeout(() => {
+      setBuildingPrompts(false);
+      setBuildRetryAt(null);
+      handleQuickGenerate();
+    }, Math.max(ms, 0));
+    return () => clearTimeout(timer);
+  }, [buildRetryAt]);
 
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
-
     setStatus("idle");
     setResultImageUrl(spread.existingImageUrl);
     setError(null);
@@ -327,17 +320,12 @@ useEffect(() => {
         if (data.imageUrl) setResultImageUrl(data.imageUrl);
         if (data.status === "done" || data.status === "error") {
           if (pollRef.current) clearInterval(pollRef.current);
-          if (data.status === "error")
-            setError("Generation failed — try again.");
+          if (data.status === "error") setError("Generation failed — try again.");
         }
-      } catch {
-        /* swallow */
-      }
+      } catch { /* swallow */ }
     }, 2500);
 
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [jobId, status]);
 
   useEffect(() => {
@@ -426,8 +414,6 @@ useEffect(() => {
     }
   }
 
-  const [showDetails, setShowDetails] = useState(false);
-
   const busy = status === "queued" || status === "generating";
 
   return (
@@ -444,7 +430,7 @@ useEffect(() => {
           </button>
         )}
 
-        {/* Header row — compact: page badge + title + scene inline */}
+        {/* Header row */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <div
@@ -467,7 +453,6 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Inline character + location pills */}
           {(spread.characters.length > 0 || spread.location) && (
             <div className="hidden lg:flex items-center gap-1.5 flex-shrink-0 pt-1">
               {spread.characters.map((c, i) => (
@@ -475,12 +460,7 @@ useEffect(() => {
                   key={c.id}
                   className="inline-flex items-center gap-1 text-[11px] font-medium bg-violet-50 text-violet-600 px-2 py-1 rounded-full"
                 >
-                  <Avatar
-                    name={c.name}
-                    imageUrl={c.imageUrl}
-                    size={16}
-                    index={i}
-                  />
+                  <Avatar name={c.name} imageUrl={c.imageUrl} size={16} index={i} />
                   {c.name}
                 </span>
               ))}
@@ -494,7 +474,7 @@ useEffect(() => {
           )}
         </div>
 
-        {/* ============ ILLUSTRATION — THE HERO ============ */}
+        {/* ── ILLUSTRATION ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="relative w-full aspect-[16/9] bg-gradient-to-br from-violet-50 via-pink-50 to-amber-50">
             <AnimatePresence mode="wait">
@@ -510,19 +490,11 @@ useEffect(() => {
                     <Sparkles className="w-6 h-6 text-violet-400 animate-pulse" />
                   </div>
                   <p className="text-sm font-medium text-gray-500">
-                    {/* {status === "queued"
+                    {buildingPrompts
+                      ? "Preparing your story — will retry automatically…"
+                      : status === "queued"
                       ? "Queued for generation…"
-                      : "Illustrating your spread…"} */}
-
-{busy && (
-  <p className="text-sm font-medium text-gray-500">
-    {buildingPrompts
-      ? "Preparing your story — will retry automatically…"
-      : status === "queued"
-      ? "Queued for generation…"
-      : "Illustrating your spread…"}
-  </p>
-)}
+                      : "Illustrating your spread…"}
                   </p>
                   <div className="flex gap-1 mt-1">
                     {[0, 1, 2].map((i) => (
@@ -530,11 +502,7 @@ useEffect(() => {
                         key={i}
                         className="w-1.5 h-1.5 rounded-full bg-violet-400"
                         animate={{ opacity: [0.3, 1, 0.3] }}
-                        transition={{
-                          repeat: Infinity,
-                          duration: 1.2,
-                          delay: i * 0.2,
-                        }}
+                        transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.2 }}
                       />
                     ))}
                   </div>
@@ -584,7 +552,7 @@ useEffect(() => {
             </AnimatePresence>
           </div>
 
-          {/* Action buttons — directly under the image */}
+          {/* Action buttons */}
           <div className="p-4 space-y-3">
             {isLocked && !busy && (
               <div className="text-center py-3 space-y-2">
@@ -602,10 +570,7 @@ useEffect(() => {
               <button
                 onClick={handleQuickGenerate}
                 className="w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2"
-                style={{
-                  background:
-                    "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
-                }}
+                style={{ background: "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)" }}
               >
                 <Wand2 className="w-4 h-4" />
                 Generate Free Preview
@@ -617,10 +582,7 @@ useEffect(() => {
                 <button
                   onClick={() => setShowRedraw(true)}
                   className="flex-1 py-3 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
-                  }}
+                  style={{ background: "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)" }}
                 >
                   <RefreshCw className="w-4 h-4" />
                   Redraw
@@ -645,6 +607,20 @@ useEffect(() => {
               </button>
             )}
 
+            {/* ── Change style escape hatch ── */}
+            {!busy && (
+              <div className="text-center pt-1">
+                <button
+                  onClick={onChangeStyle}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium transition-colors hover:text-violet-600"
+                  style={{ color: "#A0AEC0", background: "none", border: "none", cursor: "pointer" }}
+                >
+                  <Paintbrush className="w-3 h-3" />
+                  Not the right style? Change illustration style
+                </button>
+              </div>
+            )}
+
             {styleWarning && (
               <div className="flex items-center gap-2 text-amber-600 text-xs bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                 <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
@@ -666,7 +642,7 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* ============ COLLAPSIBLE DETAILS ============ */}
+        {/* ── Collapsible details ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <button
             onClick={() => setShowDetails((v) => !v)}
@@ -692,7 +668,6 @@ useEffect(() => {
                 className="overflow-hidden"
               >
                 <div className="px-5 pb-5 space-y-4">
-                  {/* Page text side by side */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-gray-50 rounded-xl p-4">
                       <p className="text-[10px] font-semibold tracking-widest text-violet-400 uppercase mb-1.5">
@@ -720,20 +695,11 @@ useEffect(() => {
                     </div>
                   </div>
 
-                  {/* Characters + location (mobile — already shown as pills on lg) */}
                   {(spread.characters.length > 0 || spread.location) && (
                     <div className="flex flex-wrap gap-4 pt-1">
                       {spread.characters.map((c, i) => (
-                        <div
-                          key={c.id}
-                          className="flex flex-col items-center gap-1"
-                        >
-                          <Avatar
-                            name={c.name}
-                            imageUrl={c.imageUrl}
-                            size={40}
-                            index={i}
-                          />
+                        <div key={c.id} className="flex flex-col items-center gap-1">
+                          <Avatar name={c.name} imageUrl={c.imageUrl} size={40} index={i} />
                           <span className="text-[10px] font-semibold text-gray-500">
                             {c.name}
                           </span>
@@ -756,7 +722,6 @@ useEffect(() => {
                     </div>
                   )}
 
-                  {/* Scene + mood */}
                   {(spread.scene || spread.mood) && (
                     <div className="flex items-start gap-2 text-sm text-violet-600 bg-violet-50 rounded-lg px-3 py-2.5">
                       <Sparkles className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-violet-400" />
@@ -846,9 +811,8 @@ export default function PreviewPageClient({
   const [spreads, setSpreads] = useState<SpreadOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [selectedSpread, setSelectedSpread] = useState<SpreadOption | null>(
-    null
-  );
+  const [selectedSpread, setSelectedSpread] = useState<SpreadOption | null>(null);
+  const [previewGeneratedId, setPreviewGeneratedId] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -856,8 +820,7 @@ export default function PreviewPageClient({
 
     fetch(`/api/stories/${storyId}/spreads-preview`)
       .then(async (res) => {
-        if (!res.ok)
-          throw new Error((await res.text()) || `HTTP ${res.status}`);
+        if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
         return res.json();
       })
       .then((data: SpreadOption[]) => {
@@ -873,16 +836,10 @@ export default function PreviewPageClient({
       .finally(() => setLoading(false));
   }, [storyId]);
 
-  /* Track which spread used the free preview */
-  const [previewGeneratedId, setPreviewGeneratedId] = useState<string | null>(
-    null
-  );
-
   useEffect(() => {
     const existing = spreads.find((s) => s.existingImageUrl);
     if (existing) {
       setPreviewGeneratedId(existing.spreadId);
-      // Auto-navigate to the generated spread — skip the picker
       setSelectedSpread(existing);
     }
   }, [spreads]);
@@ -897,6 +854,13 @@ export default function PreviewPageClient({
     }).catch(() => {});
 
     router.push(`/stories/${storyId}/checkout`);
+  }
+
+  async function handleChangeStyle() {
+    await fetch(`/api/stories/${storyId}/reset-style`, {
+      method: "POST",
+    }).catch(() => {});
+    router.push(`/stories/${storyId}/illustration-style`);
   }
 
   return (
@@ -931,7 +895,6 @@ export default function PreviewPageClient({
           </div>
         )}
 
-        {/* Loading skeleton */}
         {loading && (
           <div className="space-y-8">
             <div>
@@ -950,22 +913,16 @@ export default function PreviewPageClient({
           </div>
         )}
 
-        {/* Empty state */}
         {!loading && !fetchError && spreads.length === 0 && (
           <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center">
             <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-4">
               <Eye className="w-7 h-7 text-gray-300" />
             </div>
-            <p className="text-sm text-gray-400">
-              No spreads found for this story.
-            </p>
-            <p className="text-xs text-gray-300 mt-1">
-              Run &quot;Decide Scenes&quot; first.
-            </p>
+            <p className="text-sm text-gray-400">No spreads found for this story.</p>
+            <p className="text-xs text-gray-300 mt-1">Run &quot;Decide Scenes&quot; first.</p>
           </div>
         )}
 
-        {/* Two-phase flow */}
         {!loading && spreads.length > 0 && (
           <AnimatePresence mode="wait">
             {!selectedSpread ? (
@@ -997,11 +954,10 @@ export default function PreviewPageClient({
                     previewGeneratedId !== selectedSpread.spreadId
                   }
                   showBack={!hasUsedFreePreview}
-                  onGenerated={() =>
-                    setPreviewGeneratedId(selectedSpread.spreadId)
-                  }
+                  onGenerated={() => setPreviewGeneratedId(selectedSpread.spreadId)}
                   onBack={() => setSelectedSpread(null)}
                   onContinue={handleContinue}
+                  onChangeStyle={handleChangeStyle}
                 />
               </motion.div>
             )}

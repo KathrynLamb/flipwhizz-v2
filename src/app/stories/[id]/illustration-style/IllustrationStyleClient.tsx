@@ -1,20 +1,18 @@
-// src/app/stories/[id]/illustration-style/IllustrationStyleClient.tsx
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
-  ChevronDown,
   Loader2,
   Paintbrush,
   Sparkles,
   Upload,
   X,
-  ArrowLeft,
 } from "lucide-react";
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
+import StyleGuideChat from "./StyleGuideChat";
 import { getNextStepHref, type StepKey } from "@/lib/storySteps";
 
 /* ─────────────── Types ─────────────── */
@@ -63,14 +61,15 @@ export default function IllustrationStyleClient({
   storyConfirmed?: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const styleChanged = searchParams.get("styleChanged") === "true";
 
   const [style, setStyle] = useState<StyleGuide | null>(initialStyleGuide);
   const [isLoading, setIsLoading] = useState(!initialStyleGuide);
   const [isSaving, setIsSaving] = useState(false);
-  const [mode, setMode] = useState<"suggest" | "customise">("suggest");
+  const [mode, setMode] = useState<"suggest" | "customise" | "chat">("suggest");
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // Editable fields
   const [editVision, setEditVision] = useState("");
   const [editArtStyle, setEditArtStyle] = useState("");
   const [editNegative, setEditNegative] = useState("");
@@ -78,7 +77,6 @@ export default function IllustrationStyleClient({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load style guide if not passed as prop
   useEffect(() => {
     if (initialStyleGuide) return;
     let cancelled = false;
@@ -106,12 +104,9 @@ export default function IllustrationStyleClient({
     };
 
     poll();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [storyId, initialStyleGuide]);
 
-  // Sync edit fields when style loads
   useEffect(() => {
     if (!style) return;
     setEditVision(style.userNotes ?? "");
@@ -120,7 +115,6 @@ export default function IllustrationStyleClient({
     setPreviewImageUrl(style.sampleIllustrationUrl ?? null);
   }, [style]);
 
-  // Summary for the suggestion card
   const styleSummary = style
     ? [style.userNotes, style.artStyle].filter(Boolean).join(" — ")
     : "";
@@ -135,12 +129,21 @@ export default function IllustrationStyleClient({
         .filter((v): v is string => typeof v === "string" && v.length > 0)
     : [];
 
+  /* ── Navigation helper — preserves styleChanged param ── */
+  function navigateNext(href: string) {
+    if (styleChanged) {
+      const separator = href.includes("?") ? "&" : "?";
+      router.push(`${href}${separator}styleChanged=true`);
+    } else {
+      router.push(href);
+    }
+  }
+
   /* ── Actions ── */
 
   const handleAcceptAndContinue = async () => {
     setIsSaving(true);
     try {
-      // If user customised, save their edits
       if (mode === "customise") {
         await fetch(`/api/stories/${storyId}/style-guide`, {
           method: "PUT",
@@ -154,26 +157,46 @@ export default function IllustrationStyleClient({
         });
       }
 
-      // Mark step complete
       await fetch(`/api/stories/${storyId}/complete-step`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ step: "design" }),
       }).catch(() => {});
 
-      // Navigate to next step
-      const storyRes = await fetch(`/api/stories/${storyId}`, {
-        cache: "no-store",
-      });
+      const storyRes = await fetch(`/api/stories/${storyId}`, { cache: "no-store" });
       if (storyRes.ok) {
         const storyData = await storyRes.json();
         const story = storyData.story ?? storyData;
-        router.push(getNextStepHref(storyId, story));
+        navigateNext(getNextStepHref(storyId, story));
       } else {
-        router.push(`/stories/${storyId}/characters`);
+        navigateNext(`/stories/${storyId}/characters`);
       }
     } catch {
       alert("Failed to save style. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleChatResolved = async () => {
+    setIsSaving(true);
+    try {
+      await fetch(`/api/stories/${storyId}/complete-step`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step: "design" }),
+      }).catch(() => {});
+
+      const storyRes = await fetch(`/api/stories/${storyId}`, { cache: "no-store" });
+      if (storyRes.ok) {
+        const storyData = await storyRes.json();
+        const story = storyData.story ?? storyData;
+        navigateNext(getNextStepHref(storyId, story));
+      } else {
+        navigateNext(`/stories/${storyId}/characters`);
+      }
+    } catch {
+      alert("Failed to continue. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -256,7 +279,6 @@ export default function IllustrationStyleClient({
         className="min-h-screen relative"
         style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}
       >
-        {/* Background */}
         <div
           className="fixed inset-0 -z-10"
           style={{
@@ -275,7 +297,6 @@ export default function IllustrationStyleClient({
           />
         </div>
 
-        {/* Header */}
         <UnifiedStoryHeader
           storyId={storyId}
           title={title}
@@ -284,7 +305,25 @@ export default function IllustrationStyleClient({
           storyConfirmed={storyConfirmed}
         />
 
-        {/* Content */}
+        {/* Banner when coming from style reset */}
+        {styleChanged && (
+          <div className="max-w-xl mx-auto px-4 sm:px-6 pt-6">
+            <div
+              className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium"
+              style={{
+                background: "rgba(176,92,230,0.08)",
+                border: "1px solid rgba(176,92,230,0.2)",
+                color: "#8B5CB8",
+              }}
+            >
+              <Paintbrush className="w-4 h-4 flex-shrink-0" />
+              <span>
+                Choose your new illustration style below. Your characters will be redrawn automatically once you continue.
+              </span>
+            </div>
+          </div>
+        )}
+
         <div className="max-w-xl mx-auto px-4 sm:px-6 py-10 pb-32">
           {isLoading ? (
             <motion.div
@@ -294,19 +333,11 @@ export default function IllustrationStyleClient({
             >
               <div
                 className="w-16 h-16 rounded-[22px] flex items-center justify-center mb-5"
-                style={{
-                  background: "linear-gradient(135deg, #E8D5FF, #FFD5E5)",
-                }}
+                style={{ background: "linear-gradient(135deg, #E8D5FF, #FFD5E5)" }}
               >
-                <Loader2
-                  className="w-7 h-7 animate-spin"
-                  style={{ color: "#B05CE6" }}
-                />
+                <Loader2 className="w-7 h-7 animate-spin" style={{ color: "#B05CE6" }} />
               </div>
-              <h2
-                className="text-xl font-extrabold"
-                style={{ color: "#2D2235" }}
-              >
+              <h2 className="text-xl font-extrabold" style={{ color: "#2D2235" }}>
                 Choosing a style for your story…
               </h2>
               <p className="text-sm mt-2" style={{ color: "#7B6E90" }}>
@@ -322,9 +353,6 @@ export default function IllustrationStyleClient({
           ) : (
             <AnimatePresence mode="wait">
               {mode === "suggest" ? (
-                /* ════════════════════════════════════════
-                   SUGGESTION CARD
-                   ════════════════════════════════════════ */
                 <motion.div
                   key="suggest"
                   initial={{ opacity: 0, y: 12 }}
@@ -337,47 +365,31 @@ export default function IllustrationStyleClient({
                     style={{
                       background: "white",
                       borderColor: "rgba(180,150,210,0.12)",
-                      boxShadow:
-                        "0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)",
+                      boxShadow: "0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)",
                     }}
                   >
-                    {/* Header */}
                     <div
                       className="px-6 py-5 flex items-start gap-4"
-                      style={{
-                        borderBottom: "1px solid rgba(180,150,210,0.08)",
-                      }}
+                      style={{ borderBottom: "1px solid rgba(180,150,210,0.08)" }}
                     >
                       <div
                         className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, #E8D5FF, #FFD5E5)",
-                        }}
+                        style={{ background: "linear-gradient(135deg, #E8D5FF, #FFD5E5)" }}
                       >
-                        <Paintbrush
-                          className="w-5 h-5"
-                          style={{ color: "#B05CE6" }}
-                        />
+                        <Paintbrush className="w-5 h-5" style={{ color: "#B05CE6" }} />
                       </div>
                       <div>
-                        <h2
-                          className="text-lg font-extrabold"
-                          style={{ color: "#2D2235" }}
-                        >
-                          Here's the look we'd suggest
+                        <h2 className="text-lg font-extrabold" style={{ color: "#2D2235" }}>
+                          {styleChanged ? "Choose your new style" : "Here's the look we'd suggest"}
                         </h2>
-                        <p
-                          className="text-sm mt-1 leading-relaxed"
-                          style={{ color: "#7B6E90" }}
-                        >
-                          Based on the tone and characters in your story, we
-                          think this style fits. You can always change it.
+                        <p className="text-sm mt-1 leading-relaxed" style={{ color: "#7B6E90" }}>
+                          {styleChanged
+                            ? "Pick a style for your redesigned book, or describe exactly what you want."
+                            : "Based on the tone and characters in your story, we think this style fits. You can always change it."}
                         </p>
                       </div>
                     </div>
 
-                    {/* Style content */}
                     <div className="px-6 py-5">
                       {previewImageUrl && (
                         <div className="mb-4 rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
@@ -389,31 +401,20 @@ export default function IllustrationStyleClient({
                         </div>
                       )}
 
-                      <p
-                        className="text-[15px] leading-[1.75]"
-                        style={{ color: "#3A2E48" }}
-                      >
-                        {styleSummary ||
-                          "A warm, whimsical children's book illustration style."}
+                      <p className="text-[15px] leading-[1.75]" style={{ color: "#3A2E48" }}>
+                        {styleSummary || "A warm, whimsical children's book illustration style."}
                       </p>
 
-                      {/* Palette */}
                       {paletteColors.length > 0 && (
                         <div className="flex flex-wrap items-center gap-2 mt-4">
-                          <span
-                            className="text-[11px] font-bold uppercase tracking-wide"
-                            style={{ color: "#A897BD" }}
-                          >
+                          <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#A897BD" }}>
                             Palette
                           </span>
                           {paletteColors.map((color, i) => (
                             <span
                               key={i}
                               className="text-xs font-medium px-2.5 py-1 rounded-full capitalize"
-                              style={{
-                                background: "rgba(180,150,210,0.1)",
-                                color: "#6B5C80",
-                              }}
+                              style={{ background: "rgba(180,150,210,0.1)", color: "#6B5C80" }}
                             >
                               {color}
                             </span>
@@ -425,10 +426,7 @@ export default function IllustrationStyleClient({
                         <div className="mt-3">
                           <span
                             className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full"
-                            style={{
-                              background: "rgba(176,92,230,0.08)",
-                              color: "#8B5CB8",
-                            }}
+                            style={{ background: "rgba(176,92,230,0.08)", color: "#8B5CB8" }}
                           >
                             <Sparkles className="w-3 h-3" />
                             {style.colorPalette.mood}
@@ -437,25 +435,20 @@ export default function IllustrationStyleClient({
                       )}
                     </div>
 
-                    {/* Actions */}
                     <div className="px-6 pb-6 space-y-3">
                       <button
                         onClick={handleAcceptAndContinue}
                         disabled={isSaving}
                         className="w-full py-4 rounded-[14px] text-sm font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-px active:scale-[0.98] disabled:opacity-60 relative overflow-hidden"
                         style={{
-                          background:
-                            "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                          background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
                           boxShadow: "0 4px 16px rgba(176,92,230,0.25)",
                           border: "none",
                         }}
                       >
                         <div
                           className="absolute inset-0 rounded-[inherit]"
-                          style={{
-                            background:
-                              "linear-gradient(135deg, rgba(255,255,255,0.15), transparent)",
-                          }}
+                          style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.15), transparent)" }}
                         />
                         {isSaving ? (
                           <Loader2 className="w-4 h-4 animate-spin relative z-10" />
@@ -463,7 +456,7 @@ export default function IllustrationStyleClient({
                           <Check className="w-4 h-4 relative z-10" />
                         )}
                         <span className="relative z-10">
-                          {isSaving ? "Saving…" : "Looks great — continue"}
+                          {isSaving ? "Saving…" : styleChanged ? "Use this style — redraw characters" : "Looks great — continue"}
                         </span>
                       </button>
 
@@ -474,18 +467,32 @@ export default function IllustrationStyleClient({
                           background: "transparent",
                           color: "#7B6E90",
                           border: "1px solid rgba(180,150,210,0.2)",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
                         }}
                       >
                         <Paintbrush className="w-3.5 h-3.5" />
                         I'd like to change something
                       </button>
+
+                      <button
+                        onClick={() => setMode("chat")}
+                        className="w-full py-3 rounded-[14px] text-sm font-semibold flex items-center justify-center gap-2 transition-all hover:bg-[rgba(180,150,210,0.04)]"
+                        style={{
+                          background: "transparent",
+                          color: "#7B6E90",
+                          border: "1px solid rgba(180,150,210,0.2)",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        💬 Help me describe what I want
+                      </button>
                     </div>
                   </div>
                 </motion.div>
-              ) : (
-                /* ════════════════════════════════════════
-                   CUSTOMISE CARD — replaces suggestion
-                   ════════════════════════════════════════ */
+
+              ) : mode === "customise" ? (
                 <motion.div
                   key="customise"
                   initial={{ opacity: 0, y: 12 }}
@@ -498,11 +505,9 @@ export default function IllustrationStyleClient({
                     style={{
                       background: "white",
                       borderColor: "rgba(180,150,210,0.12)",
-                      boxShadow:
-                        "0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)",
+                      boxShadow: "0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)",
                     }}
                   >
-                    {/* Header with back */}
                     <div
                       className="px-6 py-4 flex items-center justify-between border-b"
                       style={{ borderColor: "rgba(180,150,210,0.08)" }}
@@ -510,27 +515,15 @@ export default function IllustrationStyleClient({
                       <div className="flex items-center gap-3">
                         <div
                           className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                          style={{
-                            background:
-                              "linear-gradient(135deg, #E8D5FF, #FFD5E5)",
-                          }}
+                          style={{ background: "linear-gradient(135deg, #E8D5FF, #FFD5E5)" }}
                         >
-                          <Paintbrush
-                            className="w-4 h-4"
-                            style={{ color: "#B05CE6" }}
-                          />
+                          <Paintbrush className="w-4 h-4" style={{ color: "#B05CE6" }} />
                         </div>
                         <div>
-                          <h3
-                            className="text-[15px] font-bold"
-                            style={{ color: "#2D2235" }}
-                          >
+                          <h3 className="text-[15px] font-bold" style={{ color: "#2D2235" }}>
                             Customise your style
                           </h3>
-                          <p
-                            className="text-[11px] mt-0.5"
-                            style={{ color: "#A897BD" }}
-                          >
+                          <p className="text-[11px] mt-0.5" style={{ color: "#A897BD" }}>
                             Edit anything below, or upload an image you like.
                           </p>
                         </div>
@@ -550,40 +543,22 @@ export default function IllustrationStyleClient({
                       </button>
                     </div>
 
-                    {/* Fields */}
                     <div className="px-6 py-5 space-y-5">
-                      {/* Reference image */}
                       <div>
-                        <label
-                          className="text-[11px] font-bold uppercase tracking-wide block mb-2"
-                          style={{ color: "#6B5C80" }}
-                        >
+                        <label className="text-[11px] font-bold uppercase tracking-wide block mb-2" style={{ color: "#6B5C80" }}>
                           Reference image
                         </label>
-                        <p
-                          className="text-xs mb-3 leading-relaxed"
-                          style={{ color: "#A897BD" }}
-                        >
-                          Got an illustration style you love? Upload it and
-                          we'll match the feel.
+                        <p className="text-xs mb-3 leading-relaxed" style={{ color: "#A897BD" }}>
+                          Got an illustration style you love? Upload it and we'll match the feel.
                         </p>
 
                         {previewImageUrl ? (
                           <div className="relative rounded-xl overflow-hidden border" style={{ borderColor: "rgba(180,150,210,0.12)" }}>
-                            <img
-                              src={previewImageUrl}
-                              alt="Style reference"
-                              className="w-full h-36 object-cover"
-                            />
+                            <img src={previewImageUrl} alt="Style reference" className="w-full h-36 object-cover" />
                             <button
                               onClick={() => setPreviewImageUrl(null)}
                               className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center transition-colors"
-                              style={{
-                                background: "rgba(0,0,0,0.5)",
-                                color: "white",
-                                border: "none",
-                                cursor: "pointer",
-                              }}
+                              style={{ background: "rgba(0,0,0,0.5)", color: "white", border: "none", cursor: "pointer" }}
                             >
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -601,133 +576,77 @@ export default function IllustrationStyleClient({
                               fontFamily: "inherit",
                             }}
                           >
-                            {uploadingImage ? (
-                              <Loader2 className="w-5 h-5 animate-spin" />
-                            ) : (
-                              <Upload className="w-5 h-5" />
-                            )}
+                            {uploadingImage ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                             <span className="text-xs font-semibold">
-                              {uploadingImage
-                                ? "Analysing your image…"
-                                : "Tap to upload"}
+                              {uploadingImage ? "Analysing your image…" : "Tap to upload"}
                             </span>
                           </button>
                         )}
                       </div>
 
-                      {/* Divider */}
-                      <div
-                        className="h-px"
-                        style={{ background: "rgba(180,150,210,0.08)" }}
-                      />
+                      <div className="h-px" style={{ background: "rgba(180,150,210,0.08)" }} />
 
-                      {/* Overall feel */}
                       <div>
-                        <label
-                          className="text-[11px] font-bold uppercase tracking-wide block mb-1.5"
-                          style={{ color: "#6B5C80" }}
-                        >
+                        <label className="text-[11px] font-bold uppercase tracking-wide block mb-1.5" style={{ color: "#6B5C80" }}>
                           Overall feel
                         </label>
-                        <p
-                          className="text-xs mb-2"
-                          style={{ color: "#A897BD" }}
-                        >
-                          Describe the vibe in your own words.
-                        </p>
+                        <p className="text-xs mb-2" style={{ color: "#A897BD" }}>Describe the vibe in your own words.</p>
                         <textarea
                           value={editVision}
                           onChange={(e) => setEditVision(e.target.value)}
                           rows={3}
                           className="w-full rounded-xl border px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 transition-all"
-                          style={{
-                            borderColor: "rgba(180,150,210,0.18)",
-                            background: "#FDFBFF",
-                            color: "#2D2235",
-                            fontFamily: "inherit",
-                          }}
+                          style={{ borderColor: "rgba(180,150,210,0.18)", background: "#FDFBFF", color: "#2D2235", fontFamily: "inherit" }}
                           placeholder="e.g. Warm and cosy, like a bedtime story…"
                         />
                       </div>
 
-                      {/* Art style */}
                       <div>
-                        <label
-                          className="text-[11px] font-bold uppercase tracking-wide block mb-1.5"
-                          style={{ color: "#6B5C80" }}
-                        >
+                        <label className="text-[11px] font-bold uppercase tracking-wide block mb-1.5" style={{ color: "#6B5C80" }}>
                           Art style
                         </label>
-                        <p
-                          className="text-xs mb-2"
-                          style={{ color: "#A897BD" }}
-                        >
-                          The illustration technique — watercolour, digital
-                          cartoon, pencil sketch, etc.
+                        <p className="text-xs mb-2" style={{ color: "#A897BD" }}>
+                          The illustration technique — watercolour, digital cartoon, pencil sketch, etc.
                         </p>
                         <textarea
                           value={editArtStyle}
                           onChange={(e) => setEditArtStyle(e.target.value)}
                           rows={2}
                           className="w-full rounded-xl border px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 transition-all"
-                          style={{
-                            borderColor: "rgba(180,150,210,0.18)",
-                            background: "#FDFBFF",
-                            color: "#2D2235",
-                            fontFamily: "inherit",
-                          }}
+                          style={{ borderColor: "rgba(180,150,210,0.18)", background: "#FDFBFF", color: "#2D2235", fontFamily: "inherit" }}
                           placeholder="e.g. Soft watercolour with ink outlines"
                         />
                       </div>
 
-                      {/* What to avoid */}
                       <div>
-                        <label
-                          className="text-[11px] font-bold uppercase tracking-wide block mb-1.5"
-                          style={{ color: "#6B5C80" }}
-                        >
+                        <label className="text-[11px] font-bold uppercase tracking-wide block mb-1.5" style={{ color: "#6B5C80" }}>
                           Anything to avoid?
                         </label>
-                        <p
-                          className="text-xs mb-2"
-                          style={{ color: "#A897BD" }}
-                        >
-                          Styles or elements you definitely don't want.
-                        </p>
+                        <p className="text-xs mb-2" style={{ color: "#A897BD" }}>Styles or elements you definitely don't want.</p>
                         <input
                           value={editNegative}
                           onChange={(e) => setEditNegative(e.target.value)}
                           className="w-full rounded-xl border px-4 py-3 text-sm focus:outline-none focus:ring-2 transition-all"
-                          style={{
-                            borderColor: "rgba(180,150,210,0.18)",
-                            background: "#FDFBFF",
-                            color: "#2D2235",
-                            fontFamily: "inherit",
-                          }}
+                          style={{ borderColor: "rgba(180,150,210,0.18)", background: "#FDFBFF", color: "#2D2235", fontFamily: "inherit" }}
                           placeholder="e.g. Photorealism, scary imagery"
                         />
                       </div>
                     </div>
 
-                    {/* Save */}
                     <div className="px-6 pb-6">
                       <button
                         onClick={handleAcceptAndContinue}
                         disabled={isSaving}
                         className="w-full py-4 rounded-[14px] text-sm font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-px active:scale-[0.98] disabled:opacity-60 relative overflow-hidden"
                         style={{
-                          background:
-                            "linear-gradient(135deg, #B05CE6, #D45DA0)",
+                          background: "linear-gradient(135deg, #B05CE6, #D45DA0)",
                           boxShadow: "0 4px 16px rgba(176,92,230,0.25)",
                           border: "none",
                         }}
                       >
                         <div
                           className="absolute inset-0 rounded-[inherit]"
-                          style={{
-                            background:
-                              "linear-gradient(135deg, rgba(255,255,255,0.15), transparent)",
-                          }}
+                          style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.15), transparent)" }}
                         />
                         {isSaving ? (
                           <Loader2 className="w-4 h-4 animate-spin relative z-10" />
@@ -735,11 +654,26 @@ export default function IllustrationStyleClient({
                           <Check className="w-4 h-4 relative z-10" />
                         )}
                         <span className="relative z-10">
-                          {isSaving ? "Saving…" : "Save & continue"}
+                          {isSaving ? "Saving…" : styleChanged ? "Save & redraw characters" : "Save & continue"}
                         </span>
                       </button>
                     </div>
                   </div>
+                </motion.div>
+
+              ) : (
+                <motion.div
+                  key="chat"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <StyleGuideChat
+                    storyId={storyId}
+                    onResolved={handleChatResolved}
+                    onBack={() => setMode("suggest")}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>

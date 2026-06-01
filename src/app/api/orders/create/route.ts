@@ -115,6 +115,7 @@ export async function POST(req: Request) {
         pdfUrl: story.pdfUrl!,
         shippingAddress,
         productUid: gelatoProductUid,
+        pageCount: story.length ?? 28,  // ← ADD THIS
       });
 
       await db

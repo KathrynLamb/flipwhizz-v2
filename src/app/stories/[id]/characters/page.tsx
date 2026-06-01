@@ -6,6 +6,7 @@ import { storyWorkflowProgress, characterStoryOutfits } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import CharactersClient from "@/app/stories/[id]/characters/CharactersClient";
 import { StepKey } from "@/lib/storySteps";
+import { Suspense } from "react";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -66,13 +67,15 @@ export default async function CharactersPage({ params }: Props) {
   }));
 
   return (
+    <Suspense fallback={null}>
     <CharactersClient
-    storyId={storyId}
-    storyTitle={story.title}
-    storyConfirmed={story.storyConfirmed === true}
-    characters={characters}
-    currentStep="characters"
-    completedSteps={(story.completedSteps as StepKey[]) || []}
-  />
+      storyId={storyId}
+      storyTitle={story.title}
+      storyConfirmed={story.storyConfirmed === true}
+      characters={characters}
+      currentStep="characters"
+      completedSteps={(story.completedSteps as StepKey[]) || []}
+    />
+  </Suspense>
   );
 }
