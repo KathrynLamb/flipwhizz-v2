@@ -3,7 +3,8 @@
 // v4: Portrait-only, image-first, minimal text.
 // No character descriptions. No text fallbacks. Hard fail on missing portraits.
 
-import { inngest } from "./client";
+
+import { inngest } from "@/inngest/client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { db } from "@/db";
 import {
