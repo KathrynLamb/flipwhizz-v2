@@ -166,7 +166,10 @@ export default function OrderPage({
       const res = await fetch(`/api/promo/validate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: promoInput.trim().toUpperCase() }),
+        body: JSON.stringify({ 
+          code: promoInput.trim().toUpperCase(),
+          productType: coverType === "hard" ? "gift" : "print",
+        }),
       });
 
       if (!res.ok) {
