@@ -1,5 +1,6 @@
 // src/app/api/stories/create-from-chat/route.ts
 export const maxDuration = 60;
+
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
@@ -41,7 +42,7 @@ interface ExtractedReader {
   interests: string[];
   fears: string[];
   readingLevel: string | null;
-  dateOfBirth: string | null;
+  dateOfBirth: string | null; // YYYY-MM-DD or null — never a partial date
 }
 
 interface ExtractedWorld {
@@ -65,6 +66,107 @@ interface ChatExtraction {
 }
 
 // ============================================================================
+// VALIDATION HELPERS
+// ============================================================================
+
+/**
+ * Validates and sanitises a date-of-birth string from AI extraction.
+ * Returns a clean YYYY-MM-DD string, or null if:
+ *  - the value is missing or unparseable
+ *  - the date is in the future
+ *  - the date implies an age > 18 (not a child)
+ *  - the date is suspiciously precise when only a month/year was mentioned
+ *    (we can't detect this here, but the extraction prompt prevents it)
+ */
+function safeDateOfBirth(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+
+  let d: Date;
+  try {
+    d = new Date(raw);
+  } catch {
+    return null;
+  }
+
+  if (isNaN(d.getTime())) return null;
+
+  const now = new Date();
+  // Must not be in the future
+  if (d > now) return null;
+  // Must be within the last 18 years
+  const eighteenYearsAgo = new Date(
+    now.getFullYear() - 18,
+    now.getMonth(),
+    now.getDate()
+  );
+  if (d < eighteenYearsAgo) return null;
+
+  // Return clean ISO date only (YYYY-MM-DD) — no time, no timezone confusion
+  return d.toISOString().split("T")[0];
+}
+
+/**
+ * Validates an age integer from AI extraction.
+ * Returns null if zero, negative, or > 17.
+ * Newborns should be null, not 0.
+ */
+function safeAge(raw: number | null | undefined): number | null {
+  if (raw == null) return null;
+  if (typeof raw !== "number") return null;
+  if (!Number.isInteger(raw)) return null;
+  if (raw <= 0) return null; // newborns = null
+  if (raw > 17) return null; // not a child
+  return raw;
+}
+
+/**
+ * Validates pronouns — only accepts known values.
+ */
+function safePronouns(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const allowed = ["she/her", "he/him", "they/them"];
+  return allowed.includes(raw) ? raw : null;
+}
+
+/**
+ * Validates gender — only accepts known values.
+ */
+function safeGender(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const allowed = ["girl", "boy", "non-binary"];
+  return allowed.includes(raw) ? raw : null;
+}
+
+/**
+ * Validates reading level — only accepts known values.
+ */
+function safeReadingLevel(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const allowed = ["pre-reader", "early reader", "confident reader", "independent reader"];
+  return allowed.includes(raw) ? raw : null;
+}
+
+/**
+ * Sanitises a string array from AI extraction — removes nulls, empties, non-strings.
+ */
+function safeStringArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim().slice(0, 200)); // cap each item length
+}
+
+/**
+ * Sanitises a free-text string — trims, caps at length, returns null if empty.
+ */
+function safeText(raw: unknown, maxLen = 1000): string | null {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.slice(0, maxLen);
+}
+
+// ============================================================================
 // EXTRACT READER, WORLD & INSIGHTS FROM CHAT
 // ============================================================================
 
@@ -75,34 +177,26 @@ async function extractFromChat(
 
 1. READER — the child this story is for:
    - childName: their first name. If genuinely unclear, use "Little One"
-   - age: integer or null. Listen for "she's 4", "he just turned 6", "nearly 5". For newborns or babies under 1, use null not 0.
-   - pronouns: "she/her", "he/him", "they/them", or null
-   - gender: "girl", "boy", "non-binary", or null
-   - personalityNotes: 1-2 sentences capturing who this child IS based on what the parent revealed. Not generic — specific. "Shy at first but fiercely brave once she trusts someone. Turns everything into a song."
-   - interests: array of specific things they love. Not categories — specifics. Not "animals" but "dogs, especially golden retrievers". Not "science" but "volcanoes and space rockets"
-   - fears: array of things they're working through. ONLY include if the parent actually mentioned it. "starting school", "sleeping alone", "new baby sister taking attention"
-   - readingLevel: "pre-reader" (0-3), "early reader" (3-5), "confident reader" (5-7), "independent reader" (7+), or null
-   - dateOfBirth: if the parent mentions a specific birthday ("her birthday is March 15th", "she was born in June 2021"), extract as ISO date string "YYYY-MM-DD". Use null if only age is mentioned.
+   - age: integer or null. Listen for "she's 4", "he just turned 6", "nearly 5". For newborns or babies under 1 year old, ALWAYS use null — never 0.
+   - pronouns: "she/her", "he/him", "they/them", or null. No other values allowed.
+   - gender: "girl", "boy", "non-binary", or null. No other values allowed.
+   - personalityNotes: 1-2 sentences capturing who this child IS. Specific, not generic.
+   - interests: array of specific things they love. Not categories — specifics.
+   - fears: array of things they're working through. ONLY include if the parent actually mentioned it.
+   - readingLevel: one of exactly: "pre-reader", "early reader", "confident reader", "independent reader", or null.
+   - dateOfBirth: STRICT RULE — only set this if the parent gives BOTH a specific day AND month AND year (e.g. "born on 3rd March 2022" → "2022-03-03"). If the parent only mentions a month ("born in May"), a year ("born in 2023"), or an age ("she's 4"), you MUST return null. Do not infer, estimate, or guess a day. Partial information = null.
 
 2. WORLD — the story universe being created:
-   - worldName: short, evocative, specific to THIS story. Not "Adventure Land" — something that captures the actual setting. "The Whispering Woodland" or "Sophia's Secret River"
-   - worldDescription: 1-2 vivid sentences. Not a summary — a sense of place.
-   - themes: emotional/narrative themes. Be specific: not just "friendship" but "learning that being different is what makes friendships interesting"
-   - tonality: how the story should FEEL in a few words. "warm and gently funny" or "wild, silly, and a bit chaotic"
-   - ageRange: "2-4", "3-5", "4-6", "5-7", or "6-8" based on the child's age and reading level
+   - worldName: short, evocative, specific to THIS story.
+   - worldDescription: 1-2 vivid sentences describing the world/setting.
+   - themes: emotional/narrative themes as an array of strings.
+   - tonality: how the story should FEEL in a few words.
+   - ageRange: one of "2-4", "3-5", "4-6", "5-7", "6-8" based on context, or null.
 
-3. INSIGHTS — developmental observations about the child, extracted from what the parent revealed naturally. These help future stories be even more attuned to the child. Only extract insights the parent actually shared — never infer or assume.
-
-Each insight has:
-   - type: one of "interest", "fear", "life_event", "milestone", "personality", "reading_progress", "emotional_need", "social", "preference"
-   - content: the specific observation in plain language
-   - confidence: 60-100, how clearly the parent expressed this
-
-Examples of good insights:
-   - { type: "life_event", content: "Just started Reception, nervous about making friends", confidence: 90 }
-   - { type: "personality", content: "Turns everything into a song — even brushing teeth", confidence: 85 }
-   - { type: "social", content: "Has been arguing with older brother a lot lately", confidence: 75 }
-   - { type: "preference", content: "Loves stories where animals can talk but finds robots scary", confidence: 80 }
+3. INSIGHTS — developmental observations about the child, only from what the parent actually shared. Never infer or assume.
+   Each insight: { type, content, confidence }
+   type must be one of: "interest", "fear", "life_event", "milestone", "personality", "reading_progress", "emotional_need", "social", "preference"
+   confidence: 60-100
 
 Respond with ONLY valid JSON, no markdown, no preamble:
 {
@@ -129,46 +223,74 @@ Respond with ONLY valid JSON, no markdown, no preamble:
     });
 
     let raw = (response.content[0] as any).text?.trim();
+    if (!raw) throw new Error("Empty response from extraction model");
+
+    // Strip markdown fences if present
     if (raw.startsWith("```")) {
-      raw = raw.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/\s*```$/, "");
+      raw = raw
+        .replace(/^```json\s*/i, "")
+        .replace(/^```\s*/, "")
+        .replace(/\s*```$/, "");
     }
 
     const parsed = JSON.parse(raw);
 
+    // Apply all validators at the boundary — nothing raw ever reaches the DB
     return {
       reader: {
-        childName: parsed.reader?.childName || "Little One",
-        age: parsed.reader?.age ?? null,
-        pronouns: parsed.reader?.pronouns ?? null,
-        gender: parsed.reader?.gender ?? null,
-        personalityNotes: parsed.reader?.personalityNotes ?? null,
-        interests: Array.isArray(parsed.reader?.interests) ? parsed.reader.interests : [],
-        fears: Array.isArray(parsed.reader?.fears) ? parsed.reader.fears : [],
-        readingLevel: parsed.reader?.readingLevel ?? null,
-        dateOfBirth: parsed.reader?.dateOfBirth ?? null,
+        childName: safeText(parsed.reader?.childName, 120) || "Little One",
+        age: safeAge(parsed.reader?.age),
+        pronouns: safePronouns(parsed.reader?.pronouns),
+        gender: safeGender(parsed.reader?.gender),
+        personalityNotes: safeText(parsed.reader?.personalityNotes, 500),
+        interests: safeStringArray(parsed.reader?.interests),
+        fears: safeStringArray(parsed.reader?.fears),
+        readingLevel: safeReadingLevel(parsed.reader?.readingLevel),
+        dateOfBirth: safeDateOfBirth(parsed.reader?.dateOfBirth),
       },
       world: {
-        worldName: parsed.world?.worldName || "Untitled World",
-        worldDescription: parsed.world?.worldDescription || "",
-        themes: Array.isArray(parsed.world?.themes) ? parsed.world.themes : [],
-        tonality: parsed.world?.tonality ?? null,
-        ageRange: parsed.world?.ageRange ?? null,
+        worldName: safeText(parsed.world?.worldName, 200) || "Untitled World",
+        worldDescription: safeText(parsed.world?.worldDescription, 500) || "",
+        themes: safeStringArray(parsed.world?.themes),
+        tonality: safeText(parsed.world?.tonality, 100),
+        ageRange: safeText(parsed.world?.ageRange, 10),
       },
       insights: Array.isArray(parsed.insights)
-        ? parsed.insights.filter((i: any) => i?.type && i?.content)
+        ? parsed.insights
+            .filter(
+              (i: any) =>
+                i?.type &&
+                typeof i.type === "string" &&
+                i?.content &&
+                typeof i.content === "string"
+            )
+            .map((i: any) => ({
+              type: i.type.slice(0, 50),
+              content: i.content.slice(0, 500),
+              confidence: Math.min(100, Math.max(60, Number(i.confidence) || 80)),
+            }))
         : [],
     };
   } catch (e) {
-    console.warn("⚠️ Extraction failed, using defaults:", e);
+    console.warn("⚠️ Extraction failed, using safe defaults:", e);
     return {
       reader: {
-        childName: "Little One", age: null, pronouns: null, gender: null,
-        personalityNotes: null, interests: [], fears: [], readingLevel: null,
+        childName: "Little One",
+        age: null,
+        pronouns: null,
+        gender: null,
+        personalityNotes: null,
+        interests: [],
+        fears: [],
+        readingLevel: null,
         dateOfBirth: null,
       },
       world: {
-        worldName: "Untitled World", worldDescription: "", themes: [],
-        tonality: null, ageRange: null,
+        worldName: "Untitled World",
+        worldDescription: "",
+        themes: [],
+        tonality: null,
+        ageRange: null,
       },
       insights: [],
     };
@@ -176,7 +298,7 @@ Respond with ONLY valid JSON, no markdown, no preamble:
 }
 
 // ============================================================================
-// FIND OR CREATE READER — structured fields, merge logic
+// FIND OR CREATE READER — fully hardened
 // ============================================================================
 
 async function findOrCreateReader(
@@ -184,96 +306,136 @@ async function findOrCreateReader(
   projectId: string,
   extracted: ExtractedReader
 ): Promise<string> {
-  const existing = await db
-    .select()
-    .from(readers)
-    .where(
-      and(
-        eq(readers.userId, userId),
-        rawSql`LOWER(${readers.name}) = LOWER(${extracted.childName})`
+  // Step 1: Try to match an existing reader for this user by name
+  let existing;
+  try {
+    existing = await db
+      .select()
+      .from(readers)
+      .where(
+        and(
+          eq(readers.userId, userId),
+          rawSql`LOWER(${readers.name}) = LOWER(${extracted.childName})`
+        )
       )
-    )
-    .limit(1);
+      .limit(1);
+  } catch (err) {
+    console.error("🔴 [findOrCreateReader] Failed to query existing readers:", err);
+    throw new Error(`Reader lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   if (existing.length > 0) {
     const reader = existing[0];
     console.log(`🔵 Matched existing reader: ${reader.name} (${reader.id})`);
 
+    // Build updates — never overwrite existing data, only fill gaps
     const updates: Record<string, any> = {};
 
-    // Fill gaps — never overwrite existing data
     if (!reader.gender && extracted.gender) updates.gender = extracted.gender;
     if (!reader.pronouns && extracted.pronouns) updates.pronouns = extracted.pronouns;
-    if (!reader.personalityNotes && extracted.personalityNotes) updates.personalityNotes = extracted.personalityNotes;
-    if (!reader.readingLevel && extracted.readingLevel) updates.readingLevel = extracted.readingLevel;
-    if (!(reader as any).age && extracted.age) updates.age = extracted.age;
+    if (!reader.personalityNotes && extracted.personalityNotes)
+      updates.personalityNotes = extracted.personalityNotes;
+    if (!reader.readingLevel && extracted.readingLevel)
+      updates.readingLevel = extracted.readingLevel;
 
-    // DOB — only set if we don't have one and extraction found one
-    if (!(reader as any).dateOfBirthDate && extracted.dateOfBirth) {
-      try {
-        updates.dateOfBirthDate = new Date(extracted.dateOfBirth);
-      } catch {}
+    // age: only fill if missing AND new value is valid (safeAge already run)
+    if (!reader.age && extracted.age != null) updates.age = extracted.age;
+
+    // dateOfBirthDate: only fill if missing AND we have a clean YYYY-MM-DD string
+    if (!reader.dateOfBirthDate && extracted.dateOfBirth) {
+      updates.dateOfBirthDate = extracted.dateOfBirth; // Drizzle date column accepts YYYY-MM-DD string
     }
 
     // Merge interests (deduplicate)
-    const existingInterests = ((reader as any).interests as string[]) || [];
-    const merged = [...new Set([...existingInterests, ...extracted.interests])];
-    if (merged.length > existingInterests.length) updates.interests = merged;
+    const existingInterests = (reader.interests as string[] | null) ?? [];
+    const mergedInterests = [...new Set([...existingInterests, ...extracted.interests])];
+    if (mergedInterests.length > existingInterests.length)
+      updates.interests = mergedInterests;
 
-    // Merge fears
-    const existingFears = ((reader as any).fears as string[]) || [];
+    // Merge fears (deduplicate)
+    const existingFears = (reader.fears as string[] | null) ?? [];
     const mergedFears = [...new Set([...existingFears, ...extracted.fears])];
     if (mergedFears.length > existingFears.length) updates.fears = mergedFears;
 
-    // Append personality notes if we have new info
+    // Append to personalityNotes if both old and new exist
     if (extracted.personalityNotes && reader.personalityNotes) {
-      const combined = reader.personalityNotes + " " + extracted.personalityNotes;
-      if (combined.length <= 1000 && combined !== reader.personalityNotes) {
-        updates.personalityNotes = combined;
-      }
+      const combined = `${reader.personalityNotes} ${extracted.personalityNotes}`;
+      if (combined.length <= 1000) updates.personalityNotes = combined;
     }
 
     if (Object.keys(updates).length > 0) {
       updates.updatedAt = new Date();
-      await db.update(readers).set(updates).where(eq(readers.id, reader.id));
-      console.log(`🔵 Enriched reader: ${Object.keys(updates).filter(k => k !== "updatedAt").join(", ")}`);
+      try {
+        await db.update(readers).set(updates).where(eq(readers.id, reader.id));
+        console.log(
+          `🔵 Enriched reader fields: ${Object.keys(updates)
+            .filter((k) => k !== "updatedAt")
+            .join(", ")}`
+        );
+      } catch (err) {
+        // Non-fatal: log and continue — the reader exists, enrichment is a bonus
+        console.warn("🟠 [findOrCreateReader] Reader enrichment failed (non-fatal):", err);
+      }
     }
 
     return reader.id;
   }
 
-  // Create new reader with structured fields
+  // Step 2: Create a new reader
   const readerId = uuid();
-  await db.insert(readers).values({
+
+  // Build the insert values carefully — only include optional fields when valid
+  const insertValues: Record<string, any> = {
     id: readerId,
     userId,
     projectId,
     name: extracted.childName,
-    gender: extracted.gender,
-    pronouns: extracted.pronouns,
-    personalityNotes: extracted.personalityNotes,
-    interests: extracted.interests,
-    fears: extracted.fears,
-    readingLevel: extracted.readingLevel,
-    ...(extracted.age != null && extracted.age > 0 && { age: extracted.age }),
-    ...(extracted.dateOfBirth && {
-      dateOfBirthDate: new Date(extracted.dateOfBirth),
-    }),
-    // Legacy field — still write for backward compat
+    // Legacy aiSummary — still write for backward compat
     aiSummary: [
       extracted.personalityNotes,
-      extracted.interests.length > 0 ? `Interests: ${extracted.interests.join(", ")}` : null,
-      extracted.fears.length > 0 ? `Working through: ${extracted.fears.join(", ")}` : null,
+      extracted.interests.length > 0
+        ? `Interests: ${extracted.interests.join(", ")}`
+        : null,
+      extracted.fears.length > 0
+        ? `Working through: ${extracted.fears.join(", ")}`
+        : null,
       extracted.readingLevel ? `Reading level: ${extracted.readingLevel}` : null,
-    ].filter(Boolean).join(" | "),
-  });
+    ]
+      .filter(Boolean)
+      .join(" | ") || null,
+  };
 
-  console.log(`🟢 Created reader: ${extracted.childName} (${readerId})`);
+  // Only add optional fields when they have valid values
+  if (extracted.gender) insertValues.gender = extracted.gender;
+  if (extracted.pronouns) insertValues.pronouns = extracted.pronouns;
+  if (extracted.personalityNotes)
+    insertValues.personalityNotes = extracted.personalityNotes;
+  if (extracted.readingLevel) insertValues.readingLevel = extracted.readingLevel;
+  if (extracted.interests.length > 0) insertValues.interests = extracted.interests;
+  if (extracted.fears.length > 0) insertValues.fears = extracted.fears;
+
+  // age: only include if we have a valid positive integer
+  if (extracted.age != null) insertValues.age = extracted.age;
+
+  // dateOfBirthDate: only include if we have a clean YYYY-MM-DD string
+  if (extracted.dateOfBirth) insertValues.dateOfBirthDate = extracted.dateOfBirth;
+
+  try {
+    await db.insert(readers).values(insertValues);
+    console.log(`🟢 Created reader: ${extracted.childName} (${readerId})`);
+  } catch (err) {
+    console.error("🔴 [findOrCreateReader] Reader insert failed:", err);
+    console.error("🔴 Insert values attempted:", JSON.stringify(insertValues, null, 2));
+    throw new Error(
+      `Reader creation failed: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
   return readerId;
 }
 
 // ============================================================================
-// SAVE READER INSIGHTS
+// SAVE READER INSIGHTS — non-fatal per insight
 // ============================================================================
 
 async function saveReaderInsights(
@@ -283,6 +445,7 @@ async function saveReaderInsights(
 ): Promise<void> {
   if (insights.length === 0) return;
 
+  let saved = 0;
   for (const insight of insights) {
     try {
       await db.insert(readerInsights).values({
@@ -294,12 +457,14 @@ async function saveReaderInsights(
         sourceType: "chat",
         sourceStoryId: storyId,
       });
+      saved++;
     } catch (err) {
-      console.warn(`⚠️ Failed to save insight: ${insight.content}`, err);
+      // Individual insight failures are non-fatal — log and continue
+      console.warn(`🟠 Failed to save insight "${insight.content.slice(0, 50)}...":`, err);
     }
   }
 
-  console.log(`💡 Saved ${insights.length} reader insights`);
+  console.log(`💡 Saved ${saved}/${insights.length} reader insights`);
 }
 
 // ============================================================================
@@ -312,47 +477,65 @@ async function findOrCreateWorld(
   extracted: ExtractedWorld,
   explicitWorldId: string | null
 ): Promise<{ worldId: string; bookNumber: number }> {
+  // If an explicit world ID was passed, try to use it
   if (explicitWorldId) {
-    const existingWorld = await db
-      .select()
-      .from(worlds)
-      .where(and(eq(worlds.id, explicitWorldId), eq(worlds.userId, userId)))
-      .limit(1);
+    try {
+      const existingWorld = await db
+        .select()
+        .from(worlds)
+        .where(and(eq(worlds.id, explicitWorldId), eq(worlds.userId, userId)))
+        .limit(1);
 
-    if (existingWorld.length > 0) {
-      const existingBooks = await db
-        .select({ bookNumber: stories.bookNumber })
-        .from(stories)
-        .where(eq(stories.worldId, explicitWorldId));
+      if (existingWorld.length > 0) {
+        const existingBooks = await db
+          .select({ bookNumber: stories.bookNumber })
+          .from(stories)
+          .where(eq(stories.worldId, explicitWorldId));
 
-      const maxBook = existingBooks.reduce(
-        (max, b) => Math.max(max, b.bookNumber ?? 0), 0
-      );
-      const nextBook = maxBook + 1;
+        const maxBook = existingBooks.reduce(
+          (max, b) => Math.max(max, b.bookNumber ?? 0),
+          0
+        );
+        const nextBook = maxBook + 1;
 
-      console.log(`🔵 Adding to world: ${existingWorld[0].name} (Book ${nextBook})`);
-      return { worldId: explicitWorldId, bookNumber: nextBook };
+        console.log(
+          `🔵 Adding to existing world: "${existingWorld[0].name}" (Book ${nextBook})`
+        );
+        return { worldId: explicitWorldId, bookNumber: nextBook };
+      }
+    } catch (err) {
+      console.warn("🟠 [findOrCreateWorld] Failed to look up explicit world, creating new:", err);
+      // Fall through to create a new world
     }
   }
 
+  // Create a new world
   const worldId = uuid();
-  await db.insert(worlds).values({
-    id: worldId,
-    userId,
-    name: extracted.worldName,
-    description: extracted.worldDescription,
-    tonality: extracted.tonality,
-    ageRange: extracted.ageRange,
-    themes: extracted.themes,
-  });
+  try {
+    await db.insert(worlds).values({
+      id: worldId,
+      userId,
+      name: extracted.worldName,
+      description: extracted.worldDescription || null,
+      tonality: extracted.tonality || null,
+      ageRange: extracted.ageRange || null,
+      themes: extracted.themes,
+    });
 
-  await db.insert(worldReaders).values({
-    worldId,
-    readerId,
-    role: "protagonist",
-  });
+    await db.insert(worldReaders).values({
+      worldId,
+      readerId,
+      role: "protagonist",
+    });
 
-  console.log(`🟢 Created world: "${extracted.worldName}" (${worldId})`);
+    console.log(`🟢 Created world: "${extracted.worldName}" (${worldId})`);
+  } catch (err) {
+    console.error("🔴 [findOrCreateWorld] World creation failed:", err);
+    throw new Error(
+      `World creation failed: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
   return { worldId, bookNumber: 1 };
 }
 
@@ -360,7 +543,7 @@ async function findOrCreateWorld(
 // AGE HELPER
 // ============================================================================
 
-function computeAge(dob: Date | string | null, fallbackAge: number | null): number | null {
+function computeAge(dob: string | null, fallbackAge: number | null): number | null {
   if (!dob) return fallbackAge;
   const birth = new Date(dob);
   if (isNaN(birth.getTime())) return fallbackAge;
@@ -368,7 +551,7 @@ function computeAge(dob: Date | string | null, fallbackAge: number | null): numb
   let age = today.getFullYear() - birth.getFullYear();
   const m = today.getMonth() - birth.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-  return age;
+  return age >= 0 ? age : fallbackAge;
 }
 
 // ============================================================================
@@ -376,31 +559,49 @@ function computeAge(dob: Date | string | null, fallbackAge: number | null): numb
 // ============================================================================
 
 export async function POST(req: Request) {
-  console.log("🟢 API: Story creation request received");
+  console.log("🟢 [create-from-chat] Story creation request received");
+
+  let projectId: string;
+  let pageCount: number;
+  let explicitWorldId: string | null;
+
+  // ── Parse request body ──────────────────────────────────────────────────
   try {
-    const {
-      projectId,
-      pageCount = DEFAULT_PAGE_COUNT,
-      worldId: explicitWorldId = null,
-    } = await req.json();
+    const body = await req.json();
+    projectId = body.projectId;
+    pageCount = Number(body.pageCount) || DEFAULT_PAGE_COUNT;
+    explicitWorldId = body.worldId ?? null;
+  } catch (err) {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
 
-    if (!projectId) {
-      return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
-    }
+  if (!projectId) {
+    return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
+  }
 
-    const [project] = await db
+  // ── Load project ─────────────────────────────────────────────────────────
+  let project: { purchaseIntent: string | null; userId: string } | undefined;
+  try {
+    const rows = await db
       .select({ purchaseIntent: projects.purchaseIntent, userId: projects.userId })
       .from(projects)
       .where(eq(projects.id, projectId))
       .limit(1);
+    project = rows[0];
+  } catch (err) {
+    console.error("🔴 [create-from-chat] Failed to load project:", err);
+    return NextResponse.json({ error: "Failed to load project" }, { status: 500 });
+  }
 
-    if (!project?.userId) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 });
-    }
+  if (!project?.userId) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
 
-    const { purchaseIntent: intent, userId } = project;
+  const { purchaseIntent: intent, userId } = project;
 
-    // Load chat history
+  // ── Load chat history ────────────────────────────────────────────────────
+  let claudeHistory: Array<{ role: "user" | "assistant"; content: string }>;
+  try {
     const session = await db
       .select()
       .from(chatSessions)
@@ -408,7 +609,10 @@ export async function POST(req: Request) {
       .then((r) => r[0]);
 
     if (!session) {
-      return NextResponse.json({ error: "No chat session found." }, { status: 400 });
+      return NextResponse.json(
+        { error: "No chat session found for this project" },
+        { status: 400 }
+      );
     }
 
     const history = await db
@@ -417,76 +621,123 @@ export async function POST(req: Request) {
       .where(eq(chatMessages.sessionId, session.id))
       .orderBy(asc(chatMessages.createdAt));
 
-    const claudeHistory = history.map((m) => ({
+    if (history.length === 0) {
+      return NextResponse.json(
+        { error: "Chat session exists but has no messages" },
+        { status: 400 }
+      );
+    }
+
+    claudeHistory = history.map((m) => ({
       role: m.role === "user" ? ("user" as const) : ("assistant" as const),
       content: m.content || "",
     }));
 
-    // ================================================================
-    // EXTRACT: reader, world, and insights from the conversation
-    // ================================================================
+    console.log(`🔵 Loaded ${claudeHistory.length} chat messages`);
+  } catch (err) {
+    console.error("🔴 [create-from-chat] Failed to load chat history:", err);
+    return NextResponse.json({ error: "Failed to load chat history" }, { status: 500 });
+  }
 
+  // ── Extract reader, world & insights ────────────────────────────────────
+  let extraction: ChatExtraction;
+  try {
     console.log("🔵 Extracting reader, world & insights...");
-    const extraction = await extractFromChat(claudeHistory);
+    extraction = await extractFromChat(claudeHistory);
     console.log(
-      `🔵 Extracted: reader="${extraction.reader.childName}", world="${extraction.world.worldName}", insights=${extraction.insights.length}`
+      `🔵 Extracted: reader="${extraction.reader.childName}", age=${extraction.reader.age ?? "null (newborn/unknown)"}, dob=${extraction.reader.dateOfBirth ?? "null"}, world="${extraction.world.worldName}", insights=${extraction.insights.length}`
     );
+  } catch (err) {
+    console.error("🔴 [create-from-chat] Extraction failed:", err);
+    return NextResponse.json({ error: "Failed to extract story details from chat" }, { status: 500 });
+  }
 
-    const readerId = await findOrCreateReader(userId, projectId, extraction.reader);
-    const { worldId, bookNumber } = await findOrCreateWorld(userId, readerId, extraction.world, explicitWorldId);
+  // ── Create reader ────────────────────────────────────────────────────────
+  let readerId: string;
+  try {
+    readerId = await findOrCreateReader(userId, projectId, extraction.reader);
+  } catch (err) {
+    console.error("🔴 [create-from-chat] Reader step failed:", err);
+    return NextResponse.json(
+      {
+        error: "Failed to create reader profile",
+        details: err instanceof Error ? err.message : String(err),
+      },
+      { status: 500 }
+    );
+  }
 
-    // ================================================================
-    // GENERATE THE STORY
-    // ================================================================
+  // ── Create world ─────────────────────────────────────────────────────────
+  let worldId: string;
+  let bookNumber: number;
+  try {
+    ({ worldId, bookNumber } = await findOrCreateWorld(
+      userId,
+      readerId,
+      extraction.world,
+      explicitWorldId
+    ));
+  } catch (err) {
+    console.error("🔴 [create-from-chat] World step failed:", err);
+    return NextResponse.json(
+      {
+        error: "Failed to create story world",
+        details: err instanceof Error ? err.message : String(err),
+      },
+      { status: 500 }
+    );
+  }
 
-    const readerAge = computeAge(extraction.reader.dateOfBirth, extraction.reader.age);
+  // ── Generate story ───────────────────────────────────────────────────────
+  const readerAge = computeAge(extraction.reader.dateOfBirth, extraction.reader.age);
 
-    const SYSTEM = `You are FlipWhizz — a children's story generator that creates SPECIFIC, VOICE-DRIVEN stories.
+  const SYSTEM = `You are FlipWhizz — a children's story generator that creates SPECIFIC, VOICE-DRIVEN stories.
 
 You've just had a conversation with a parent about a story for their child. Everything they told you matters. This story should feel like it could ONLY be about this specific child.
 
-${readerAge ? `THE READER: ${extraction.reader.childName}, age ${readerAge}` : `THE READER: ${extraction.reader.childName}`}
+${readerAge != null ? `THE READER: ${extraction.reader.childName}, age ${readerAge}` : `THE READER: ${extraction.reader.childName}`}
 ${extraction.reader.pronouns ? `Pronouns: ${extraction.reader.pronouns}` : ""}
 ${extraction.reader.personalityNotes ? `Personality: ${extraction.reader.personalityNotes}` : ""}
 ${extraction.reader.interests.length > 0 ? `Loves: ${extraction.reader.interests.join(", ")}` : ""}
 ${extraction.reader.fears.length > 0 ? `Working through: ${extraction.reader.fears.join(", ")}` : ""}
 ${extraction.reader.readingLevel ? `Reading level: ${extraction.reader.readingLevel}` : ""}
 
-${bookNumber > 1 ? `SERIES CONTEXT: This is Book ${bookNumber} in "${extraction.world.worldName}". The reader knows and loves these characters. Make it feel like coming home — familiar but with new surprises. Reference previous adventures naturally.` : ""}
+${bookNumber > 1 ? `SERIES CONTEXT: This is Book ${bookNumber} in "${extraction.world.worldName}". The reader knows and loves these characters. Make it feel like coming home.` : ""}
 
-ANTI-SLOP RULES — these are non-negotiable:
-1. VOICE IS EVERYTHING. If a character "turns everything into a song," we hear the actual song. If they're "funny," we laugh at something specific they say.
-2. SHOW, DON'T TELL. Never "she was brave" — show her doing the brave thing. Never "he felt sad" — show what sadness looks like for THIS child.
-3. BANNED PHRASES. If you've read it in 100 children's books, don't write it. No "the most beautiful X she had ever seen", no "declared bravely", no "began to cry happy tears", no "the best X ever".
-4. SPECIFIC DETAILS. Not "made up a funny rhyme" but THE ACTUAL RHYME. Not "did a cool trick" but the exact move. The parent gave you specifics — use every single one.
-5. DISTINCT VOICES. Every character sounds different. A wise old dog doesn't talk like an excited child. Dialogue reveals personality.
-6. UNEXPECTED MOMENTS. At least 2-3 moments that genuinely surprise. Real humour, real wonder, real tension — not paint-by-numbers plot.
-7. EMOTIONAL TRUTH. One authentic moment of feeling beats ten generic descriptions. Let the child feel something real.
+ANTI-SLOP RULES — non-negotiable:
+1. VOICE IS EVERYTHING. If a character "turns everything into a song," we hear the actual song.
+2. SHOW, DON'T TELL. Never "she was brave" — show her doing the brave thing.
+3. BANNED PHRASES. No "the most beautiful X she had ever seen", no "declared bravely", no "began to cry happy tears".
+4. SPECIFIC DETAILS. Not "made up a funny rhyme" but THE ACTUAL RHYME.
+5. DISTINCT VOICES. Every character sounds different.
+6. UNEXPECTED MOMENTS. At least 2-3 moments that genuinely surprise.
+7. EMOTIONAL TRUTH. One authentic moment beats ten generic descriptions.
 
 STRUCTURE:
 - Exactly ${pageCount} pages
-- 1-3 sentences per page — quality over quantity
+- 1-3 sentences per page
 - Each page = one illustratable moment
 - Build tension properly. Don't solve problems instantly.
-- The climax uses THIS character's specific skills, not generic determination
-- The resolution feels earned
+- The climax uses THIS character's specific traits, not generic determination.
 
 ${extraction.reader.readingLevel === "pre-reader" ? "LANGUAGE: Very simple sentences. Repetition is good. Rhyme and rhythm help. Max 15 words per page." : ""}
-${extraction.reader.readingLevel === "early reader" ? "LANGUAGE: Short, clear sentences. Some new vocabulary is fine if context makes meaning obvious. 1-2 sentences per page." : ""}
-${extraction.reader.readingLevel === "confident reader" ? "LANGUAGE: Richer vocabulary, longer sentences OK. Can handle more complex emotions and plot. 2-3 sentences per page." : ""}
+${extraction.reader.readingLevel === "early reader" ? "LANGUAGE: Short, clear sentences. 1-2 sentences per page." : ""}
+${extraction.reader.readingLevel === "confident reader" ? "LANGUAGE: Richer vocabulary OK. 2-3 sentences per page." : ""}
 
-JSON OUTPUT — no markdown, no preamble, ONLY this:
+JSON OUTPUT — no markdown, no preamble, ONLY this structure:
 {
   "title": "A specific, intriguing title",
   "pages": [
     { "page": 1, "text": "..." }
   ],
   "styleGuide": {
-    "summary": "Specific visual style — mood, palette, artistic approach. NOT 'whimsical storybook illustration'.",
+    "summary": "Specific visual style description.",
     "negativePrompt": "What to avoid in illustrations"
   }
 }`;
 
+  let json: { title?: string; pages?: any[]; styleGuide?: any };
+  try {
     const completion = await client.messages.create({
       model: MODEL,
       system: SYSTEM,
@@ -501,33 +752,48 @@ JSON OUTPUT — no markdown, no preamble, ONLY this:
     });
 
     let raw = (completion.content[0] as any).text?.trim();
+    if (!raw) throw new Error("Empty response from story generation model");
+
     if (raw.startsWith("```")) {
-      raw = raw.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/\s*```$/, "");
+      raw = raw
+        .replace(/^```json\s*/i, "")
+        .replace(/^```\s*/, "")
+        .replace(/\s*```$/, "");
     }
 
-    let json;
-    try {
-      json = JSON.parse(raw);
-    } catch {
-      console.error("🔴 JSON parse error:", raw?.slice(0, 200));
-      return NextResponse.json({ error: "Invalid JSON from AI", raw }, { status: 500 });
-    }
+    json = JSON.parse(raw);
+  } catch (err) {
+    console.error("🔴 [create-from-chat] Story generation failed:", err);
+    return NextResponse.json(
+      {
+        error: "Failed to generate story content",
+        details: err instanceof Error ? err.message : String(err),
+      },
+      { status: 500 }
+    );
+  }
 
-    const { title, pages, styleGuide } = json;
+  const { title, pages, styleGuide } = json;
 
-    // ================================================================
-    // SAVE: Story, pages, products, style guide, insights
-    // ================================================================
+  if (!title || !Array.isArray(pages) || pages.length === 0) {
+    console.error("🔴 [create-from-chat] Story generation returned invalid structure:", json);
+    return NextResponse.json(
+      { error: "Story generation returned incomplete data" },
+      { status: 500 }
+    );
+  }
 
-    const storyId = uuid();
-    console.log(`🔵 Creating story "${title}" — World: ${worldId}, Book #${bookNumber}`);
+  // ── Save story to DB ─────────────────────────────────────────────────────
+  const storyId = uuid();
+  console.log(`🔵 Saving story "${title}" — World: ${worldId}, Book #${bookNumber}`);
 
+  try {
     await db.insert(stories).values({
       id: storyId,
       projectId,
       title: title || "Untitled Story",
       length: pageCount,
-      fullDraft: raw,
+      fullDraft: JSON.stringify(json),
       status: "paged",
       readerId,
       worldId,
@@ -535,22 +801,47 @@ JSON OUTPUT — no markdown, no preamble, ONLY this:
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+  } catch (err) {
+    console.error("🔴 [create-from-chat] Story insert failed:", err);
+    return NextResponse.json(
+      {
+        error: "Failed to save story",
+        details: err instanceof Error ? err.message : String(err),
+      },
+      { status: 500 }
+    );
+  }
 
-    if (Array.isArray(pages) && pages.length > 0) {
-      await db.insert(storyPages).values(
-        pages.map((p: any) => ({
-          id: uuid(),
-          storyId,
-          pageNumber: Number(p.page),
-          text: p.text,
-          illustrationPrompt: null,
-          imageId: null,
-          createdAt: new Date(),
-        }))
-      );
-    }
+  // ── Save pages ───────────────────────────────────────────────────────────
+  try {
+    await db.insert(storyPages).values(
+      pages.map((p: any) => ({
+        id: uuid(),
+        storyId,
+        pageNumber: Number(p.page),
+        text: String(p.text || ""),
+        illustrationPrompt: null,
+        imageId: null,
+        createdAt: new Date(),
+      }))
+    );
+    console.log(`🔵 Saved ${pages.length} pages`);
+  } catch (err) {
+    console.error("🔴 [create-from-chat] Pages insert failed:", err);
+    // Story exists but pages failed — return partial success so the user isn't left hanging
+    return NextResponse.json(
+      {
+        error: "Story was created but pages failed to save. Please contact support.",
+        storyId,
+        details: err instanceof Error ? err.message : String(err),
+      },
+      { status: 500 }
+    );
+  }
 
-    if (intent) {
+  // ── Save product intent (non-fatal) ──────────────────────────────────────
+  if (intent) {
+    try {
       const existing = await db.query.storyProducts.findFirst({
         where: eq(storyProducts.storyId, storyId),
       });
@@ -562,64 +853,71 @@ JSON OUTPUT — no markdown, no preamble, ONLY this:
           requiresPdf: true,
         });
       }
-    }
-
-    let styleGuideCreated = false;
-    try {
-      if (styleGuide) {
-        await db.insert(storyStyleGuide).values({
-          id: uuid(),
-          storyId,
-          summary: styleGuide.summary ?? null,
-          negativePrompt: styleGuide.negativePrompt ?? null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-        styleGuideCreated = true;
-      }
     } catch (err) {
-      console.warn("🟠 Style guide save failed:", err);
+      console.warn("🟠 [create-from-chat] Product intent save failed (non-fatal):", err);
     }
+  }
 
-    // Save reader insights (non-blocking — don't fail the request)
-    saveReaderInsights(readerId, storyId, extraction.insights).catch((err) =>
-      console.warn("⚠️ Insight save failed:", err)
-    );
+  // ── Save style guide (non-fatal) ─────────────────────────────────────────
+  let styleGuideCreated = false;
+  if (styleGuide) {
+    try {
+      await db.insert(storyStyleGuide).values({
+        id: uuid(),
+        storyId,
+        summary: safeText(styleGuide.summary) ?? null,
+        negativePrompt: safeText(styleGuide.negativePrompt) ?? null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      styleGuideCreated = true;
+    } catch (err) {
+      console.warn("🟠 [create-from-chat] Style guide save failed (non-fatal):", err);
+    }
+  }
 
-    console.log("🟢 Story creation complete!");
+  // ── Save reader insights (non-fatal, fire-and-forget) ────────────────────
+  saveReaderInsights(readerId, storyId, extraction.insights).catch((err) =>
+    console.warn("🟠 [create-from-chat] Insight save failed (non-fatal):", err)
+  );
 
-
-
+  // ── PostHog event (non-fatal) ─────────────────────────────────────────────
+  try {
     await captureServerEvent(userId, "story_created", {
       story_id: storyId,
       project_id: projectId,
       title,
-      page_count: pages?.length || 0,
+      page_count: pages.length,
       reader_name: extraction.reader.childName,
-      reader_age: extraction.reader.age,
+      reader_age: readerAge,
       world_name: extraction.world.worldName,
       book_number: bookNumber,
       insights_count: extraction.insights.length,
       purchase_intent: intent || null,
     });
-
-    return NextResponse.json({
-      storyId,
-      title,
-      pagesCreated: pages?.length || 0,
-      styleGuideCreated,
-      readerId,
-      worldId,
-      worldName: extraction.world.worldName,
-      bookNumber,
-      readerName: extraction.reader.childName,
-      insightsExtracted: extraction.insights.length,
-    });
-  } catch (err: any) {
-    console.error("🔴 Critical error:", err);
-    return NextResponse.json(
-      { error: "Story creation failed", details: err.message || String(err) },
-      { status: 500 }
-    );
+  } catch (err) {
+    console.warn("🟠 [create-from-chat] PostHog event failed (non-fatal):", err);
   }
+
+  console.log("🟢 [create-from-chat] Story creation complete!", {
+    storyId,
+    title,
+    pages: pages.length,
+    readerId,
+    worldId,
+    bookNumber,
+  });
+
+  return NextResponse.json({
+    storyId,
+    title,
+    pagesCreated: pages.length,
+    styleGuideCreated,
+    readerId,
+    worldId,
+    worldName: extraction.world.worldName,
+    bookNumber,
+    readerName: extraction.reader.childName,
+    insightsExtracted: extraction.insights.length,
+  });
 }
