@@ -187,14 +187,26 @@ function StoryViewer({
               {s}
             </button>
           ))}
-          <a
-            href={`https://app.inngest.com/env/production/functions`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-3 text-xs px-2 py-1 rounded font-mono border border-white/10 text-slate-400 hover:text-white hover:border-white/30 transition-all"
-          >
-            Inngest ↗
-          </a>
+          <a>
+          <button
+  onClick={async () => {
+    const res = await fetch(`/api/admin/stories/${storyId}/retrigger`, { method: "POST" });
+    const data = await res.json();
+    if (res.ok) alert(`✅ Retrigger fired — event: ${data.eventId}`);
+    else alert(`❌ Failed: ${data.error}`);
+  }}
+  className="ml-2 text-xs px-2 py-1 rounded font-mono border border-amber-500/30 text-amber-400 hover:border-amber-400 hover:text-amber-300 transition-all"
+>
+  retrigger spreads
+</button>
+
+  href="https://app.inngest.com/env/production/functions"
+  target="_blank"
+  rel="noopener noreferrer"
+  className="ml-1 text-xs px-2 py-1 rounded font-mono border border-white/10 text-slate-400 hover:text-white hover:border-white/30 transition-all"
+
+  Inngest ↗
+</a>
         </div>
       </div>
 
@@ -207,7 +219,7 @@ function StoryViewer({
         )}
         {!loading && data && (
           <div className="grid grid-cols-2 gap-4 max-w-5xl mx-auto">
-            {data.pages.map(page => (
+        {data.pages.filter(page => page.pageNumber % 2 !== 0).map(page => (
               <div key={page.id} className="bg-[#0f0f1a] border border-white/8 rounded-lg overflow-hidden">
                 {page.imageUrl ? (
                   <img

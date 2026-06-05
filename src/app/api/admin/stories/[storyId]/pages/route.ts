@@ -20,6 +20,7 @@ export async function GET(
   if (!isAdmin(session?.user?.email)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
   const { storyId } = await params;
 
   const [story] = await db
@@ -49,14 +50,14 @@ export async function GET(
 // PATCH — nudge story status
 export async function PATCH(
   req: Request,
-  { params }: { params: { storyId: string } }
+  { params }: { params: Promise<{ storyId: string }> }
 ) {
   const session = await getServerSession(authOptions);
   if (!isAdmin(session?.user?.email)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { storyId } = params;
+  const { storyId } = await params;
   const { status } = await req.json();
 
   const allowed = ["paged", "generating", "ready", "complete"];
