@@ -13,15 +13,15 @@ function isAdmin(email: string | null | undefined) {
 }
 
 export async function GET(
-  req: Request,
-  { params }: { params: { userId: string } }
-) {
+    req: Request,
+    { params }: { params: Promise<{ userId: string }> }
+  ) {
   const session = await getServerSession(authOptions);
   if (!isAdmin(session?.user?.email)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { userId } = params;
+  const { userId } = await params;
 
   const [user] = await db
     .select()

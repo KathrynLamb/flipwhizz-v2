@@ -14,14 +14,13 @@ function isAdmin(email: string | null | undefined) {
 
 export async function GET(
   req: Request,
-  { params }: { params: { storyId: string } }
+  { params }: { params: Promise<{ storyId: string }> }
 ) {
   const session = await getServerSession(authOptions);
   if (!isAdmin(session?.user?.email)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-
-  const { storyId } = params;
+  const { storyId } = await params;
 
   const [story] = await db
     .select({ title: stories.title, status: stories.status })
