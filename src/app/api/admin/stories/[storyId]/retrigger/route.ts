@@ -2,10 +2,12 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { inngest } from "@/inngest/client";
+import { db } from "@/db";
+import { stories } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-const INNGEST_EVENT_KEY = process.env.INNGEST_EVENT_KEY;
-const INNGEST_BASE_URL = process.env.INNGEST_BASE_URL ?? "https://inn.gs";
 
 function isAdmin(email: string | null | undefined) {
   return ADMIN_EMAIL && email === ADMIN_EMAIL;
@@ -20,31 +22,27 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (!INNGEST_EVENT_KEY) {
-    return NextResponse.json({ error: "INNGEST_EVENT_KEY not configured" }, { status: 500 });
-  }
-
   const { storyId } = await params;
 
-  const url = `${INNGEST_BASE_URL}/e/${INNGEST_EVENT_KEY}`;
+  const [story] = await db
+    .select()
+    .from(stories)
+    .where(eq(stories.id, storyId))
+    .limit(1);
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: "story/generate-spreads",
-      data: { storyId },
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("🔴 Inngest retrigger failed:", text);
-    return NextResponse.json({ error: "Inngest event failed", details: text }, { status: 500 });
+  if (!story) {
+    return NextResponse.json({ error: "Story not found" }, { status: 404 });
   }
 
-  const json = await res.json();
-  console.log(`🟢 Admin retrigger: story ${storyId} — event ID: ${json.ids?.[0]}`);
+  await db
+    .update(stories)
+    .set({ status: "generating", updatedAt: new Date() })
+    .where(eq(stories.id, storyId));
 
-  return NextResponse.json({ ok: true, eventId: json.ids?.[0] });
+  await inngest.send({
+    name: "story/generate-spreads",
+    data: { storyId },
+  });
+
+  return NextResponse.json({ ok: true, storyId, status: "generating" });
 }
