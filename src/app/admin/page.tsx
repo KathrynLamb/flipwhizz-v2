@@ -187,26 +187,17 @@ function StoryViewer({
               {s}
             </button>
           ))}
-          <a>
-          <button
-  onClick={async () => {
-    const res = await fetch(`/api/admin/stories/${storyId}/retrigger`, { method: "POST" });
-    const data = await res.json();
-    if (res.ok) alert(`✅ Retrigger fired — event: ${data.eventId}`);
-    else alert(`❌ Failed: ${data.error}`);
-  }}
-  className="ml-2 text-xs px-2 py-1 rounded font-mono border border-amber-500/30 text-amber-400 hover:border-amber-400 hover:text-amber-300 transition-all"
->
-  retrigger spreads
-</button>
+<div className="flex items-center gap-2">
+  <button>retrigger spreads</button>
 
-  href="https://app.inngest.com/env/production/functions"
-  target="_blank"
-  rel="noopener noreferrer"
-  className="ml-1 text-xs px-2 py-1 rounded font-mono border border-white/10 text-slate-400 hover:text-white hover:border-white/30 transition-all"
-
-  Inngest ↗
-</a>
+  <a
+    href="https://app.inngest.com/env/production/functions"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    Inngest ↗
+  </a>
+</div>
         </div>
       </div>
 
