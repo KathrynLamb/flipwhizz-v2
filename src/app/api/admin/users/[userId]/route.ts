@@ -3,9 +3,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { db } from "@/db";
-import { users, projects, stories, storyPages } from "@/db/schema";
+import { users, projects, stories, storyPages, storyWorkflowProgress } from "@/db/schema";
 import { eq, asc, sql } from "drizzle-orm";
-import { storyWorkflowProgress } from "@/db/schema";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
@@ -51,8 +50,7 @@ export async function GET(
       createdAt: stories.createdAt,
       updatedAt: stories.updatedAt,
       pageCount: sql<number>`cast(count(${storyPages.id}) as int)`,
-      imagesCount: sql<number>`cast(count(${storyPages.imageUrl}) as int)`,
-      // Workflow
+      imagesCount: sql<number>`cast(sum(case when ${storyPages.imageUrl} is not null then 1 else 0 end) as int)`,
       charactersExtracted: storyWorkflowProgress.charactersExtracted,
       locationsExtracted: storyWorkflowProgress.locationsExtracted,
       spreadsBuilt: storyWorkflowProgress.spreadsBuilt,
