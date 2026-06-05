@@ -8,11 +8,12 @@
  *   node scripts/retrigger-spreads.mjs
  */
 
+
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
 const STORY_IDS = [
-  "b1029f6d-8ebd-46fc-862d-3bf9ac613093", 
+  "ccc40920-1f69-4f46-b996-547d0b2d603d",
 ];
 
 // Inngest accepts events at this endpoint using your event key
