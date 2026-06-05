@@ -26,6 +26,7 @@ import RedrawStrategistModal, {
   type RedrawStrategistContext,
   type StrategistMessage,
 } from "@/app/stories/[id]/studio/components/RedrawStrategistModal";
+import StyleOverhaulModal from "@/app/stories/[id]/studio/components/StyleOverhaulModal";
 
 /* ---------------------------------- Types --------------------------------- */
 
@@ -195,6 +196,10 @@ function SplitRedrawBanner({
         >
           Dismiss
         </button>
+
+
+
+
       </div>
     </div>
   );
@@ -618,6 +623,8 @@ export default function DesktopStudio({
   const totalCount = pages.length;
   const allGenerated = completedCount === totalCount;
   const isPaid = story.paymentStatus === "paid";
+
+  const [styleOverhaulOpen, setStyleOverhaulOpen] = useState(false);
 
   /* ── Polling ── */
   useEffect(() => {
@@ -1234,6 +1241,23 @@ export default function DesktopStudio({
         isGenerating={isGenerating}
       />
 
+{allGenerated && (
+  <div className="max-w-[1400px] mx-auto px-8 pt-2 flex justify-end">
+    <button
+      onClick={() => setStyleOverhaulOpen(true)}
+      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:shadow-md"
+      style={{
+        background: "rgba(176,92,230,0.08)",
+        color: "#B05CE6",
+        border: "1px solid rgba(176,92,230,0.15)",
+      }}
+    >
+      <Sparkles className="w-4 h-4" />
+      Rethink the style
+    </button>
+  </div>
+)}
+
       {allGenerated && (
         <div className="max-w-[1400px] mx-auto px-8 pt-6">
           <StudioActionCard
@@ -1282,6 +1306,22 @@ export default function DesktopStudio({
           />
         )}
       </div>
+
+
+  <StyleOverhaulModal
+  isOpen={styleOverhaulOpen}
+  onClose={() => setStyleOverhaulOpen(false)}
+  storyId={story.id}
+  storyTitle={story.title}
+  spreads={spreads}
+  onTriggerSampleRedraw={(spreadId, pageIds) => {
+    const spread = spreads.find(
+      (s) => s.spreadId === spreadId || s.left.id === pageIds[0]
+    );
+    if (spread) startRegenerationForSpread(spread, { freshStart: true });
+  }}
+  onTriggerFullRedraw={handleGenerateAll}
+/>
     </div>
   );
 }

@@ -75,7 +75,7 @@ async function extractFromChat(
 
 1. READER — the child this story is for:
    - childName: their first name. If genuinely unclear, use "Little One"
-   - age: integer or null. Listen for "she's 4", "he just turned 6", "nearly 5"
+   - age: integer or null. Listen for "she's 4", "he just turned 6", "nearly 5". For newborns or babies under 1, use null not 0.
    - pronouns: "she/her", "he/him", "they/them", or null
    - gender: "girl", "boy", "non-binary", or null
    - personalityNotes: 1-2 sentences capturing who this child IS based on what the parent revealed. Not generic — specific. "Shy at first but fiercely brave once she trusts someone. Turns everything into a song."
@@ -255,7 +255,7 @@ async function findOrCreateReader(
     interests: extracted.interests,
     fears: extracted.fears,
     readingLevel: extracted.readingLevel,
-    ...(extracted.age != null && { age: extracted.age }),
+    ...(extracted.age != null && extracted.age > 0 && { age: extracted.age }),
     ...(extracted.dateOfBirth && {
       dateOfBirthDate: new Date(extracted.dateOfBirth),
     }),

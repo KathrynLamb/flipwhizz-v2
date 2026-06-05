@@ -626,8 +626,8 @@ function GenerationPanel({
                 <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
                 {styleWarning === "no_style_guide" &&
                   "No style guide found — generating with default style."}
-                {styleWarning === "style_not_locked" &&
-                  "Your style guide isn't locked yet. Lock it in Design for best results."}
+                {/* {styleWarning === "style_not_locked" &&
+                  "Your style guide isn't locked yet. Lock it in Design for best results."} */}
                 {styleWarning === "no_reference_image" &&
                   "No style reference image uploaded. Add one in Design for better consistency."}
               </div>
