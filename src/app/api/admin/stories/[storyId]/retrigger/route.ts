@@ -23,6 +23,18 @@ export async function POST(
   }
 
   const { storyId } = await params;
+  const { event = "story/generate-spreads" } = await req.json().catch(() => ({}));
+
+  const allowed = [
+    "story/ensure-world",
+    "story/build-spreads",
+    "story/build-spread-prompts",
+    "story/generate-spreads",
+  ];
+
+  if (!allowed.includes(event)) {
+    return NextResponse.json({ error: "Invalid event" }, { status: 400 });
+  }
 
   const [story] = await db
     .select()
@@ -39,10 +51,7 @@ export async function POST(
     .set({ status: "generating", updatedAt: new Date() })
     .where(eq(stories.id, storyId));
 
-  await inngest.send({
-    name: "story/generate-spreads",
-    data: { storyId },
-  });
+  await inngest.send({ name: event, data: { storyId } });
 
-  return NextResponse.json({ ok: true, storyId, status: "generating" });
+  return NextResponse.json({ ok: true, storyId, event });
 }

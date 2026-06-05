@@ -187,27 +187,33 @@ function StoryViewer({
               {s}
             </button>
           ))}
-<div className="flex items-center gap-2">
-  <button
-    onClick={async () => {
-      const res = await fetch(`/api/admin/stories/${storyId}/retrigger`, { method: "POST" });
-      const data = await res.json();
-      if (res.ok) alert(`✅ Retrigger fired`);
-      else alert(`❌ Failed: ${data.error}`);
-    }}
-    className="text-xs px-2 py-1 rounded font-mono border border-amber-500/30 text-amber-400 hover:border-amber-400 hover:text-amber-300 transition-all"
-  >
-    retrigger spreads
-  </button>
-  <a
-    href="https://app.inngest.com/env/production/functions"
-    target="_blank"
-    rel="noopener noreferrer"
-    className="text-xs px-2 py-1 rounded font-mono border border-white/10 text-slate-400 hover:text-white hover:border-white/30 transition-all"
-  >
-    Inngest ↗
-  </a>
-</div>
+<select
+  id={`retrigger-${storyId}`}
+  className="text-xs px-2 py-1 rounded font-mono border border-white/10 bg-transparent text-slate-400"
+  defaultValue="story/generate-spreads"
+>
+  <option value="story/ensure-world">ensure-world (full pipeline)</option>
+  <option value="story/build-spreads">build-spreads</option>
+  <option value="story/build-spread-prompts">build-spread-prompts</option>
+  <option value="story/generate-spreads">generate-spreads (images only)</option>
+</select>
+<button
+  onClick={async () => {
+    const select = document.getElementById(`retrigger-${storyId}`) as HTMLSelectElement;
+    const event = select?.value ?? "story/generate-spreads";
+    const res = await fetch(`/api/admin/stories/${storyId}/retrigger`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event }),
+    });
+    const data = await res.json();
+    if (res.ok) alert(`✅ Fired: ${data.event}`);
+    else alert(`❌ Failed: ${data.error}`);
+  }}
+  className="text-xs px-2 py-1 rounded font-mono border border-amber-500/30 text-amber-400 hover:border-amber-400 hover:text-amber-300 transition-all"
+>
+  retrigger
+</button>
         </div>
       </div>
 
