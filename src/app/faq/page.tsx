@@ -41,6 +41,21 @@ const faqs = [
       "Most personalised book services swap a child's name and appearance into a pre-written story. The plot stays the same for every child — only the name on the cover changes. FlipWhizz is different because it builds the entire story from scratch around your child's personality, interests, and the experience you want to create. A book for a dinosaur-obsessed 4-year-old starting school will be completely different from one made for a 7-year-old who loves football and dreams about space.",
   },
   {
+    question: "Can I change the art style FlipWhizz chooses for my book?",
+    answer:
+      "Yes. FlipWhizz suggests an illustration style based on the tone of your story — soft watercolour for a cozy bedtime tale, vibrant 3D for a space adventure, and so on. If it's not quite right, you can change the style direction yourself, or upload a reference image to show FlipWhizz the look you're after.",
+  },
+  {
+    question: "What if a character's outfit or appearance is wrong on a page?",
+    answer:
+      "You can fix it. If a character's outfit doesn't match what you pictured — or doesn't match how they looked on a previous page — you can redo that specific scene and adjust the outfit, colours, or details, without regenerating the whole book.",
+  },
+  {
+    question: "If I make more than one book, will the characters stay consistent?",
+    answer:
+      "Yes. FlipWhizz remembers your child's appearance, your other characters, and the visual style of your book, so if you create a sequel or a new story with the same cast, they look like themselves — not a different version of the character.",
+  },
+  {
     question: "What kinds of stories can I create?",
     answer:
       "Adventure stories, bedtime stories, confidence-building stories, friendship stories, funny stories, fantasy worlds, sports stories, animal stories, and more. You can create stories that help with real situations too — like starting school, welcoming a new sibling, overcoming a fear, or celebrating something a child is proud of. The best stories are the ones built around something real about your child.",

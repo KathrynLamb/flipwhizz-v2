@@ -102,6 +102,8 @@ export default async function Home() {
       </section>
 
       {/* ── HOW IT WORKS ── */}
+
+      
       <section id="how-it-works" style={{ background: "#FEFCFA" }}>
         <div className="relative w-full">
           <div className="hidden lg:block relative w-full" style={{ aspectRatio: "16 / 9" }}>
