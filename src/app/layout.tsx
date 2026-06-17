@@ -66,6 +66,9 @@ export const metadata: Metadata = {
     },
   },
   category: "children's books",
+  other: {
+    "p:domain_verify": "c61384e9f5173c00572a46579a40bc72",
+  },
 };
 
 export default function RootLayout({
