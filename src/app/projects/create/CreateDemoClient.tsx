@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -63,6 +64,27 @@ export default function CreateDemoClient() {
 
   const reachedLimit = userMessageCount >= MAX_USER_MESSAGES;
   const remaining = Math.max(0, MAX_USER_MESSAGES - userMessageCount);
+
+const searchParams = useSearchParams();
+const seed = searchParams.get("seed");
+
+const SEED_PROMPTS: Record<string, string> = {
+  potty: "My little one is potty training right now and I'd love a story that makes it fun and exciting for them",
+  bedtime: "My child fights bedtime every night — I'd love a calming story that makes going to sleep feel magical",
+  newsibling: "We're expecting a new baby and I want a story to help my older child feel excited about becoming a big brother or sister",
+  dinosaurs: "My little one is completely obsessed with dinosaurs and I'd love a story all about them",
+};
+
+useEffect(() => {
+  if (!messagesLoaded) return;
+  if (!seed) return;
+  if (messages.length > 0) return; // don't clobber a resumed session
+  const preset = SEED_PROMPTS[seed];
+  if (preset) {
+    setInput(preset);
+    posthog.capture("demo_seeded", { seed });
+  }
+}, [messagesLoaded, seed, messages.length]);
 
 
 // Load messages effect
