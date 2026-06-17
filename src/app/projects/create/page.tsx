@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import Link from "next/link";
 import CreateDemoClient from "./CreateDemoClient";
 
@@ -132,7 +133,9 @@ export default function CreatePage() {
 
         {/* Demo chat */}
         <div className="mt-8">
-          <CreateDemoClient />
+          <Suspense fallback={null}>
+            <CreateDemoClient />
+          </Suspense>
         </div>
 
         {/* Footer links */}
