@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       }));
 
     const completion = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       system: buildDemoSystemPrompt(),
       max_tokens: 300,
       messages: [

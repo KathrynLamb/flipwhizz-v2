@@ -29,7 +29,7 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-6";
 
 function extractJson(raw: string) {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);

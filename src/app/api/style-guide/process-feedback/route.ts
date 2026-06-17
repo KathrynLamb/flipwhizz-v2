@@ -83,7 +83,7 @@ Please analyze both the feedback and the reference image to create an updated, d
 
     // Call Claude to analyze and update style
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 1024,
       messages,
     });

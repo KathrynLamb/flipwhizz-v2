@@ -22,7 +22,7 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "cclaude-sonnet-4-6";
 const MAX_FEATURED_CHARACTERS_PER_SPREAD = 5;
 
 /* -------------------------------------------------------------------------- */

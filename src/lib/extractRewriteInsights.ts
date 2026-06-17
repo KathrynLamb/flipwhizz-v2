@@ -27,7 +27,7 @@ export async function extractInsightsFromRewriteChat(
 
   try {
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 800,
       system: `You analyze editing conversations between a parent and a children's book co-author. Your job is to extract DEVELOPMENTAL INSIGHTS about the child — information that would help make future stories better for this specific child.
 

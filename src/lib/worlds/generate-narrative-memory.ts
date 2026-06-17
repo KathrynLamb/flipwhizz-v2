@@ -87,7 +87,7 @@ Extract the narrative memory for this book. Focus on:
 5. The core emotional themes`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 1500,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],

@@ -17,7 +17,7 @@ import { eq, asc, inArray, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import Anthropic from "@anthropic-ai/sdk";
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-6";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,

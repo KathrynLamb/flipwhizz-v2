@@ -13,7 +13,7 @@ import { z } from "zod";
 /*                                CONFIG                                      */
 /* -------------------------------------------------------------------------- */
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "claude-sonnet-4-6";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,

@@ -90,7 +90,7 @@ export async function POST(req: Request) {
     /* ---------------- Claude = ART DIRECTOR ---------------- */
 
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 900,
       system: `
 You are an expert children's book art director.

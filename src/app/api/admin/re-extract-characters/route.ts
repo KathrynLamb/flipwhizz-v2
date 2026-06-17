@@ -65,7 +65,7 @@ export async function POST(req: Request) {
 
     // Ask Claude to extract characters — only skip those linked to THIS story
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 4000,
       system: `You extract characters from children's stories. Return ONLY valid JSON, no markdown fences, no preamble.`,
       messages: [{
