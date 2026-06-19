@@ -32,23 +32,23 @@ function IllustrationsBox({ projectId, style }: IllustrationsBoxProps){
   return (
     <Link
     href={`/projects/${projectId}/images`}
-    className="group rounded-3xl bg-white/5 p-5 ring-1 ring-white/10 hover:ring-white/20 transition sm:p-6"
+    className="group rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow-md sm:p-6"
   >
     <div className="flex items-start gap-4">
-      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/10">
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-[#FDFBFF]">
         <span className="text-xl">🎨</span>
       </div>
       <div>
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold">Illustrations</h2>
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[9px] font-semibold text-white/70 ring-1 ring-white/10">
+          <h2 className="text-lg font-bold text-slate-900">Illustrations</h2>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-semibold text-slate-500">
             Soon
           </span>
         </div>
-        <p className="mt-1 text-sm text-white/70">
+        <p className="mt-1 text-sm text-slate-600">
           Generate character-consistent art page by page.
         </p>
-        <p className="mt-3 text-[11px] text-white/50">
+        <p className="mt-3 text-[11px] text-slate-400">
           Tip: this will feel magical once pages are split.
         </p>
       </div>
