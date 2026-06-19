@@ -399,15 +399,6 @@ export function MobileLocationCard({
               </div>
             )}
 
-            {/* Name overlay */}
-            <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-3 pt-8 pointer-events-none"
-              style={{ background: "linear-gradient(to top, rgba(0,0,0,0.65) 0%, transparent 100%)" }}>
-              <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-white/70 flex-shrink-0" />
-                <h2 className="text-2xl font-extrabold text-white leading-tight drop-shadow-lg">{loc.name}</h2>
-              </div>
-            </div>
-
             {/* Status badge */}
             <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold"
               style={{
@@ -421,7 +412,19 @@ export function MobileLocationCard({
 
           {/* BODY */}
           <div className="flex-1 flex flex-col min-h-0" style={{ background: "#FDFBFF" }}>
-            <div className="flex-1 px-4 pt-3 pb-1 flex flex-col justify-center min-h-0 overflow-hidden">
+            {/* Name row — moved out of the image zone so it never collides
+                with the upload/generate choice panel on long location names.
+                Previously both were bottom-anchored inside the same 55%
+                image zone, overlapping when combined content exceeded that
+                height. */}
+            <div className="flex-shrink-0 flex items-center gap-2 px-4 pt-3.5 pb-1">
+              <MapPin className="w-4 h-4 flex-shrink-0" style={{ color: "#B8A5D0" }} />
+              <h2 className="text-lg font-extrabold leading-tight" style={{ color: "#2D2235" }}>
+                {loc.name}
+              </h2>
+            </div>
+
+            <div className="flex-1 px-4 pt-1 pb-1 flex flex-col justify-center min-h-0 overflow-hidden">
 
               <AnimatePresence>
                 {uploadError && (
