@@ -11,7 +11,24 @@ const PINK = "#D94590";
 // Rainbow colours sampled from the FlipWhizz logo
 const NAV_COLORS = ["#E8457A", "#F5A623", "#7BC67E", "#5EAED4"];
 
-export default function Header({ session }: { session: any }) {
+// `minimal` strips the nav links and keeps only the logo + a quiet auth
+// action. Used on conversion pages (e.g. /projects/create) where every extra
+// link is an exit from the flow.
+// `title`/`subtitle` render a compact heading inside the bar (desktop: centred
+// between logo and auth; mobile: a tidy line beneath the logo row). Used on
+// conversion pages so the page hero lives in the header and the chat gets more
+// room. Most pages pass neither and are unaffected.
+export default function Header({
+  session,
+  minimal = false,
+  title,
+  subtitle,
+}: {
+  session: any;
+  minimal?: boolean;
+  title?: string;
+  subtitle?: string;
+}) {
   const [isOpen, setIsOpen] = useState(false);
 
   const handleSignOut = async () => {
@@ -29,34 +46,55 @@ export default function Header({ session }: { session: any }) {
   return (
     <header className="relative z-50 w-full">
       {/* Desktop */}
-      <div className="hidden lg:flex items-center justify-between px-12 py-1 bg-white/95 backdrop-blur-xl border-b border-gray-100">
+      <div className="relative hidden lg:flex items-center justify-between px-12 py-1 bg-white/95 backdrop-blur-xl border-b border-gray-100">
         <Logo />
-        <nav className="flex items-center gap-9">
-          {navLinks.map(({ href, label }, i) => (
-            <Link
-              key={href}
-              href={href}
-              className="relative group text-sm font-semibold tracking-wide transition-colors duration-300"
-              style={{ color: NAV_COLORS[i] }}
+
+        {title && (
+          <div className="pointer-events-none absolute left-1/2 top-1/2 max-w-[50vw] -translate-x-1/2 -translate-y-1/2 text-center">
+            <p
+              className="truncate text-[32px] font-black tracking-tighter"
+              style={{
+                backgroundImage:
+                  "linear-gradient(90deg, #F2546A, #F7A93E, #8AC7E0, #A270C9)",
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                color: "transparent",
+              }}
             >
-              <span className="group-hover:opacity-80 transition-opacity duration-300">{label}</span>
-              <span
-                className="absolute -bottom-0.5 left-0 w-0 h-[2px] rounded-full group-hover:w-full transition-all duration-300"
-                style={{ background: NAV_COLORS[i] }}
-              />
-            </Link>
-          ))}
-        </nav>
+              {title}
+            </p>
+            {/* {subtitle && (
+              <p className="mt-0.5 truncate text-[12px] font-medium text-slate-400">
+                {subtitle}
+              </p>
+            )} */}
+          </div>
+        )}
+
+        {!minimal && (
+          <nav className="flex items-center gap-9">
+            {navLinks.map(({ href, label }, i) => (
+              <Link
+                key={href}
+                href={href}
+                className="relative group text-sm font-semibold tracking-wide transition-colors duration-300"
+                style={{ color: NAV_COLORS[i] }}
+              >
+                <span className="group-hover:opacity-80 transition-opacity duration-300">
+                  {label}
+                </span>
+                <span
+                  className="absolute -bottom-0.5 left-0 w-0 h-[2px] rounded-full group-hover:w-full transition-all duration-300"
+                  style={{ background: NAV_COLORS[i] }}
+                />
+              </Link>
+            ))}
+          </nav>
+        )}
+
         <div className="flex items-center gap-3">
           {!session ? (
-            <Link
-              href="/auth/signin"
-              className="px-6 py-2.5 rounded-full text-sm font-semibold text-gray-500 border-2 border-gray-200 hover:text-white transition-all duration-300"
-              onMouseEnter={(e) => { e.currentTarget.style.background = PINK; e.currentTarget.style.borderColor = PINK; e.currentTarget.style.color = "white"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = ""; e.currentTarget.style.borderColor = ""; e.currentTarget.style.color = ""; }}
-            >
-              Sign In
-            </Link>
+            <SignInButton />
           ) : (
             <>
               <Link
@@ -78,22 +116,63 @@ export default function Header({ session }: { session: any }) {
       </div>
 
       {/* Mobile */}
-      <div className="lg:hidden flex items-center justify-between px-6 py-4 bg-white/95 backdrop-blur-xl border-b border-gray-100">
-        <Logo />
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          aria-label="Toggle menu"
-          className="relative z-50 w-10 h-10 flex flex-col items-center justify-center gap-[5px]"
-        >
-          <motion.span animate={isOpen ? { rotate: 45, y: 7 } : { rotate: 0, y: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} className="block w-6 h-[2px] bg-gray-700 origin-center" />
-          <motion.span animate={isOpen ? { opacity: 0, scaleX: 0 } : { opacity: 1, scaleX: 1 }} transition={{ duration: 0.2 }} className="block w-6 h-[2px] bg-gray-700" />
-          <motion.span animate={isOpen ? { rotate: -45, y: -7 } : { rotate: 0, y: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} className="block w-6 h-[2px] bg-gray-700 origin-center" />
-        </button>
+      <div className="lg:hidden bg-white/95 backdrop-blur-xl border-b border-gray-100">
+        <div className="flex items-center justify-between px-6 py-4">
+          <Logo />
+
+          {minimal ? (
+            /* On conversion pages, skip the hamburger entirely, just a quiet
+               auth action, so there's no menu of exits. */
+            !session ? (
+              <SignInButton />
+            ) : (
+              <Link
+                href="/projects"
+                className="px-5 py-2 rounded-full text-sm font-bold text-white tracking-wide"
+                style={{ background: PINK, boxShadow: `0 3px 14px ${PINK}40` }}
+              >
+                ✦ My Library
+              </Link>
+            )
+          ) : (
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              aria-label="Toggle menu"
+              className="relative z-50 w-10 h-10 flex flex-col items-center justify-center gap-[5px]"
+            >
+              <motion.span animate={isOpen ? { rotate: 45, y: 7 } : { rotate: 0, y: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} className="block w-6 h-[2px] bg-gray-700 origin-center" />
+              <motion.span animate={isOpen ? { opacity: 0, scaleX: 0 } : { opacity: 1, scaleX: 1 }} transition={{ duration: 0.2 }} className="block w-6 h-[2px] bg-gray-700" />
+              <motion.span animate={isOpen ? { rotate: -45, y: -7 } : { rotate: 0, y: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} className="block w-6 h-[2px] bg-gray-700 origin-center" />
+            </button>
+          )}
+        </div>
+
+        {title && (
+          <div className="px-5 pb-3 -mt-1 text-center">
+            <p
+              className="text-[19px] font-black leading-tight tracking-tighter"
+              style={{
+                backgroundImage:
+                  "linear-gradient(90deg, #F2546A, #F7A93E, #8AC7E0, #A270C9)",
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                color: "transparent",
+              }}
+            >
+              {title}
+            </p>
+            {subtitle && (
+              <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+                {subtitle}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Mobile overlay */}
+      {/* Mobile overlay, only when not minimal */}
       <AnimatePresence>
-        {isOpen && (
+        {!minimal && isOpen && (
           <>
             <motion.div key="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.35 }} className="fixed inset-0 z-40 bg-black/15 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
             <motion.div
@@ -128,11 +207,11 @@ export default function Header({ session }: { session: any }) {
               </nav>
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42, duration: 0.4, ease: [0.16, 1, 0.3, 1] }} className="relative z-10 px-8 pb-16 flex flex-col gap-3">
                 {!session ? (
-                  <Link href="/auth/signin" onClick={() => setIsOpen(false)} className="w-full py-4 rounded-2xl text-center text-base font-semibold text-gray-500 border-2 border-gray-200 transition-all">Sign In</Link>
+                  <Link href="/auth/signin" onClick={() => setIsOpen(false)} className="w-full py-4 rounded-2xl text-center text-base font-semibold text-[#DB79AC] border-2 border-[#DB79AC] transition-all">Sign In</Link>
                 ) : (
                   <>
-                    <Link href="/projects" onClick={() => setIsOpen(false)} className="w-full py-4 rounded-2xl text-center text-base font-bold text-white tracking-wide transition-all hover:scale-[1.02] active:scale-[0.98]" style={{ background: PINK, boxShadow: `0 4px 20px ${PINK}30` }}>✦ My Library</Link>
-                    <button onClick={handleSignOut} className="w-full py-4 rounded-2xl text-center text-base font-medium text-gray-400 hover:text-gray-600 transition-all">Sign Out</button>
+                    <Link href="/projects" onClick={() => setIsOpen(false)} className="w-full py-4 rounded-2xl text-center text-base font-bold text-white tracking-wide transition-all hover:scale-[1.02] active:scale-[0.98] bg-[#DB79AC]" style={{  boxShadow: `0 4px 20px ` }}>✦ My Library</Link>
+                    <button onClick={handleSignOut} className="w-full py-4 rounded-2xl text-center text-base font-medium text-[#DB79AC] hover:text-[#DB79AC] transition-all">Sign Out</button>
                   </>
                 )}
               </motion.div>
@@ -141,6 +220,20 @@ export default function Header({ session }: { session: any }) {
         )}
       </AnimatePresence>
     </header>
+  );
+}
+
+// Quiet, on-brand secondary action. Pink-outline pill that fills on hover via
+// pure CSS (no inline JS), with a visible keyboard focus ring. Reads as
+// intentional rather than greyed-out, but stays secondary to the demo.
+function SignInButton() {
+  return (
+    <Link
+      href="/auth/signin"
+      className="rounded-full border-2 border-[#D94590]/30 px-6 py-2.5 text-sm font-semibold text-[#D94590] transition-all duration-300 hover:bg-[#DB79AC] hover:border-[#D94590] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D94590]/50 focus-visible:ring-offset-2"
+    >
+      Sign in
+    </Link>
   );
 }
 
