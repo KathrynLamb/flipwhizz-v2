@@ -65,7 +65,7 @@ export default async function Home() {
         </div>
         <div className="relative w-full">
           <div className="hidden lg:block relative w-full" style={{ height: "min(75vh, 700px)" }}>
-            <Image src="/LandingPage/new-hero.png" alt="Big Imaginations Deserve Beautiful Books" fill priority className="object-cover object-top" />
+            <Image src="/LandingPage/white_hero.jpg" alt="Big Imaginations Deserve Beautiful Books" fill priority className="object-cover object-top" />
           </div>
           <div className="lg:hidden relative w-full">
             <Image src="/LandingPage/hero-mobile.jpg" alt="Big Imaginations Deserve Beautiful Books" width={1536} height={2752} priority className="w-full h-auto" />
