@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { headers } from "next/headers";
 import Link from "next/link";
 import Image from "next/image";
 import { Playfair_Display, Lato } from "next/font/google";
@@ -11,12 +12,23 @@ import { projects } from "@/db/schema";
 import { stories, bookCovers } from "@/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import GallerySection from "@/components/GallerySection";
+import { getPriceCents, formatPrice, countryToCurrency } from "@/lib/pricing";
 
 const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-serif", weight: ["400", "700", "900"] });
 const lato = Lato({ subsets: ["latin"], variable: "--font-sans", weight: ["400", "700"] });
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
+
+  // Resolve display currency from geo. This page is already dynamic (it reads
+  // the session cookie via getServerSession), so reading a header here adds no
+  // extra caching/SEO cost.
+  const country = (await headers()).get("x-vercel-ip-country");
+  const currency = countryToCurrency(country);
+
+  const priceDigital = formatPrice(getPriceCents("digital", currency), currency);
+  const pricePrint = formatPrice(getPriceCents("print", currency), currency);
+  const priceGift = formatPrice(getPriceCents("gift", currency), currency);
 
   const publicStories = await db
     .select({ id: stories.id, title: stories.title, description: stories.description, coverSpreadUrl: stories.coverSpreadUrl, updatedAt: stories.updatedAt })
@@ -197,7 +209,7 @@ export default async function Home() {
               <h3 className="font-serif text-2xl font-bold mb-2" style={{ color: "#D94590" }}>Print at home PDF</h3>
               <p className="text-sm mb-6" style={{ color: "#6B5D52" }}>A beautifully illustrated story, ready to read or print.</p>
               <div className="mb-6">
-                <span className="text-4xl font-serif font-bold" style={{ color: "#2D2235" }}>£14</span>
+                <span className="text-4xl font-serif font-bold" style={{ color: "#2D2235" }}>{priceDigital}</span>
                 <span style={{ color: "#6B5D52" }}> one-off</span>
               </div>
               <ul className="space-y-3 text-sm mb-8" style={{ color: "#4A4038" }}>
@@ -227,7 +239,7 @@ export default async function Home() {
               <h3 className="font-serif text-2xl font-bold mb-2" style={{ color: "#D94590" }}>Printed Storybook</h3>
               <p className="text-sm mb-6" style={{ color: "#6B5D52" }}>A keepsake to hold, gift, and treasure for years.</p>
               <div className="mb-6">
-                <span className="text-4xl font-serif font-bold" style={{ color: "#2D2235" }}>£29</span>
+                <span className="text-4xl font-serif font-bold" style={{ color: "#2D2235" }}>{pricePrint}</span>
                 <span style={{ color: "#6B5D52" }}> one-off</span>
               </div>
               <ul className="space-y-3 text-sm mb-8" style={{ color: "#4A4038" }}>
@@ -245,7 +257,7 @@ export default async function Home() {
               <h3 className="font-serif text-2xl font-bold mb-2" style={{ color: "#D94590" }}>Gift Edition</h3>
               <p className="text-sm mb-6" style={{ color: "#6B5D52" }}>Made for birthdays, Christmas, and once-in-a-lifetime moments.</p>
               <div className="mb-6">
-                <span className="text-4xl font-serif font-bold" style={{ color: "#2D2235" }}>£39</span>
+                <span className="text-4xl font-serif font-bold" style={{ color: "#2D2235" }}>{priceGift}</span>
                 <span style={{ color: "#6B5D52" }}> one-off</span>
               </div>
               <ul className="space-y-3 text-sm mb-8" style={{ color: "#4A4038" }}>
