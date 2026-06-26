@@ -162,17 +162,7 @@ export default function CheckoutPage() {
     [storyId, currency]
   );
 
-  // Detect currency on mount
-  useEffect(() => {
-    fetch('/api/geo/currency')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.currency && data.currency in CURRENCIES) {
-          setCurrency(data.currency as CurrencyCode);
-        }
-      })
-      .catch(() => {}); // fallback to GBP
-  }, []);
+
 
   useEffect(() => {
     if (!storyId) return;
@@ -180,36 +170,55 @@ export default function CheckoutPage() {
 
     async function load() {
       try {
+        // Resolve geo currency FIRST so it takes precedence over any stale saved value
+        let geoCurrency: CurrencyCode | null = null;
+        try {
+          const geoRes = await fetch('/api/geo/currency');
+          const geoData = await geoRes.json();
+          if (geoData?.currency && geoData.currency in CURRENCIES) {
+            geoCurrency = geoData.currency as CurrencyCode;
+          }
+        } catch {}
+    
         const [productRes, storyRes] = await Promise.all([
           fetch(`/api/stories/${storyId}/product`),
           fetch(`/api/stories/${storyId}`),
         ]);
-
+    
         const productData = await productRes.json();
         const storyData = await storyRes.json();
-
+    
         if (!storyRes.ok) throw new Error(storyData?.error || 'Failed to load story');
         if (cancelled) return;
-
+    
         const s = storyData.story;
         setStory(s);
         setCompletedSteps((s.completedSteps as StepKey[]) || []);
-
+    
         if (s.paymentStatus === 'paid') {
           router.replace(`/stories/${storyId}/studio`);
           return;
         }
-
+    
         if (productRes.ok && productData?.productSelected && productData?.productType) {
           setSelectedTier(productData.productType as TierKey);
-          if (productData.currency && productData.currency in CURRENCIES) {
-            setCurrency(productData.currency as CurrencyCode);
+          const savedCurrency =
+            productData.currency && productData.currency in CURRENCIES
+              ? (productData.currency as CurrencyCode)
+              : null;
+          const resolved = geoCurrency ?? savedCurrency ?? 'GBP';
+          setCurrency(resolved);
+          // If geo disagrees with what's stored, re-stamp so the DB stays in sync
+          if (savedCurrency && resolved !== savedCurrency) {
+            saveProductSelection(productData.productType as TierKey, resolved).catch(() => {});
           }
           setProductReady(true);
         } else {
-          await saveProductSelection('print');
+          const initial = geoCurrency ?? 'GBP';
+          setCurrency(initial);
+          await saveProductSelection('print', initial); // stamp the right currency on first save
         }
-
+    
         if (!cancelled) setLoading(false);
       } catch (e: any) {
         if (cancelled) return;
