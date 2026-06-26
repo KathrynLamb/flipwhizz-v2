@@ -85,8 +85,7 @@ export async function POST(req: NextRequest) {
         }
 
         const currency = (storyProduct.currency ?? "GBP") as CurrencyCode;
-        const discount = resolvePromoDiscount(promo, productType);
-        const originalCents = getPriceCents(productType, currency);
+        const discount = resolvePromoDiscount(promo, productType as ProductType, currency);        const originalCents = getPriceCents(productType, currency);
         const finalCents = applyDiscount(originalCents, discount.discountPercent, discount.isFree);
 
         if (finalCents !== 0) {

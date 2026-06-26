@@ -93,6 +93,8 @@ export function applyDiscount(
  * Given a promo code record and a product type, resolve the effective discount.
  * Returns { discountPercent, isFree, label }.
  */
+// src/lib/pricing.ts
+
 export function resolvePromoDiscount(
   promo: {
     discountPercent: number | null;
@@ -101,7 +103,8 @@ export function resolvePromoDiscount(
     giftOverride: number | null;
     label: string | null;
   },
-  product: ProductType
+  product: ProductType,
+  currency: CurrencyCode = "GBP"
 ): { discountPercent: number; isFree: boolean; label: string } {
   const overrideMap: Record<ProductType, number | null> = {
     digital: promo.digitalOverride,
@@ -118,10 +121,13 @@ export function resolvePromoDiscount(
   }
 
   if (override !== null && override !== undefined) {
-    // Product-specific override percentage
-    return { discountPercent: override, isFree: false, label: promo.label ?? "Promo" };
+    // Override is a fixed price in cents — convert to a discount percent
+    const originalCents = getPriceCents(product, currency);
+    const discountPercent = Math.round(((originalCents - override) / originalCents) * 100);
+    const isFree = override === 0;
+    return { discountPercent, isFree, label: promo.label ?? "Promo" };
   }
 
-  // Default discount
+  // No product override — use the code's global discountPercent
   return { discountPercent: basePercent, isFree: false, label: promo.label ?? "Promo" };
 }

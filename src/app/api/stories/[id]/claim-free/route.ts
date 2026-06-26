@@ -63,7 +63,8 @@ export async function POST(
       return NextResponse.json({ error: "Invalid promo code" }, { status: 400 });
     }
 
-    const discount = resolvePromoDiscount(promo, productType);
+    const discount = resolvePromoDiscount(promo, productType as ProductType, currency);
+
     const originalCents = getPriceCents(productType, currency);
     const finalCents = applyDiscount(originalCents, discount.discountPercent, discount.isFree);
 

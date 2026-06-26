@@ -119,7 +119,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Promo code fully redeemed." }, { status: 400 });
       }
 
-      const discount = resolvePromoDiscount(promo, productType);
+      const discount = resolvePromoDiscount(promo, productType as ProductType, currency);
+
       const discountedCents = applyDiscount(expectedCents, discount.discountPercent, discount.isFree);
 
       discountCents = expectedCents - discountedCents;

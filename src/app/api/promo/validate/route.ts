@@ -83,7 +83,8 @@ export async function POST(req: Request) {
     }
 
     // Calculate discount for requested product
-    const discount = resolvePromoDiscount(promo, productType as ProductType);
+    const discount = resolvePromoDiscount(promo, productType as ProductType, currency);
+
     const originalCents = getPriceCents(productType as ProductType, cur);
     const discountedCents = applyDiscount(
       originalCents,
