@@ -789,7 +789,7 @@ export const orders = pgTable("orders", {
   paymentStatus: text("payment_status").notNull().default("pending"),
   amount: text("amount"),
   currency: text("currency").default("USD"),
-
+  promoCode: varchar("promo_code", { length: 50 }),
   pdfUrl: text("pdf_url"),
 
   shippingAddress: jsonb("shipping_address"),

@@ -69,7 +69,7 @@ const TIER_DEFS: TierDef[] = [
       'Everything in Digital',
       'Premium soft-touch cover',
       'Beautiful full-colour pages',
-      'Free UK delivery',
+      'Free delivery',
     ],
   },
   {
@@ -79,9 +79,9 @@ const TIER_DEFS: TierDef[] = [
     description: 'Hardcover keepsake, gift-ready',
     features: [
       'Deluxe hardcover book',
-      'Personal dedication page',
       'Gift-ready presentation',
       'Designed to be kept forever',
+      'Free delivery',
     ],
   },
 ];
@@ -597,7 +597,10 @@ export default function CheckoutPage() {
                             const res = await fetch('/api/paypal/capture', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ orderID: data.orderID }),
+                              body: JSON.stringify({ 
+                                orderID: data.orderID,
+                                promoCode: promoState?.valid ? promoState.code : undefined,
+                              }),
                             });
                             const result = await res.json();
                             if (!res.ok || !result.success) throw new Error(result?.error || 'Payment capture failed.');

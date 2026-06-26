@@ -72,7 +72,11 @@ export async function POST(req: Request) {
     let expectedCents = getPriceCents(productType, currency);
     let isUpgrade = false;
 
-    if (upgradeFrom && typeof upgradeFrom === "string" && VALID_PRODUCTS.includes(upgradeFrom as ProductType)) {
+    if (
+      upgradeFrom &&
+      typeof upgradeFrom === "string" &&
+      VALID_PRODUCTS.includes(upgradeFrom as ProductType)
+    ) {
       const fromCents = getPriceCents(upgradeFrom as ProductType, currency);
       const toCents = getPriceCents(productType, currency);
 
@@ -119,30 +123,21 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Promo code fully redeemed." }, { status: 400 });
       }
 
-      const discount = resolvePromoDiscount(promo, productType as ProductType, currency);
-
+      const discount = resolvePromoDiscount(promo, productType, currency);
       const discountedCents = applyDiscount(expectedCents, discount.discountPercent, discount.isFree);
 
       discountCents = expectedCents - discountedCents;
       expectedCents = discountedCents;
       promoApplied = true;
       promoLabel = discount.label;
-
-      // Increment usage
-      await db
-        .update(promoCodes)
-        .set({
-          currentUses: sql`${promoCodes.currentUses} + 1`,
-          updatedAt: new Date(),
-        })
-        .where(eq(promoCodes.id, promo.id));
+      // NOTE: do NOT increment currentUses here — that happens in /api/paypal/capture
+      // after payment is confirmed, to avoid burning uses on cancelled payments.
     }
 
     /* --------------------------------------------------
        HANDLE FREE ORDERS (promo makes it £0)
     -------------------------------------------------- */
     if (expectedCents === 0) {
-      // No PayPal needed — return a special response the client can handle
       return NextResponse.json({
         orderID: null,
         free: true,
@@ -152,6 +147,7 @@ export async function POST(req: Request) {
         isUpgrade,
         promoApplied,
         promoLabel,
+        promoCode: promoApplied ? promoCode.trim().toUpperCase() : undefined,
       });
     }
 
@@ -205,6 +201,7 @@ export async function POST(req: Request) {
       isUpgrade,
       promoApplied,
       promoLabel,
+      promoCode: promoApplied ? promoCode.trim().toUpperCase() : undefined,
       discountCents,
     });
   } catch (err: any) {

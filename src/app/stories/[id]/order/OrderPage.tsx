@@ -14,10 +14,12 @@ import {
   Minus,
   Check,
   Loader2,
-  Share2,
-  Truck,
   Heart,
 } from "lucide-react";
+import { getPriceCents, formatPrice, type CurrencyCode } from "@/lib/pricing";
+
+// ─── Constants ───
+const CURRENCY: CurrencyCode = "GBP";
 
 // ─── Types ───
 interface Props {
@@ -27,14 +29,12 @@ interface Props {
     coverSpreadUrl: string | null;
     pdfUrl: string | null;
   };
-  pricing: {
-    basePrice: number; // pence
-    currency: string;
-    productType: string;
-  };
   hasReview: boolean;
   reviewPromoCode: string | null;
   reviewPromoDiscount: number | null;
+  autoPromoCode: string | null;
+  autoPromoDiscount: number | null;
+  hasPrintOrder: boolean;
   previousOrderCount: number;
   lastShippingAddress: {
     firstName?: string;
@@ -63,11 +63,6 @@ interface ShippingAddress {
   phone: string;
 }
 
-// ─── Helpers ───
-function formatPrice(pence: number) {
-  return `£${(pence / 100).toFixed(2)}`;
-}
-
 const EMPTY_ADDRESS: ShippingAddress = {
   firstName: "",
   lastName: "",
@@ -84,19 +79,19 @@ const EMPTY_ADDRESS: ShippingAddress = {
 // ─── Main ───
 export default function OrderPage({
   story,
-  pricing,
   hasReview,
   reviewPromoCode,
   reviewPromoDiscount,
+  autoPromoCode,
+  autoPromoDiscount,
+  hasPrintOrder,
   previousOrderCount,
   lastShippingAddress,
 }: Props) {
   const router = useRouter();
 
   // Order config
-  const [coverType, setCoverType] = useState<"soft" | "hard">(
-    pricing?.productType === "gift" ? "hard" : "soft"
-  );
+  const [coverType, setCoverType] = useState<"soft" | "hard">("soft");
   const [quantity, setQuantity] = useState(1);
   const [isGift, setIsGift] = useState(false);
   const [giftMessage, setGiftMessage] = useState("");
@@ -106,6 +101,7 @@ export default function OrderPage({
   const [appliedPromo, setAppliedPromo] = useState<{
     code: string;
     discount: number;
+    isAuto: boolean;
   } | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promoChecking, setPromoChecking] = useState(false);
@@ -135,20 +131,26 @@ export default function OrderPage({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Auto-apply review promo if available
+  // ─── Auto-apply promo on mount ───
+  // Priority: review promo > auto (beta) promo
   useEffect(() => {
-    if (reviewPromoCode && reviewPromoDiscount && !appliedPromo) {
-      setAppliedPromo({
-        code: reviewPromoCode,
-        discount: reviewPromoDiscount,
-      });
-      setPromoInput(reviewPromoCode);
-    }
-  }, [reviewPromoCode, reviewPromoDiscount, appliedPromo]);
+    if (appliedPromo) return;
 
-  // ─── Pricing calculation ───
-  const PRICES = { soft: 2900, hard: 3900 }; // pence
-  const basePrice = PRICES[coverType];
+    if (reviewPromoCode && reviewPromoDiscount) {
+      setAppliedPromo({ code: reviewPromoCode, discount: reviewPromoDiscount, isAuto: true });
+      setPromoInput(reviewPromoCode);
+      return;
+    }
+
+    if (autoPromoCode && autoPromoDiscount && !hasPrintOrder) {
+      setAppliedPromo({ code: autoPromoCode, discount: autoPromoDiscount, isAuto: true });
+      setPromoInput(autoPromoCode);
+    }
+  }, [reviewPromoCode, reviewPromoDiscount, autoPromoCode, autoPromoDiscount, hasPrintOrder]);
+
+  // ─── Pricing — all from pricing.ts, no hardcoding ───
+  const productType = coverType === "hard" ? "gift" : "print";
+  const basePrice = getPriceCents(productType, CURRENCY);
   const subtotal = basePrice * quantity;
   const bulkDiscount = quantity >= 3 ? Math.round(subtotal * 0.1) : 0;
   const promoDiscount = appliedPromo
@@ -163,25 +165,23 @@ export default function OrderPage({
     setPromoError(null);
 
     try {
-      const res = await fetch(`/api/promo/validate`, {
+      const res = await fetch("/api/promo/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           code: promoInput.trim().toUpperCase(),
-          productType: coverType === "hard" ? "gift" : "print",
+          productType,
+          currency: CURRENCY,
         }),
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        setPromoError(data.error || "Invalid code");
+      const data = await res.json();
+
+      if (!res.ok || !data.valid) {
+        setPromoError(data.reason || data.error || "Invalid code");
         setAppliedPromo(null);
       } else {
-        const data = await res.json();
-        setAppliedPromo({
-          code: data.code,
-          discount: data.discountPercent,
-        });
+        setAppliedPromo({ code: data.code, discount: data.discountPercent, isAuto: false });
         setPromoError(null);
       }
     } catch {
@@ -191,9 +191,16 @@ export default function OrderPage({
     }
   }
 
+  function clearPromo() {
+    setAppliedPromo(null);
+    setPromoInput("");
+    setPromoError(null);
+  }
+
   // ─── Form validation ───
   function isFormValid() {
-    const a = usePreviousAddress && lastShippingAddress ? lastShippingAddress : address;
+    const a =
+      usePreviousAddress && lastShippingAddress ? lastShippingAddress : address;
     return (
       a.firstName?.trim() &&
       a.lastName?.trim() &&
@@ -211,7 +218,7 @@ export default function OrderPage({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         storyId: story.id,
-        currency: pricing.currency,
+        currency: CURRENCY,
         price: (total / 100).toFixed(2),
         promoCode: appliedPromo?.code,
       }),
@@ -221,15 +228,14 @@ export default function OrderPage({
     if (!res.ok) throw new Error(data.error || "Failed to create payment");
 
     if (data.free) {
-      // Promo made it free — skip PayPal, go straight to Gelato order
       await submitGelatoOrder();
-      return null; // signals no PayPal approval needed
+      return null;
     }
 
     return data.orderID;
   }
 
-  // ─── PayPal: capture after approval ───
+  // ─── PayPal: capture ───
   async function capturePayPalOrder(orderID: string) {
     const res = await fetch("/api/paypal/capture", {
       method: "POST",
@@ -239,19 +245,16 @@ export default function OrderPage({
 
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Payment capture failed");
-
     return data;
   }
 
-  // ─── Submit to Gelato after payment ───
+  // ─── Submit to Gelato ───
   async function submitGelatoOrder() {
     setSubmitting(true);
     setError(null);
 
     const shippingAddr =
-      usePreviousAddress && lastShippingAddress
-        ? lastShippingAddress
-        : address;
+      usePreviousAddress && lastShippingAddress ? lastShippingAddress : address;
 
     try {
       const res = await fetch(`/api/stories/${story.id}/order`, {
@@ -263,7 +266,7 @@ export default function OrderPage({
           isGift,
           giftMessage: isGift ? giftMessage : undefined,
           promoCode: appliedPromo?.code,
-          productType: coverType === "hard" ? "gift" : "print",
+          productType,
         }),
       });
 
@@ -290,6 +293,9 @@ export default function OrderPage({
       setSubmitting(false);
     }
   }
+
+  const softPrice = getPriceCents("print", CURRENCY);
+  const hardPrice = getPriceCents("gift", CURRENCY);
 
   return (
     <div
@@ -327,6 +333,7 @@ export default function OrderPage({
 
       {/* ─── Content ─── */}
       <div className="max-w-2xl mx-auto px-6 py-8 space-y-6">
+
         {/* Book preview */}
         {story.coverSpreadUrl && (
           <div className="flex items-center gap-4 p-4 bg-white rounded-2xl border border-gray-200">
@@ -340,9 +347,32 @@ export default function OrderPage({
                 {story.title}
               </p>
               <p className="text-[12px] text-gray-400">
-                {coverType === "hard" ? "Hardcover" : "Softcover"} · {formatPrice(basePrice)} each
+                {coverType === "hard" ? "Hardcover" : "Softcover"} ·{" "}
+                {formatPrice(basePrice, CURRENCY)} each
               </p>
             </div>
+          </div>
+        )}
+
+        {/* ─── Auto-applied promo banner ─── */}
+        {appliedPromo?.isAuto && (
+          <div className="flex items-center gap-3 p-4 bg-green-50 rounded-2xl border border-green-200/60">
+            <Check size={18} className="text-green-500 shrink-0" />
+            <p className="text-[13px] text-green-700">
+              {appliedPromo.code === reviewPromoCode ? (
+                <>
+                  <span className="font-semibold">Review discount applied!</span>{" "}
+                  {appliedPromo.discount}% off — thanks for sharing your feedback.
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold">
+                    {appliedPromo.discount}% beta tester discount applied automatically.
+                  </span>{" "}
+                  Your code {appliedPromo.code} is active.
+                </>
+              )}
+            </p>
           </div>
         )}
 
@@ -365,14 +395,37 @@ export default function OrderPage({
                   <Check size={12} strokeWidth={3} className="text-white" />
                 </div>
               )}
-              <Package size={24} className={coverType === "soft" ? "text-green-600" : "text-gray-400"} />
+              <Package
+                size={24}
+                className={
+                  coverType === "soft" ? "text-green-600" : "text-gray-400"
+                }
+              />
               <div className="text-center">
-                <p className={`text-[14px] font-semibold ${coverType === "soft" ? "text-green-900" : "text-gray-700"}`}>
+                <p
+                  className={`text-[14px] font-semibold ${
+                    coverType === "soft" ? "text-green-900" : "text-gray-700"
+                  }`}
+                >
                   Softcover
                 </p>
-                <p className="text-[13px] font-bold text-gray-900 mt-0.5">
-                  {formatPrice(2900)}
-                </p>
+                {appliedPromo ? (
+                  <div className="flex items-center justify-center gap-1.5 mt-0.5">
+                    <span className="text-[11px] line-through text-gray-400">
+                      {formatPrice(softPrice, CURRENCY)}
+                    </span>
+                    <span className="text-[13px] font-bold text-green-600">
+                      {formatPrice(
+                        Math.round(softPrice * (1 - appliedPromo.discount / 100)),
+                        CURRENCY
+                      )}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-[13px] font-bold text-gray-900 mt-0.5">
+                    {formatPrice(softPrice, CURRENCY)}
+                  </p>
+                )}
                 <p className="text-[11px] text-gray-400 mt-0.5">
                   Lightweight & flexible
                 </p>
@@ -392,14 +445,37 @@ export default function OrderPage({
                   <Check size={12} strokeWidth={3} className="text-white" />
                 </div>
               )}
-              <Gift size={24} className={coverType === "hard" ? "text-green-600" : "text-gray-400"} />
+              <Gift
+                size={24}
+                className={
+                  coverType === "hard" ? "text-green-600" : "text-gray-400"
+                }
+              />
               <div className="text-center">
-                <p className={`text-[14px] font-semibold ${coverType === "hard" ? "text-green-900" : "text-gray-700"}`}>
+                <p
+                  className={`text-[14px] font-semibold ${
+                    coverType === "hard" ? "text-green-900" : "text-gray-700"
+                  }`}
+                >
                   Hardcover
                 </p>
-                <p className="text-[13px] font-bold text-gray-900 mt-0.5">
-                  {formatPrice(3900)}
-                </p>
+                {appliedPromo ? (
+                  <div className="flex items-center justify-center gap-1.5 mt-0.5">
+                    <span className="text-[11px] line-through text-gray-400">
+                      {formatPrice(hardPrice, CURRENCY)}
+                    </span>
+                    <span className="text-[13px] font-bold text-green-600">
+                      {formatPrice(
+                        Math.round(hardPrice * (1 - appliedPromo.discount / 100)),
+                        CURRENCY
+                      )}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-[13px] font-bold text-gray-900 mt-0.5">
+                    {formatPrice(hardPrice, CURRENCY)}
+                  </p>
+                )}
                 <p className="text-[11px] text-gray-400 mt-0.5">
                   Premium keepsake quality
                 </p>
@@ -408,8 +484,8 @@ export default function OrderPage({
           </div>
         </div>
 
-        {/* ─── Review nudge (if no review yet) ─── */}
-        {!hasReview && (
+        {/* ─── Review nudge (if no review yet and no auto promo) ─── */}
+        {!hasReview && !autoPromoCode && (
           <div className="p-5 bg-amber-50 rounded-2xl border border-amber-200/60">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
@@ -435,20 +511,8 @@ export default function OrderPage({
           </div>
         )}
 
-        {/* ─── Auto-applied review discount ─── */}
-        {appliedPromo && reviewPromoCode && appliedPromo.code === reviewPromoCode && (
-          <div className="flex items-center gap-3 p-4 bg-green-50 rounded-2xl border border-green-200/60">
-            <Check size={18} className="text-green-500 shrink-0" />
-            <p className="text-[13px] text-green-700">
-              <span className="font-semibold">Review discount applied!</span>{" "}
-              {appliedPromo.discount}% off — thanks for sharing your feedback.
-            </p>
-          </div>
-        )}
-
         {/* ─── Quantity + Gift toggle ─── */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-5">
-          {/* Quantity */}
+        {/* <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-5">
           <div>
             <label className="text-[13px] font-semibold text-gray-700 mb-3 block">
               How many copies?
@@ -487,7 +551,7 @@ export default function OrderPage({
             )}
           </div>
 
-          {/* Gift toggle */}
+          
           <div className="border-t border-gray-100 pt-5">
             <button
               onClick={() => setIsGift(!isGift)}
@@ -532,7 +596,6 @@ export default function OrderPage({
               </div>
             </button>
 
-            {/* Gift message */}
             {isGift && (
               <div className="mt-4 animate-in fade-in slide-in-from-top-2 duration-300">
                 <label className="text-[12px] font-semibold text-gray-600 mb-2 block">
@@ -552,7 +615,7 @@ export default function OrderPage({
               </div>
             )}
           </div>
-        </div>
+        </div> */}
 
         {/* ─── Shipping Address ─── */}
         <div className="bg-white rounded-2xl border border-gray-200 p-5">
@@ -563,7 +626,6 @@ export default function OrderPage({
             </h3>
           </div>
 
-          {/* Use previous address toggle */}
           {lastShippingAddress && !isGift && (
             <button
               onClick={() => {
@@ -577,8 +639,7 @@ export default function OrderPage({
                     city: lastShippingAddress.city || "",
                     state: lastShippingAddress.state || "",
                     postCode: lastShippingAddress.postCode || "",
-                    countryIsoCode:
-                      lastShippingAddress.countryIsoCode || "GB",
+                    countryIsoCode: lastShippingAddress.countryIsoCode || "GB",
                     email: lastShippingAddress.email || "",
                     phone: lastShippingAddress.phone || "",
                   });
@@ -614,40 +675,31 @@ export default function OrderPage({
             </button>
           )}
 
-          {/* Address form */}
           {(!usePreviousAddress || isGift) && (
             <div className="grid grid-cols-2 gap-3 animate-in fade-in duration-300">
               <InputField
                 label="First name"
                 value={address.firstName}
-                onChange={(v) =>
-                  setAddress((a) => ({ ...a, firstName: v }))
-                }
+                onChange={(v) => setAddress((a) => ({ ...a, firstName: v }))}
                 required
               />
               <InputField
                 label="Last name"
                 value={address.lastName}
-                onChange={(v) =>
-                  setAddress((a) => ({ ...a, lastName: v }))
-                }
+                onChange={(v) => setAddress((a) => ({ ...a, lastName: v }))}
                 required
               />
               <InputField
                 label="Address line 1"
                 value={address.addressLine1}
-                onChange={(v) =>
-                  setAddress((a) => ({ ...a, addressLine1: v }))
-                }
+                onChange={(v) => setAddress((a) => ({ ...a, addressLine1: v }))}
                 className="col-span-2"
                 required
               />
               <InputField
                 label="Address line 2"
                 value={address.addressLine2}
-                onChange={(v) =>
-                  setAddress((a) => ({ ...a, addressLine2: v }))
-                }
+                onChange={(v) => setAddress((a) => ({ ...a, addressLine2: v }))}
                 className="col-span-2"
               />
               <InputField
@@ -659,18 +711,14 @@ export default function OrderPage({
               <InputField
                 label="Postcode"
                 value={address.postCode}
-                onChange={(v) =>
-                  setAddress((a) => ({ ...a, postCode: v }))
-                }
+                onChange={(v) => setAddress((a) => ({ ...a, postCode: v }))}
                 required
               />
               <InputField
                 label="Email"
                 type="email"
                 value={address.email}
-                onChange={(v) =>
-                  setAddress((a) => ({ ...a, email: v }))
-                }
+                onChange={(v) => setAddress((a) => ({ ...a, email: v }))}
                 className="col-span-2"
                 required
               />
@@ -678,9 +726,7 @@ export default function OrderPage({
                 label="Phone (optional)"
                 type="tel"
                 value={address.phone}
-                onChange={(v) =>
-                  setAddress((a) => ({ ...a, phone: v }))
-                }
+                onChange={(v) => setAddress((a) => ({ ...a, phone: v }))}
                 className="col-span-2"
               />
             </div>
@@ -706,10 +752,7 @@ export default function OrderPage({
             />
             {appliedPromo ? (
               <button
-                onClick={() => {
-                  setAppliedPromo(null);
-                  setPromoInput("");
-                }}
+                onClick={clearPromo}
                 className="px-4 py-2.5 rounded-xl text-[13px] font-semibold text-red-500 border border-red-200 hover:bg-red-50 transition"
               >
                 Remove
@@ -746,19 +789,19 @@ export default function OrderPage({
           <div className="space-y-2.5">
             <SummaryRow
               label={`${quantity}× ${coverType === "hard" ? "Hardcover" : "Softcover"} book`}
-              value={formatPrice(subtotal)}
+              value={formatPrice(subtotal, CURRENCY)}
             />
             {bulkDiscount > 0 && (
               <SummaryRow
                 label="Bulk discount (10%)"
-                value={`-${formatPrice(bulkDiscount)}`}
+                value={`-${formatPrice(bulkDiscount, CURRENCY)}`}
                 highlight
               />
             )}
             {promoDiscount > 0 && (
               <SummaryRow
                 label={`Promo: ${appliedPromo?.code}`}
-                value={`-${formatPrice(promoDiscount)}`}
+                value={`-${formatPrice(promoDiscount, CURRENCY)}`}
                 highlight
               />
             )}
@@ -766,7 +809,7 @@ export default function OrderPage({
             <div className="border-t border-gray-100 pt-3 mt-3">
               <SummaryRow
                 label="Total"
-                value={formatPrice(total)}
+                value={formatPrice(total, CURRENCY)}
                 bold
               />
             </div>
@@ -813,13 +856,13 @@ export default function OrderPage({
             <div className="space-y-3">
               <div className="p-4 bg-white rounded-2xl border border-gray-200">
                 <p className="text-[13px] text-gray-500 text-center mb-3">
-                  Pay {formatPrice(total)} securely with PayPal
+                  Pay {formatPrice(total, CURRENCY)} securely with PayPal
                 </p>
                 <PayPalButton
                   createOrder={async () => {
                     try {
                       const orderID = await createPayPalOrder();
-                      if (!orderID) return ""; // free order, already handled
+                      if (!orderID) return "";
                       return orderID;
                     } catch (err) {
                       setError(
@@ -833,8 +876,10 @@ export default function OrderPage({
                   onApprove={async (orderID: string) => {
                     await handlePayPalApprove(orderID);
                   }}
-                  onError={(err: any) => {
-                    setError("Payment was cancelled or failed. Please try again.");
+                  onError={() => {
+                    setError(
+                      "Payment was cancelled or failed. Please try again."
+                    );
                   }}
                 />
               </div>
@@ -963,13 +1008,21 @@ function PayPalButton({
     const paypal = (window as any).paypal;
     if (!paypal?.Buttons) return;
     containerRef.current.innerHTML = "";
-    paypal.Buttons({
-      style: { layout: "vertical", color: "gold", shape: "rect", label: "pay", height: 48 },
-      createOrder: async () => await createOrder(),
-      onApprove: async (data: any) => await onApprove(data.orderID),
-      onError: (err: any) => onError(err),
-      onCancel: () => onError("Payment cancelled"),
-    }).render(containerRef.current);
+    paypal
+      .Buttons({
+        style: {
+          layout: "vertical",
+          color: "gold",
+          shape: "rect",
+          label: "pay",
+          height: 48,
+        },
+        createOrder: async () => await createOrder(),
+        onApprove: async (data: any) => await onApprove(data.orderID),
+        onError: (err: any) => onError(err),
+        onCancel: () => onError("Payment cancelled"),
+      })
+      .render(containerRef.current);
   }, [sdkReady, createOrder, onApprove, onError]);
 
   if (!sdkReady) {

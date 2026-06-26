@@ -3,8 +3,8 @@
 import { NextResponse } from "next/server";
 import { paypalCaptureOrder } from "@/lib/paypal";
 import { db } from "@/db";
-import { stories, storyProducts } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { stories, storyProducts, promoCodes } from "@/db/schema";
+import { eq, sql } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 import { captureServerEvent } from "@/lib/posthog-server";
 
@@ -59,7 +59,7 @@ function extractPaypalShippingAddress(receipt: any): ShippingAddress | null {
 
 export async function POST(req: Request) {
   try {
-    const { orderID } = await req.json();
+    const { orderID, promoCode } = await req.json();
 
     if (!orderID) {
       return NextResponse.json({ error: "orderID required" }, { status: 400 });
@@ -140,7 +140,9 @@ export async function POST(req: Request) {
         .update(stories)
         .set({
           paymentStatus: "paid",
-          paymentId: orderID,
+          paymentId: promoCode
+            ? `promo:${promoCode.trim().toUpperCase()}:${orderID}`
+            : orderID,
           status: "generating",
           updatedAt: new Date(),
         })
@@ -150,6 +152,17 @@ export async function POST(req: Request) {
         name: "story/generate.spreads",
         data: { storyId },
       });
+    }
+
+    // Persist promo usage now that payment is confirmed
+    if (promoCode && typeof promoCode === "string") {
+      await db
+        .update(promoCodes)
+        .set({
+          currentUses: sql`${promoCodes.currentUses} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(sql`LOWER(${promoCodes.code}) = LOWER(${promoCode.trim()})`);
     }
 
     const payerEmail = receipt?.payer?.email_address;
@@ -165,6 +178,7 @@ export async function POST(req: Request) {
       amount: amountValue ? parseFloat(amountValue) : undefined,
       currency,
       payer_email: payerEmail,
+      promo_code: promoCode ?? undefined,
     });
 
     return NextResponse.json({
