@@ -23,13 +23,13 @@ export const metadata: Metadata = {
     "personalised gift for children",
   ],
   alternates: {
-    canonical: "https://www.flipwhizz.com/projects/create",
+    canonical: "https://flipwhizz.com/projects/create",
   },
   openGraph: {
     title: "Create a Personalised Children's Book | FlipWhizz",
     description:
       "Build a one-of-a-kind storybook shaped around your child's world. Try the free demo, no sign-up needed.",
-    url: "https://www.flipwhizz.com/projects/create",
+    url: "https://flipwhizz.com/projects/create",
     siteName: "FlipWhizz",
     type: "website",
     locale: "en_GB",
@@ -48,7 +48,7 @@ const jsonLd = {
   name: "FlipWhizz",
   applicationCategory: "DesignApplication",
   operatingSystem: "Web",
-  url: "https://www.flipwhizz.com",
+  url: "https://flipwhizz.com",
   description:
     "AI-powered personalised children's book creator. Build custom storybooks shaped around a child's name, interests, and personality.",
   offers: {
@@ -67,13 +67,13 @@ const breadcrumbJsonLd = {
       "@type": "ListItem",
       position: 1,
       name: "Home",
-      item: "https://www.flipwhizz.com",
+      item: "https://flipwhizz.com",
     },
     {
       "@type": "ListItem",
       position: 2,
       name: "Create",
-      item: "https://www.flipwhizz.com/projects/create",
+      item: "https://flipwhizz.com/projects/create",
     },
   ],
 };

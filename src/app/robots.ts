@@ -16,6 +16,6 @@ export default function robots(): MetadataRoute.Robots {
         "/_next/"
       ],
     },
-    sitemap: "https://www.flipwhizz.com/sitemap.xml",
+    sitemap: "https://flipwhizz.com/sitemap.xml",
   };
 }

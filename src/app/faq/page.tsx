@@ -6,13 +6,13 @@ export const metadata: Metadata = {
   description:
     "Answers to common questions about FlipWhizz: how it works, what ages it's for, how it's different from other personalised children's books, printing options, pricing, and more.",
   alternates: {
-    canonical: "https://www.flipwhizz.com/faq",
+    canonical: "https://flipwhizz.com/faq",
   },
   openGraph: {
     title: "FAQ — Personalised Children's Books | FlipWhizz",
     description:
       "Everything parents want to know about creating a personalised storybook with FlipWhizz.",
-    url: "https://www.flipwhizz.com/faq",
+    url: "https://flipwhizz.com/faq",
     siteName: "FlipWhizz",
     type: "website",
     locale: "en_GB",
@@ -128,13 +128,13 @@ const breadcrumbJsonLd = {
       "@type": "ListItem",
       position: 1,
       name: "Home",
-      item: "https://www.flipwhizz.com",
+      item: "https://flipwhizz.com",
     },
     {
       "@type": "ListItem",
       position: 2,
       name: "FAQ",
-      item: "https://www.flipwhizz.com/faq",
+      item: "https://flipwhizz.com/faq",
     },
   ],
 };

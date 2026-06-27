@@ -46,8 +46,60 @@ export default async function Home() {
     hasProjects = userProjects[0].count > 0;
   }
 
+  // Honest, current dateModified: the homepage genuinely changes when new
+  // public stories are added to the gallery. publicStories is ordered by
+  // updatedAt desc, so [0] is the most recent. Falls back to now if empty.
+  const lastModified = new Date(publicStories[0]?.updatedAt ?? Date.now()).toISOString();
+
+  // ── Structured data for the brand SERP ──
+  const organizationJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "FlipWhizz",
+    url: "https://flipwhizz.com",
+    // Swap for a square logo asset if you have one; og-image works as a fallback.
+    logo: "https://flipwhizz.com/og-image.png",
+    description:
+      "Personalised children's book platform where parents author original, co-created stories for their child. Built by an educator with 30 years working with children.",
+    founder: { "@type": "Person", name: "Katy" },
+    // Add your TikTok / Facebook URLs here as you confirm the handles.
+    sameAs: ["https://www.instagram.com/flipwhizz_kate"],
+  };
+
+  const websiteJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "FlipWhizz",
+    url: "https://flipwhizz.com",
+    publisher: { "@type": "Organization", name: "FlipWhizz" },
+  };
+
+  const webPageJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    url: "https://flipwhizz.com",
+    name: "FlipWhizz | Personalised Storybooks for Kids",
+    description:
+      "Create personalised storybooks for kids with FlipWhizz. Turn your child's interests, imagination, and real-life moments into magical bedtime stories, adventures, and keepsake books.",
+    isPartOf: { "@type": "WebSite", url: "https://flipwhizz.com" },
+    dateModified: lastModified,
+  };
+
   return (
     <main className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans text-slate-900 overflow-x-hidden`} style={{ background: "#FEFCFA" }}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageJsonLd) }}
+      />
+
       {/* CSS-only hover effects for pricing cards */}
       <style>{`
         .pricing-card {

@@ -11,13 +11,13 @@ export const metadata: Metadata = {
   description:
     "Insights on children, reading, and why the stories we tell our kids matter more than you think.",
   alternates: {
-    canonical: "https://www.flipwhizz.com/blog",
+    canonical: "https://flipwhizz.com/blog",
   },
   openGraph: {
     title: "Blog | FlipWhizz",
     description:
       "Honest thoughts on children, stories, and why the books we give our kids matter more than we realise.",
-    url: "https://www.flipwhizz.com/blog",
+    url: "https://flipwhizz.com/blog",
     siteName: "FlipWhizz",
     type: "website",
     locale: "en_GB",
@@ -32,13 +32,13 @@ const breadcrumbJsonLd = {
       "@type": "ListItem",
       position: 1,
       name: "Home",
-      item: "https://www.flipwhizz.com",
+      item: "https://flipwhizz.com",
     },
     {
       "@type": "ListItem",
       position: 2,
       name: "Blog",
-      item: "https://www.flipwhizz.com/blog",
+      item: "https://flipwhizz.com/blog",
     },
   ],
 };
