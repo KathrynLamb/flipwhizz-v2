@@ -1,11 +1,11 @@
 // /api/chat/demo/route.ts
-// Comments show file path for reference
+// Fixed version with proper sessionId handling
 
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
 import { chatMessages, chatSessions } from "@/db/schema";
-import { v4 as uuidv4 } from "uuid";
+import { eq } from "drizzle-orm";
 
 type DemoMsg = {
   role: "user" | "assistant";
@@ -66,23 +66,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid history." }, { status: 400 });
     }
 
-    // On first message, create a demo session (if doesn't exist)
-    const existingSession = await db
-      .select({ id: chatSessions.id })
-      .from(chatSessions)
-      .where(chatSessions.id === sessionId)
-      .limit(1)
-      .then((rows) => rows[0]);
+    // Ensure the demo session exists before inserting messages
+    try {
+      const existingSession = await db
+        .select({ id: chatSessions.id })
+        .from(chatSessions)
+        .where(eq(chatSessions.id, sessionId as any))
+        .limit(1)
+        .then((rows) => rows[0]);
 
-    if (!existingSession) {
-      // Create a new demo session with userId=null, projectId=null
-      await db.insert(chatSessions).values({
-        id: sessionId as any, // Cast to UUID (frontend provides UUID-like string)
-        userId: null,
-        projectId: null,
-        status: "open",
-        lastMessageAt: new Date(),
-      });
+      if (!existingSession) {
+        // Create a new demo session with userId=null, projectId=null
+        await db.insert(chatSessions).values({
+          id: sessionId as any, // UUID from frontend
+          userId: null,
+          projectId: null,
+          status: "open",
+          lastMessageAt: new Date(),
+        });
+      }
+    } catch (sessionErr) {
+      console.error("[demo chat] session creation/lookup error:", sessionErr);
+      throw new Error("Failed to initialize chat session");
     }
 
     const trimmedHistory = history
@@ -114,31 +119,46 @@ export async function POST(req: NextRequest) {
 
     // Persist both user message and assistant reply to DB
     const now = new Date();
-    await db.insert(chatMessages).values([
-      {
-        id: uuidv4() as any,
-        sessionId: sessionId as any,
-        role: "user",
-        content: message,
-        createdAt: now,
-      },
-      {
-        id: uuidv4() as any,
-        sessionId: sessionId as any,
-        role: "assistant",
-        content: reply,
-        createdAt: new Date(now.getTime() + 1), // slight delay so reply comes after
-      },
-    ]);
+    try {
+      await db.insert(chatMessages).values([
+        {
+          sessionId: sessionId as any,
+          role: "user",
+          content: message,
+          createdAt: now,
+        },
+        {
+          sessionId: sessionId as any,
+          role: "assistant",
+          content: reply,
+          createdAt: new Date(now.getTime() + 1), // slight delay so reply comes after
+        },
+      ]);
+    } catch (msgErr) {
+      console.error("[demo chat] message insert error:", msgErr);
+      throw new Error("Failed to save messages");
+    }
 
     // Update the session's lastMessageAt
-    await db.update(chatSessions).set({ lastMessageAt: new Date() });
+    try {
+      await db
+        .update(chatSessions)
+        .set({ lastMessageAt: new Date() })
+        .where(eq(chatSessions.id, sessionId as any));
+    } catch (updateErr) {
+      console.warn("[demo chat] session update error (non-critical):", updateErr);
+      // Don't throw—this is just a timestamp update
+    }
 
     return NextResponse.json({ reply });
   } catch (error) {
     console.error("[demo chat] error:", error);
+
+    const message =
+      error instanceof Error ? error.message : "Demo chat failed.";
+
     return NextResponse.json(
-      { error: "Demo chat failed." },
+      { error: message },
       { status: 500 }
     );
   }
