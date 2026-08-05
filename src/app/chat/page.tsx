@@ -1,3 +1,5 @@
+// /src/app/chat/page.tsx
+
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { getServerSession } from "next-auth";
@@ -5,109 +7,65 @@ import { authOptions } from "@/lib/auth";
 import Header from "@/components/Header";
 import ChatClient from "@/app/chat/ChatClient";
 
-
+// This route serves two things: the public demo at /chat, and the real
+// project workspace at /chat?project=<uuid>. The project variant is a
+// signed-in surface with a query param, so it should not be indexed, and
+// the canonical points at the bare /chat rather than /projects/create.
 export const metadata: Metadata = {
-  title: "Create a Personalised Children's Book | AI Storybook Maker | FlipWhizz",
+  title: "Shape Your Story | FlipWhizz",
   description:
-    "Create a personalised children's book built around your child's name, interests, and personality. Try the free story demo, no sign-up needed. Adventure stories, bedtime stories, confidence-building books, and more.",
-  keywords: [
-    "personalised children's book",
-    "personalised storybook",
-    "custom children's book",
-    "AI storybook maker",
-    "personalised book for kids",
-    "children's book with child's name",
-    "bedtime story creator",
-    "personalised bedtime story",
-    "custom story for kids UK",
-    "personalised gift for children",
-  ],
+    "Chat to shape a personalised children's story, then turn it into a real illustrated book.",
   alternates: {
-    canonical: "https://flipwhizz.com/projects/create",
+    canonical: "https://flipwhizz.com/chat",
+  },
+  robots: {
+    index: false,
+    follow: true,
   },
   openGraph: {
-    title: "Create a Personalised Children's Book | FlipWhizz",
+    title: "Shape Your Story | FlipWhizz",
     description:
-      "Build a one-of-a-kind storybook shaped around your child's world. Try the free demo, no sign-up needed.",
-    url: "https://flipwhizz.com/projects/create",
+      "Chat to shape a personalised children's story, then turn it into a real illustrated book.",
+    url: "https://flipwhizz.com/chat",
     siteName: "FlipWhizz",
     type: "website",
     locale: "en_GB",
   },
-  twitter: {
-    card: "summary_large_image",
-    title: "Create a Personalised Children's Book | FlipWhizz",
-    description:
-      "Shape a story around your child's interests, personality, and imagination, then turn it into a real book.",
-  },
 };
 
-const jsonLd = {
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  name: "FlipWhizz",
-  applicationCategory: "DesignApplication",
-  operatingSystem: "Web",
-  url: "https://flipwhizz.com",
-  description:
-    "AI-powered personalised children's book creator. Build custom storybooks shaped around a child's name, interests, and personality.",
-  offers: {
-    "@type": "Offer",
-    price: "0",
-    priceCurrency: "GBP",
-    description: "Free story demo, no sign-up required",
-  },
-};
-
-const breadcrumbJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  itemListElement: [
-    {
-      "@type": "ListItem",
-      position: 1,
-      name: "Home",
-      item: "https://flipwhizz.com",
-    },
-    {
-      "@type": "ListItem",
-      position: 2,
-      name: "Create",
-      item: "https://flipwhizz.com/projects/create",
-    },
-  ],
-};
-
-export default async function CreatePage() {
+export default async function ChatPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>;
+}) {
   const session = await getServerSession(authOptions);
+  const { project } = await searchParams;
+  const isProjectMode = Boolean(project);
 
   return (
     <main className="relative flex h-screen flex-col overflow-hidden bg-white text-slate-900">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
-      />
-
       {/* Real shared header, stripped for the conversion flow, title in-bar.
-          session comes from getServerSession above; if Sign in/out doesn't
-          reflect your real auth state, the cause is session resolution here,
-          not this component, since Header already branches on session
-          internally. */}
+          In project mode the demo pitch is wrong: the visitor has already
+          signed in and created the book, so the subtitle would be selling
+          them something they've bought. */}
       <Header
         session={session}
         minimal
-        title="Make a story only your family could tell"
-        subtitle="Personalised, illustrated, and entirely yours."
+        title={
+          isProjectMode
+            ? "Your story"
+            : "Make a story only your family could tell"
+        }
+        subtitle={
+          isProjectMode
+            ? "Keep chatting to shape it."
+            : "Personalised, illustrated, and entirely yours."
+        }
       />
 
       {/* Full-height app surface: h-screen on main (not min-h-screen) so this
-          flex-1 region has a real, fixed height for CreateDemoClient's
-          h-full to resolve against. No card, no footer, the chat is the
-          page. */}
+          flex-1 region has a real, fixed height for ChatClient's h-full to
+          resolve against. No card, no footer, the chat is the page. */}
       <div className="relative flex-1 overflow-hidden">
         <Suspense fallback={null}>
           <ChatClient />

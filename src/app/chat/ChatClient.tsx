@@ -5,7 +5,6 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
-import { getDemoSessionId, migrateDemoToUserAccount, clearDemoSessionId } from "@/lib/demo-session-utils";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Loader2, Send, Zap, BookOpen, Sparkles, User } from "lucide-react";
@@ -52,6 +51,16 @@ export default function ChatClient() {
   const router = useRouter();
   const { data: session, status: authStatus } = useSession();
 
+  const searchParams = useSearchParams();
+  const seed = searchParams.get("seed");
+
+  // THE KEY CHANGE. When ?project=<uuid> is present we are no longer in the
+  // 3-message public demo, we are in the real project chat. That switches
+  // three things: history comes from the database instead of sessionStorage,
+  // no opener is injected, and there is no message limit.
+  const projectId = searchParams.get("project");
+  const isProjectMode = Boolean(projectId);
+
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [messagesLoaded, setMessagesLoaded] = useState(false);
   const [input, setInput] = useState("");
@@ -59,7 +68,6 @@ export default function ChatClient() {
   const [creatingProject, setCreatingProject] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasAttemptedResume, setHasAttemptedResume] = useState(false);
-  const [sessionId, setSessionId] = useState<string>("");
   // Guard so the opener is only ever injected once per mount.
   const openerInjectedRef = useRef(false);
 
@@ -71,39 +79,70 @@ export default function ChatClient() {
     [messages],
   );
 
-  const reachedLimit = userMessageCount >= MAX_USER_MESSAGES;
+  // The limit only applies to the public demo. In project mode the user has
+  // already signed in and created the project, so they chat freely.
+  const reachedLimit = !isProjectMode && userMessageCount >= MAX_USER_MESSAGES;
   const remaining = Math.max(0, MAX_USER_MESSAGES - userMessageCount);
 
-  const searchParams = useSearchParams();
-  const seed = searchParams.get("seed");
-
-  // Initialize the demo session ID on mount
+  // Load history. Project mode reads the saved conversation out of the
+  // database via /api/chat/history. Demo mode restores from sessionStorage
+  // as before. Either way messagesLoaded gates the opener effect below, so
+  // a returning visitor resumes rather than getting a fresh "hello" on top
+  // of their existing chat.
   useEffect(() => {
-    const id = getDemoSessionId();
-    setSessionId(id);
-  }, []);
+    let cancelled = false;
 
-  // Load any saved conversation first. This must run before we decide whether
-  // to inject an opener, so a returning mid-demo visitor resumes rather than
-  // getting a fresh "hello" on top of their existing chat.
-  useEffect(() => {
-    const saved = sessionStorage.getItem("flipwhizz_create_demo_messages");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as ChatMsg[];
-        if (Array.isArray(parsed) && parsed.length > 0) setMessages(parsed);
-      } catch {
-        /* ignore */
+    async function load() {
+      if (isProjectMode && projectId) {
+        try {
+          const res = await fetch(
+            `/api/chat/history?projectId=${encodeURIComponent(projectId)}`,
+          );
+          const data = await res.json().catch(() => null);
+
+          if (!cancelled && Array.isArray(data?.messages)) {
+            setMessages(
+              data.messages.map((m: ChatMsg) => ({
+                role: m.role,
+                content: m.content,
+              })),
+            );
+          }
+        } catch (err) {
+          console.error("[chat] failed to load project history:", err);
+          if (!cancelled) {
+            setError("We could not load your conversation. Please refresh.");
+          }
+        } finally {
+          if (!cancelled) setMessagesLoaded(true);
+        }
+        return;
       }
-    }
-    setMessagesLoaded(true);
-  }, []);
 
-  // Inject the fake AI opener, only on a genuinely fresh, empty start.
-  // Seeded visitors get their themed opener; everyone else gets a random
-  // generic one. This is a hardcoded assistant message (no API call, instant,
-  // free) and does NOT count toward the user's 3 messages.
+      const saved = sessionStorage.getItem("flipwhizz_create_demo_messages");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as ChatMsg[];
+          if (Array.isArray(parsed) && parsed.length > 0) setMessages(parsed);
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!cancelled) setMessagesLoaded(true);
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [isProjectMode, projectId]);
+
+  // Inject the fake AI opener, only on a genuinely fresh, empty demo start.
+  // Never in project mode: an empty project chat means history is still
+  // loading or genuinely empty, and an opener on top of a real saved
+  // conversation is exactly the bug this replaces.
   useEffect(() => {
+    if (isProjectMode) return;
     if (!messagesLoaded) return;
     if (openerInjectedRef.current) return;
     if (messages.length > 0) return; // resumed conversation, no opener
@@ -122,10 +161,12 @@ export default function ChatClient() {
     // Focus the box so the cursor is already there. The proven failure mode
     // was visitors never moving to the input at all.
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [messagesLoaded, seed, messages.length]);
+  }, [isProjectMode, messagesLoaded, seed, messages.length]);
 
-  // Resume effect, gate on messagesLoaded
+  // Resume effect, gate on messagesLoaded. Demo only: in project mode the
+  // project already exists and there is nothing to resume into.
   useEffect(() => {
+    if (isProjectMode) return;
     if (!messagesLoaded) return;
     if (hasAttemptedResume) return;
     if (authStatus !== "authenticated") return;
@@ -139,19 +180,31 @@ export default function ChatClient() {
     sessionStorage.removeItem("flipwhizz_demo_pending_resume");
     void continueToFullProject();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authStatus, reachedLimit, messages, hasAttemptedResume, messagesLoaded]);
+  }, [
+    isProjectMode,
+    authStatus,
+    reachedLimit,
+    messages,
+    hasAttemptedResume,
+    messagesLoaded,
+  ]);
 
+  // Persist to sessionStorage in demo mode only. Project conversations live
+  // in the database, so mirroring them into sessionStorage would just risk
+  // a stale copy leaking back into a later demo.
   useEffect(() => {
     if (!messagesLoaded) return;
-    sessionStorage.setItem(
-      "flipwhizz_create_demo_messages",
-      JSON.stringify(messages),
-    );
+    if (!isProjectMode) {
+      sessionStorage.setItem(
+        "flipwhizz_create_demo_messages",
+        JSON.stringify(messages),
+      );
+    }
     const id = window.setTimeout(() => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 80);
     return () => window.clearTimeout(id);
-  }, [messages, messagesLoaded]);
+  }, [messages, messagesLoaded, isProjectMode]);
 
   useEffect(() => {
     if (!textareaRef.current) return;
@@ -171,14 +224,14 @@ export default function ChatClient() {
   }, [reachedLimit]);
 
   async function sendMessage() {
-    if (!input.trim() || loading || reachedLimit || !sessionId) return;
+    if (!input.trim() || loading || reachedLimit) return;
 
     const text = input.trim();
     const userMessage: ChatMsg = { role: "user", content: text };
     const nextHistory = [...messages, userMessage];
 
-    // Track first message as demo_started
-    if (messages.filter((m) => m.role === "user").length === 0) {
+    // Track first message as demo_started, demo only.
+    if (!isProjectMode && messages.filter((m) => m.role === "user").length === 0) {
       posthog.capture("demo_started", {
         is_authenticated: authStatus === "authenticated",
         message_preview: text.slice(0, 80),
@@ -193,21 +246,25 @@ export default function ChatClient() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     try {
-      const res = await fetch("/api/chat/demo", {
+      // NOTE: verify this against your /api/chat/route.ts. The demo endpoint
+      // is stateless and does not know about projects, so project chat has to
+      // go somewhere that can persist into the project's chat session.
+      const endpoint = isProjectMode ? "/api/chat" : "/api/chat/demo";
+      const payload = isProjectMode
+        ? { projectId, message: text, history: nextHistory }
+        : { message: text, history: nextHistory };
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: nextHistory,
-          sessionId, // Pass the sessionId
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
         throw new Error(
-          data?.error || "The demo chat could not respond just now.",
+          data?.error || "The chat could not respond just now.",
         );
       }
 
@@ -320,6 +377,15 @@ export default function ChatClient() {
       {/* Messages, full width, no card, no border, sits directly on the page */}
       <div className="flex-1 overflow-y-auto px-6 pb-32 pt-6">
         <div className="mx-auto w-full max-w-xl space-y-3">
+          {/* Loading state while project history comes back from the database.
+              Without this the page flashes empty and looks like the chat was
+              lost, which is the bug this replaces. */}
+          {isProjectMode && !messagesLoaded && (
+            <div className="flex justify-center py-10">
+              <Loader2 className="h-5 w-5 animate-spin text-[#9B88CF]" />
+            </div>
+          )}
+
           {messages.map((msg, i) => (
             <motion.div
               key={`${msg.role}-${i}-${msg.content.slice(0, 24)}`}
@@ -464,7 +530,7 @@ export default function ChatClient() {
           }}
         />
         <div className="mx-auto w-full max-w-xl">
-          {userMessageCount > 0 && !reachedLimit && (
+          {!isProjectMode && userMessageCount > 0 && !reachedLimit && (
             <div className="mb-2 px-1">
               <div className="flex items-center gap-2 text-xs font-semibold text-[#DB79AC]">
                 <Zap className="h-3.5 w-3.5" />
@@ -476,7 +542,7 @@ export default function ChatClient() {
             </div>
           )}
 
-          {userMessageCount === 0 && !reachedLimit && (
+          {!isProjectMode && userMessageCount === 0 && !reachedLimit && (
             <div className="mb-2 px-1 text-center">
               <p className="text-xs text-slate-500">
                 Chat to shape the story, then make it a real illustrated
