@@ -1,8 +1,11 @@
-//api/chat/demo/route.ts
-
+// /api/chat/demo/route.ts
+// Comments show file path for reference
 
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { db } from "@/db";
+import { chatMessages, chatSessions } from "@/db/schema";
+import { v4 as uuidv4 } from "uuid";
 
 type DemoMsg = {
   role: "user" | "assistant";
@@ -49,13 +52,37 @@ export async function POST(req: NextRequest) {
     const message =
       typeof body?.message === "string" ? body.message.trim() : "";
     const history = body?.history;
+    const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
 
     if (!message) {
       return NextResponse.json({ error: "Missing message." }, { status: 400 });
     }
 
+    if (!sessionId) {
+      return NextResponse.json({ error: "Missing sessionId." }, { status: 400 });
+    }
+
     if (!isValidMessageArray(history)) {
       return NextResponse.json({ error: "Invalid history." }, { status: 400 });
+    }
+
+    // On first message, create a demo session (if doesn't exist)
+    const existingSession = await db
+      .select({ id: chatSessions.id })
+      .from(chatSessions)
+      .where(chatSessions.id === sessionId)
+      .limit(1)
+      .then((rows) => rows[0]);
+
+    if (!existingSession) {
+      // Create a new demo session with userId=null, projectId=null
+      await db.insert(chatSessions).values({
+        id: sessionId as any, // Cast to UUID (frontend provides UUID-like string)
+        userId: null,
+        projectId: null,
+        status: "open",
+        lastMessageAt: new Date(),
+      });
     }
 
     const trimmedHistory = history
@@ -66,6 +93,7 @@ export async function POST(req: NextRequest) {
         content: m.content,
       }));
 
+    // Call Claude
     const completion = await client.messages.create({
       model: "claude-sonnet-4-6",
       system: buildDemoSystemPrompt(),
@@ -82,12 +110,33 @@ export async function POST(req: NextRequest) {
         .filter(Boolean)
         .join("\n")
         .trim() ||
-      "That already feels like the start of something lovely. What’s one more detail you’d want in the story?";
+      "That already feels like the start of something lovely. What's one more detail you'd want in the story?";
+
+    // Persist both user message and assistant reply to DB
+    const now = new Date();
+    await db.insert(chatMessages).values([
+      {
+        id: uuidv4() as any,
+        sessionId: sessionId as any,
+        role: "user",
+        content: message,
+        createdAt: now,
+      },
+      {
+        id: uuidv4() as any,
+        sessionId: sessionId as any,
+        role: "assistant",
+        content: reply,
+        createdAt: new Date(now.getTime() + 1), // slight delay so reply comes after
+      },
+    ]);
+
+    // Update the session's lastMessageAt
+    await db.update(chatSessions).set({ lastMessageAt: new Date() });
 
     return NextResponse.json({ reply });
   } catch (error) {
     console.error("[demo chat] error:", error);
-
     return NextResponse.json(
       { error: "Demo chat failed." },
       { status: 500 }

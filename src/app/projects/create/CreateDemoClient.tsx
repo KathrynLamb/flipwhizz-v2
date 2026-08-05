@@ -1,8 +1,11 @@
+// /src/app/projects/create/CreateDemoClient.tsx
+
 "use client";
 
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
+import { getDemoSessionId, migrateDemoToUserAccount, clearDemoSessionId } from "@/lib/demo-session-utils";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Loader2, Send, Zap, BookOpen } from "lucide-react";
@@ -56,6 +59,7 @@ export default function CreateDemoClient() {
   const [creatingProject, setCreatingProject] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasAttemptedResume, setHasAttemptedResume] = useState(false);
+  const [sessionId, setSessionId] = useState<string>("");
   // Guard so the opener is only ever injected once per mount.
   const openerInjectedRef = useRef(false);
 
@@ -72,6 +76,12 @@ export default function CreateDemoClient() {
 
   const searchParams = useSearchParams();
   const seed = searchParams.get("seed");
+
+  // Initialize the demo session ID on mount
+  useEffect(() => {
+    const id = getDemoSessionId();
+    setSessionId(id);
+  }, []);
 
   // Load any saved conversation first. This must run before we decide whether
   // to inject an opener, so a returning mid-demo visitor resumes rather than
@@ -161,7 +171,7 @@ export default function CreateDemoClient() {
   }, [reachedLimit]);
 
   async function sendMessage() {
-    if (!input.trim() || loading || reachedLimit) return;
+    if (!input.trim() || loading || reachedLimit || !sessionId) return;
 
     const text = input.trim();
     const userMessage: ChatMsg = { role: "user", content: text };
@@ -186,7 +196,11 @@ export default function CreateDemoClient() {
       const res = await fetch("/api/chat/demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history: nextHistory }),
+        body: JSON.stringify({
+          message: text,
+          history: nextHistory,
+          sessionId, // Pass the sessionId
+        }),
       });
 
       const data = await res.json().catch(() => null);
@@ -425,7 +439,7 @@ export default function CreateDemoClient() {
         </div>
       </div>
 
-{/* Input, fixed to the bottom of the screen now that there's no card
+      {/* Input, fixed to the bottom of the screen now that there's no card
           or footer below it to collide with. A thin gradient edge ties it
           back to the header title; the bar itself stays white so the
           textarea and send button stay legible. */}
@@ -460,7 +474,7 @@ export default function CreateDemoClient() {
           )}
 
           <div className="flex items-end gap-2">
-          <div className="flex min-h-[44px] flex-1 items-center rounded-[20px] border border-slate-200 bg-white px-4 py-2 shadow-sm transition focus-within:border-[#A270C9]/50 focus-within:ring-2 focus-within:ring-[#A270C9]/20">
+            <div className="flex min-h-[44px] flex-1 items-center rounded-[20px] border border-slate-200 bg-white px-4 py-2 shadow-sm transition focus-within:border-[#A270C9]/50 focus-within:ring-2 focus-within:ring-[#A270C9]/20">
               <textarea
                 ref={textareaRef}
                 value={input}
