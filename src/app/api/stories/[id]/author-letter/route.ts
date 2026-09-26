@@ -4,6 +4,7 @@ import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -164,10 +165,16 @@ ${excerpt}
    ROUTE
 ====================================================== */
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
+    const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
     const body = await req.json();
-    const { title, pages, storyId } = body;
+    const { title, pages } = body;
 
     console.log("author-letter input:", {
       title,

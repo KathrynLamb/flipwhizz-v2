@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { v2 as cloudinary } from "cloudinary";
 import { Readable } from "node:stream";
 import { v4 as uuid } from "uuid";
+import { requireCharacterOwner } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -71,6 +72,8 @@ export async function POST(
 ) {
   try {
     const { id } = await ctx.params;
+    const ownerCheck = await requireCharacterOwner(id);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const character = await db.query.characters.findFirst({
       where: eq(characters.id, id),

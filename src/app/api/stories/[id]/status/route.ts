@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 
 /**
@@ -19,6 +20,8 @@ export async function POST(
 ) {
   try {
     const { id: storyId } = await context.params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     if (!storyId) {
       return NextResponse.json(

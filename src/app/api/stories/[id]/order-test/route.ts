@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { createGelatoOrder } from "print/gelato/createOrder";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ export async function POST(
 ) {
   try {
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     
     const story = await db.query.stories.findFirst({

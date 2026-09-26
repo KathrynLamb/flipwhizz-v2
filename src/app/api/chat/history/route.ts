@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { chatSessions, chatMessages } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { requireProjectOwner } from "@/lib/apiAuth";
 
 export async function GET(req: Request) {
   try {
@@ -14,6 +15,9 @@ export async function GET(req: Request) {
         { status: 400 }
       );
     }
+
+    const ownerCheck = await requireProjectOwner(projectId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     // 1. Find the chat session for this project
     const session = await db

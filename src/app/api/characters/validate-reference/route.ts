@@ -1,11 +1,15 @@
 // src/app/api/characters/validate-reference/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { requireUser } from "@/lib/apiAuth";
 
 const anthropic = new Anthropic();
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireUser();
+    if (!auth.ok) return auth.response;
+
     const { imageUrl, characterName } = await req.json();
 
     if (!imageUrl) {

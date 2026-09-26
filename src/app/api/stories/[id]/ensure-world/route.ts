@@ -5,6 +5,7 @@ import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 /**
  * POST /api/stories/[id]/ensure-world
  * 
@@ -21,6 +22,8 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await context.params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
   
   // Check for force parameter
   const url = new URL(req.url);

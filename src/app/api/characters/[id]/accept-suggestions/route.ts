@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characters, characterStoryOutfits } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { requireCharacterOwner } from "@/lib/apiAuth";
 
 /**
  * POST /api/characters/[id]/accept-suggestions
@@ -24,6 +25,8 @@ export async function POST(
 ) {
   try {
     const { id: characterId } = await params;
+    const ownerCheck = await requireCharacterOwner(characterId);
+    if (!ownerCheck.ok) return ownerCheck.response;
     const body = await req.json();
     const {
       storyId,

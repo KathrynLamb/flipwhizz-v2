@@ -18,6 +18,7 @@ import { eq, and, inArray } from "drizzle-orm";
 
 import { NextResponse } from "next/server";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 type OutfitOption = {
   outfitKey: string;
   outfitDescription: string;
@@ -48,6 +49,8 @@ export async function GET(
 ) {
   try {
     const { id: storyId, spreadId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     /* ───────── 1. Spread ───────── */
 

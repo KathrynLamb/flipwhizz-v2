@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { storyWorkflowProgress } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 /**
  * GET /api/stories/[id]/workflow-progress
  * 
@@ -15,6 +16,8 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await context.params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   const progress = await db.query.storyWorkflowProgress.findFirst({
     where: eq(storyWorkflowProgress.storyId, storyId),

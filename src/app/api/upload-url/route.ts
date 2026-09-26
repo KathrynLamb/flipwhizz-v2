@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bucket } from "@/lib/firebaseAdmin";
 import { v4 as uuid } from "uuid";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,6 +13,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const fileName = `story-references/${storyId}/${uuid()}`;
     const file = bucket.file(fileName);

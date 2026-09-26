@@ -16,6 +16,7 @@ import {
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,9 @@ export async function POST(req: Request) {
     if (!storyId) {
       return NextResponse.json({ error: "Missing storyId" }, { status: 400 });
     }
+
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     /* --------------------------------------------------
        1. Load story (project-scoped fields)

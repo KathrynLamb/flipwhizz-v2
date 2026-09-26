@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 const MAX_FEATURED_CHARACTERS = 5;
 
 function uniqueIds(values: string[] | undefined | null) {
@@ -20,6 +21,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
   const body = await req.json();
 
   const {

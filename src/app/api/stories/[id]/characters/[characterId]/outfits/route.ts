@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { characterStoryOutfits } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string; characterId: string } }
+  { params }: { params: Promise<{ id: string; characterId: string }> }
 ) {
-  const { id: storyId, characterId } = params;
+  const { id: storyId, characterId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   if (!storyId || !characterId) {
     return NextResponse.json(

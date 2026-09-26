@@ -3,12 +3,15 @@ import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const style = await db.query.storyStyleGuide.findFirst({
       where: eq(storyStyleGuide.storyId, storyId),

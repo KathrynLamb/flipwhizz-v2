@@ -14,6 +14,7 @@ import {
 } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { requireProjectOwner } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -62,6 +63,9 @@ export async function POST(
     if (!projectId) {
       return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
     }
+
+    const ownerCheck = await requireProjectOwner(projectId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const project = await db
       .select()

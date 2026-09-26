@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { inngest } from "@/inngest/client";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,9 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     await inngest.send({
       name: "story/generate.cover.spread",

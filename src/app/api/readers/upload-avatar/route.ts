@@ -5,11 +5,14 @@ import { readers } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebaseClient";
+import { requireReaderOwner } from "@/lib/apiAuth";
 
 export async function POST(req: Request) {
   const formData = await req.formData();
   const file = formData.get("file") as File;
   const readerId = formData.get("readerId") as string;
+  const ownerCheck = await requireReaderOwner(readerId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   if (!file || !readerId) {
     return NextResponse.json({ error: "Missing file or readerId" }, { status: 400 });

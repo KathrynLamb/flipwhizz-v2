@@ -12,6 +12,7 @@ import { db } from "@/db";
 import { stories, projects, characters, storyCharacters } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { requireAdmin } from "@/lib/apiAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,9 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 export async function POST(req: Request) {
   try {
+    const auth = await requireAdmin();
+    if (!auth.ok) return auth.response;
+
     const { storyId } = await req.json();
     if (!storyId) return NextResponse.json({ error: "storyId required" }, { status: 400 });
 

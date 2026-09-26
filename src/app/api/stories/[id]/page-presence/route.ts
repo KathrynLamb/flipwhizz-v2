@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 
 export async function GET(
@@ -18,6 +19,8 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await context.params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   const pagesParam = request.nextUrl.searchParams.get("pages");
   if (!pagesParam) {

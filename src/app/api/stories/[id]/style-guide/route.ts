@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 /* -------------------------------------------------------------------------- */
 /*  Shared handler — accepts POST (client) and PATCH (legacy/other callers)   */
 /* -------------------------------------------------------------------------- */
@@ -82,6 +83,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const ownerCheck = await requireStoryOwner(id);
+  if (!ownerCheck.ok) return ownerCheck.response;
   return handleSave(req, id);
 }
 
@@ -90,5 +93,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const ownerCheck = await requireStoryOwner(id);
+  if (!ownerCheck.ok) return ownerCheck.response;
   return handleSave(req, id);
 }

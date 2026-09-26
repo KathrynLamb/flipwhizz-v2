@@ -131,3 +131,57 @@ export function resolvePromoDiscount(
   // No product override — use the code's global discountPercent
   return { discountPercent: basePercent, isFree: false, label: promo.label ?? "Promo" };
 }
+/**
+ * Returns why a promo code can't be redeemed right now, or null if it can.
+ * Checks active flag, start/expiry dates and the global usage limit.
+ */
+export function getPromoUnusableReason(
+  promo: {
+    active: boolean;
+    startsAt: Date | null;
+    expiresAt: Date | null;
+    maxUses: number | null;
+    currentUses: number;
+  },
+  now: Date = new Date()
+): string | null {
+  if (!promo.active) return "Promo code is no longer active.";
+  if (promo.startsAt && now < promo.startsAt) return "Promo code is not yet active.";
+  if (promo.expiresAt && now > promo.expiresAt) return "Promo code has expired.";
+  if (promo.maxUses !== null && promo.currentUses >= promo.maxUses) {
+    return "Promo code has been fully redeemed.";
+  }
+  return null;
+}
+
+/**
+ * Server-side checkout price in cents — the single source of truth used when
+ * creating a PayPal order and again when capturing it.
+ *
+ * - upgradeFrom: charge only the difference (caller must verify the story is
+ *   already paid). Returns null if the "upgrade" isn't to a pricier product.
+ * - promo: an already-validated promo code (see getPromoUnusableReason).
+ */
+export function computeCheckoutCents(
+  productType: ProductType,
+  currency: CurrencyCode,
+  opts: {
+    upgradeFrom?: ProductType | null;
+    promo?: Parameters<typeof resolvePromoDiscount>[0] | null;
+  } = {}
+): number | null {
+  let cents = getPriceCents(productType, currency);
+
+  if (opts.upgradeFrom) {
+    const fromCents = getPriceCents(opts.upgradeFrom, currency);
+    if (cents <= fromCents) return null;
+    cents -= fromCents;
+  }
+
+  if (opts.promo) {
+    const discount = resolvePromoDiscount(opts.promo, productType, currency);
+    cents = applyDiscount(cents, discount.discountPercent, discount.isFree);
+  }
+
+  return cents;
+}

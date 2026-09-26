@@ -9,6 +9,7 @@ import { postProcessPdf } from "@/lib/postProcessPdf";
 import { exportCompletePDF } from "print/gelato/exportCompletePDF";
 import { getPrintSpec } from "@/lib/printSpecs";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,8 @@ export async function POST(
   try {
     stage = "params";
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     console.log("🟡 export-complete: params", { storyId });
 

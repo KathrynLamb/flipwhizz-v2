@@ -3,6 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireStoryOwner, requireUser } from "@/lib/apiAuth";
 
 export const maxDuration = 60;
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
@@ -45,6 +46,9 @@ function assertValidOutput(data: any) {
 export async function POST(req: Request) {
   try {
     const { imageUrl, storyId } = await req.json();
+
+    const auth = storyId ? await requireStoryOwner(storyId) : await requireUser();
+    if (!auth.ok) return auth.response;
 
     if (!imageUrl || typeof imageUrl !== "string") {
       return NextResponse.json(

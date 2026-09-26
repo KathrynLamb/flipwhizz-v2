@@ -5,6 +5,7 @@ import InitialStyleEditor, {
 import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { headers } from "next/headers";
   import { notFound } from "next/navigation";
   
   export default async function ProjectImagesPage({
@@ -53,6 +54,8 @@ console.log('guide', guide)
   
     const res = await fetch(`${baseUrl}/api/projects/${projectId}/story`, {
       cache: "no-store",
+      // Forward the login cookie — the API route checks project ownership
+      headers: { cookie: (await headers()).get("cookie") ?? "" },
     });
   
     if (!res.ok) return notFound();

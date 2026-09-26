@@ -11,12 +11,15 @@ import {
 } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export async function GET(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   // 🔥 unwrap async params (Next 14)
   const { id: storyId } = await context.params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   if (!storyId) {
     return NextResponse.json(
@@ -119,6 +122,8 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await context.params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   try {
     const body = await req.json();

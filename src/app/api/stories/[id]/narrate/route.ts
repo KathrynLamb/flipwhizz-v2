@@ -8,6 +8,7 @@ import { stories, storyPages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v2 as cloudinary } from "cloudinary";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -26,6 +27,8 @@ export async function POST(
 ) {
   try {
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
     const { text, pageIndex } = await req.json();
 
     if (!text || pageIndex === undefined) {

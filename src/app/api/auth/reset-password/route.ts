@@ -4,8 +4,7 @@ import { NextResponse } from "next/server";
 import { eq, and, gt, isNull } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "@/db";
-import { passwordResetTokens } from "@/db/schema";
-import { users } from "drizzle/schema";
+import { passwordResetTokens, users } from "@/db/schema";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -50,7 +49,7 @@ export async function POST(req: Request) {
     await db.transaction(async (tx) => {
       await tx
         .update(users)
-        .set({ password: hashed })
+        .set({ hashedPassword: hashed })
         .where(eq(users.id, record.userId));
 
       await tx

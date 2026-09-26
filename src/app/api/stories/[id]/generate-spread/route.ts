@@ -12,6 +12,7 @@ import {
 import { eq, inArray, or } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 type GenerateSpreadRequestBody = {
   leftPageId?: string;
   rightPageId?: string | null;
@@ -33,6 +34,8 @@ export async function POST(
 ) {
   try {
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
     const body = (await req.json()) as GenerateSpreadRequestBody;
 
     const {

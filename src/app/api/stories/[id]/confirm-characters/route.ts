@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { stories, storyCharacters, characters } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 /* ------------------------------------------------------------------
    POST /api/stories/[id]/confirm-characters
 ------------------------------------------------------------------ */
@@ -12,6 +13,8 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await context.params; // ✅ FIX
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   if (!storyId) {
     return NextResponse.json(

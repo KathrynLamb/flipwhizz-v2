@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { bookCovers } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireUser } from "@/lib/apiAuth";
 
 export const dynamic = "force-dynamic"; // prevent caching
 
@@ -17,6 +18,9 @@ export async function GET(req: Request) {
         { status: 400 }
       );
     }
+
+    const auth = await requireUser();
+    if (!auth.ok) return auth.response;
 
     console.log("🔎 COVER STATUS CHECK jobId:", jobId);
 

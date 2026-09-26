@@ -5,11 +5,14 @@ import { stories, storyStyleGuide, styleGuideImages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export async function POST(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await context.params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
   const body = await req.json();
 
   const summary = typeof body.summary === "string" ? body.summary : "";

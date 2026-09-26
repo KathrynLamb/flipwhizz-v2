@@ -6,11 +6,14 @@ import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   try {
     // Check story exists

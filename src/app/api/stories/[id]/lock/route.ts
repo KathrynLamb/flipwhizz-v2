@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { requireStoryOwner } from "@/lib/apiAuth";
 import type { StepKey } from "@/lib/storySteps";
 
 type Context = {
@@ -32,13 +31,9 @@ const VALID_STEPS: StepKey[] = [
  * with the same step is a no-op.
  */
 export async function POST(req: Request, { params }: Context) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const { id: storyId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   // Parse + validate body
   let step: StepKey;
@@ -66,18 +61,12 @@ export async function POST(req: Request, { params }: Context) {
       .select({
         id: stories.id,
         completedSteps: stories.completedSteps,
-        userId: stories.userId,
       })
       .from(stories)
       .where(eq(stories.id, storyId));
 
     if (!story) {
       return NextResponse.json({ error: "Story not found" }, { status: 404 });
-    }
-
-    // Ownership check
-    if (story.userId !== session.user.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
     const existingSteps: string[] =

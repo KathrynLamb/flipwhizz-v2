@@ -11,6 +11,7 @@ import { db } from "@/db";
 import { locations, storyLocations, storyStyleGuide, stories } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { GoogleGenAI } from "@google/genai";
+import { requireLocationOwner } from "@/lib/apiAuth";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
@@ -159,6 +160,8 @@ function buildStyleBlock(style: {
 export async function POST(req: Request) {
   try {
     const { locationId } = await req.json();
+    const ownerCheck = await requireLocationOwner(locationId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     if (!locationId) {
       return NextResponse.json(

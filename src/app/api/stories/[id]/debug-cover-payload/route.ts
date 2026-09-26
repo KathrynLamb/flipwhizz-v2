@@ -16,11 +16,14 @@ import {
 } from "@/db/schema";
 import { eq, sql, inArray } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),

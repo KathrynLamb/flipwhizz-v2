@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { coverChatSessions } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +20,17 @@ export async function POST(req: Request) {
       );
     }
 
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
+
     const session = await db.query.coverChatSessions.findFirst({
       where: eq(coverChatSessions.id, sessionId),
     });
+
+    // The cover session must belong to the story we just authorised
+    if (session && session.storyId !== storyId) {
+      return NextResponse.json({ error: "Cover session not found" }, { status: 404 });
+    }
 
 
     if (!session || !session.coverPlan) {

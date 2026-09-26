@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 /**
  * ensure-world
@@ -27,6 +28,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   console.log("🔵 ensure-world called for story:", storyId);
 
@@ -109,6 +112,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   console.log("🧨 RESETTING world for story:", storyId);
 

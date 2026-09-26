@@ -12,6 +12,7 @@ import {
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const maxDuration = 30; // web search adds latency
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
@@ -23,6 +24,8 @@ export async function POST(
 ): Promise<Response> {
   try {
     const { id: storyId } = await context.params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const body = await request.json();
     const {

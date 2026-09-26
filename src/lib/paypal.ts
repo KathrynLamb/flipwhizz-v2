@@ -96,11 +96,35 @@ export async function paypalCreateOrder(args: CreateOrderArgs) {
   return data; // includes id
 }
 
+export async function paypalGetOrder(orderID: string) {
+  const token = await getPaypalAccessToken();
+
+  const res = await fetch(
+    `${PAYPAL_BASE_URL}/v2/checkout/orders/${encodeURIComponent(orderID)}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    console.error("[PayPal] get order failed:", data);
+    throw new Error(data?.message || "Failed to load PayPal order");
+  }
+
+  return data;
+}
+
 export async function paypalCaptureOrder(orderID: string) {
   const token = await getPaypalAccessToken();
 
   const res = await fetch(
-    `${PAYPAL_BASE_URL}/v2/checkout/orders/${orderID}/capture`,
+    `${PAYPAL_BASE_URL}/v2/checkout/orders/${encodeURIComponent(orderID)}/capture`,
     {
       method: "POST",
       headers: {

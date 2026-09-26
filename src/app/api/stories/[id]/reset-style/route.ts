@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { stories, storySpreads, storySpreadScene, storyWorkflowProgress } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 const POST_DESIGN_STEPS = [
   "design",
   "characters",
@@ -21,6 +22,8 @@ export async function POST(
 ) {
   try {
     const { id: storyId } = await context.params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     // 1. Strip post-design steps from completedSteps
     const story = await db
