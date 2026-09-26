@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { orders, stories } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,8 @@ export async function GET(
   try {
     // ✅ MUST await params
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     if (!storyId) {
       return NextResponse.json(

@@ -11,6 +11,7 @@ import { sendOrderConfirmation } from "@/lib/emails/sendOrderConfirmation";
 import { resend } from "@/lib/resend";
 
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,8 @@ export async function POST(
 ) {
   try {
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
     const { shippingAddress } = await req.json();
 
     if (!storyId) {

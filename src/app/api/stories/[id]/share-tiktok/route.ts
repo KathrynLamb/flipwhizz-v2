@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { db } from "@/db";
 import { users, stories } from "@/db/schema";
+import { requireStoryOwner } from "@/lib/apiAuth";
 import { eq } from "drizzle-orm";
 
 export async function POST(
@@ -10,6 +11,8 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
   ) {
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

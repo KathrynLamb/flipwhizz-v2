@@ -11,11 +11,14 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export async function POST(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await context.params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
   const body = await req.json();
 
   const spreadIndex = Number(body.spreadIndex);

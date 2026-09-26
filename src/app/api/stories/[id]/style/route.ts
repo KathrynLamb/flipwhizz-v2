@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 
 export async function PATCH(
@@ -12,6 +13,8 @@ export async function PATCH(
 ) {
   try {
     const { id: storyId } = await context.params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     if (!storyId) {
       return NextResponse.json({ error: "Missing story id" }, { status: 400 });

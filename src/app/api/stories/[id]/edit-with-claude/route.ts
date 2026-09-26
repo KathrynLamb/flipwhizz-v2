@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 
 const client = new Anthropic({
@@ -16,9 +17,15 @@ function extractClaudeText(content: any[]): string {
     .trim();
 }
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const { storyId, page, history = [] } = await req.json();
+    const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
+    const { page, history = [] } = await req.json();
 
     if (!storyId || !page?.text) {
       return NextResponse.json(

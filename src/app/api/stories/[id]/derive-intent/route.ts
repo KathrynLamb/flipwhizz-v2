@@ -10,6 +10,7 @@ import {
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 /* ======================================================
    CLIENT
 ====================================================== */
@@ -67,6 +68,8 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await context.params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   console.log("🟣 DERIVE-INTENT START", { storyId });
 

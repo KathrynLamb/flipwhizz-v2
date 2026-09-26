@@ -7,6 +7,7 @@ import heicConvert from "heic-convert";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireCharacterOwner } from "@/lib/apiAuth";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -39,6 +40,9 @@ export async function POST(req: Request) {
     if (!file || !(file instanceof File) || !characterId) {
       return NextResponse.json({ error: "Missing data" }, { status: 400 });
     }
+
+    const ownerCheck = await requireCharacterOwner(characterId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const originalBuffer = Buffer.from(await file.arrayBuffer());
     const { buffer, format } = await maybeConvertHeic(originalBuffer, file.name);

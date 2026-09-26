@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { coverChatSessions, coverChatMessages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,9 @@ export async function POST(req: Request) {
         { status: 404 }
       );
     }
+
+    const ownerCheck = await requireStoryOwner(session.storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     /* ---------------- Save user message ---------------- */
 

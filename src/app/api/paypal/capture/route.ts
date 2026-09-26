@@ -1,12 +1,27 @@
 // src/app/api/paypal/capture/route.ts
 
 import { NextResponse } from "next/server";
-import { paypalCaptureOrder } from "@/lib/paypal";
+import { paypalCaptureOrder, paypalGetOrder } from "@/lib/paypal";
 import { db } from "@/db";
 import { stories, storyProducts, promoCodes } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 import { captureServerEvent } from "@/lib/posthog-server";
+import {
+  computeCheckoutCents,
+  getPromoUnusableReason,
+  type CurrencyCode,
+  type ProductType,
+} from "@/lib/pricing";
+import { requireUser, requireStoryOwner } from "@/lib/apiAuth";
+
+const VALID_CURRENCIES: CurrencyCode[] = ["GBP", "USD", "EUR", "AUD"];
+
+function moneyToCents(value: unknown): number | null {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.round(num * 100);
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,30 +74,34 @@ function extractPaypalShippingAddress(receipt: any): ShippingAddress | null {
 
 export async function POST(req: Request) {
   try {
+    const userCheck = await requireUser();
+    if (!userCheck.ok) return userCheck.response;
+
     const { orderID, promoCode } = await req.json();
 
-    if (!orderID) {
+    if (!orderID || typeof orderID !== "string") {
       return NextResponse.json({ error: "orderID required" }, { status: 400 });
     }
 
-    const receipt = await paypalCaptureOrder(orderID);
-
-    if (receipt?.status !== "COMPLETED") {
-      return NextResponse.json(
-        { error: `Order not completed (status=${receipt?.status})`, receipt },
-        { status: 400 }
-      );
-    }
-
-    const pu = receipt?.purchase_units?.[0];
-    const storyId: string | undefined = pu?.custom_id || pu?.reference_id;
+    /* --------------------------------------------------
+       VERIFY THE ORDER BEFORE TAKING PAYMENT
+       The order could have been created outside /api/paypal/order
+       (the PayPal client ID is public), so re-check who it's for and
+       that the amount matches our server-side price.
+    -------------------------------------------------- */
+    const pending = await paypalGetOrder(orderID);
+    const pendingUnit = pending?.purchase_units?.[0];
+    const storyId: string | undefined = pendingUnit?.custom_id || pendingUnit?.reference_id;
 
     if (!storyId) {
       return NextResponse.json(
-        { error: "Missing storyId on PayPal purchase unit", receipt },
+        { error: "Missing storyId on PayPal purchase unit" },
         { status: 400 }
       );
     }
+
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const storyProduct = await db.query.storyProducts.findFirst({
       where: eq(storyProducts.storyId, storyId),
@@ -95,11 +114,73 @@ export async function POST(req: Request) {
       );
     }
 
-    const productType = storyProduct.productType;
+    const productType = storyProduct.productType as ProductType;
 
     if (!productType || !["digital", "print", "gift"].includes(productType)) {
       return NextResponse.json(
         { error: `Invalid productType "${productType}"`, storyId, orderID },
+        { status: 400 }
+      );
+    }
+
+    const orderCurrency = pendingUnit?.amount?.currency_code as CurrencyCode;
+    const orderCents = moneyToCents(pendingUnit?.amount?.value);
+
+    if (!VALID_CURRENCIES.includes(orderCurrency) || orderCents === null) {
+      return NextResponse.json({ error: "Invalid order amount" }, { status: 400 });
+    }
+
+    let promo: typeof promoCodes.$inferSelect | undefined;
+    if (promoCode && typeof promoCode === "string") {
+      [promo] = await db
+        .select()
+        .from(promoCodes)
+        .where(sql`LOWER(${promoCodes.code}) = LOWER(${promoCode.trim()})`)
+        .limit(1);
+
+      const unusable = promo ? getPromoUnusableReason(promo) : "Invalid promo code.";
+      if (unusable) {
+        return NextResponse.json({ error: unusable }, { status: 400 });
+      }
+    }
+
+    const [paidRow] = await db
+      .select({ paymentStatus: stories.paymentStatus })
+      .from(stories)
+      .where(eq(stories.id, storyId))
+      .limit(1);
+
+    // Full price is always acceptable; the digital → print/gift upgrade
+    // price only for a book that's already been paid for.
+    const acceptableCents = [
+      computeCheckoutCents(productType, orderCurrency, { promo }),
+      paidRow?.paymentStatus === "paid"
+        ? computeCheckoutCents(productType, orderCurrency, { upgradeFrom: "digital", promo })
+        : null,
+    ].filter((c): c is number => c !== null && c > 0);
+
+    if (!acceptableCents.includes(orderCents)) {
+      console.error("[PayPal capture] amount mismatch", {
+        storyId,
+        orderID,
+        orderCents,
+        orderCurrency,
+        acceptableCents,
+      });
+      return NextResponse.json(
+        { error: "Order amount doesn't match the price for this book." },
+        { status: 400 }
+      );
+    }
+
+    /* --------------------------------------------------
+       CAPTURE
+    -------------------------------------------------- */
+    const receipt = await paypalCaptureOrder(orderID);
+
+    if (receipt?.status !== "COMPLETED") {
+      return NextResponse.json(
+        { error: `Order not completed (status=${receipt?.status})` },
         { status: 400 }
       );
     }
@@ -155,14 +236,14 @@ export async function POST(req: Request) {
     }
 
     // Persist promo usage now that payment is confirmed
-    if (promoCode && typeof promoCode === "string") {
+    if (promo) {
       await db
         .update(promoCodes)
         .set({
           currentUses: sql`${promoCodes.currentUses} + 1`,
           updatedAt: new Date(),
         })
-        .where(sql`LOWER(${promoCodes.code}) = LOWER(${promoCode.trim()})`);
+        .where(eq(promoCodes.id, promo.id));
     }
 
     const payerEmail = receipt?.payer?.email_address;

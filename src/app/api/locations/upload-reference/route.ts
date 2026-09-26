@@ -83,10 +83,13 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { locations } from "@/db/schema";
+import { requireLocationOwner } from "@/lib/apiAuth";
 
 export async function POST(req: Request) {
   try {
     const { locationId, imageUrl, storagePath } = await req.json();
+    const ownerCheck = await requireLocationOwner(locationId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     if (!locationId || !imageUrl) {
       return NextResponse.json(

@@ -25,6 +25,7 @@ import {
 } from "@/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -322,6 +323,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   try {
     const body = await req.json();

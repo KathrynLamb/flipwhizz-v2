@@ -3,12 +3,15 @@ import { db } from "@/db";
 import { storyPages } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 // This is your existing PATCH handler for updating pages
 export async function PATCH(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await context.params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   if (!storyId) {
     return NextResponse.json({ error: "Missing story ID" }, { status: 400 });
@@ -41,6 +44,8 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await context.params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   if (!storyId) {
     return NextResponse.json({ error: "Missing story ID" }, { status: 400 });

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireCharacterOwner } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,8 @@ export async function PATCH(
 ) {
   try {
     const { id: characterId } = await ctx.params;
+    const ownerCheck = await requireCharacterOwner(characterId);
+    if (!ownerCheck.ok) return ownerCheck.response;
     const body = await req.json();
 
     console.log("Updating character:", characterId);
@@ -50,6 +53,8 @@ export async function DELETE(
 ) {
   try {
     const { id: characterId } = await ctx.params;
+    const ownerCheck = await requireCharacterOwner(characterId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     console.log("Deleting character:", characterId);
 

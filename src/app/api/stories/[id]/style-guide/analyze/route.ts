@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
@@ -94,6 +95,8 @@ export async function POST(
 ) {
   try {
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
     const { imageUrl } = await req.json();
 
     if (!imageUrl || typeof imageUrl !== "string") {

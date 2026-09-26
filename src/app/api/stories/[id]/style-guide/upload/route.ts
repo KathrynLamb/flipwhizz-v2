@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -10,9 +11,12 @@ cloudinary.config({
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { storyId: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
@@ -34,7 +38,7 @@ export async function POST(
       cloudinary.uploader
         .upload_stream(
           {
-            folder: `flipwhizz/style-guides/${params.storyId}`,
+            folder: `flipwhizz/style-guides/${storyId}`,
             public_id: `style-reference-${Date.now()}`,
             resource_type: "image",
             transformation: [

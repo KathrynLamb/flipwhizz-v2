@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -14,6 +15,9 @@ export async function GET(req: Request) {
       { status: 400 }
     );
   }
+
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),

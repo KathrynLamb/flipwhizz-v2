@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import { createGelatoOrder } from "print/gelato/createOrder";
 import { storyProducts } from "@/db/schema";
 import { captureServerEvent } from "@/lib/posthog-server";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 
 interface CreateOrderRequest {
@@ -29,14 +30,19 @@ interface CreateOrderRequest {
 export async function POST(req: Request) {
   try {
     const body: CreateOrderRequest = await req.json();
-    const { storyId, shippingAddress, userId } = body;
+    const { storyId, shippingAddress } = body;
 
-    if (!storyId || !shippingAddress || !userId) {
+    if (!storyId || !shippingAddress) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
       );
     }
+
+    // The order is placed as the signed-in owner — never a client-supplied userId
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
+    const userId = ownerCheck.userId;
 
     const story = await db.query.stories.findFirst({
       where: eq(stories.id, storyId),

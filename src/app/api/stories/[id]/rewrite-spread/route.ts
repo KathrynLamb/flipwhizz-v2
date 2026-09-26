@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { storyPages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 /* -------------------- CLIENT -------------------- */
 
 const client = new Anthropic({
@@ -18,6 +19,8 @@ export async function POST(
 ): Promise<Response> {
   try {
     const { id: storyId } = await context.params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const body = await request.json();
     const {

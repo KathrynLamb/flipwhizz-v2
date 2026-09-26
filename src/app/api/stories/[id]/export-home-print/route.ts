@@ -7,6 +7,7 @@ import { eq, asc } from "drizzle-orm";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { uploadPdfToR2 } from "@/lib/uploadPdfToR2";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -34,6 +35,8 @@ export async function POST(
   try {
     stage = "params";
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
     if (!storyId) {
       return NextResponse.json({ error: "Missing story id" }, { status: 400 });
     }

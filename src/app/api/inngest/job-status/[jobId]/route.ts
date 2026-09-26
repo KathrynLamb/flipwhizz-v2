@@ -8,12 +8,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyPages } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireUser } from "@/lib/apiAuth";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
   const { jobId } = await params;
+  const auth = await requireUser();
+  if (!auth.ok) return auth.response;
 
   // Format: "leftPageId__storyId" — we only need the leftPageId
   const leftPageId = jobId.split("__")[0];

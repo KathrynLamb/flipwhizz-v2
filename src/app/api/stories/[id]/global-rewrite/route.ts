@@ -7,6 +7,7 @@ import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { extractInsightsFromRewriteChat } from "@/lib/extractRewriteInsights";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -82,6 +83,8 @@ export async function POST(
 
   try {
     const { id: storyId } = await context.params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     if (!storyId) {
       return NextResponse.json({ error: "Missing story id" }, { status: 400 });

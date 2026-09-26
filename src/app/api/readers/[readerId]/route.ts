@@ -3,12 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { readers } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireReaderOwner } from "@/lib/apiAuth";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ readerId: string }> }
 ) {
   const { readerId } = await params;
+  const ownerCheck = await requireReaderOwner(readerId);
+  if (!ownerCheck.ok) return ownerCheck.response;
   const body = await req.json();
 
   const updates: Record<string, any> = { updatedAt: new Date() };

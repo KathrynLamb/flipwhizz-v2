@@ -561,7 +561,7 @@ function UpgradeSheet({ storyId, selectedTier, onSelectTier, onClose, onSuccess,
                   onApprove={async (data) => {
                     setProcessing(true);
                     try {
-                      const res = await fetch("/api/paypal/capture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderID: data.orderID }) });
+                      const res = await fetch("/api/paypal/capture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderID: data.orderID, promoCode: promoState?.valid ? promoState.code : undefined }) });
                       const result = await res.json();
                       if (!res.ok || !result.success) throw new Error(result?.error || "Payment capture failed.");
                       onSuccess();

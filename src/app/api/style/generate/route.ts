@@ -1,6 +1,7 @@
 // api/style/generate/route.ts
 import { NextResponse } from "next/server";
 import { inngest } from "@/inngest/client";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 /**
  * STYLE SAMPLE GENERATION
@@ -47,6 +48,9 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     console.log("📘 storyId:", storyId);
 

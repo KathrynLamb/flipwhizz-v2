@@ -7,6 +7,7 @@ import path from "path";
 import fs from "fs/promises";
 import { exportInteriorPDF } from "print/gelato/exportInteriorPDF";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 
 export async function POST(
@@ -15,6 +16,8 @@ export async function POST(
 ) {
   try {
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     if (!storyId) {
       return NextResponse.json({ error: "Missing story id" }, { status: 400 });

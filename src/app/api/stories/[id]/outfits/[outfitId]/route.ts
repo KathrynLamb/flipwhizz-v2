@@ -1,15 +1,19 @@
-// src/app/api/stories/[storyId]/outfits/[outfitId]/route.ts
+// src/app/api/stories/[id]/outfits/[outfitId]/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characterStoryOutfits } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ storyId: string; outfitId: string }> }
+  { params }: { params: Promise<{ id: string; outfitId: string }> }
 ) {
   try {
-    const { storyId, outfitId } = await params;
+    const { id: storyId, outfitId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
+
     const { outfitDescription } = await req.json();
 
     if (!outfitDescription || typeof outfitDescription !== "string") {
@@ -22,7 +26,12 @@ export async function PATCH(
     const updated = await db
       .update(characterStoryOutfits)
       .set({ outfitDescription })
-      .where(eq(characterStoryOutfits.id, outfitId))
+      .where(
+        and(
+          eq(characterStoryOutfits.id, outfitId),
+          eq(characterStoryOutfits.storyId, storyId)
+        )
+      )
       .returning();
 
     if (!updated.length) {

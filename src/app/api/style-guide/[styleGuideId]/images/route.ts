@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyStyleGuide, styleGuideImages } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,10 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    // styleGuideId is looked up as the story id below
+    const ownerCheck = await requireStoryOwner(styleGuideId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const { url, notes, label, type } = await req.json();
 

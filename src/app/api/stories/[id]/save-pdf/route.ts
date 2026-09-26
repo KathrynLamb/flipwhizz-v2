@@ -4,6 +4,7 @@ import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v2 as cloudinary } from "cloudinary";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -16,6 +17,8 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const ownerCheck = await requireStoryOwner(id);
+    if (!ownerCheck.ok) return ownerCheck.response;
     const formData = await req.formData();
     const file = formData.get("file") as File;
 

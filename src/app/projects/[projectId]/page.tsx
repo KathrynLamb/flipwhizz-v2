@@ -8,6 +8,7 @@ import Header from "@/components/Header";
 import PagesBox from "@/app/projects/components/PagesBox";
 import IllustrationsBox from "@/app/projects/components/IllustrationsBox";
 import { AuthButton } from "@/components/auth-button";
+import { headers } from "next/headers";
 
 function isFilled(v: unknown) {
   if (!v) return false;
@@ -22,8 +23,8 @@ export default async function ProjectDashboard(
 
   const storyBundle = await fetch(
     `${process.env.NEXT_PUBLIC_BASE_URL}/api/projects/${projectId}/story`,
-
-    { cache: "no-store" }
+    // Forward the login cookie — the API route checks project ownership
+    { cache: "no-store", headers: { cookie: (await headers()).get("cookie") ?? "" } }
   ).then(res => res.json());
   
   

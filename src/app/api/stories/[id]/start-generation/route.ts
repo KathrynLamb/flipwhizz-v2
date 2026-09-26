@@ -2,6 +2,7 @@
 import { inngest } from "@/inngest/client";
 import { NextResponse } from "next/server";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 /**
  * Starts spread generation for a story.
  *
@@ -15,6 +16,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   if (!storyId) {
     return NextResponse.json(

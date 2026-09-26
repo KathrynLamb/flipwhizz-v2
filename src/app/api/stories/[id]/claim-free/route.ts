@@ -7,17 +7,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories, storyProducts, promoCodes } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 import {
   resolvePromoDiscount,
   getPriceCents,
   applyDiscount,
+  getPromoUnusableReason,
   type ProductType,
   type CurrencyCode,
 } from "@/lib/pricing";
 import { captureServerEvent } from "@/lib/posthog-server";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,8 @@ export async function POST(
 ) {
   try {
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
     const body = await req.json();
     const { promoCode } = body ?? {};
 
@@ -59,8 +63,13 @@ export async function POST(
       .where(sql`LOWER(${promoCodes.code}) = LOWER(${promoCode.trim()})`)
       .limit(1);
 
-    if (!promo || !promo.active) {
+    if (!promo) {
       return NextResponse.json({ error: "Invalid promo code" }, { status: 400 });
+    }
+
+    const unusable = getPromoUnusableReason(promo);
+    if (unusable) {
+      return NextResponse.json({ error: unusable }, { status: 400 });
     }
 
     const discount = resolvePromoDiscount(promo, productType as ProductType, currency);
@@ -86,8 +95,30 @@ export async function POST(
       return NextResponse.json({ error: "Story already paid" }, { status: 400 });
     }
 
+    /* ---------- RESERVE A PROMO USE ---------- */
+    // Atomic: only succeeds while uses remain, so concurrent claims
+    // can't push a code past its maxUses.
+    const reserved = await db
+      .update(promoCodes)
+      .set({
+        currentUses: sql`${promoCodes.currentUses} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(promoCodes.id, promo.id),
+          or(isNull(promoCodes.maxUses), lt(promoCodes.currentUses, promoCodes.maxUses))
+        )
+      )
+      .returning({ id: promoCodes.id });
+
+    if (reserved.length === 0) {
+      return NextResponse.json({ error: "Promo code has been fully redeemed." }, { status: 400 });
+    }
+
     /* ---------- MARK PAID + GENERATE ---------- */
-    await db
+    // Conditional on not already paid, so a double-submit can't fire generation twice.
+    const marked = await db
       .update(stories)
       .set({
         paymentStatus: "paid",
@@ -95,16 +126,22 @@ export async function POST(
         status: "generating",
         updatedAt: new Date(),
       })
-      .where(eq(stories.id, storyId));
+      .where(
+        and(
+          eq(stories.id, storyId),
+          or(isNull(stories.paymentStatus), ne(stories.paymentStatus, "paid"))
+        )
+      )
+      .returning({ id: stories.id });
 
-    // Increment promo usage
-    await db
-      .update(promoCodes)
-      .set({
-        currentUses: sql`${promoCodes.currentUses} + 1`,
-        updatedAt: new Date(),
-      })
-      .where(eq(promoCodes.id, promo.id));
+    if (marked.length === 0) {
+      // Lost a race with another claim — give the use back.
+      await db
+        .update(promoCodes)
+        .set({ currentUses: sql`${promoCodes.currentUses} - 1`, updatedAt: new Date() })
+        .where(eq(promoCodes.id, promo.id));
+      return NextResponse.json({ error: "Story already paid" }, { status: 400 });
+    }
 
     // Fire generation — must match the event name in generateBookSpreads.ts
     await inngest.send({

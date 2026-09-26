@@ -11,6 +11,7 @@ import {
   locations,
   storyStyleGuide,
 } from "@/db/schema";
+import { requireProjectOwner } from "@/lib/apiAuth";
 
 
 export const runtime = "nodejs";
@@ -25,6 +26,9 @@ export async function GET(
     if (!projectId) {
       return NextResponse.json({ error: "Missing project id" }, { status: 400 });
     }
+
+    const ownerCheck = await requireProjectOwner(projectId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     // 1️⃣ Load the story belonging to this project
     const story = await db

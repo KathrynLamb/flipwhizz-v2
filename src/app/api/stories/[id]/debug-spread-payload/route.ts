@@ -20,11 +20,14 @@ import {
 } from "@/db/schema";
 import { eq, inArray, asc, desc, or, sql, and } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
   const url = new URL(req.url);
   const spreadIndex = parseInt(url.searchParams.get("spread") || "0", 10);
 

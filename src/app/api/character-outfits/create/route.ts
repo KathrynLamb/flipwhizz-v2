@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { characterStoryOutfits } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { requireStoryOwner, requireCharacterOwner } from "@/lib/apiAuth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,6 +24,11 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const storyCheck = await requireStoryOwner(storyId);
+    if (!storyCheck.ok) return storyCheck.response;
+    const characterCheck = await requireCharacterOwner(characterId);
+    if (!characterCheck.ok) return characterCheck.response;
 
     if (!outfitKey || !outfitDescription) {
       return NextResponse.json(

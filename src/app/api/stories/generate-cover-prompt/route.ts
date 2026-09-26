@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +18,9 @@ export async function POST(req: Request) {
     if (!storyId) {
       return NextResponse.json({ error: "storyId required" }, { status: 400 });
     }
+
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const story = await db
       .select()

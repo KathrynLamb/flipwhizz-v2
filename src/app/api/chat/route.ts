@@ -17,6 +17,7 @@ import { worlds, worldReaders, worldNarrativeMemory } from "@/db/schema-worlds";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import type { InferSelectModel } from "drizzle-orm";
+import { requireProjectOwner } from "@/lib/apiAuth";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -429,6 +430,9 @@ export async function POST(req: Request) {
     if (!message || !projectId) {
       return NextResponse.json({ reply: "(invalid request)" });
     }
+
+    const ownerCheck = await requireProjectOwner(projectId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const project = await db
       .select()

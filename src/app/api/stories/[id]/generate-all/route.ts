@@ -4,12 +4,15 @@ import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export async function POST(
   _req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id: storyId } = await context.params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     console.log("🚀 Starting illustration generation for story:", storyId);
 

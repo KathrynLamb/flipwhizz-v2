@@ -3,11 +3,14 @@ import { db } from "@/db";
 import { storyEditSessions, storyEditMessages } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   try {
     const session = await db.query.storyEditSessions.findFirst({

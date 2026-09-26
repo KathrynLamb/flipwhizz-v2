@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 export const runtime = "nodejs";
 
 export async function GET(
@@ -11,6 +12,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: storyId } = await params;
+  const ownerCheck = await requireStoryOwner(storyId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   const filePath = path.join(
     process.cwd(),

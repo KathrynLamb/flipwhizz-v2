@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireProjectOwner } from "@/lib/apiAuth";
 
 export async function GET(req: Request) {
   try {
@@ -15,6 +16,9 @@ export async function GET(req: Request) {
     if (!projectId) {
       return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
     }
+
+    const ownerCheck = await requireProjectOwner(projectId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const story = await db
       .select()

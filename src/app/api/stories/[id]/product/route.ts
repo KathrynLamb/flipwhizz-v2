@@ -11,6 +11,7 @@ import {
   type CurrencyCode,
 } from "@/lib/pricing";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 const ALLOWED_PRODUCT_TYPES = ["digital", "print", "gift"] as const;
 const ALLOWED_CURRENCIES: CurrencyCode[] = ["GBP", "USD", "EUR", "AUD"];
 
@@ -37,6 +38,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const ownerCheck = await requireStoryOwner(id);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   const [product] = await db
     .select()
@@ -74,6 +77,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const ownerCheck = await requireStoryOwner(id);
+  if (!ownerCheck.ok) return ownerCheck.response;
   const body = await req.json();
   const rawProductType = body?.productType;
   const rawCurrency = body?.currency;

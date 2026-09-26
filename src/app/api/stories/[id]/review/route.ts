@@ -8,6 +8,7 @@ import { stories, reviews, promoCodes, projects } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
+import { requireStoryOwner } from "@/lib/apiAuth";
 // ─── Generate a unique promo code ───
 function generatePromoCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1 for readability
@@ -25,6 +26,8 @@ export async function POST(
 ) {
   try {
     const { id: storyId } = await params;
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     // Check story exists
     const story = await db.query.stories.findFirst({

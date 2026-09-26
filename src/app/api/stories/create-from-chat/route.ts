@@ -20,6 +20,7 @@ import { sql as rawSql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { worlds, worldReaders } from "@/db/schema-worlds";
 import { captureServerEvent } from "@/lib/posthog-server";
+import { requireProjectOwner } from "@/lib/apiAuth";
 
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("Missing ANTHROPIC_API_KEY environment variable");
@@ -578,6 +579,9 @@ export async function POST(req: Request) {
   if (!projectId) {
     return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
   }
+
+  const ownerCheck = await requireProjectOwner(projectId);
+  if (!ownerCheck.ok) return ownerCheck.response;
 
   // ── Load project ─────────────────────────────────────────────────────────
   let project: { purchaseIntent: string | null; userId: string } | undefined;

@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { requireCharacterOwner } from "@/lib/apiAuth";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -753,6 +754,8 @@ export async function POST(req: Request) {
     if (!characterId) {
       return NextResponse.json({ error: "Character ID is required" }, { status: 400 });
     }
+    const ownerCheck = await requireCharacterOwner(characterId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     const character = await db.query.characters.findFirst({
       where: eq(characters.id, characterId),

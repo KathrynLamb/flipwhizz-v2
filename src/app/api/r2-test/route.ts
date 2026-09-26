@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import crypto from "crypto";
+import { requireAdmin } from "@/lib/apiAuth";
 
 function hmac(key: Buffer | string, data: string) {
   return crypto.createHmac("sha256", key).update(data).digest();
@@ -11,6 +12,9 @@ function sha256(data: Buffer | string) {
 }
 
 export async function GET() {
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth.response;
+
   const accountId = process.env.R2_ACCOUNT_ID!;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY!;

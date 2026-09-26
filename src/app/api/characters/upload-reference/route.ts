@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireCharacterOwner } from "@/lib/apiAuth";
 
 export async function POST(req: Request) {
   try {
@@ -9,6 +10,8 @@ export async function POST(req: Request) {
 
     const characterId =
       typeof body.characterId === "string" ? body.characterId : null;
+    const ownerCheck = await requireCharacterOwner(characterId);
+    if (!ownerCheck.ok) return ownerCheck.response;
     const imageUrl =
       typeof body.imageUrl === "string" ? body.imageUrl : null;
     const storagePath =

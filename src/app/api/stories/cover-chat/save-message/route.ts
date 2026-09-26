@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { coverChatSessions, coverChatMessages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { requireStoryOwner } from "@/lib/apiAuth";
 
 export async function POST(req: Request) {
   try {
@@ -16,6 +17,9 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    const ownerCheck = await requireStoryOwner(storyId);
+    if (!ownerCheck.ok) return ownerCheck.response;
 
     if (role !== "user" && role !== "assistant") {
       return NextResponse.json(
