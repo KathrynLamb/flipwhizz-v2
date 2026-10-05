@@ -6,8 +6,9 @@ import { stories, orders, promoCodes } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { auth } from "@/auth";
 import { inngest } from "@/inngest/client";
+import { withAlerts } from "@/lib/alerts";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -84,3 +85,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const POST = withAlerts("api/paypal/capture-free", _POST, { severity: "critical" });

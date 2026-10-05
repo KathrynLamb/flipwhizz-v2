@@ -6,10 +6,11 @@ import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { Resend } from "resend";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { withAlerts } from "@/lib/alerts";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const body = await req.json();
     console.log("REGISTER BODY:", body);
@@ -120,3 +121,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withAlerts("api/auth/register", _POST, { severity: "critical" });

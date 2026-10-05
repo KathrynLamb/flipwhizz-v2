@@ -18,13 +18,14 @@ import {
 import { captureServerEvent } from "@/lib/posthog-server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { withAlerts } from "@/lib/alerts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const VALID_PRODUCTS: ProductType[] = ["digital", "print", "gift"];
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
@@ -164,3 +165,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const POST = withAlerts("api/basket/claim-free", _POST, { severity: "critical" });

@@ -6,6 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
 import { chatMessages, chatSessions } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAlerts } from "@/lib/alerts";
 
 type DemoMsg = {
   role: "user" | "assistant";
@@ -46,7 +47,7 @@ Tone:
 Warm, playful, collaborative, specific, child-centred.`;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const body = await req.json();
     const message =
@@ -163,3 +164,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const POST = withAlerts("api/chat/demo", _POST);

@@ -20,6 +20,7 @@ import { sql as rawSql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { worlds, worldReaders } from "@/db/schema-worlds";
 import { captureServerEvent } from "@/lib/posthog-server";
+import { withAlerts } from "@/lib/alerts";
 
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("Missing ANTHROPIC_API_KEY environment variable");
@@ -558,7 +559,7 @@ function computeAge(dob: string | null, fallbackAge: number | null): number | nu
 // MAIN ROUTE
 // ============================================================================
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   console.log("🟢 [create-from-chat] Story creation request received");
 
   let projectId: string;
@@ -921,3 +922,5 @@ JSON OUTPUT — no markdown, no preamble, ONLY this structure:
     insightsExtracted: extraction.insights.length,
   });
 }
+
+export const POST = withAlerts("api/stories/create-from-chat", _POST, { severity: "critical" });

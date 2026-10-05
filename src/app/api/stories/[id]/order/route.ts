@@ -9,6 +9,7 @@ import { createGelatoOrder } from "print/gelato/createOrder";
 import { getPrintSpec } from "@/lib/printSpecs";
 import { sendOrderConfirmation } from "@/lib/emails/sendOrderConfirmation";
 import { resend } from "@/lib/resend";
+import { withAlerts } from "@/lib/alerts";
 
 
 export const runtime = "nodejs";
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "katylamb2000@gmail.com";
 
-export async function POST(
+async function _POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -252,3 +253,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAlerts("api/stories/[id]/order", _POST, { severity: "critical" });

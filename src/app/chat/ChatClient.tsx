@@ -9,6 +9,7 @@ import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Loader2, Send, Zap, BookOpen, Sparkles, User } from "lucide-react";
 import posthog from "posthog-js";
+import { reportClientError } from "@/lib/reportClientError";
 
 type ChatMsg = {
   role: "user" | "assistant";
@@ -135,6 +136,10 @@ export default function ChatClient() {
           }
         } catch (err) {
           console.error("[chat] failed to load project history:", err);
+          reportClientError("chat_history_failed", {
+            projectId,
+            message: err instanceof Error ? err.message : String(err),
+          });
           if (!cancelled) {
             setError("We could not load your conversation. Please refresh.");
           }
@@ -282,7 +287,18 @@ export default function ChatClient() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.storyId) {
-        throw new Error(data?.error || "We could not start writing your story.");
+        reportClientError("story_creation_failed", {
+          projectId,
+          status: res.status,
+          message:
+            data?.error ||
+            (res.status === 504 ? "Timed out (504) before the story was created" : `HTTP ${res.status}`),
+        });
+        throw new Error(
+          res.status === 504
+            ? "Writing your story is taking longer than usual. We've been alerted and will finish it for you."
+            : "We couldn't start writing your story just now. We've been alerted, so please try again in a moment.",
+        );
       }
 
       posthog.capture("story_creation_succeeded", {
@@ -294,6 +310,9 @@ export default function ChatClient() {
       const message =
         err instanceof Error ? err.message : "We could not start writing your story.";
       console.error("[chat] story creation failed:", err);
+      if (!(err instanceof Error && err.message.includes("We've been alerted"))) {
+        reportClientError("story_creation_failed", { projectId, message });
+      }
       posthog.capture("story_creation_failed", {
         project_id: projectId,
         error: message,
@@ -372,6 +391,9 @@ export default function ChatClient() {
           ? err.message
           : "Something went wrong while sending your message.";
 
+      if (isProjectMode) {
+        reportClientError("chat_failed", { projectId, message });
+      }
       posthog.capture("demo_error", {
         error: message,
         message_count: userMessageCount,

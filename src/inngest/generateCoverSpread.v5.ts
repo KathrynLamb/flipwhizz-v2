@@ -105,23 +105,6 @@ async function fetchAndReupload(sourceUrl: string, storyId: string, maxWidth = 1
   return uploadToCloudinary(buffer.toString("base64"), storyId);
 }
 
-async function notifyFailure(storyId: string, error: Error) {
-  try {
-    await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${process.env.RESEND_API_KEY}` },
-      body: JSON.stringify({
-        from: "FlipWhizz Alerts <alerts@flipwhizz.com>",
-        to: "katy@flipwhizz.co.uk",
-        subject: `⚠️ Cover generation failed — ${storyId.slice(0, 8)}`,
-        text: `Cover generation failed for story:\n${storyId}\n\nError: ${error.message}\n\nCheck Inngest: https://app.inngest.com\n\nStory status reset to "cover_failed".`,
-      }),
-    });
-  } catch (err) {
-    console.error("⚠️ Failed to send failure notification:", err);
-  }
-}
-
 const SAFETY_SETTINGS = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
   { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
@@ -144,7 +127,7 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       } catch (dbErr) {
         console.error("Failed to reset story status:", dbErr);
       }
-      await notifyFailure(storyId, error);
+      // Alert email now comes from alertOnFunctionFailure (inngest/function.failed).
     },
   },
   async ({ event, step }) => {

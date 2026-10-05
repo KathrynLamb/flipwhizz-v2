@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAlerts } from "@/lib/alerts";
 
 /**
  * Records a payment reference on a story.
@@ -12,7 +13,7 @@ import { eq } from "drizzle-orm";
  * - Authoritative payment handling lives in /api/paypal/capture.
  * - Lifecycle transitions live in /api/stories/[id]/status.
  */
-export async function POST(
+async function _POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -44,3 +45,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAlerts("api/stories/[id]/checkout", _POST, { severity: "critical" });

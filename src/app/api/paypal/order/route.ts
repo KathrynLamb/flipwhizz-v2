@@ -12,6 +12,7 @@ import {
   type ProductType,
   type CurrencyCode,
 } from "@/lib/pricing";
+import { withAlerts } from "@/lib/alerts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ function normalizeMoney(value: unknown): string | null {
   return num.toFixed(2);
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const body = await req.json();
     const { storyId, currency: rawCurrency, upgradeFrom, promoCode } = body ?? {};
@@ -212,3 +213,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withAlerts("api/paypal/order", _POST, { severity: "critical" });

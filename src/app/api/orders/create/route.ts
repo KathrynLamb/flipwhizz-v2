@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import { createGelatoOrder } from "print/gelato/createOrder";
 import { storyProducts } from "@/db/schema";
 import { captureServerEvent } from "@/lib/posthog-server";
+import { withAlerts } from "@/lib/alerts";
 
 
 interface CreateOrderRequest {
@@ -26,7 +27,7 @@ interface CreateOrderRequest {
   userId: string;
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const body: CreateOrderRequest = await req.json();
     const { storyId, shippingAddress, userId } = body;
@@ -172,3 +173,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withAlerts("api/orders/create", _POST, { severity: "critical" });

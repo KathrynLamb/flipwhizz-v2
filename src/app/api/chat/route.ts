@@ -17,6 +17,7 @@ import { worlds, worldReaders, worldNarrativeMemory } from "@/db/schema-worlds";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import type { InferSelectModel } from "drizzle-orm";
+import { withAlerts } from "@/lib/alerts";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -422,7 +423,7 @@ TONE: Warm, collaborative, genuinely interested. You're building something toget
 // MAIN ROUTE
 // ============================================================================
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { message, history = [], projectId, worldId, readerId } = await req.json();
 
@@ -663,3 +664,5 @@ export function prepareStoryGenerationPrompt(
     message: `Generate the complete ${pageCount}-page story now as valid JSON. Output ONLY the JSON.`,
   };
 }
+
+export const POST = withAlerts("api/chat", _POST);

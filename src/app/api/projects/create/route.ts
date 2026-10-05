@@ -5,8 +5,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { v4 as uuid } from "uuid";
 import { captureServerEvent } from "@/lib/posthog-server";
+import { withAlerts } from "@/lib/alerts";
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -38,3 +39,5 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ id: projectId });
 }
+
+export const POST = withAlerts("api/projects/create", _POST);

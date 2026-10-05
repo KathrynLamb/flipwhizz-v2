@@ -14,10 +14,11 @@ import { orders, stories, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { sendOrderShipped } from "@/lib/emails/sendOrderShipped";
 import { sendOrderFailed } from "@/lib/emails/sendOrderFailed";
+import { withAlerts } from "@/lib/alerts";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "katylamb2000@gmail.com";
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   let payload: any;
 
   try {
@@ -198,3 +199,5 @@ async function notifyAdmin({
     `,
   });
 }
+
+export const POST = withAlerts("api/webhooks/gelato", _POST, { severity: "critical" });

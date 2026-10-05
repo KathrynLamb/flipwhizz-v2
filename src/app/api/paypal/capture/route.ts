@@ -7,6 +7,7 @@ import { stories, storyProducts, promoCodes } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 import { captureServerEvent } from "@/lib/posthog-server";
+import { withAlerts } from "@/lib/alerts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,7 +58,7 @@ function extractPaypalShippingAddress(receipt: any): ShippingAddress | null {
   };
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { orderID, promoCode } = await req.json();
 
@@ -196,3 +197,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withAlerts("api/paypal/capture", _POST, { severity: "critical" });
