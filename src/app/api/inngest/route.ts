@@ -19,6 +19,7 @@ import { generateCoverSpreadV5 } from "@/inngest/generateCoverSpread.v5";
 
 // Alerts
 import { alertOnFunctionFailure } from "@/inngest/alertOnFailure";
+import { dailyHealthCheck } from "@/inngest/dailyHealthCheck";
 
 
 export const { GET, POST, PUT } = serve({
@@ -41,5 +42,6 @@ export const { GET, POST, PUT } = serve({
 
     // Alerts: emails Katy whenever any function above fails for good
     alertOnFunctionFailure,
+    dailyHealthCheck,       // 08:00 UK digest of anything stuck
   ],
 });

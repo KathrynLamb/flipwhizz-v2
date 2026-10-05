@@ -336,7 +336,10 @@ export default function AdminPage() {
           <span className="text-white/20 text-xs">/</span>
           <span className="text-white/50 text-xs">admin</span>
         </div>
-        <span className="text-white/30 text-xs">🔒 restricted</span>
+        <div className="flex items-center gap-4">
+          <a href="/admin/health" className="text-xs text-[#C4B5FD] hover:text-white">health check →</a>
+          <span className="text-white/30 text-xs">🔒 restricted</span>
+        </div>
       </div>
 
       <div className="max-w-6xl mx-auto px-8 py-10">

@@ -29,7 +29,7 @@ export interface AlertInput {
 
 const ALERT_TO = process.env.ALERT_EMAIL || process.env.ADMIN_EMAIL || "katy@flipwhizz.co.uk";
 const ALERT_FROM = "FlipWhizz Alerts <alerts@flipwhizz.com>";
-const SITE = process.env.NEXT_PUBLIC_BASE_URL || "https://flipwhizz.com";
+const SITE = (process.env.NEXT_PUBLIC_BASE_URL || "https://flipwhizz.com").replace(/\/+$/, "");
 
 // Best-effort throttle so one broken thing doesn't send 200 emails.
 // Per server instance, so it's approximate, which is fine.
