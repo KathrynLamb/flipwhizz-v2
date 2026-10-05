@@ -3,10 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
-export async function PATCH(
+async function _PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -57,3 +58,5 @@ export async function PATCH(
     return NextResponse.json({ error: "Failed to save style" }, { status: 500 });
   }
 }
+
+export const PATCH = withAccess({ story: { param: "id" } }, _PATCH);

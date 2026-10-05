@@ -10,8 +10,9 @@ import {
   locations,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function POST(
+async function _POST(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -145,3 +146,5 @@ async function fakeGenerateAndStore(_prompt: string) {
   // return a placeholder image so UI works during wiring
   return "https://placehold.co/1200x900/png?text=Style+Preview";
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories, storySpreads, storySpreadScene, storyWorkflowProgress } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 const POST_DESIGN_STEPS = [
   "design",
@@ -15,7 +16,7 @@ const POST_DESIGN_STEPS = [
   "print",
 ];
 
-export async function POST(
+async function _POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -91,3 +92,5 @@ export async function POST(
     return NextResponse.json({ error: "Reset failed" }, { status: 500 });
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

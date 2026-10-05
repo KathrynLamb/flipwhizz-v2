@@ -8,6 +8,7 @@ import { eq, sql } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { withAlerts } from "@/lib/alerts";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -198,4 +199,4 @@ async function _POST(req: Request) {
   }
 }
 
-export const POST = withAlerts("api/paypal/capture", _POST, { severity: "critical" });
+export const POST = withAlerts("api/paypal/capture", withAccess({ login: true }, _POST), { severity: "critical" });

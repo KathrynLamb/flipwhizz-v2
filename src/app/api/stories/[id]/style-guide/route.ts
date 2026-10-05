@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 /* -------------------------------------------------------------------------- */
 /*  Shared handler — accepts POST (client) and PATCH (legacy/other callers)   */
@@ -77,7 +78,7 @@ async function handleSave(req: Request, storyId: string) {
   }
 }
 
-export async function POST(
+async function _POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -85,10 +86,13 @@ export async function POST(
   return handleSave(req, id);
 }
 
-export async function PATCH(
+async function _PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
   return handleSave(req, id);
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);
+export const PATCH = withAccess({ story: { param: "id" } }, _PATCH);

@@ -11,6 +11,7 @@ import { db } from "@/db";
 import { locations, storyLocations, storyStyleGuide, stories } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { GoogleGenAI } from "@google/genai";
+import { withAccess } from "@/lib/authz";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
@@ -156,7 +157,7 @@ function buildStyleBlock(style: {
 /*  ROUTE                                                                     */
 /* -------------------------------------------------------------------------- */
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { locationId } = await req.json();
 
@@ -344,3 +345,5 @@ not as a photographic reproduction.
     );
   }
 }
+
+export const POST = withAccess({ location: { body: "locationId" } }, _POST);

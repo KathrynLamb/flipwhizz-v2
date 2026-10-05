@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
+import { withAccess } from "@/lib/authz";
 
 /**
  * POST /api/stories/[id]/ensure-world
@@ -16,7 +17,7 @@ import { inngest } from "@/inngest/client";
  * - Timeout detection (>5 min = probably stuck)
  * - Manual retry capability
  */
-export async function POST(
+async function _POST(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -96,3 +97,5 @@ if (!story.storyConfirmed && !force) {
       : "World extraction started (resumable from last checkpoint)",
   });
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

@@ -1,6 +1,7 @@
 // api/style/generate/route.ts
 import { NextResponse } from "next/server";
 import { inngest } from "@/inngest/client";
+import { withAccess } from "@/lib/authz";
 
 /**
  * STYLE SAMPLE GENERATION
@@ -13,7 +14,7 @@ import { inngest } from "@/inngest/client";
  * Logs are intentionally verbose.
  */
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const startedAt = Date.now();
   const requestId = crypto.randomUUID();
 
@@ -167,3 +168,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withAccess({ story: { body: "storyId" } }, _POST);

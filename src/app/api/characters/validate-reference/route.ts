@@ -1,10 +1,11 @@
 // src/app/api/characters/validate-reference/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { withAccess } from "@/lib/authz";
 
 const anthropic = new Anthropic();
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const { imageUrl, characterName } = await req.json();
 
@@ -84,3 +85,5 @@ Respond with exactly this shape:
     return NextResponse.json({ valid: true, issue: null, message: null });
   }
 }
+
+export const POST = withAccess({ login: true }, _POST);

@@ -10,8 +10,9 @@ import {
   storyStyleGuide,
 } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function GET(
+async function _GET(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -114,7 +115,7 @@ export async function GET(
   });
 }
 
-export async function PATCH(
+async function _PATCH(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -140,3 +141,6 @@ export async function PATCH(
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+export const GET = withAccess({ story: { param: "id" } }, _GET);
+export const PATCH = withAccess({ story: { param: "id" } }, _PATCH);

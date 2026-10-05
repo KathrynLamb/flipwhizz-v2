@@ -16,6 +16,7 @@ import {
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { withAccess } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ type EmitCoverPlanInput = {
    ROUTE — INTERPRET
 ====================================================== */
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { storyId } = await req.json();
 
@@ -305,3 +306,5 @@ ${styleGuide ? JSON.stringify(styleGuide) : "None"}
     );
   }
 }
+
+export const POST = withAccess({ story: { body: "storyId" } }, _POST);

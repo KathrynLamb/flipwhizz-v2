@@ -3,10 +3,11 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
-export async function PATCH(
+async function _PATCH(
   req: Request,
   ctx: { params: Promise<{ id: string }> }
 ) {
@@ -44,7 +45,7 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
+async function _DELETE(
   req: Request,
   ctx: { params: Promise<{ id: string }> }
 ) {
@@ -70,3 +71,6 @@ export async function DELETE(
     );
   }
 }
+
+export const PATCH = withAccess({ character: { param: "id" } }, _PATCH);
+export const DELETE = withAccess({ character: { param: "id" } }, _DELETE);

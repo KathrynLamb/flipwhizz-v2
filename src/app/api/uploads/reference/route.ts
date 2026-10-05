@@ -7,6 +7,7 @@ import heicConvert from "heic-convert";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -30,7 +31,7 @@ async function maybeConvertHeic(buffer: Buffer, filename: string) {
   }
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const form = await req.formData();
     const file = form.get("file");
@@ -76,3 +77,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: err.message || "Upload failed" }, { status: 500 });
   }
 }
+
+export const POST = withAccess({ character: { form: "characterId" } }, _POST);

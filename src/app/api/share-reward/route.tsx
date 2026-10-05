@@ -6,10 +6,11 @@ import { promoCodes, users } from "@/db/schema";
 import { eq, like, and } from "drizzle-orm";
 import { Resend } from "resend";
 import { nanoid } from "nanoid";
+import { withAccess } from "@/lib/authz";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { email, childName } = await req.json();
 
@@ -143,3 +144,5 @@ function shareRewardEmailHtml({ code, childName }: { code: string; childName: st
 </body>
 </html>`;
 }
+
+export const POST = withAccess({ login: true }, _POST, { bodyEmailField: "email" });

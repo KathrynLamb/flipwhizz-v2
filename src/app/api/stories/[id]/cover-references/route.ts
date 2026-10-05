@@ -13,8 +13,9 @@ import {
   storyStyleGuide, storyPages,
 } from "@/db/schema";
 import { eq, inArray, asc, sql } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function GET(
+async function _GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -140,3 +141,5 @@ export async function GET(
     return NextResponse.json({ error: "Failed to load cover references" }, { status: 500 });
   }
 }
+
+export const GET = withAccess({ story: { param: "id" } }, _GET);

@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { eq, inArray, or } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { withAccess } from "@/lib/authz";
 
 type GenerateSpreadRequestBody = {
   leftPageId?: string;
@@ -27,7 +28,7 @@ type GenerateSpreadRequestBody = {
   };
 };
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -280,3 +281,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

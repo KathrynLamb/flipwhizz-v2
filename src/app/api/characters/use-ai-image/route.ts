@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { withAccess } from "@/lib/authz";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -743,7 +744,7 @@ async function generatePortrait(args: {
 /* POST HANDLER                                                        */
 /* ------------------------------------------------------------------ */
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { characterId, outfitMode } = (await req.json()) as {
       characterId?: string;
@@ -1021,3 +1022,5 @@ Do not drift into a generic face and do not make it photorealistic.`,
     );
   }
 }
+
+export const POST = withAccess({ character: { body: "characterId" } }, _POST);

@@ -1,6 +1,7 @@
 // src/app/api/stories/[id]/edit-with-claude/route.ts
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ function extractClaudeText(content: any[]): string {
     .trim();
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { storyId, page, history = [] } = await req.json();
 
@@ -78,3 +79,5 @@ RULES:
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

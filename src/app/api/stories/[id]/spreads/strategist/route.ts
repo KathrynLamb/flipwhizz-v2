@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -593,7 +594,7 @@ async function buildAnthropicUserContent(
 /*                                    Route                                   */
 /* -------------------------------------------------------------------------- */
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -792,3 +793,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

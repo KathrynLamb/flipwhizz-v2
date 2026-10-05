@@ -21,6 +21,7 @@ import { v4 as uuid } from "uuid";
 import { worlds, worldReaders } from "@/db/schema-worlds";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { withAlerts } from "@/lib/alerts";
+import { withAccess } from "@/lib/authz";
 
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("Missing ANTHROPIC_API_KEY environment variable");
@@ -923,4 +924,4 @@ JSON OUTPUT — no markdown, no preamble, ONLY this structure:
   });
 }
 
-export const POST = withAlerts("api/stories/create-from-chat", _POST, { severity: "critical" });
+export const POST = withAlerts("api/stories/create-from-chat", withAccess({ project: { body: "projectId" } }, _POST), { severity: "critical" });

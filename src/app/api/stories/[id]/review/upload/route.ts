@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
 import heicConvert from "heic-convert";
+import { withAccess } from "@/lib/authz";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -32,7 +33,7 @@ async function maybeConvertHeic(buffer: Buffer, filename: string) {
   }
 }
 
-export async function POST(
+async function _POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -85,3 +86,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

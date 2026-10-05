@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyPages } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 // This is your existing PATCH handler for updating pages
-export async function PATCH(
+async function _PATCH(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -36,7 +37,7 @@ export async function PATCH(
 }
 
 // Add a GET handler for fetching pages
-export async function GET(
+async function _GET(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -61,3 +62,6 @@ export async function GET(
   }
 }
  
+
+export const PATCH = withAccess({ story: { param: "id" } }, _PATCH);
+export const GET = withAccess({ story: { param: "id" } }, _GET);

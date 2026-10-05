@@ -4,12 +4,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { storyId, feedback, referenceImageUrl } = await req.json();
 
@@ -118,3 +119,5 @@ Please analyze both the feedback and the reference image to create an updated, d
     );
   }
 }
+
+export const POST = withAccess({ story: { body: "storyId" } }, _POST);

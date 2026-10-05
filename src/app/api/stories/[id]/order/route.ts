@@ -10,6 +10,7 @@ import { getPrintSpec } from "@/lib/printSpecs";
 import { sendOrderConfirmation } from "@/lib/emails/sendOrderConfirmation";
 import { resend } from "@/lib/resend";
 import { withAlerts } from "@/lib/alerts";
+import { withAccess } from "@/lib/authz";
 
 
 export const runtime = "nodejs";
@@ -254,4 +255,4 @@ async function _POST(
   }
 }
 
-export const POST = withAlerts("api/stories/[id]/order", _POST, { severity: "critical" });
+export const POST = withAlerts("api/stories/[id]/order", withAccess({ story: { param: "id" } }, _POST), { severity: "critical" });

@@ -19,8 +19,9 @@ import {
   characterStoryOutfits,
 } from "@/db/schema";
 import { eq, inArray, asc, desc, or, sql, and } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function GET(
+async function _GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -205,3 +206,5 @@ export async function GET(
     promptParts,
   });
 }
+
+export const GET = withAccess({ admin: true }, _GET);

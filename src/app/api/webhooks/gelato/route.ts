@@ -14,9 +14,28 @@ import { orders, stories, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { sendOrderShipped } from "@/lib/emails/sendOrderShipped";
 import { sendOrderFailed } from "@/lib/emails/sendOrderFailed";
-import { withAlerts } from "@/lib/alerts";
+import { withAlerts, sendAlert } from "@/lib/alerts";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "katylamb2000@gmail.com";
+
+async function fetchGelatoStatus(
+  gelatoOrderId: string,
+): Promise<{ status?: string | "not_found"; error?: string }> {
+  if (!process.env.GELATO_API_KEY) return { error: "GELATO_API_KEY missing" };
+  try {
+    const res = await fetch(
+      `https://order.gelatoapis.com/v4/orders/${encodeURIComponent(gelatoOrderId)}`,
+      { headers: { "X-API-KEY": process.env.GELATO_API_KEY }, cache: "no-store" },
+    );
+    if (res.status === 404) return { status: "not_found" };
+    if (!res.ok) return { error: `Gelato API ${res.status}` };
+    const data = (await res.json()) as { fulfillmentStatus?: string; status?: string };
+    const st = (data.fulfillmentStatus ?? data.status ?? "").toLowerCase();
+    return st ? { status: st } : { error: "No status in Gelato API response" };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 async function _POST(req: Request) {
   let payload: any;
@@ -36,7 +55,9 @@ async function _POST(req: Request) {
   // We handle the two most common layouts here.
   const orderData = payload.order ?? payload;
   const gelatoOrderId: string | null = orderData.id ?? payload.orderId ?? null;
-  const gelatoStatus: string = (orderData.status ?? payload.status ?? "").toLowerCase();
+  let gelatoStatus: string = (
+    orderData.fulfillmentStatus ?? orderData.status ?? payload.fulfillmentStatus ?? payload.status ?? ""
+  ).toLowerCase();
 
   // Tracking — may come from fulfillments array or top-level
   const fulfillment = orderData.fulfillments?.[0] ?? payload.fulfillments?.[0];
@@ -61,6 +82,36 @@ async function _POST(req: Request) {
   if (!gelatoStatus) {
     console.warn("⚠️  Gelato webhook: no status in payload for order", gelatoOrderId);
     return NextResponse.json({ ok: true });
+  }
+
+  // ── Verify with Gelato ──────────────────────────────────────────────────────
+  // Webhooks aren't signed, so ask Gelato for the real status rather than
+  // trusting the payload. If Gelato can't be reached, fall back to the
+  // payload (so real updates are never dropped) and alert.
+  const verified = await fetchGelatoStatus(gelatoOrderId);
+  if (verified.status === "not_found") {
+    await sendAlert({
+      area: "api/webhooks/gelato",
+      title: "Gelato webhook for an order Gelato doesn't know",
+      severity: "warning",
+      error: `Order ${gelatoOrderId} not found at Gelato; webhook ignored`,
+      context: { payloadStatus: gelatoStatus },
+    });
+    return NextResponse.json({ ok: true });
+  }
+  if (verified.status) {
+    if (verified.status !== gelatoStatus) {
+      console.warn(`⚠️  Gelato webhook status "${gelatoStatus}" differs from API "${verified.status}"; using API`);
+    }
+    gelatoStatus = verified.status;
+  } else {
+    await sendAlert({
+      area: "api/webhooks/gelato",
+      title: "Couldn't verify Gelato webhook",
+      severity: "warning",
+      error: verified.error ?? "unknown",
+      context: { gelatoOrderId, payloadStatus: gelatoStatus },
+    });
   }
 
   // ── Find the order ─────────────────────────────────────────────────────────

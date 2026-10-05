@@ -13,6 +13,7 @@ import {
   type CurrencyCode,
 } from "@/lib/pricing";
 import { withAlerts } from "@/lib/alerts";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -214,4 +215,4 @@ async function _POST(req: Request) {
   }
 }
 
-export const POST = withAlerts("api/paypal/order", _POST, { severity: "critical" });
+export const POST = withAlerts("api/paypal/order", withAccess({ story: { body: "storyId" } }, _POST), { severity: "critical" });

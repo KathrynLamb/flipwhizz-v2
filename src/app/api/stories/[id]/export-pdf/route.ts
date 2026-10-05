@@ -6,10 +6,11 @@ import { eq, asc } from "drizzle-orm";
 import path from "path";
 import fs from "fs/promises";
 import { exportInteriorPDF } from "print/gelato/exportInteriorPDF";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
-export async function POST(
+async function _POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -114,3 +115,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

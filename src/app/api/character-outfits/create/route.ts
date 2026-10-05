@@ -4,8 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { characterStoryOutfits } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const body = await req.json();
 
@@ -90,3 +91,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const POST = withAccess({ story: { body: "storyId" } }, _POST);

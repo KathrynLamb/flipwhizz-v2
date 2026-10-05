@@ -8,8 +8,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyPages } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function GET(
+async function _GET(
   _req: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
@@ -56,3 +57,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withAccess({ login: true }, _GET);

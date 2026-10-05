@@ -5,8 +5,9 @@ import { db } from "@/db";
 import { coverChatSessions, coverChatMessages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { withAccess } from "@/lib/authz";
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { storyId, role, content } = await req.json();
 
@@ -62,3 +63,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withAccess({ story: { body: "storyId" } }, _POST);

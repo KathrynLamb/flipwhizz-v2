@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import type { StepKey } from "@/lib/storySteps";
+import { withAccess } from "@/lib/authz";
 
 type Context = {
   params: Promise<{ id: string }>;
@@ -31,7 +32,7 @@ const VALID_STEPS: StepKey[] = [
  * if it isn't already there. Idempotent — calling twice
  * with the same step is a no-op.
  */
-export async function POST(req: Request, { params }: Context) {
+async function _POST(req: Request, { params }: Context) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
@@ -116,3 +117,5 @@ export async function POST(req: Request, { params }: Context) {
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

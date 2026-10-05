@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyEditSessions, storyEditMessages } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function GET(
+async function _GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -49,7 +50,7 @@ export async function GET(
   }
 }
 
-export async function POST(
+async function _POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -108,3 +109,6 @@ export async function POST(
     );
   }
 }
+
+export const GET = withAccess({ story: { param: "id" } }, _GET);
+export const POST = withAccess({ story: { param: "id" } }, _POST);

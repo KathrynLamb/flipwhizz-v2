@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characters, characterStoryOutfits } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 /**
  * POST /api/characters/[id]/accept-suggestions
@@ -18,7 +19,7 @@ import { eq, and } from "drizzle-orm";
  *   outfitLabel?: string,           // e.g. "casual summer"
  * }
  */
-export async function POST(
+async function _POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -140,3 +141,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ character: { param: "id" } }, _POST);

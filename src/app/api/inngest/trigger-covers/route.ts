@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { inngest } from "@/inngest/client";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { storyId } = await req.json();
 
@@ -28,3 +29,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withAccess({ story: { body: "storyId" } }, _POST);

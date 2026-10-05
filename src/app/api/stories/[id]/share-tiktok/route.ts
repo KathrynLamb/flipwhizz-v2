@@ -4,8 +4,9 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { db } from "@/db";
 import { users, stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function POST(
+async function _POST(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
   ) {
@@ -131,3 +132,5 @@ export async function POST(
     publishId: tiktokData.data?.publish_id,
   });
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

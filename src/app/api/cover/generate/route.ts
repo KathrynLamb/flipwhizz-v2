@@ -5,10 +5,11 @@ import { db } from "@/db";
 import { coverChatSessions } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { withAccess } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { storyId, sessionId } = await req.json();
     console.log('storyId, sessionId', storyId, sessionId)
@@ -72,3 +73,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withAccess({ story: { body: "storyId" } }, _POST);

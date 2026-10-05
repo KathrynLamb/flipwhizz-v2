@@ -17,6 +17,7 @@ import {
 import { eq, and, inArray } from "drizzle-orm";
 
 import { NextResponse } from "next/server";
+import { withAccess } from "@/lib/authz";
 
 type OutfitOption = {
   outfitKey: string;
@@ -42,7 +43,7 @@ function uniqueIds(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
 
-export async function GET(
+async function _GET(
   _req: Request,
   { params }: { params: Promise<{ id: string; spreadId: string }> }
 ) {
@@ -390,3 +391,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withAccess({ story: { param: "id" } }, _GET);

@@ -3,10 +3,11 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyStyleGuide, styleGuideImages } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
-export async function POST(
+async function _POST(
   req: Request,
   ctx: { params: Promise<{ styleGuideId: string }> }
 ) {
@@ -64,3 +65,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ styleGuide: { param: "styleGuideId" } }, _POST);

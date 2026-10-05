@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { chatSessions, chatMessages } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function GET(req: Request) {
+async function _GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get("projectId");
@@ -53,3 +54,5 @@ export async function GET(req: Request) {
     );
   }
 }
+
+export const GET = withAccess({ project: { query: "projectId" } }, _GET);

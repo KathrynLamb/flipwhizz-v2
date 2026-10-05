@@ -6,11 +6,12 @@ import { eq } from "drizzle-orm";
 
 import { v4 as uuidv4 } from "uuid";
 import { createGelatoOrder } from "print/gelato/createOrder";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(
+async function _POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -68,3 +69,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ admin: true }, _POST);

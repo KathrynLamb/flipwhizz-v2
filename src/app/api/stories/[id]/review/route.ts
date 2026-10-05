@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { stories, reviews, promoCodes, projects } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
+import { withAccess } from "@/lib/authz";
 
 // ─── Generate a unique promo code ───
 function generatePromoCode(): string {
@@ -19,7 +20,7 @@ function generatePromoCode(): string {
 }
 
 // ─── Main handler ───
-export async function POST(
+async function _POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -147,3 +148,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

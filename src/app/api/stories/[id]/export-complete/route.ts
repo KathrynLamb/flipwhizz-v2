@@ -8,11 +8,12 @@ import { uploadPdfToR2 } from "@/lib/uploadPdfToR2";
 import { postProcessPdf } from "@/lib/postProcessPdf";
 import { exportCompletePDF } from "print/gelato/exportCompletePDF";
 import { getPrintSpec } from "@/lib/printSpecs";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(
+async function _POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -242,3 +243,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

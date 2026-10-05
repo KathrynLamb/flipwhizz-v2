@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const body = await req.json();
 
@@ -42,3 +43,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withAccess({ character: { body: "characterId" } }, _POST);

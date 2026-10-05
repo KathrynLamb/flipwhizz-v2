@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 export const maxDuration = 30;
 
@@ -55,7 +56,7 @@ RESOLVED JSON SHAPE:
 
 IMPORTANT: The promptBase for this alien-device story concept should emphasise: bold graphic style, tech/screen aesthetic, alien UI elements, NOT soft watercolour or traditional storybook warmth — unless the parent specifically wants that contrast.`;
 
-export async function POST(
+async function _POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -138,3 +139,5 @@ export async function POST(
     return NextResponse.json({ error: "Chat failed" }, { status: 500 });
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

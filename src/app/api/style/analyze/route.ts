@@ -3,6 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 export const maxDuration = 60;
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
@@ -42,7 +43,7 @@ function assertValidOutput(data: any) {
    POST
 ------------------------------------------------------------ */
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { imageUrl, storyId } = await req.json();
 
@@ -142,3 +143,5 @@ Return JSON with EXACTLY these fields:
     );
   }
 }
+
+export const POST = withAccess({ story: { body: "storyId" }, optional: true }, _POST);

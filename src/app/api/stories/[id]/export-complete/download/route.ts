@@ -3,10 +3,11 @@
 import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
-export async function GET(
+async function _GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -32,3 +33,5 @@ export async function GET(
     return NextResponse.json({ error: "PDF not found" }, { status: 404 });
   }
 }
+
+export const GET = withAccess({ story: { param: "id" } }, _GET);

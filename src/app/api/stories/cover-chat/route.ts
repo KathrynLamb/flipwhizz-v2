@@ -19,6 +19,7 @@ import {
 } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { withAccess } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ const TOOL_NAME = "cover_chat_response";
 
 type CoverStage = "greeting" | "title" | "image" | "backcover" | "author" | "ready";
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const body = await req.json();
     const {
@@ -430,3 +431,5 @@ ${ctx.existingCoverUrl ? `If they want to modify the existing cover, use the "ed
 
   return `${base}\n\n${stageInstructions[ctx.stage]}`;
 }
+
+export const POST = withAccess({ story: { body: "storyId" } }, _POST);

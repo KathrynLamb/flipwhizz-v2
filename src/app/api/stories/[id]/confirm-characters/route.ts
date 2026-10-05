@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories, storyCharacters, characters } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 /* ------------------------------------------------------------------
    POST /api/stories/[id]/confirm-characters
 ------------------------------------------------------------------ */
 
-export async function POST(
+async function _POST(
   _req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -61,3 +62,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

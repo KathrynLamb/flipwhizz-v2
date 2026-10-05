@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
 import { storyPages } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 /* -------------------- CLIENT -------------------- */
 
@@ -12,7 +13,7 @@ const client = new Anthropic({
 
 /* -------------------- ROUTE -------------------- */
 
-export async function POST(
+async function _POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ): Promise<Response> {
@@ -126,3 +127,5 @@ Do not include any preamble, explanation, or markdown code blocks.`;
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

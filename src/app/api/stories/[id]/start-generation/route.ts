@@ -1,6 +1,7 @@
 // api/stories/[id]/start-generation
 import { inngest } from "@/inngest/client";
 import { NextResponse } from "next/server";
+import { withAccess } from "@/lib/authz";
 
 /**
  * Starts spread generation for a story.
@@ -10,7 +11,7 @@ import { NextResponse } from "next/server";
  * - Workflow state transitions must be handled exclusively via:
  *   POST /api/stories/[id]/status
  */
-export async function POST(
+async function _POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -31,3 +32,5 @@ export async function POST(
 
   return NextResponse.json({ success: true });
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

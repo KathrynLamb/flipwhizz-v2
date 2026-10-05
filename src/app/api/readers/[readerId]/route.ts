@@ -3,8 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { readers } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function PATCH(
+async function _PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ readerId: string }> }
 ) {
@@ -20,3 +21,5 @@ export async function PATCH(
 
   return NextResponse.json({ ok: true });
 }
+
+export const PATCH = withAccess({ reader: { param: "readerId" } }, _PATCH);

@@ -14,6 +14,7 @@ import {
 } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
@@ -52,7 +53,7 @@ function extractClaudeText(content: any[]): string {
     .trim();
 }
 
-export async function POST(
+async function _POST(
   request: NextRequest,
   context: { params: Promise<{ projectId: string }> }
 ) {
@@ -228,3 +229,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ project: { param: "projectId" } }, _POST);

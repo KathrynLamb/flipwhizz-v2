@@ -11,11 +11,12 @@ import {
   locations,
   storyStyleGuide,
 } from "@/db/schema";
+import { withAccess } from "@/lib/authz";
 
 
 export const runtime = "nodejs";
 
-export async function GET(
+async function _GET(
   req: Request,
   ctx: { params: Promise<{ projectId: string }> }
 ) {
@@ -114,3 +115,5 @@ const styleGuide = await db
     );
   }
 }
+
+export const GET = withAccess({ project: { param: "projectId" } }, _GET);

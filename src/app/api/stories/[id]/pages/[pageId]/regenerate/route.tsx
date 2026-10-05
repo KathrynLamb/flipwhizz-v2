@@ -3,8 +3,9 @@ import { inngest } from "@/inngest/client";
 import { db } from "@/db";
 import { storyPages, storySpreads } from "@/db/schema";
 import { eq, or } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function POST(
+async function _POST(
   req: Request,
   context: { params: Promise<{ id: string; pageId: string }> }
 ) {
@@ -89,3 +90,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

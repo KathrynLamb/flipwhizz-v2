@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function GET(req: Request) {
+async function _GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const storyId = searchParams.get("storyId");
 
@@ -53,3 +54,5 @@ export async function GET(req: Request) {
 
   return NextResponse.json(readiness);
 }
+
+export const GET = withAccess({ story: { query: "storyId" } }, _GET);

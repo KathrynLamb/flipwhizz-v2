@@ -24,6 +24,7 @@ import {
   storyLocations,
 } from "@/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -317,7 +318,7 @@ async function applyMutations(storyId: string, mutations: StyleMutation[]) {
   }
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -427,3 +428,5 @@ export async function POST(
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

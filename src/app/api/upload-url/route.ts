@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bucket } from "@/lib/firebaseAdmin";
 import { v4 as uuid } from "uuid";
+import { withAccess } from "@/lib/authz";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const { fileType, storyId } = await req.json();
 
@@ -33,3 +34,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to create upload URL" }, { status: 500 });
   }
 }
+
+export const POST = withAccess({ story: { body: "storyId" }, optional: true }, _POST);

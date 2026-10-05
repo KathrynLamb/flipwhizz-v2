@@ -10,6 +10,7 @@ import {
   type ProductType,
   type CurrencyCode,
 } from "@/lib/pricing";
+import { withAccess } from "@/lib/authz";
 
 const ALLOWED_PRODUCT_TYPES = ["digital", "print", "gift"] as const;
 const ALLOWED_CURRENCIES: CurrencyCode[] = ["GBP", "USD", "EUR", "AUD"];
@@ -32,7 +33,7 @@ function requiresShipping(productType: ProductType): boolean {
   return productType !== "digital";
 }
 
-export async function GET(
+async function _GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -69,7 +70,7 @@ export async function GET(
   });
 }
 
-export async function PUT(
+async function _PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -127,3 +128,6 @@ export async function PUT(
     productSelected: true,
   });
 }
+
+export const GET = withAccess({ story: { param: "id" } }, _GET);
+export const PUT = withAccess({ story: { param: "id" } }, _PUT);

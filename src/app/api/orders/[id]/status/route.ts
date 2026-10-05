@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function GET(
+async function _GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -27,3 +28,5 @@ export async function GET(
     shippingAddress: order.shippingAddress,
   });
 }
+
+export const GET = withAccess({ order: { param: "id" } }, _GET);

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyWorkflowProgress } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 /**
  * GET /api/stories/[id]/workflow-progress
@@ -10,7 +11,7 @@ import { eq } from "drizzle-orm";
  * Returns the current workflow progress for a story.
  * Used by the ExtractWorldPage to poll for status updates.
  */
-export async function GET(
+async function _GET(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -67,3 +68,5 @@ export async function GET(
     },
   });
 }
+
+export const GET = withAccess({ story: { param: "id" } }, _GET);

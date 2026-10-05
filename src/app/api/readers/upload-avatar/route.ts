@@ -5,8 +5,9 @@ import { readers } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebaseClient";
+import { withAccess } from "@/lib/authz";
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const formData = await req.formData();
   const file = formData.get("file") as File;
   const readerId = formData.get("readerId") as string;
@@ -30,3 +31,5 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true, url });
 }
+
+export const POST = withAccess({ reader: { form: "readerId" } }, _POST);

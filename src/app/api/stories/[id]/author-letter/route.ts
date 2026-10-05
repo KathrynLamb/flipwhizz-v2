@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -164,7 +165,7 @@ ${excerpt}
    ROUTE
 ====================================================== */
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const body = await req.json();
     const { title, pages, storyId } = body;
@@ -279,3 +280,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

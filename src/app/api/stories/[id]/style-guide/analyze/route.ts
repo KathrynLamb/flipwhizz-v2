@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { withAccess } from "@/lib/authz";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -88,7 +89,7 @@ Analyse ONLY the artistic style — not the subject matter of the image. Study: 
 /*                                   ROUTE                                    */
 /* -------------------------------------------------------------------------- */
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -186,3 +187,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

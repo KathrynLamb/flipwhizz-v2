@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characterStoryOutfits } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function PATCH(
+async function _PATCH(
   req: Request,
   { params }: { params: Promise<{ storyId: string; outfitId: string }> }
 ) {
@@ -38,3 +39,5 @@ export async function PATCH(
     );
   }
 }
+
+export const PATCH = withAccess({ story: { param: "id" } }, _PATCH);

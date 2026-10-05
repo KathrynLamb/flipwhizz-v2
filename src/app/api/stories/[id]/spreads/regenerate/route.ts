@@ -8,6 +8,7 @@ import {
   storyPageLocations,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 const MAX_FEATURED_CHARACTERS = 5;
 
@@ -15,7 +16,7 @@ function uniqueIds(values: string[] | undefined | null) {
   return [...new Set((values ?? []).filter(Boolean))];
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -259,3 +260,5 @@ export async function POST(
     status: "started",
   });
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

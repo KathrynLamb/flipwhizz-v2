@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { locations } from "@/db/schema";
+import { withAccess } from "@/lib/authz";
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { locationId } = await req.json();
 
@@ -29,3 +30,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withAccess({ location: { body: "locationId" } }, _POST);

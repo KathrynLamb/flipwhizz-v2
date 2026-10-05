@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { orders, stories } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(
+async function _GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -63,3 +64,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withAccess({ story: { param: "id" } }, _GET);

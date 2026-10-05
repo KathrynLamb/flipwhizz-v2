@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { coverChatSessions, coverChatMessages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { withAccess } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ function deepMerge(
    ROUTE — REFINE
 ====================================================== */
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const { sessionId, message } = await req.json();
 
@@ -214,3 +215,5 @@ return NextResponse.json({
     );
   }
 }
+
+export const POST = withAccess({ coverSession: { body: "sessionId" } }, _POST);

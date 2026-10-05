@@ -8,6 +8,7 @@ import { createGelatoOrder } from "print/gelato/createOrder";
 import { storyProducts } from "@/db/schema";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { withAlerts } from "@/lib/alerts";
+import { withAccess } from "@/lib/authz";
 
 
 interface CreateOrderRequest {
@@ -174,4 +175,4 @@ async function _POST(req: Request) {
   }
 }
 
-export const POST = withAlerts("api/orders/create", _POST, { severity: "critical" });
+export const POST = withAlerts("api/orders/create", withAccess({ story: { body: "storyId" } }, _POST, { bodyUserIdField: "userId" }), { severity: "critical" });

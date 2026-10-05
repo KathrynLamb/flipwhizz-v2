@@ -3,11 +3,12 @@ import { db } from "@/db";
 import { stories, orders } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(
+async function _POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -57,3 +58,5 @@ export async function POST(
     message: "Character avatar generation started",
   });
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

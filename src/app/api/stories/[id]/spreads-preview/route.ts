@@ -13,8 +13,9 @@ import {
   storyLocations,
 } from "@/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function GET(
+async function _GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -186,3 +187,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withAccess({ story: { param: "id" } }, _GET);

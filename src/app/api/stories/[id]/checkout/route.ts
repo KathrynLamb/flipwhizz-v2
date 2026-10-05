@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { withAlerts } from "@/lib/alerts";
+import { withAccess } from "@/lib/authz";
 
 /**
  * Records a payment reference on a story.
@@ -46,4 +47,4 @@ async function _POST(
   }
 }
 
-export const POST = withAlerts("api/stories/[id]/checkout", _POST, { severity: "critical" });
+export const POST = withAlerts("api/stories/[id]/checkout", withAccess({ story: { param: "id" } }, _POST), { severity: "critical" });

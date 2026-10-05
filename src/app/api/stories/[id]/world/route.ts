@@ -1,3 +1,4 @@
+import { withAccess } from "@/lib/authz";
 // import { db } from "@/db";
 // import {
 //   stories,
@@ -160,7 +161,7 @@ import {
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-export async function GET(
+async function _GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -248,3 +249,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withAccess({ story: { param: "id" } }, _GET);

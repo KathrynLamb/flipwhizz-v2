@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
+import { withAccess } from "@/lib/authz";
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -42,3 +43,5 @@ export async function POST(
 
   return NextResponse.json({ ok: true, completedSteps: updated });
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

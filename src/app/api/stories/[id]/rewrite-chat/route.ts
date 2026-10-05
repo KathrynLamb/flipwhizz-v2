@@ -11,13 +11,14 @@ import {
 } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { withAccess } from "@/lib/authz";
 
 export const maxDuration = 30; // web search adds latency
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 const MODEL = "claude-sonnet-4-6"; // ✅ updated — sonnet-4-20250514 retires June 15
 
-export async function POST(
+async function _POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ): Promise<Response> {
@@ -192,3 +193,5 @@ const messages = [
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

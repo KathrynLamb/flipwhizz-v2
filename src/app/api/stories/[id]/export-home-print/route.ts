@@ -6,6 +6,7 @@ import { stories, storyPages } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { uploadPdfToR2 } from "@/lib/uploadPdfToR2";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ const CREAM_R = 0.996;
 const CREAM_G = 0.988;
 const CREAM_B = 0.98;
 
-export async function POST(
+async function _POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -350,3 +351,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

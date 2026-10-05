@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { withAccess } from "@/lib/authz";
 
 /* ======================================================
    CLIENT
@@ -62,7 +63,7 @@ function extractJsonFromClaude(response: any) {
    ROUTE
 ====================================================== */
 
-export async function POST(
+async function _POST(
   _req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -236,3 +237,5 @@ JSON ONLY.
     intent: parsed,
   });
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

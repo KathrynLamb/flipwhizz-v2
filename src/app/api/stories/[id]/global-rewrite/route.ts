@@ -6,6 +6,7 @@ import { stories, storyPages } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { extractInsightsFromRewriteChat } from "@/lib/extractRewriteInsights";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,7 +75,7 @@ RULES:
   return txt.startsWith("{") ? txt : `{${txt}`;
 }
 
-export async function POST(
+async function _POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -256,3 +257,5 @@ RULES:
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

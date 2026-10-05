@@ -329,6 +329,23 @@ export async function runHealthCheck(): Promise<HealthReport> {
     ),
   ]);
 
+  // Hide Katy's own test accounts. Add more with HEALTH_IGNORE_EMAILS
+  // (comma-separated) in Vercel.
+  const ignore = new Set(
+    [
+      process.env.ADMIN_EMAIL,
+      "katylamb2000@gmail.com",
+      "katy@flipwhizz.co.uk",
+      "hello@flipwhizz.com",
+      ...(process.env.HEALTH_IGNORE_EMAILS ?? "").split(","),
+    ]
+      .map((e) => (e ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  for (const sec of sections) {
+    sec.rows = sec.rows.filter((r) => !r.userEmail || !ignore.has(r.userEmail.toLowerCase()));
+  }
+
   // A chat that promised a story also counts as a long chat; show it once.
   const promised = new Set(
     sections.find((x) => x.key === "chat_promised_no_story")?.rows.map((r) => r.link) ?? [],

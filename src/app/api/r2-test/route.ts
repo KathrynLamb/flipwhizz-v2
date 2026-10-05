@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import crypto from "crypto";
+import { withAccess } from "@/lib/authz";
 
 function hmac(key: Buffer | string, data: string) {
   return crypto.createHmac("sha256", key).update(data).digest();
@@ -10,7 +11,7 @@ function sha256(data: Buffer | string) {
   return crypto.createHash("sha256").update(data).digest("hex");
 }
 
-export async function GET() {
+async function _GET() {
   const accountId = process.env.R2_ACCOUNT_ID!;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY!;
@@ -75,3 +76,5 @@ export async function GET() {
     { status: 200 }
   );
 }
+
+export const GET = withAccess({ admin: true }, _GET);

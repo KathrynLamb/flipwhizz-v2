@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { v2 as cloudinary } from "cloudinary";
 import { Readable } from "node:stream";
 import { v4 as uuid } from "uuid";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -65,7 +66,7 @@ async function uploadToCloudinary(
 
 /* ---------------- Route ---------------- */
 
-export async function POST(
+async function _POST(
   _req: Request,
   ctx: { params: Promise<{ id: string }> }
 ) {
@@ -150,3 +151,5 @@ Description: ${character.description ?? ""}
     );
   }
 }
+
+export const POST = withAccess({ character: { param: "id" } }, _POST);

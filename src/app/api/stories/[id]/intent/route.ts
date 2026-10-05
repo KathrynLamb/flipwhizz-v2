@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { storyIntent } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function GET(
+async function _GET(
   _req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -16,3 +17,5 @@ export async function GET(
 
   return NextResponse.json({ intent });
 }
+
+export const GET = withAccess({ story: { param: "id" } }, _GET);

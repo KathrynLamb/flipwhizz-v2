@@ -18,6 +18,7 @@ import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import type { InferSelectModel } from "drizzle-orm";
 import { withAlerts } from "@/lib/alerts";
+import { withAccess } from "@/lib/authz";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -665,4 +666,4 @@ export function prepareStoryGenerationPrompt(
   };
 }
 
-export const POST = withAlerts("api/chat", _POST);
+export const POST = withAlerts("api/chat", withAccess([{ project: { body: "projectId" } }, { reader: { body: "readerId" }, world: { body: "worldId" }, optional: true }], _POST));

@@ -17,13 +17,14 @@ import {
   type CurrencyCode,
 } from "@/lib/pricing";
 import { captureServerEvent } from "@/lib/posthog-server";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const VALID_PRODUCTS: ProductType[] = ["digital", "print", "gift"];
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -134,3 +135,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

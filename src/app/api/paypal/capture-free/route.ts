@@ -7,6 +7,7 @@ import { eq, sql } from "drizzle-orm";
 import { auth } from "@/auth";
 import { inngest } from "@/inngest/client";
 import { withAlerts } from "@/lib/alerts";
+import { withAccess } from "@/lib/authz";
 
 async function _POST(req: NextRequest) {
   try {
@@ -86,4 +87,4 @@ async function _POST(req: NextRequest) {
   }
 }
 
-export const POST = withAlerts("api/paypal/capture-free", _POST, { severity: "critical" });
+export const POST = withAlerts("api/paypal/capture-free", withAccess({ story: { body: "storyId" } }, _POST), { severity: "critical" });

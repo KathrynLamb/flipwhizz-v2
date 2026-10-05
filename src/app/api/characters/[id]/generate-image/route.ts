@@ -4,6 +4,7 @@ import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v2 as cloudinary } from "cloudinary";
 import { Readable } from "node:stream";
+import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
@@ -56,7 +57,7 @@ async function uploadToCloudinary(
 
 /* ---------------- Route ---------------- */
 
-export async function POST(
+async function _POST(
   req: Request,
   ctx: { params: Promise<{ id: string }> }
 ) {
@@ -141,3 +142,5 @@ Description: ${character.description || "A friendly storybook character"}
 
   return Response.json({ imageUrl });
 }
+
+export const POST = withAccess({ character: { param: "id" } }, _POST);

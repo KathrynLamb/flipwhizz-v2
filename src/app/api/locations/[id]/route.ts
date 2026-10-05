@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
+import { withAccess } from "@/lib/authz";
 
 /**
  * ensure-world
@@ -22,7 +23,7 @@ import { inngest } from "@/inngest/client";
    POST — ENSURE / DISPATCH
 ============================================================ */
 
-export async function POST(
+async function _POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -104,7 +105,7 @@ export async function POST(
    DELETE — HARD RESET WORLD
 ============================================================ */
 
-export async function DELETE(
+async function _DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -149,3 +150,6 @@ export async function DELETE(
     message: "World data deleted successfully",
   });
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);
+export const DELETE = withAccess({ story: { param: "id" } }, _DELETE);

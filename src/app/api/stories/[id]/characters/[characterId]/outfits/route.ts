@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { characterStoryOutfits } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: { id: string; characterId: string } }
 ) {
@@ -86,3 +87,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withAccess({ story: { param: "id" } }, _POST);

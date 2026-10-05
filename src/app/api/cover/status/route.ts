@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { bookCovers } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { withAccess } from "@/lib/authz";
 
 export const dynamic = "force-dynamic"; // prevent caching
 
-export async function GET(req: Request) {
+async function _GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get("jobId");
@@ -53,3 +54,5 @@ export async function GET(req: Request) {
     );
   }
 }
+
+export const GET = withAccess({ login: true }, _GET);
