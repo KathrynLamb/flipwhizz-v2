@@ -1,5 +1,5 @@
 // src/app/api/stories/create-from-chat/route.ts
-export const maxDuration = 60;
+export const maxDuration = 300; // two sequential Claude calls; long chats exceed 60s
 
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
