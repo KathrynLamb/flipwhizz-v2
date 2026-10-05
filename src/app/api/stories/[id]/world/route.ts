@@ -184,6 +184,9 @@ async function _GET(
         appearance: characters.appearance,
         portraitImageUrl: characters.portraitImageUrl,
         referenceImageUrl: characters.referenceImageUrl,
+        // Needed by the mobile character stack: it refreshes from this
+        // endpoint, and without `locked` every refresh wiped earlier locks.
+        locked: characters.locked,
         role: storyCharacters.role,
       })
       .from(storyCharacters)
@@ -226,6 +229,7 @@ async function _GET(
         description: locations.description,
         portraitImageUrl: locations.portraitImageUrl,
         referenceImageUrl: locations.referenceImageUrl,
+        locked: locations.locked,
         significance: storyLocations.significance,
       })
       .from(storyLocations)

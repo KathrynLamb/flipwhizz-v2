@@ -283,6 +283,10 @@ export default function MobileCoverChat({
   const inputRef         = useRef<HTMLTextAreaElement>(null);
   const hasStartedRef    = useRef(false);
   const knownCoverUrlRef = useRef<string | null>(localStory.coverSpreadUrl);
+  // Only trust the server status once the cover job has actually been
+  // triggered; before that it still shows the previous status and the poll
+  // would wrongly report "no image was created".
+  const coverJobStartedRef = useRef(false);
 
   const hasCovers          = !!localStory.coverSpreadUrl;
   const isGeneratingCovers = localStory.status === "generating_covers";
@@ -322,6 +326,7 @@ export default function MobileCoverChat({
     const interval = setInterval(async () => {
       try {
         pollCount++;
+        if (!coverJobStartedRef.current) return;
         const res  = await fetch(`/api/stories/${storyId}`);
         const data = await res.json();
         const newUrl    = data.story?.coverSpreadUrl;
@@ -438,6 +443,7 @@ export default function MobileCoverChat({
 
   async function handleGenerate() {
     knownCoverUrlRef.current = localStory.coverSpreadUrl; // snapshot current before regenerating
+    coverJobStartedRef.current = false;
     setLocalStory(s => ({ ...s, status: "generating_covers" }));
     setIsLoading(true);
     try {
@@ -445,7 +451,9 @@ export default function MobileCoverChat({
       if (strategyReply?.message) addAssistantMsg(strategyReply.message);
       setLocalStory(s => ({ ...s, status: "generating_covers" }));
       await fetch(`/api/stories/${storyId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "generating_covers" }) }).catch(() => {});
-      await fetch("/api/inngest/trigger-covers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storyId }) });
+      const trig = await fetch("/api/inngest/trigger-covers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storyId }) });
+      if (!trig.ok) throw new Error(`trigger-covers ${trig.status}`);
+      coverJobStartedRef.current = true;
     } catch {
       addAssistantMsg("Something went wrong starting cover generation. Please try again.");
     } finally {

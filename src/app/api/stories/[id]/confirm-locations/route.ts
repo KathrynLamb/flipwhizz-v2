@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories, locations, storyLocations } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { withAccess } from "@/lib/authz";
 
 async function _POST(
@@ -16,7 +16,9 @@ async function _POST(
     .update(locations)
     .set({ locked: true, lockedAt: new Date() })
     .where(
-      eq(
+      // inArray, not eq: a story has several locations, and "= (subquery)"
+      // errors in Postgres when the subquery returns more than one row.
+      inArray(
         locations.id,
         db
           .select({ id: storyLocations.locationId })

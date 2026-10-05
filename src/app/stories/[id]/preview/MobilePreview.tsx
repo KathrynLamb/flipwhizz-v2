@@ -16,6 +16,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import RedrawModal from "@/app/stories/[id]/studio/components/redrawModal";
+import { reportClientError } from "@/lib/reportClientError";
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                              */
@@ -98,6 +99,43 @@ export default function MobilePreview({
   const [textExpanded, setTextExpanded] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // First preview on a new story: the server may still be building the
+  // illustration prompts and replies 202 { buildingPrompts, retryAfter }
+  // with no jobId. We wait and retry instead of spinning forever.
+  const [preparing, setPreparing] = useState(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (retryTimerRef.current) clearTimeout(retryTimerRef.current); }, []);
+
+  /** POST generate-spread, retrying while prompts are being built. Returns a jobId or throws. */
+  async function requestSpread(body: Record<string, unknown>, attempt = 0): Promise<string> {
+    const res = await fetch(`/api/stories/${storyId}/generate-spread`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error((await res.text()) || "Request failed");
+    const data = await res.json();
+    if (data?.jobId) {
+      setPreparing(false);
+      return data.jobId as string;
+    }
+    if (data?.buildingPrompts && attempt < 4) {
+      setPreparing(true);
+      const waitMs = Math.min(Math.max(Number(data.retryAfter) || 35, 10), 60) * 1000;
+      await new Promise<void>((resolve) => {
+        retryTimerRef.current = setTimeout(resolve, waitMs);
+      });
+      return requestSpread(body, attempt + 1);
+    }
+    setPreparing(false);
+    reportClientError("generation_stalled", {
+      storyId,
+      message: data?.buildingPrompts
+        ? `Preview still waiting for prompts after ${attempt + 1} tries`
+        : "generate-spread returned no jobId",
+    });
+    throw new Error("We couldn't start your illustration just now. We've been alerted, so please try again in a minute.");
+  }
 
   /* ── Load spreads ── */
   useEffect(() => {
@@ -170,19 +208,14 @@ export default function MobilePreview({
     setError(null);
     setStatus("queued");
     try {
-      const res = await fetch(`/api/stories/${storyId}/generate-spread`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          leftPageId: selected.leftPageId,
-          rightPageId: selected.rightPageId,
-          pageLabel: selected.pageLabel,
-        }),
+      const id = await requestSpread({
+        leftPageId: selected.leftPageId,
+        rightPageId: selected.rightPageId,
+        pageLabel: selected.pageLabel,
       });
-      if (!res.ok) throw new Error((await res.text()) || "Request failed");
-      const data = await res.json();
-      setJobId(data.jobId);
+      setJobId(id);
       setStatus("generating");
+      // Only count the free preview as used once a real job has started.
       setPreviewGeneratedId(selected.spreadId);
     } catch (e: any) {
       setError(e.message);
@@ -197,10 +230,7 @@ export default function MobilePreview({
     setShowRedraw(false);
     setStatus("queued");
     try {
-      const res = await fetch(`/api/stories/${storyId}/generate-spread`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const id = await requestSpread({
           leftPageId: selected.leftPageId,
           rightPageId: selected.rightPageId,
           pageLabel: selected.pageLabel,
@@ -213,11 +243,8 @@ export default function MobilePreview({
             primaryLocationId: payload.primaryLocationId,
             includedLocationIds: payload.includedLocationIds,
           },
-        }),
       });
-      if (!res.ok) throw new Error((await res.text()) || "Request failed");
-      const data = await res.json();
-      setJobId(data.jobId);
+      setJobId(id);
       setStatus("generating");
     } catch (e: any) {
       setError(e.message);
@@ -325,7 +352,7 @@ export default function MobilePreview({
                 <Sparkles className="w-5 h-5 text-white" />
               </motion.div>
               <p className="text-xs font-bold relative z-10" style={{ color: resultImageUrl ? "white" : "#9B59D0" }}>
-                {status === "queued" ? "Queued…" : "Illustrating…"}
+                {preparing ? "Preparing your illustration… about a minute" : status === "queued" ? "Queued…" : "Illustrating…"}
               </p>
             </motion.div>
           )}
@@ -384,7 +411,7 @@ export default function MobilePreview({
             className="w-full py-3.5 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 opacity-50"
             style={{ background: "rgba(176,92,230,0.3)", border: "none", fontFamily: FONT }}>
             <Loader2 className="w-4 h-4 animate-spin" />
-            {status === "queued" ? "Queued…" : "Generating…"}
+            {preparing ? "Preparing…" : status === "queued" ? "Queued…" : "Generating…"}
           </button>
         )}
 
