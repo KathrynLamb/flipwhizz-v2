@@ -71,6 +71,14 @@ export default function ChatClient() {
   // Guard so the opener is only ever injected once per mount.
   const openerInjectedRef = useRef(false);
 
+  // Project mode: story creation. /api/chat returns readyToGenerate when the
+  // AI calls its start_writing tool. Something has to act on that and call
+  // /api/stories/create-from-chat, otherwise the user is told "I'm on it"
+  // and then nothing ever happens.
+  const [storyCreating, setStoryCreating] = useState(false);
+  const [storyError, setStoryError] = useState<string | null>(null);
+  const creationTriggeredRef = useRef(false);
+
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -107,6 +115,23 @@ export default function ChatClient() {
                 content: m.content,
               })),
             );
+          }
+          // If this project already has a story, go straight to it rather
+          // than leaving the user in a chat that has already finished.
+          try {
+            const storyRes = await fetch(
+              `/api/stories/by-project?projectId=${encodeURIComponent(projectId)}`,
+              { cache: "no-store" },
+            );
+            const storyData = await storyRes.json().catch(() => null);
+            if (!cancelled && storyData?.storyId) {
+              creationTriggeredRef.current = true;
+              setStoryCreating(true);
+              await waitForPagesAndNavigate(storyData.storyId);
+              return;
+            }
+          } catch (err) {
+            console.error("[chat] failed to check for existing story:", err);
           }
         } catch (err) {
           console.error("[chat] failed to load project history:", err);
@@ -223,6 +248,62 @@ export default function ChatClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reachedLimit]);
 
+  async function waitForPagesAndNavigate(nextStoryId: string) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const res = await fetch(`/api/stories/${nextStoryId}/pages`, {
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) break;
+      } catch {
+        /* keep polling */
+      }
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    window.location.href = `/stories/${nextStoryId}/pages`;
+  }
+
+  async function createStoryFromChat() {
+    if (!projectId) return;
+    if (creationTriggeredRef.current) return;
+    creationTriggeredRef.current = true;
+
+    setStoryCreating(true);
+    setStoryError(null);
+    posthog.capture("story_creation_started", { project_id: projectId });
+
+    try {
+      const res = await fetch("/api/stories/create-from-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.storyId) {
+        throw new Error(data?.error || "We could not start writing your story.");
+      }
+
+      posthog.capture("story_creation_succeeded", {
+        project_id: projectId,
+        story_id: data.storyId,
+      });
+      await waitForPagesAndNavigate(data.storyId);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "We could not start writing your story.";
+      console.error("[chat] story creation failed:", err);
+      posthog.capture("story_creation_failed", {
+        project_id: projectId,
+        error: message,
+      });
+      setStoryError(message);
+      setStoryCreating(false);
+      creationTriggeredRef.current = false;
+    }
+  }
+
   async function sendMessage() {
     if (!input.trim() || loading || reachedLimit) return;
 
@@ -277,6 +358,14 @@ export default function ChatClient() {
             "That sounds wonderful! Tell me a little more so I can start shaping the story.",
         },
       ]);
+
+      // The AI has decided it has enough to write the book. Give the user a
+      // moment to read the reply, then create the story.
+      if (isProjectMode && data?.readyToGenerate) {
+        window.setTimeout(() => {
+          void createStoryFromChat();
+        }, 1500);
+      }
     } catch (err) {
       const message =
         err instanceof Error
@@ -513,6 +602,54 @@ export default function ChatClient() {
             </motion.div>
           )}
 
+          {isProjectMode && messagesLoaded && messages.length === 0 && !storyCreating && (
+            <div className="flex items-end gap-2">
+              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
+                <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
+              </div>
+              <div className="max-w-[85%] rounded-[20px] rounded-bl-[4px] bg-[#9B88CF] px-5 py-3 shadow-sm">
+                <p className="text-[16px] leading-[1.4] text-white">
+                  Hi! I&apos;m your co-author. Tell me who this story is for
+                  and what they love, and we&apos;ll shape it together.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {isProjectMode && storyCreating && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-end gap-2"
+            >
+              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
+                <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
+              </div>
+              <div className="rounded-[20px] rounded-bl-[4px] bg-[#9B88CF] px-5 py-3 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-white" />
+                  <p className="text-[16px] font-semibold leading-[1.4] text-white">
+                    Writing your story… this takes about a minute.
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {isProjectMode && storyError && !storyCreating && (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+              <p className="text-sm font-medium text-rose-700">{storyError}</p>
+              <button
+                type="button"
+                onClick={() => void createStoryFromChat()}
+                className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#DB79AC] px-5 py-2.5 text-sm font-bold text-white"
+              >
+                <BookOpen className="h-4 w-4" />
+                Try writing my story again
+              </button>
+            </div>
+          )}
+
           <div ref={bottomRef} />
         </div>
       </div>
@@ -573,7 +710,7 @@ export default function ChatClient() {
                     ? "Demo complete. Continue to create your book"
                     : "Type your reply… a name, an age, what they love, anything"
                 }
-                disabled={loading || reachedLimit || creatingProject}
+                disabled={loading || reachedLimit || creatingProject || storyCreating}
                 rows={1}
                 className="max-h-[100px] w-full resize-none border-0 bg-transparent text-[16px] font-normal text-gray-900 outline-none placeholder:text-gray-500 focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ lineHeight: "1.4" }}
@@ -584,7 +721,7 @@ export default function ChatClient() {
               type="button"
               onClick={() => void sendMessage()}
               disabled={
-                !input.trim() || loading || reachedLimit || creatingProject
+                !input.trim() || loading || reachedLimit || creatingProject || storyCreating
               }
               className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full transition-all duration-200 active:scale-90 disabled:cursor-not-allowed"
               style={{
