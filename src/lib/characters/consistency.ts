@@ -41,7 +41,7 @@ cloudinary.config({
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const TEXT_MODEL = "gemini-2.5-flash";
 const IMAGE_MODEL = "gemini-3-pro-image-preview";
-const MAX_SHEET_IMAGES = 10;
+const MAX_SHEET_IMAGES = 14;
 const SHEET_VERSION = 1; // bump to force every story to rebuild its sheet
 
 export type CastSheet = {
@@ -243,7 +243,13 @@ export async function getCastSheet(storyId: string): Promise<CastSheet | null> {
 
     // Main characters' pictures first, so they get the image budget.
     const ordered = [...cast].sort((a, b) => {
-      const rank = (r: string | null) => (r === "protagonist" ? 0 : r === "supporting" ? 1 : 2);
+      // Roles in the DB are main / supporting / minor (older rows: protagonist).
+      const rank = (r: string | null) => {
+        const v = (r ?? "").toLowerCase();
+        if (v === "main" || v === "protagonist") return 0;
+        if (v === "supporting") return 1;
+        return 2;
+      };
       return rank(a.role) - rank(b.role);
     });
 
