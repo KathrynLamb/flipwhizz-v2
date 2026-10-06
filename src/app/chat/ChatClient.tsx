@@ -10,6 +10,7 @@ import { motion } from "framer-motion";
 import { Loader2, Send, Zap, BookOpen, Sparkles, User } from "lucide-react";
 import posthog from "posthog-js";
 import { reportClientError } from "@/lib/reportClientError";
+import { getDemoSessionId, clearDemoSessionId } from "@/lib/demo-session-utils";
 
 type ChatMsg = {
   role: "user" | "assistant";
@@ -79,6 +80,33 @@ export default function ChatClient() {
   const [storyCreating, setStoryCreating] = useState(false);
   const [storyError, setStoryError] = useState<string | null>(null);
   const creationTriggeredRef = useRef(false);
+
+  // Demo mode: /api/chat/demo requires a sessionId (it persists the demo
+  // chat so it can be migrated after sign-in). Without it every demo
+  // message failed with "Missing sessionId". Falls back to an in-memory id
+  // if localStorage is blocked (some private-browsing modes).
+  const demoSessionFallbackRef = useRef<string | null>(null);
+  function demoSessionId(): string {
+    try {
+      return getDemoSessionId();
+    } catch {
+      if (!demoSessionFallbackRef.current) {
+        demoSessionFallbackRef.current =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now().toString(16).padStart(8, "0")}-0000-4000-8000-${Math.random().toString(16).slice(2, 14).padEnd(12, "0")}`;
+      }
+      return demoSessionFallbackRef.current;
+    }
+  }
+  function resetDemoSessionId() {
+    try {
+      clearDemoSessionId();
+    } catch {
+      /* ignore */
+    }
+    demoSessionFallbackRef.current = null;
+  }
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -352,7 +380,7 @@ export default function ChatClient() {
       const endpoint = isProjectMode ? "/api/chat" : "/api/chat/demo";
       const payload = isProjectMode
         ? { projectId, message: text, history: nextHistory }
-        : { message: text, history: nextHistory };
+        : { message: text, history: nextHistory, sessionId: demoSessionId() };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -361,6 +389,12 @@ export default function ChatClient() {
       });
 
       const data = await res.json().catch(() => null);
+
+      // Server-side demo cap reached: show its friendly nudge, not an error.
+      if (res.status === 429 && data?.reply) {
+        setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+        return;
+      }
 
       if (!res.ok) {
         throw new Error(
@@ -457,6 +491,8 @@ export default function ChatClient() {
 
       sessionStorage.removeItem("flipwhizz_create_demo_messages");
       sessionStorage.removeItem("flipwhizz_demo_pending_resume");
+      // The demo has become a real project; start a fresh demo session next time.
+      resetDemoSessionId();
       router.push(`/chat?project=${data.projectId}`);
     } catch (err) {
       setCreatingProject(false);
@@ -480,6 +516,7 @@ export default function ChatClient() {
     setError(null);
     sessionStorage.removeItem("flipwhizz_create_demo_messages");
     sessionStorage.removeItem("flipwhizz_demo_pending_resume");
+    resetDemoSessionId();
     requestAnimationFrame(() => textareaRef.current?.focus());
   }
 

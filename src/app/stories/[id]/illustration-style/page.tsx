@@ -8,6 +8,7 @@ import { stories, storyStyleGuide } from "@/db/schema";
 import IllustrationStyleClient from "@/app/stories/[id]/illustration-style/IllustrationStyleClient";
 import { StepKey } from "@/lib/storySteps";
 import { ConsoleMessage } from "puppeteer-core";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -15,6 +16,9 @@ type Props = {
 
 export default async function IllustrationStylePage({ params }: Props) {
   const { id: storyId } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(storyId);
 
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),

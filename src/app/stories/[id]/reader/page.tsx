@@ -5,6 +5,7 @@ import { stories, storySpreads, storyPages } from "@/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import StoryReader from "./StoryReader";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 export default async function ReaderPage({
   params,
@@ -12,6 +13,9 @@ export default async function ReaderPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(id);
 
   // 1. Fetch story
   const story = await db.query.stories.findFirst({

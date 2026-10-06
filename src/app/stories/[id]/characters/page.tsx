@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import CharactersClient from "@/app/stories/[id]/characters/CharactersClient";
 import { StepKey } from "@/lib/storySteps";
 import { Suspense } from "react";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -14,6 +15,9 @@ type Props = {
 
 export default async function CharactersPage({ params }: Props) {
   const { id: storyId } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(storyId);
 
   const data = await getStoryForHub(storyId);
   if (!data) notFound();

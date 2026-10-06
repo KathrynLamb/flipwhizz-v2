@@ -3,6 +3,7 @@ import { getStoryForHub } from "@/lib/story/getStoryForHub";
 import LocationsClient from "@/app/stories/[id]/locations/locationsClient";
 import { stepNumberToKey } from "@/lib/storySteps";
 import type { StepKey } from "@/lib/storySteps";
+import { requireStoryOwnerPage } from "@/lib/pageGuards";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -10,6 +11,8 @@ type Props = {
 
 export default async function LocationsPage({ params }: Props) {
   const { id: storyId } = await params;
+  // Check access before loading data. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(storyId);
 
   const data = await getStoryForHub(storyId);
   if (!data) notFound();

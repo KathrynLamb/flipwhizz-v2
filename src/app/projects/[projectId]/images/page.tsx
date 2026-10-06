@@ -5,6 +5,8 @@ import InitialStyleEditor, {
 import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireProjectOwnerPage } from "@/lib/pageGuards";
+import { headers as nextHeaders } from "next/headers";
   import { notFound } from "next/navigation";
   
   export default async function ProjectImagesPage({
@@ -14,6 +16,7 @@ import { eq } from "drizzle-orm";
   }) {
     // ✅ unwrap params (Next 15 dynamic)
     const { projectId } = await params;
+    await requireProjectOwnerPage(projectId);
     console.log(projectId)
 
   //   const story = await db
@@ -51,7 +54,7 @@ console.log('guide', guide)
   
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
   
-    const res = await fetch(`${baseUrl}/api/projects/${projectId}/story`, {
+    const res = await fetch(`${baseUrl}/api/projects/${projectId}/story`, { headers: { cookie: (await nextHeaders()).get("cookie") ?? "" },
       cache: "no-store",
     });
   

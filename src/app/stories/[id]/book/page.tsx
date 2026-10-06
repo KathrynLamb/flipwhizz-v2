@@ -7,6 +7,7 @@ import { eq, desc, asc, inArray } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 // ─── Gelato status sync on page load ───
 async function syncGelatoStatus(
@@ -120,6 +121,9 @@ export default async function BookPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(id);
 
   // 1. Session — for userEmail
   const session = await getServerSession(authOptions);

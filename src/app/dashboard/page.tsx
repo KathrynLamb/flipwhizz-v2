@@ -3,6 +3,7 @@ import { projects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { requireProjectOwnerPage } from "@/lib/pageGuards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ export default async function ProjectDashboard({
 }) {
   const projectId = params?.projectId;
   if (!projectId) redirect("/projects");
+  await requireProjectOwnerPage(projectId);
 
   const project = await db
     .select()

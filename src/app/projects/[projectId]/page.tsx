@@ -8,6 +8,8 @@ import Header from "@/components/Header";
 import PagesBox from "@/app/projects/components/PagesBox";
 import IllustrationsBox from "@/app/projects/components/IllustrationsBox";
 import { AuthButton } from "@/components/auth-button";
+import { requireProjectOwnerPage } from "@/lib/pageGuards";
+import { headers as nextHeaders } from "next/headers";
 
 function isFilled(v: unknown) {
   if (!v) return false;
@@ -19,11 +21,12 @@ export default async function ProjectDashboard(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
+  await requireProjectOwnerPage(projectId);
 
   const storyBundle = await fetch(
     `${process.env.NEXT_PUBLIC_BASE_URL}/api/projects/${projectId}/story`,
 
-    { cache: "no-store" }
+    { headers: { cookie: (await nextHeaders()).get("cookie") ?? "" }, cache: "no-store" }
   ).then(res => res.json());
   
   

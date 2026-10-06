@@ -4,6 +4,7 @@
 
 import Link from "next/link";
 import { runHealthCheck } from "@/lib/healthCheck";
+import { requireAdminPage } from "@/lib/pageGuards";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -15,6 +16,8 @@ const tone = {
 } as const;
 
 export default async function AdminHealthPage() {
+  // The admin layout's redirect doesn't stop this page rendering in parallel.
+  await requireAdminPage();
   const report = await runHealthCheck();
 
   return (

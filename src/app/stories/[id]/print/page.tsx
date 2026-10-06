@@ -5,6 +5,7 @@ import { stories, orders, storyProducts } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import PrintPage from "./PrintPage";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 const POST_PAYMENT_STATUSES = new Set(["paid", "gifted", "failed"]);
 
@@ -14,6 +15,9 @@ export default async function PrintRoute({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(id);
 
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, id),

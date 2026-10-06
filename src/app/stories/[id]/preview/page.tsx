@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import PreviewPageClient from "./PreviewPageClient";
 import type { StepKey } from "@/lib/storySteps";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 export default async function PreviewPage({
   params,
@@ -13,6 +14,9 @@ export default async function PreviewPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: storyId } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(storyId);
 
   const rows = await db
     .select({

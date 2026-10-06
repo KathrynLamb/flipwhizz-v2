@@ -4,6 +4,7 @@ import { eq, asc } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import CoverDesignChat from "./CoverDesignChat";
 import type { StepKey } from "@/lib/storySteps";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 export default async function CoverPage({
   params,
@@ -11,6 +12,9 @@ export default async function CoverPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: storyId } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(storyId);
 
   const story = await db.query.stories.findFirst({
     where: eq(stories.id, storyId),

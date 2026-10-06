@@ -13,6 +13,7 @@ import {
 import { eq, inArray, asc } from "drizzle-orm";
 import { User, MapPin, Image as ImageIcon, Info } from "lucide-react";
 import Image from "next/image";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 // --- DATA FETCHING ---
 async function getSpreadData(storyId: string) {
@@ -133,6 +134,9 @@ async function getSpreadData(storyId: string) {
 // --- COMPONENT ---
 export default async function DebugSpreadsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: storyId } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireAdminPage();
 
   if (!storyId) return <div className="p-10 text-red-500">Error: No Story ID provided</div>;
 

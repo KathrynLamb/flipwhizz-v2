@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getPriceCents, resolvePromoDiscount } from "@/lib/pricing";
 import OrderPage from "./OrderPage";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 export default async function OrderRoute({
   params,
@@ -13,6 +14,9 @@ export default async function OrderRoute({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(id);
   const session = await getServerSession(authOptions);
 
   const story = await db.query.stories.findFirst({

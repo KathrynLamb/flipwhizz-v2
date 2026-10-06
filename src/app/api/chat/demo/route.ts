@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
 import { chatMessages, chatSessions } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { withAlerts } from "@/lib/alerts";
 
 type DemoMsg = {
@@ -47,6 +47,8 @@ Tone:
 Warm, playful, collaborative, specific, child-centred.`;
 }
 
+const DEMO_SERVER_MESSAGE_CAP = 4;
+
 async function _POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -63,6 +65,14 @@ async function _POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing sessionId." }, { status: 400 });
     }
 
+    // Validate inputs before touching the DB or Claude.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
+      return NextResponse.json({ error: "Invalid sessionId." }, { status: 400 });
+    }
+    if (message.length > 2000) {
+      return NextResponse.json({ error: "That message is a little long. Could you shorten it?" }, { status: 400 });
+    }
+
     if (!isValidMessageArray(history)) {
       return NextResponse.json({ error: "Invalid history." }, { status: 400 });
     }
@@ -70,11 +80,36 @@ async function _POST(req: NextRequest) {
     // Ensure the demo session exists before inserting messages
     try {
       const existingSession = await db
-        .select({ id: chatSessions.id })
+        .select({ id: chatSessions.id, userId: chatSessions.userId, projectId: chatSessions.projectId })
         .from(chatSessions)
         .where(eq(chatSessions.id, sessionId as any))
         .limit(1)
         .then((rows) => rows[0]);
+
+      // Never let the public demo write into a real user's or project's chat.
+      if (existingSession && (existingSession.userId || existingSession.projectId)) {
+        return NextResponse.json({ error: "Invalid sessionId." }, { status: 400 });
+      }
+
+      // The 3-message demo limit was only enforced in the browser, so the
+      // endpoint could be used as an unlimited free Claude chat. Cap it here
+      // (one spare message for retries).
+      if (existingSession) {
+        const used = await db
+          .select({ id: chatMessages.id })
+          .from(chatMessages)
+          .where(and(eq(chatMessages.sessionId, sessionId as any), eq(chatMessages.role, "user")));
+        if (used.length >= DEMO_SERVER_MESSAGE_CAP) {
+          return NextResponse.json(
+            {
+              error: "demo_limit",
+              reply:
+                "I've loved shaping this with you! Sign in to keep going and turn it into a real illustrated book.",
+            },
+            { status: 429 },
+          );
+        }
+      }
 
       if (!existingSession) {
         // Create a new demo session with userId=null, projectId=null

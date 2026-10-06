@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 
 export default async function DesignPage({
@@ -21,6 +22,9 @@ export default async function DesignPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: storyId } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(storyId);
 
   const progress = await db.query.storyWorkflowProgress.findFirst({
     where: eq(storyWorkflowProgress.storyId, storyId),

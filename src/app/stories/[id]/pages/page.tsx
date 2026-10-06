@@ -6,6 +6,7 @@ import { eq, asc } from "drizzle-orm";
 
 import StoryReaderClient from "./StoryReaderClient";
 import { StepKey } from "@/lib/storySteps";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 export default async function StoryPagesPage({
   params,
@@ -14,6 +15,9 @@ export default async function StoryPagesPage({
 }) {
   // ✅ MUST await params in Next 15
   const { id: storyId } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(storyId);
 
   if (!storyId) {
     redirect("/projects");

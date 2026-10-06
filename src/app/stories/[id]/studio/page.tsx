@@ -5,6 +5,7 @@ import { stories, storyPages, storyStyleGuide, storySpreads } from "@/db/schema"
 import { eq, asc } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import StudioShell from "./StudioShell";
+import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
 
 export default async function StudioPage({
   params,
@@ -14,6 +15,9 @@ export default async function StudioPage({
   searchParams: Promise<{ mode?: string }>;
 }) {
   const { id } = await params;
+  // Check access BEFORE loading data: the layout's redirect doesn't stop
+  // this page rendering in parallel. See src/lib/pageGuards.ts
+  await requireStoryOwnerPage(id);
   const { mode } = await searchParams;
 
   const story = await db.query.stories.findFirst({
