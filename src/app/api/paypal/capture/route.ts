@@ -151,7 +151,7 @@ async function _POST(req: Request) {
         .where(eq(stories.id, storyId));
 
       await inngest.send({
-        name: "story/generate.spreads",
+        name: "story/generate-spreads", // hyphens: "generate.spreads" (dots) had no listener
         data: { storyId },
       });
     }

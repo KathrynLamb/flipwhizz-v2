@@ -30,6 +30,7 @@ export async function POST(
     "story/build-spreads",
     "story/build-spread-prompts",
     "story/generate-spreads",
+    "story/generate-spreads:force",
   ];
 
   if (!allowed.includes(event)) {
@@ -51,7 +52,13 @@ export async function POST(
     .set({ status: "generating", updatedAt: new Date() })
     .where(eq(stories.id, storyId));
 
-  await inngest.send({ name: event, data: { storyId } });
+  // "story/generate-spreads:force" = redraw every spread, even finished ones.
+  const force = event === "story/generate-spreads:force";
+  await inngest.send({
+    name: force ? "story/generate-spreads" : event,
+    // Admin retriggers may run on unpaid books (support/testing).
+    data: force ? { storyId, force: true, allowUnpaid: true } : { storyId, allowUnpaid: true },
+  });
 
   return NextResponse.json({ ok: true, storyId, event });
 }

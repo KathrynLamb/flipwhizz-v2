@@ -195,7 +195,8 @@ function StoryViewer({
   <option value="story/ensure-world">ensure-world (full pipeline)</option>
   <option value="story/build-spreads">build-spreads</option>
   <option value="story/build-spread-prompts">build-spread-prompts</option>
-  <option value="story/generate-spreads">generate-spreads (images only)</option>
+  <option value="story/generate-spreads">generate-spreads (missing images only)</option>
+  <option value="story/generate-spreads:force">generate-spreads (redraw ALL images)</option>
 </select>
 <button
   onClick={async () => {

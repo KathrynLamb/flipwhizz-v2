@@ -73,7 +73,7 @@ async function _POST(req: NextRequest) {
 
     // Fire generation
     await inngest.send({
-      name: "story/generate.spreads",
+      name: "story/generate-spreads", // hyphens: "generate.spreads" (dots) had no listener
       data: { storyId },
     });
 

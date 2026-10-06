@@ -23,6 +23,7 @@ import {
   characterStoryOutfits,
   storySpreadPresence,
   storySpreadScene,
+  stories,
 } from "@/db/schema";
 import { db } from "@/db";
 import { v2 as cloudinary } from "cloudinary";
@@ -342,11 +343,38 @@ export const generateBookSpreads = inngest.createFunction(
     id: "generate-book-spreads",
     concurrency: 5,
     retries: 2,
+    // Checkout, PayPal capture and the studio can all fire this within
+    // seconds of each other; merge them into one run per story.
+    debounce: { key: "event.data.storyId", period: "20s" },
     triggers: [{ event: "story/generate-spreads" }],
   },
   async ({ event, step }) => {
-    const { storyId } = event.data as { storyId?: string };
+    const { storyId, force, allowUnpaid } = event.data as {
+      storyId?: string;
+      force?: boolean;
+      allowUnpaid?: boolean;
+    };
     assertNonEmpty(storyId, "storyId");
+
+    // PAYMENT GATE. Full-book illustration costs real money (one Gemini image
+    // per spread). Several routes send this event (build-spread-prompts right
+    // after prompts are built, /generate-all, trigger-spread-workflow), some
+    // before payment. Only paid books get drawn; the free preview uses
+    // generate.single.spread and is unaffected. Admin can pass allowUnpaid.
+    const paid = await step.run("check-paid", async () => {
+      const row = await db.query.stories.findFirst({
+        where: eq(stories.id, storyId),
+        columns: { paymentStatus: true },
+      });
+      return row?.paymentStatus === "paid";
+    });
+    if (!paid && !allowUnpaid) {
+      console.log(`⏸️ [generate-spreads] Story ${storyId} not paid; skipping full-book generation`);
+      return { skipped: true, reason: "not_paid" };
+    }
+    // By default only spreads WITHOUT an image are drawn, so retries fill gaps
+    // instead of replacing finished (already seen, already paid-for) pages.
+    // Send { force: true } to redraw the whole book.
 
     /* ------------------------------------------------------------------ */
     /* PREFLIGHT 1: Verify story_spread_scene records exist for all spreads */
@@ -522,16 +550,23 @@ export const generateBookSpreads = inngest.createFunction(
     const pages = await db.query.storyPages.findMany({
       where: eq(storyPages.storyId, storyId),
       orderBy: asc(storyPages.pageNumber),
-      columns: { id: true, pageNumber: true },
+      columns: { id: true, pageNumber: true, imageUrl: true },
     });
 
     const events: Array<{ name: string; data: any }> = [];
     const skippedForFocus: string[] = [];
+    const skippedExisting: string[] = [];
 
     for (let i = 0; i < pages.length; i += 2) {
       const leftPageId = pages[i].id;
       const rightPageId = pages[i + 1]?.id ?? null;
       const pageLabel = `${pages[i].pageNumber}-${pages[i + 1]?.pageNumber ?? "end"}`;
+
+      const existingImage = pages[i].imageUrl;
+      if (!force && existingImage && !isDataUrl(existingImage)) {
+        skippedExisting.push(pageLabel);
+        continue;
+      }
 
       const spread = await step.run(`load-spread-${pageLabel}`, async () =>
         loadSpreadRecord(leftPageId, rightPageId)
@@ -565,6 +600,7 @@ export const generateBookSpreads = inngest.createFunction(
     return {
       spreadsQueued: events.length,
       spreadsSkippedForFocus: skippedForFocus,
+      spreadsSkippedExisting: skippedExisting,
     };
   }
 );
