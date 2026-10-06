@@ -23,7 +23,7 @@ import {
 import {
   Lock, Unlock, Loader2, X, Check, Sparkles, Camera,
   AlertTriangle, RotateCcw, PenLine, PawPrint, MessageSquare,
-  Shirt, ChevronDown,
+  Shirt, ChevronDown, ArrowRight, Pencil,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -692,25 +692,56 @@ onOpenDrawer: () => void;
         </div>
       )}
 
-      {/* State A — no image */}
+      {/* State A — no image: same layout as the location cards, so all
+          three paths are obvious: upload, AI imagine, or edit first. */}
       {imageState === "empty" && !isDragging && !isBackgroundTask && (
-        <div className="absolute inset-0 flex items-center justify-center p-5">
-          <div className="w-full rounded-2xl p-4 text-center"
-            style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.25)" }}>
-            <p className="text-white font-bold text-sm mb-0.5">{char.name} needs a face</p>
-            <p className="text-white/70 text-[11px] mb-3">A photo makes illustrations more personal</p>
-            <div className="flex gap-2">
-              <button onClick={(e) => { e.stopPropagation(); onUpload(); }}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 transition-transform"
-                style={{ background: "rgba(255,255,255,0.92)", color: "#2D2235" }}>
-                <Camera className="w-3.5 h-3.5" /> Add photo
-              </button>
-              <button onClick={(e) => { e.stopPropagation(); onGeneratePortrait(); }}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold text-white active:scale-95 transition-transform"
-                style={{ background: "linear-gradient(135deg, rgba(176,92,230,0.9), rgba(212,93,160,0.9))", border: "1px solid rgba(255,255,255,0.2)" }}>
-                <Sparkles className="w-3.5 h-3.5" /> AI imagine
-              </button>
-            </div>
+        <div className="absolute inset-0 flex flex-col justify-end p-4 pb-16 z-10">
+          <div className="rounded-2xl overflow-hidden"
+            style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(14px)", border: "1px solid rgba(255,255,255,0.22)" }}>
+
+            {/* Option 1: Upload a photo */}
+            <button onClick={(e) => { e.stopPropagation(); onUpload(); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-white/10 transition-colors"
+              style={{ borderBottom: "1px solid rgba(255,255,255,0.15)" }}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "rgba(255,255,255,0.9)" }}>
+                <Camera className="w-4 h-4" style={{ color: "#8B5CF6" }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-bold text-white leading-tight">Upload a photo of {char.name}</p>
+                <p className="text-[10px] text-white/65 leading-snug mt-0.5">Best likeness. AI illustrates it in your book&apos;s style</p>
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-white/50 flex-shrink-0" />
+            </button>
+
+            {/* Option 2: Generate from description */}
+            <button onClick={(e) => { e.stopPropagation(); onGeneratePortrait(); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-white/10 transition-colors"
+              style={{ borderBottom: "1px solid rgba(255,255,255,0.15)" }}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.85), rgba(217,70,239,0.85))" }}>
+                <Sparkles className="w-4 h-4 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-bold text-white leading-tight">Generate from description</p>
+                <p className="text-[10px] text-white/65 leading-snug mt-0.5">No photo needed. AI imagines {char.name}</p>
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-white/50 flex-shrink-0" />
+            </button>
+
+            {/* Option 3: Edit the description first */}
+            <button onClick={(e) => { e.stopPropagation(); onOpenDrawer(); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-white/10 transition-colors">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.3)" }}>
+                <Pencil className="w-4 h-4 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-bold text-white leading-tight">Edit description first</p>
+                <p className="text-[10px] text-white/65 leading-snug mt-0.5">Hair, clothes, age, breed: get the details right</p>
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-white/50 flex-shrink-0" />
+            </button>
           </div>
         </div>
       )}

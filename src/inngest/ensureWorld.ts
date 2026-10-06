@@ -49,6 +49,17 @@ function extractJson(raw: string) {
   return JSON.parse(json);
 }
 
+/** Parse Claude's JSON reply, failing with a clear message if it was cut off. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function claudeJson(res: { stop_reason?: string | null; content: unknown }): any {
+  if (res.stop_reason === "max_tokens") {
+    throw new Error(
+      "Claude's reply was cut off (hit max_tokens) before the JSON finished. Raise max_tokens for this step.",
+    );
+  }
+  return claudeJson(res);
+}
+
 function extractClaudeText(content: any): string {
   return (Array.isArray(content) ? content : [])
     .map((b) => (b?.type === "text" ? String(b.text ?? "") : ""))
@@ -162,7 +173,7 @@ export const ensureWorld = inngest.createFunction(
 
           const res = await client.messages.create({
             model: MODEL,
-            max_tokens: 2000,
+            max_tokens: 8000,
             // ── CHANGE: added personalityTraits field ──
             system: `Extract ALL characters from this story. Return ONLY this JSON:
 {
@@ -188,7 +199,7 @@ export const ensureWorld = inngest.createFunction(
             messages: [{ role: "user", content: storyText }],
           });
 
-          const data = extractJson(extractClaudeText(res.content));
+          const data = claudeJson(res);
 
           await db.transaction(async (tx) => {
             await tx
@@ -262,7 +273,7 @@ export const ensureWorld = inngest.createFunction(
 
           const res = await client.messages.create({
             model: MODEL,
-            max_tokens: 1500,
+            max_tokens: 8000,
             system: `Extract ALL locations/settings from this story. Return ONLY this JSON:
 {
   "locations": [
@@ -277,7 +288,7 @@ Focus on visual details: architecture, natural features, atmosphere, colors, lig
             messages: [{ role: "user", content: storyText }],
           });
 
-          const data = extractJson(extractClaudeText(res.content));
+          const data = claudeJson(res);
 
           await db.transaction(async (tx) => {
             await tx
@@ -389,7 +400,7 @@ Focus on visual details: architecture, natural features, atmosphere, colors, lig
 
         const res = await client.messages.create({
           model: MODEL,
-          max_tokens: 1500,
+          max_tokens: 8000,
           system: `Analyze this story and create a visual style guide for illustrations. Return ONLY this JSON:
 {
   "style": {
@@ -408,7 +419,7 @@ Focus on visual details: architecture, natural features, atmosphere, colors, lig
           messages: [{ role: "user", content: storyText }],
         });
 
-        const data = extractJson(extractClaudeText(res.content));
+        const data = claudeJson(res);
 
         await db.transaction(async (tx) => {
           await tx
@@ -472,7 +483,7 @@ Focus on visual details: architecture, natural features, atmosphere, colors, lig
 
         const res = await client.messages.create({
           model: MODEL,
-          max_tokens: 2500,
+          max_tokens: 8000,
           system: `Create illustration spreads for this children's book. Return ONLY this JSON:
 {
   "spreads": [
@@ -493,7 +504,7 @@ Rules:
           messages: [{ role: "user", content: text }],
         });
 
-        const data = extractJson(extractClaudeText(res.content));
+        const data = claudeJson(res);
 
         await db.transaction(async (tx) => {
           await tx
@@ -609,7 +620,7 @@ Rules:
 
         const res = await client.messages.create({
           model: MODEL,
-          max_tokens: 2000,
+          max_tokens: 8000,
           system: `Assign characters to illustration spreads. Return ONLY this JSON:
 {
   "assignments": [
@@ -629,7 +640,7 @@ Only include characters that should visually appear in each spread's illustratio
           ],
         });
 
-        const data = extractJson(extractClaudeText(res.content));
+        const data = claudeJson(res);
 
         await db.transaction(async (tx) => {
           await tx
@@ -754,7 +765,7 @@ Only include characters that should visually appear in each spread's illustratio
 
         const res = await client.messages.create({
           model: MODEL,
-          max_tokens: 2000,
+          max_tokens: 8000,
           system: `Assign locations to illustration spreads. Return ONLY this JSON:
 {
   "assignments": [
@@ -774,7 +785,7 @@ Each spread should have ONE primary location where the scene takes place.`,
           ],
         });
 
-        const data = extractJson(extractClaudeText(res.content));
+        const data = claudeJson(res);
 
         await db.transaction(async (tx) => {
           await tx
@@ -885,7 +896,7 @@ Each spread should have ONE primary location where the scene takes place.`,
 
         const res = await client.messages.create({
           model: MODEL,
-          max_tokens: 4000,
+          max_tokens: 8000,
           system: `Analyze this children's story and identify all DISTINCT OUTFITS each character would need throughout the story.
 
 Return ONLY this JSON:
@@ -917,7 +928,7 @@ Rules:
           ],
         });
 
-        const data = extractJson(extractClaudeText(res.content));
+        const data = claudeJson(res);
 
         await db.transaction(async (tx) => {
           const characterIds = allCharacters.map((sc) => sc.characterId);
@@ -1060,7 +1071,7 @@ Rules:
         try {
           const res = await client.messages.create({
             model: MODEL,
-            max_tokens: 3000,
+            max_tokens: 8000,
             system: `For each spread, decide which outfit each character should wear based on the scene context.
 
 Return ONLY this JSON:
@@ -1097,8 +1108,7 @@ Rules:
             ],
           });
 
-          const rawText = extractClaudeText(res.content);
-          const data = extractJson(rawText);
+          const data = claudeJson(res);
           parsedAssignments = data.assignments ?? [];
           console.log(
             `👔 Parsed ${parsedAssignments.length} outfit assignments`

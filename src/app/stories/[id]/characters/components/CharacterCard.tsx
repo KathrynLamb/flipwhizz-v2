@@ -18,6 +18,8 @@ import {
   Save,
   X,
   Eye,
+  ArrowRight,
+  Pencil,
   MessageSquare,
   User,
   AlertTriangle,
@@ -282,6 +284,18 @@ export default function CharacterCard({
 
   /* ── Render ── */
 
+  function openUploadPicker() {
+    setUploadError(null);
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/jpeg,image/png,image/webp,image/heic';
+    input.onchange = (e) => {
+      const f = (e.target as HTMLInputElement).files?.[0];
+      if (f) uploadReference(f);
+    };
+    input.click();
+  }
+
   return (
     <div
       className="relative overflow-hidden transition-all duration-300"
@@ -317,20 +331,35 @@ export default function CharacterCard({
           </div>
         )}
 
-        {/* Upload controls */}
-        {!locked && !isBusy && (
+        {/* No image yet: show all three paths clearly (matches location cards) */}
+        {!currentImageUrl && !locked && !isBusy && (
+          <div className="absolute inset-x-3 bottom-3 z-10 rounded-2xl overflow-hidden bg-white/95 backdrop-blur"
+            style={{ boxShadow: '0 4px 18px rgba(100,60,140,0.12)' }}>
+            {[
+              { key: 'upload', icon: <Camera className="w-4 h-4" style={{ color: '#8B5CF6' }} />, title: `Upload a photo of ${character.name}`, sub: "Best likeness. AI illustrates it in your book's style", onClick: openUploadPicker },
+              { key: 'ai', icon: <Sparkles className="w-4 h-4" style={{ color: '#D946EF' }} />, title: 'Generate from description', sub: `No photo needed. AI imagines ${character.name}`, onClick: () => useAiImage() },
+              { key: 'edit', icon: <Pencil className="w-4 h-4" style={{ color: '#8B7BA0' }} />, title: 'Edit description first', sub: 'Hair, clothes, age, breed: get the details right', onClick: () => { setExpanded(true); setEditing(true); } },
+            ].map((o, i) => (
+              <button key={o.key} onClick={o.onClick}
+                className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left hover:bg-violet-50 transition-colors"
+                style={{ borderTop: i ? '1px solid rgba(180,150,210,0.15)' : 'none' }}>
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(139,92,246,0.08)' }}>
+                  {o.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-bold leading-tight" style={{ color: '#2D2235' }}>{o.title}</p>
+                  <p className="text-[10.5px] leading-snug mt-0.5" style={{ color: '#8B7BA0' }}>{o.sub}</p>
+                </div>
+                <ArrowRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#B8A9CC' }} />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Change controls (when there is already an image) */}
+        {currentImageUrl && !locked && !isBusy && (
           <div className="absolute top-3 left-3 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={() => {
-              setUploadError(null);
-              const input = document.createElement('input');
-              input.type = 'file';
-              input.accept = 'image/jpeg,image/png,image/webp,image/heic';
-              input.onchange = (e) => {
-                const f = (e.target as HTMLInputElement).files?.[0];
-                if (f) uploadReference(f);
-              };
-              input.click();
-            }}
+            <button onClick={openUploadPicker}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-semibold"
               style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(8px)', color: '#2D2235' }}>
               <Upload className="w-3 h-3" /> Photo
