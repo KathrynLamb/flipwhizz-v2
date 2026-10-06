@@ -38,7 +38,8 @@ export default async function StoryPagesPage({
     where: eq(projects.id, story.projectId),
   });
 
-  if (!project || project.userId !== user.id) {
+  const isAdmin = Boolean(process.env.ADMIN_EMAIL && user.email === process.env.ADMIN_EMAIL);
+  if (!project || (project.userId !== user.id && !isAdmin)) {
     redirect("/projects");
   }
 

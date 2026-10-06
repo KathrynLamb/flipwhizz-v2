@@ -7,7 +7,7 @@ import { headers } from "next/headers";
 
 import { getUserFromSession } from "@/lib/auth";
 import { db } from "@/db";
-import { stories, projects } from "@/db/schema";
+import { stories, projects, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 
 import StoryJourneyShell from "./StoryShell";
@@ -34,6 +34,9 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
   if (!user) redirect("/auth/signin");
 
   let story: any = null;
+  // Admin can open any customer's book to see exactly what they see.
+  const isAdmin = Boolean(process.env.ADMIN_EMAIL && user.email === process.env.ADMIN_EMAIL);
+  let viewingAsCustomer: string | null = null;
 
   try {
     // ✅ Fetch story and verify ownership
@@ -42,10 +45,9 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
       .from(stories)
       .innerJoin(projects, eq(stories.projectId, projects.id))
       .where(
-        and(
-          eq(stories.id, storyId),
-          eq(projects.userId, user.id)
-        )
+        isAdmin
+          ? eq(stories.id, storyId)
+          : and(eq(stories.id, storyId), eq(projects.userId, user.id))
       );
 
     if (!result || result.length === 0) {
@@ -54,6 +56,14 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
     }
 
     story = result[0].stories;
+    if (isAdmin && result[0].projects.userId !== user.id) {
+      const owner = await db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, result[0].projects.userId as string))
+        .then((r) => r[0]);
+      viewingAsCustomer = owner?.email ?? "a customer";
+    }
   } catch (error) {
     // Re-throw NEXT_REDIRECT so Next.js can handle it
     if (error instanceof Error && error.message === "NEXT_REDIRECT") throw error;
@@ -87,6 +97,15 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
 
   try {
     return (
+      <>
+      {viewingAsCustomer && (
+        <div
+          style={{ position: "sticky", top: 0, zIndex: 9999, background: "#B45309", color: "white",
+                   fontSize: 13, fontWeight: 600, padding: "8px 16px", textAlign: "center" }}
+        >
+          👀 Admin: viewing {viewingAsCustomer}&apos;s book. Anything you click here changes THEIR book.
+        </div>
+      )}
       <StoryJourneyShell
         storyConfirmed={story.storyConfirmed}
         storyId={story.id}
@@ -100,6 +119,7 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
       >
         {children}
       </StoryJourneyShell>
+      </>
     );
   } catch (error) {
     if (error instanceof Error && error.message === "NEXT_REDIRECT") throw error;
