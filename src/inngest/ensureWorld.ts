@@ -57,7 +57,7 @@ function claudeJson(res: { stop_reason?: string | null; content: unknown }): any
       "Claude's reply was cut off (hit max_tokens) before the JSON finished. Raise max_tokens for this step.",
     );
   }
-  return claudeJson(res);
+  return extractJson(extractClaudeText(res.content));
 }
 
 function extractClaudeText(content: any): string {
