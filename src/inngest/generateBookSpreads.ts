@@ -688,12 +688,29 @@ export const generateSingleSpread = inngest.createFunction(
         backgroundCharacterIds = resolved.backgroundIds;
       }
 
-      // If still empty after all resolution, hard fail — no blind generation
+      // Nothing marked "featured". Don't fail the whole spread: picture books
+      // often have scene-only pages (an empty house, a moonlit garden).
+      //   1) promote background characters, else
+      //   2) use characters tagged on these two pages, else
+      //   3) draw a scene-only spread.
+      let sceneOnly = false;
       if (featuredCharacterIds.length === 0) {
-        throw new Error(
-          `Cannot generate spread ${pageLabel}: no featured characters resolved from presence, ` +
-            `overrides, or plan. Check story_spread_presence records.`
-        );
+        if (backgroundCharacterIds.length > 0) {
+          featuredCharacterIds = backgroundCharacterIds;
+          backgroundCharacterIds = [];
+          console.warn(`⚠️ Spread ${pageLabel}: no featured characters; promoting background characters`);
+        } else {
+          const pageIds = [leftPageId, rightPageId].filter(Boolean) as string[];
+          const pageChars = pageIds.length ? await loadPageCharacterIds(pageIds) : [];
+          const hidden = new Set(hiddenCharacterIds);
+          featuredCharacterIds = pageChars.filter((id) => !hidden.has(id)).slice(0, MAX_FEATURED_CHARACTERS);
+          if (featuredCharacterIds.length > 0) {
+            console.warn(`⚠️ Spread ${pageLabel}: no presence record; using page-tagged characters`);
+          } else {
+            sceneOnly = true;
+            console.warn(`⚠️ Spread ${pageLabel}: no characters at all; generating a scene-only illustration`);
+          }
+        }
       }
 
       featuredCharacterIds = uniqueIds(featuredCharacterIds);
@@ -937,7 +954,9 @@ One continuous 16:9 landscape. Left half = left page, right half = right page.
 HIGHEST PRIORITY:
 - Preserve the identity of every FEATURED character exactly
 - Do not redesign, simplify, substitute, or genericise featured characters
-- Only ${featuredRefs.length} character(s) should be drawn with full detail and accurate likeness: ${featuredRefs.map((c) => c.name).join(", ")}
+${sceneOnly || featuredRefs.length === 0
+  ? "- This is a SCENE-ONLY illustration: do not draw any of the story's characters. Focus on the setting, mood and objects described."
+  : `- Only ${featuredRefs.length} character(s) should be drawn with full detail and accurate likeness: ${featuredRefs.map((c) => c.name).join(", ")}`}
 
 STYLE:
 ${geminiStyleBlock}

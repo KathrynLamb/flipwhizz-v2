@@ -633,7 +633,9 @@ function GenerationPanel({
               </div>
             )}
 
-            {styleWarning && (
+            {/* Only show warnings that have a message. "style_not_locked" had its
+                text commented out, which left an empty yellow box. */}
+            {(styleWarning === "no_style_guide" || styleWarning === "no_reference_image") && (
               <div className="flex items-center gap-2 text-amber-600 text-xs bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                 <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
                 {styleWarning === "no_style_guide" &&
