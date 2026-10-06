@@ -284,13 +284,17 @@ const isLocking = lockPhase === "locking";
   
       // Outside try/finally — runs after finally completes, only if upload worked
       if (uploadSucceeded && isMounted.current) {
-        // Unlock silently if locked, then generate
+        // A new photo means a new portrait. Unlock first (and wait for it),
+        // then redraw the portrait from the new photo.
         if (locked) {
-          fetch("/api/characters/unlock", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ characterId: char.id }),
-          }).then(() => { if (isMounted.current) setLocked(false); });
+          try {
+            await fetch("/api/characters/unlock", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ characterId: char.id }),
+            });
+          } catch { /* portrait generation does not depend on the lock */ }
+          if (isMounted.current) setLocked(false);
         }
         generatePortrait("story");
       }
@@ -747,25 +751,28 @@ onOpenDrawer: () => void;
       )}
 
       {/* State B — has reference, needs portrait */}
-{imageState === "reference" && !isDragging && !isBackgroundTask && !locked && (
+{/* Always available, even when locked: a new photo unlocks and redraws */}
+{imageState === "reference" && !isDragging && !isBackgroundTask && (
   <button onClick={(e) => { e.stopPropagation(); onChangePhoto(); }}
-    className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full active:scale-95 transition-transform"
-    style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.8)" }}>
-    Change photo
+    className="absolute top-12 right-3 z-20 flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-full active:scale-95 transition-transform"
+    style={{ background: "rgba(255,255,255,0.92)", color: "#2D2235", boxShadow: "0 2px 10px rgba(0,0,0,0.18)" }}>
+    <Camera className="w-3.5 h-3.5" style={{ color: "#8B5CF6" }} />
+    New photo
   </button>
 )}
 
   {/* State C — has portrait */}
-{imageState === "portrait" && !isDragging && !isBackgroundTask && !locked && (
+{imageState === "portrait" && !isDragging && !isBackgroundTask && (
   <>
     <button onClick={(e) => { e.stopPropagation(); onChangePhoto(); }}
-      className="absolute top-12 right-3 z-20 text-[10px] font-semibold px-2.5 py-1 rounded-full active:scale-95 transition-transform"
-      style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.75)" }}>
-      Change
-    </button>
+    className="absolute top-12 right-3 z-20 flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-full active:scale-95 transition-transform"
+    style={{ background: "rgba(255,255,255,0.92)", color: "#2D2235", boxShadow: "0 2px 10px rgba(0,0,0,0.18)" }}>
+    <Camera className="w-3.5 h-3.5" style={{ color: "#8B5CF6" }} />
+    New photo
+  </button>
 
     {/* Stale portrait warning — portrait was generated without the reference photo */}
-    {(char as any).portraitSource === "description_only" && hasReference && (
+    {!locked && (char as any).portraitSource === "description_only" && hasReference && (
       <div className="absolute bottom-14 left-4 right-4 z-30">
         <button
           onClick={(e) => { e.stopPropagation(); onOpenDrawer(); }}

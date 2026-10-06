@@ -84,6 +84,7 @@ export default function CharacterCard({
   const [locked, setLocked] = useState(character.locked);
   const [uploading, setUploading] = useState(false);
   const [validating, setValidating] = useState(false);       // NEW
+  const [drawing, setDrawing] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null); // NEW
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -130,8 +131,22 @@ export default function CharacterCard({
     }
   }
 
+  // A new photo or a redraw should never be blocked by the lock: unlock
+  // quietly first (the user can lock again once they like the result).
+  async function ensureUnlocked() {
+    if (!locked) return;
+    try {
+      const res = await fetch('/api/characters/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId: character.id }),
+      });
+      if (res.ok) setLocked(false);
+    } catch { /* generation does not depend on the lock */ }
+  }
+
   async function uploadReference(file: File) {
-    if (locked) return;
+    await ensureUnlocked();
     setUploadError(null);
     setUploading(true);
 
@@ -192,8 +207,11 @@ export default function CharacterCard({
       if (res.ok) {
         const data = await res.json();
         setCurrentImageUrl(data.url);
-        onUpdate?.();
-        router.refresh();
+        // Previously the old portrait stayed in use after a new photo, so
+        // the book kept drawing the old look. Redraw from the new photo now.
+        setUploading(false);
+        setValidating(false);
+        await useAiImage('story', true);
       }
     } catch (err) {
       console.error('Photo upload failed:', err);
@@ -213,14 +231,14 @@ export default function CharacterCard({
     setOutfitEdits(Object.fromEntries((character.outfits || []).map((o) => [o.id, o.outfitDescription])));
   }, [character]);
 
-  async function useAiImage(outfitMode?: 'story' | 'reference') {
-    if (locked) return;
+  async function useAiImage(outfitMode?: 'story' | 'reference', alreadyUnlocked = false) {
     if (currentImageUrl && !outfitMode) {
       setShowOutfitChoice(true);
       return;
     }
+    if (!alreadyUnlocked) await ensureUnlocked();
     setShowOutfitChoice(false);
-    setUploading(true);
+    setDrawing(true);
     try {
       const res = await fetch('/api/characters/use-ai-image', {
         method: 'POST',
@@ -230,11 +248,15 @@ export default function CharacterCard({
       if (res.ok) {
         const data = await res.json();
         if (data.url) setCurrentImageUrl(data.url);
-        onUpdate?.();
-        router.refresh();
+      } else {
+        setUploadError(`Couldn't draw ${character.name} this time. Please try again.`);
       }
+      onUpdate?.();
+      router.refresh();
+    } catch {
+      setUploadError(`Couldn't draw ${character.name} this time. Please try again.`);
     } finally {
-      setUploading(false);
+      setDrawing(false);
     }
   }
 
@@ -280,7 +302,7 @@ export default function CharacterCard({
     setEditing(false);
   }
 
-  const isBusy = uploading || validating;
+  const isBusy = uploading || validating || drawing;
 
   /* ── Render ── */
 
@@ -356,18 +378,19 @@ export default function CharacterCard({
           </div>
         )}
 
-        {/* Change controls (when there is already an image) */}
-        {currentImageUrl && !locked && !isBusy && (
-          <div className="absolute top-3 left-3 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Change controls: always visible (not hover-only) and available
+            even when locked. A new photo unlocks and redraws the portrait. */}
+        {currentImageUrl && !isBusy && (
+          <div className="absolute top-3 left-3 z-10 flex gap-1.5">
             <button onClick={openUploadPicker}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-semibold"
-              style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(8px)', color: '#2D2235' }}>
-              <Upload className="w-3 h-3" /> Photo
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold"
+              style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(8px)', color: '#2D2235', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
+              <Camera className="w-3.5 h-3.5" style={{ color: '#8B5CF6' }} /> New photo
             </button>
             <button onClick={() => useAiImage()}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-semibold text-white"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-white"
               style={{ background: 'linear-gradient(135deg, #B05CE6, #D45DA0)', boxShadow: '0 2px 8px rgba(176,92,230,0.3)' }}>
-              <Sparkles className="w-3 h-3" /> AI
+              <Sparkles className="w-3.5 h-3.5" /> Redraw
             </button>
           </div>
         )}
@@ -377,6 +400,14 @@ export default function CharacterCard({
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center gap-2 z-20">
             <Loader2 className="w-7 h-7 text-white animate-spin" />
             <span className="text-xs font-semibold text-white">Uploading…</span>
+          </div>
+        )}
+
+        {/* Drawing overlay */}
+        {drawing && (
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center gap-2 z-20">
+            <Loader2 className="w-7 h-7 text-white animate-spin" />
+            <span className="text-xs font-semibold text-white">Drawing {character.name}…</span>
           </div>
         )}
 

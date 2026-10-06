@@ -33,6 +33,13 @@ import { z } from "zod";
 import fs from "fs/promises";
 import path from "path";
 import { generatePortraitFromDescription } from "@/lib/characters/generatePortrait";
+import {
+  getCastSheet,
+  castSheetBlock,
+  ensureFullBody,
+  fullBodyIsCurrent,
+  type CastSheet,
+} from "@/lib/characters/consistency";
 
 /* -------------------------------------------------------------------------- */
 /*                               CONFIGURATION                                */
@@ -459,7 +466,7 @@ export const generateBookSpreads = inngest.createFunction(
     /* PREFLIGHT 2: Auto-generate portraits for any character missing one  */
     /* ------------------------------------------------------------------ */
 
-    await step.run("check-and-generate-character-portraits", async () => {
+    const mainCharacterIds = await step.run("check-and-generate-character-portraits", async () => {
       const spreadPresenceRows = await db
         .select({ characters: storySpreadPresence.characters })
         .from(storySpreadPresence)
@@ -541,6 +548,8 @@ export const generateBookSpreads = inngest.createFunction(
       console.log(
         `✅ Portrait preflight: ${totalWithImage}/${charRecords.length} characters have images`
       );
+
+      return Array.from(featuredIds);
     });
 
     /* ------------------------------------------------------------------ */
@@ -593,7 +602,28 @@ export const generateBookSpreads = inngest.createFunction(
       });
     }
 
+    /* ------------------------------------------------------------------ */
+    /* CONSISTENCY PREP (only when there is something to draw)             */
+    /* 1. Cast sheet: exact hair/height/outfit line per character, cached  */
+    /* 2. Full-body reference per main character, cached until the         */
+    /*    portrait changes. Both fail soft: spreads still generate.        */
+    /* ------------------------------------------------------------------ */
+
     if (events.length) {
+      await step.run("build-cast-sheet", async () => {
+        const sheet = await getCastSheet(storyId);
+        return {
+          characters: sheet ? Object.keys(sheet.lines).length : 0,
+          fallback: !!sheet?.fallback,
+        };
+      });
+
+      for (const characterId of mainCharacterIds ?? []) {
+        await step.run(`full-body-${characterId}`, async () =>
+          ensureFullBody(characterId, storyId)
+        );
+      }
+
       await step.sendEvent("dispatch-spread-workers", events);
     }
 
@@ -639,6 +669,16 @@ export const generateSingleSpread = inngest.createFunction(
 
     const hasOverrides = !!referenceOverrides;
     const hasPlan = !!strategistPlan;
+
+    // Cached per story; rebuilt automatically when a character changes.
+    const castSheet = (await step.run("cast-sheet", async () => {
+      try {
+        return await getCastSheet(storyId);
+      } catch (err) {
+        console.warn("⚠️ Cast sheet unavailable, continuing without it:", err);
+        return null;
+      }
+    })) as CastSheet | null;
 
     const imageUrl = await step.run("generate-and-upload", async () => {
       const spreadPageIds = [leftPageId, ...(rightPageId ? [rightPageId] : [])];
@@ -899,7 +939,14 @@ export const generateSingleSpread = inngest.createFunction(
               .slice(0, 6)
               .join(", ")
           : "";
-        const anchorNote = anchors ? ` Key features: ${anchors}.` : "";
+        // Full cast-sheet line (hair length, height vs others, outfit) beats
+        // the old 6-fragment cut, which often dropped hair length entirely.
+        const sheetLine = castSheet?.lines?.[c.id];
+        const anchorNote = sheetLine
+          ? ` ${sheetLine}`
+          : anchors
+          ? ` Key features: ${anchors}.`
+          : "";
 
         if (isAnimal) {
           const coatNote = animalProfile?.coatColour
@@ -912,6 +959,24 @@ export const generateSingleSpread = inngest.createFunction(
           parts.push({
             text: `↑ FEATURED CHARACTER: ${c.name.toUpperCase()}.${anchorNote} Preserve this character's identity exactly. ↑`,
           });
+        }
+
+        // Full-body reference: shows height, proportions, hair length and
+        // outfit, which a head-and-shoulders portrait cannot.
+        if (
+          c.fullBodyUrl &&
+          charImageUrl !== c.fullBodyUrl &&
+          !isDataUrl(c.fullBodyUrl) &&
+          fullBodyIsCurrent(c)
+        ) {
+          try {
+            parts.push(await getImagePart(c.fullBodyUrl));
+            parts.push({
+              text: `↑ ${c.name.toUpperCase()} FULL BODY: use this for height, body proportions, hair length and outfit. ↑`,
+            });
+          } catch (err) {
+            console.warn(`⚠️ Full-body ref failed for ${c.name}:`, err);
+          }
         }
       }
 
@@ -970,6 +1035,10 @@ export const generateSingleSpread = inngest.createFunction(
       }
 
       // 6. SCENE INSTRUCTION
+      const castBlock = castSheetBlock(castSheet, [
+        ...featuredRefs.map((c) => c.id),
+        ...backgroundCharacterIds,
+      ]);
       if (hasPlan && strategistPlan!.recommendedPrompt) {
         // Strategist plan path (manual revision flow)
         const backgroundSection =
@@ -993,6 +1062,8 @@ HIGHEST PRIORITY:
 ${sceneOnly || featuredRefs.length === 0
   ? "- This is a SCENE-ONLY illustration: do not draw any of the story's characters. Focus on the setting, mood and objects described."
   : `- Only ${featuredRefs.length} character(s) should be drawn with full detail and accurate likeness: ${featuredRefs.map((c) => c.name).join(", ")}`}
+
+${castBlock}
 
 STYLE:
 ${geminiStyleBlock}
@@ -1043,6 +1114,8 @@ HIGHEST PRIORITY:
 - Preserve the identity of every FEATURED character exactly
 - Do not redesign, simplify, substitute, or genericise featured characters
 - Match their face, body, colours, markings, hair/fur shape, and signature features closely
+
+${castBlock}
 
 STYLE:
 ${geminiStyleBlock}

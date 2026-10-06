@@ -452,7 +452,10 @@ DEFAULT_STORY_OUTFIT:
 ${args.defaultOutfit?.outfitDescription ?? ""}
 
 Instructions:
-- Keep the face / hair / eyes / skin tone / age / overall build anchored to the photo.
+- The PHOTO is the only source of truth for physical traits: face, hair (colour, LENGTH, texture, style), eyes, skin tone, age and build.
+- CURRENT_APPEARANCE may describe an OLDER photo of this character. Drop every physical trait in it that the new photo contradicts or does not show. Never blend old and new hair, skin or face details.
+- From CURRENT_APPEARANCE keep only details the photo cannot show and does not contradict (for example glasses they always wear, or a story-specific accessory).
+- Always state hair length against the body (e.g. "falls to mid-back") and texture (e.g. "soft loose curls"), never just "long hair".
 - Make the result concise, specific, and useful for image generation.
 - If OUTFIT_MODE is "reference", include the clothing from PHOTO_CLOTHING.
 - If OUTFIT_MODE is "story", use DEFAULT_STORY_OUTFIT for clothing instead of PHOTO_CLOTHING.

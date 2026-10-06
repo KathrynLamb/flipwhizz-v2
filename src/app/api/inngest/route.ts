@@ -2,6 +2,9 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
 
+// Image steps (spreads, covers, full-body references) can take 30-90s each.
+export const maxDuration = 300;
+
 // Core narrative
 import { globalRewriteJob } from "@/inngest/functions";
 import { ensureWorld } from "@/inngest/ensureWorld";
