@@ -258,7 +258,9 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       return url;
     });
 
-    const finalBase64 = await step.run("pass2-character-swap", async () => {
+    // Upload + save INSIDE the step and return only the small result. Returning
+    // the raw base64 image (several MB) exceeded Inngest's step output limit.
+    return await step.run("pass2-character-swap", async () => {
       const parts: any[] = [];
       const pass1UrlResized = pass1Url.replace("/upload/", "/upload/w_1920,q_80/");
       parts.push(await getImagePart(pass1UrlResized));
@@ -279,10 +281,8 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       const image = extractInlineImage(response);
       if (!image) throw new Error("Gemini returned no image (pass 2)");
       console.log("🎨 [pass2] ✅ Character swap complete");
-      return image.data;
+      return await saveCover(image.data, storyId, strategy, refs.chars);
     });
-
-    return await step.run("save-cover", async () => saveCover(finalBase64, storyId, strategy, refs.chars));
   }
 );
 
