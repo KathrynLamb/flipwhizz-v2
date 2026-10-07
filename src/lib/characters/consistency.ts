@@ -52,8 +52,13 @@ const IMAGE_MODEL = "gemini-3-pro-image-preview";
 const MAX_SHEET_IMAGES = 40; // flash handles many; 13 characters x 2 pictures fits
 const SHEET_VERSION = 2; // bump to force every story to rebuild its sheet
 
-// Gemini 3 Pro Image accepts at most this many input images per request.
+// Gemini 3 Pro Image accepts at most 14 input images per request, and Google
+// documents "up to 5 images of characters" for character consistency. Past
+// that, likeness gets worse, not better, so character pictures are capped at
+// 5 per request: every featured character gets a portrait first, then photos
+// go to as many characters as the remaining slots allow.
 export const MAX_INPUT_IMAGES = 14;
+export const MAX_CHARACTER_IMAGES = 5;
 // Reference photos come straight off phones (several MB each); shrink before
 // sending so five of them don't blow the request size limit.
 const MAX_REF_PX = 1024;

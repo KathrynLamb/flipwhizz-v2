@@ -31,6 +31,7 @@ export async function POST(
     "story/build-spread-prompts",
     "story/generate-spreads",
     "story/generate-spreads:force",
+    "story/generate.cover.spread",
   ];
 
   if (!allowed.includes(event)) {
@@ -47,9 +48,18 @@ export async function POST(
     return NextResponse.json({ error: "Story not found" }, { status: 404 });
   }
 
+  // The cover function replays the strategy the cover chat saved; without
+  // one there is nothing to run.
+  if (event === "story/generate.cover.spread" && !(story.coverPlan as any)?.generationStrategy) {
+    return NextResponse.json(
+      { error: "This story has no saved cover strategy yet. Generate the cover from the cover chat first." },
+      { status: 400 }
+    );
+  }
+
   await db
     .update(stories)
-    .set({ status: "generating", updatedAt: new Date() })
+    .set({ status: event === "story/generate.cover.spread" ? "generating_covers" : "generating", updatedAt: new Date() })
     .where(eq(stories.id, storyId));
 
   // "story/generate-spreads:force" = redraw every spread, even finished ones.

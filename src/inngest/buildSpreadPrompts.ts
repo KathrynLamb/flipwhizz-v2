@@ -442,6 +442,8 @@ IMPORTANT RULES:
 - Keep illustrationPrompt focused on action, setting, and emotion — not on style (style is handled separately).
 - compositionNotes should be concrete framing instructions, not vague adjectives.
 - negativePrompt should be scene-specific (what's wrong for THIS spread) not generic avoid lists.
+- CROWDED SPREADS: when a spread lists a STAGING line, it has more than five featured characters and will be drawn in two passes: cluster A first, then cluster B painted into the same picture. Your compositionNotes MUST place the two clusters on separate pages exactly as the staging says (e.g. "Left page: the two girls and their parents at the table", "Right page: the aunties and uncle in the doorway"), by role not name, with cluster A nearest the action and clear space between the clusters. Never merge the clusters into one huddle.
+- Background characters get no reference picture. When a spread has background characters, say in compositionNotes how they are seen so they need no face: from behind, far away, or partly out of frame.
 - Every spreadIndex from the input must appear exactly once in your output.
 - You must call the build_spread_prompts tool. Do not respond in plain text.
 `.trim();
@@ -468,6 +470,12 @@ IMPORTANT RULES:
         .filter((c) => c.role === "background")
         .map((c) => charById.get(c.characterId)?.name ?? c.characterId);
 
+      // Crowd staging written by decide-scenes (two clusters, one per page).
+      const staging =
+        typeof (presence as any)?.reasoning === "string" && (presence as any).reasoning.trim()
+          ? (presence as any).reasoning.trim()
+          : null;
+
       const absentChars = charRecords
         .filter((c) => !chars.some((pc) => pc.characterId === c.id))
         .map((c) => c.name);
@@ -484,6 +492,7 @@ IMPORTANT RULES:
         `SPREAD ${s.spreadIndex}`,
         `FEATURED CHARACTERS: ${featuredChars.length ? featuredChars.join(", ") : "none"}`,
         `BACKGROUND CHARACTERS: ${backgroundChars.length ? backgroundChars.join(", ") : "none"}`,
+        ...(staging ? [`STAGING (two clusters, one per page): ${staging}`] : []),
         `NOT IN THIS SPREAD: ${absentChars.length ? absentChars.join(", ") : "none"}`,
         `PRIMARY LOCATION: ${locName}`,
         `LEFT PAGE TEXT:\n${leftText}`,

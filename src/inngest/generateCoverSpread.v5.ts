@@ -46,6 +46,7 @@ import {
   pushCharacterReferenceParts,
   withoutParts,
   MAX_INPUT_IMAGES,
+  MAX_CHARACTER_IMAGES,
   type CastSheet,
   type RefCharacter,
 } from "@/lib/characters/consistency";
@@ -130,10 +131,19 @@ async function generateWithPhotoFallback(parts: any[], photoParts: any[], strate
       contents: [{ role: "user", parts: p }],
       config: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: strategy.aspectRatio, imageSize: strategy.imageSize }, safetySettings: SAFETY_SETTINGS },
     });
-  let response = await call(parts);
-  let image = extractInlineImage(response);
+  let response: any = null;
+  let image: any = null;
+  let firstError: unknown = null;
+  try {
+    response = await call(parts);
+    image = extractInlineImage(response);
+  } catch (err) {
+    if (photoParts.length === 0) throw err;
+    firstError = err;
+  }
   if (!image && photoParts.length > 0) {
-    console.warn(`🎨 [${label}] no image with reference photos (block: ${(response as any)?.promptFeedback?.blockReason ?? "none"}). Retrying without photos.`);
+    const why = firstError instanceof Error ? firstError.message : `block: ${response?.promptFeedback?.blockReason ?? "none"}`;
+    console.warn(`🎨 [${label}] no image with reference photos (${why}). Retrying without photos.`);
     response = await call(withoutParts(parts, photoParts));
     image = extractInlineImage(response);
   }
@@ -212,7 +222,8 @@ export const generateCoverSpreadV5 = inngest.createFunction(
     });
 
     const castBlock = castSheetBlock(refs.castSheet as CastSheet | null, characterIds);
-    const charBudget = (fixedImages: number) => Math.max(refs.chars.length, MAX_INPUT_IMAGES - fixedImages);
+    const charBudget = (fixedImages: number) =>
+      Math.max(refs.chars.length, Math.min(MAX_CHARACTER_IMAGES, MAX_INPUT_IMAGES - fixedImages));
 
     const missingPortraits = refs.chars.filter(c => !c.portraitImageUrl || isDataUrl(c.portraitImageUrl));
     if (missingPortraits.length > 0) {

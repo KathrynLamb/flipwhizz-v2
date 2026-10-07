@@ -23,7 +23,12 @@ const client = new Anthropic({
 });
 
 const MODEL = "claude-sonnet-4-6";
-const MAX_FEATURED_CHARACTERS_PER_SPREAD = 5;
+// The image model gives full attention to at most 5 character references per
+// request. Up to 5 featured = one pass. 6 to 10 = two passes (two clusters,
+// one per page). Anything past 10 is a background figure by design.
+const MAX_FEATURED_CHARACTERS_PER_SPREAD = 5; // preferred (one pass)
+const MAX_FEATURED_CHARACTERS_HARD = 10; // absolute (two passes)
+const CLUSTER_SIZE = MAX_FEATURED_CHARACTERS_PER_SPREAD;
 
 /* -------------------------------------------------------------------------- */
 /*                                   TYPES                                    */
@@ -47,6 +52,7 @@ type ClaudeSpreadDecision = {
   featuredCharacterIds: string[];
   backgroundCharacterIds: string[];
   locations: ClaudeSpreadLocationDecision[];
+  staging?: string;
 };
 
 type ClaudeToolInput = {
@@ -83,8 +89,13 @@ const decideSpreadScenesTool: Anthropic.Tool = {
             featuredCharacterIds: {
               type: "array",
               description:
-                `Array of character IDs that are visually important and should be illustrated most clearly in this spread. Prefer no more than ${MAX_FEATURED_CHARACTERS_PER_SPREAD}.`,
+                `Character IDs that must be illustrated clearly and recognisably, MOST IMPORTANT FIRST. Prefer no more than ${MAX_FEATURED_CHARACTERS_PER_SPREAD}. Up to ${MAX_FEATURED_CHARACTERS_HARD} is allowed only when the page text makes the whole group the point of the picture. When more than ${CLUSTER_SIZE} are featured, the first ${CLUSTER_SIZE} IDs are CLUSTER A and the rest are CLUSTER B; they will be drawn in two passes.`,
               items: { type: "string" },
+            },
+            staging: {
+              type: "string",
+              description:
+                `Only when more than ${CLUSTER_SIZE} characters are featured: one or two sentences staging the scene as two natural clusters, one per page, each of at most ${CLUSTER_SIZE} people, using the characters' names. Say who is in cluster A, who is in cluster B, which page each cluster is on and what each cluster is doing. Cluster A (the first ${CLUSTER_SIZE} featured IDs) must be nearest the action. Omit for ${CLUSTER_SIZE} or fewer featured characters.`,
             },
             backgroundCharacterIds: {
               type: "array",
@@ -215,10 +226,10 @@ function normalizeClaudeToolInput(input: ClaudeToolInput): ClaudeToolInput {
 
       const normalizedFeatured = featuredCharacterIds.slice(
         0,
-        MAX_FEATURED_CHARACTERS_PER_SPREAD
+        MAX_FEATURED_CHARACTERS_HARD
       );
       const overflowFeatured = featuredCharacterIds.slice(
-        MAX_FEATURED_CHARACTERS_PER_SPREAD
+        MAX_FEATURED_CHARACTERS_HARD
       );
 
       const normalizedBackground = Array.from(
@@ -272,8 +283,14 @@ function normalizeClaudeToolInput(input: ClaudeToolInput): ClaudeToolInput {
         });
       }
 
+      const staging =
+        normalizedFeatured.length > CLUSTER_SIZE && typeof spread.staging === "string" && spread.staging.trim()
+          ? spread.staging.trim()
+          : undefined;
+
       return {
         spreadIndex: spread.spreadIndex,
+        staging,
         featuredCharacterIds: normalizedFeatured,
         backgroundCharacterIds: normalizedBackground,
         locations: normalizedLocations,
@@ -447,10 +464,15 @@ You MUST return ONLY via the decide_spread_scenes tool.
 A FEATURED character is visually important and should be illustrated clearly.
 A BACKGROUND character may appear, but is less important, smaller, more distant, or less exact.
 
-Illustration constraint:
-- Prefer NO MORE THAN ${MAX_FEATURED_CHARACTERS_PER_SPREAD} featured characters in a single spread
-- If more than ${MAX_FEATURED_CHARACTERS_PER_SPREAD} characters are narratively present, choose the most important ${MAX_FEATURED_CHARACTERS_PER_SPREAD} as featured
-- Put less important, less visible, or more distant characters into backgroundCharacterIds
+Illustration constraint (the image model can hold at most ${CLUSTER_SIZE} character references in one pass):
+- Use the FEWEST people that tell this moment. Ask of each character: does the text on these pages name them, give them something to do, or need them visibly here? If not, leave them out (absent) or put them in backgroundCharacterIds.
+- Up to ${MAX_FEATURED_CHARACTERS_PER_SPREAD} featured is the normal case and is drawn in one pass.
+- ${CLUSTER_SIZE + 1} to ${MAX_FEATURED_CHARACTERS_HARD} featured is allowed ONLY when the text makes the whole group the point (everyone arrives, the family gathers, everyone cheers). Then:
+  - order featuredCharacterIds by importance: protagonists and whoever the text is about first
+  - the first ${CLUSTER_SIZE} IDs are CLUSTER A, the rest are CLUSTER B
+  - fill in "staging": two natural clusters, one per page, cluster A nearest the action, each cluster doing something that reads clearly (at the table / in the doorway / on the sofa)
+- Never feature more than ${MAX_FEATURED_CHARACTERS_HARD}. Anyone beyond that goes in backgroundCharacterIds and will be drawn from behind, far away or half out of frame, so they need no face.
+- Background characters get no reference picture, so never put a protagonist there.
 - Do not duplicate the same character in both featuredCharacterIds and backgroundCharacterIds
 
 Prioritise as featured:
@@ -549,7 +571,8 @@ Rules:
 - use only IDs already provided
 - every spread must include featuredCharacterIds, backgroundCharacterIds, and locations
 - locations must be an array
-- featuredCharacterIds must contain no more than ${MAX_FEATURED_CHARACTERS_PER_SPREAD} IDs
+- featuredCharacterIds must contain no more than ${MAX_FEATURED_CHARACTERS_HARD} IDs, most important first
+- when featuredCharacterIds has more than ${CLUSTER_SIZE} IDs, include "staging" (a string)
 - do not duplicate a character across featuredCharacterIds and backgroundCharacterIds
 `.trim(),
           messages: [
@@ -657,6 +680,8 @@ Rules:
             spreadId: spread.id,
             characters: characterPresence,
             locations: locationPresence,
+            // Crowd staging (two clusters, one per page) for 6-10 featured.
+            reasoning: decision.staging ?? null,
             source: "claude",
             locked: true,
             createdAt: new Date(),
@@ -667,6 +692,7 @@ Rules:
             set: {
               characters: characterPresence,
               locations: locationPresence,
+              reasoning: decision.staging ?? null,
               updatedAt: new Date(),
             },
           });

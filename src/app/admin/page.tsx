@@ -197,6 +197,7 @@ function StoryViewer({
   <option value="story/build-spread-prompts">build-spread-prompts</option>
   <option value="story/generate-spreads">generate-spreads (missing images only)</option>
   <option value="story/generate-spreads:force">generate-spreads (redraw ALL images)</option>
+  <option value="story/generate.cover.spread">generate cover (redraw with saved cover plan)</option>
 </select>
 <button
   onClick={async () => {

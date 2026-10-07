@@ -40,6 +40,7 @@ import {
   pushCharacterReferenceParts,
   withoutParts,
   MAX_INPUT_IMAGES,
+  MAX_CHARACTER_IMAGES,
   type CastSheet,
 } from "@/lib/characters/consistency";
 
@@ -61,7 +62,12 @@ const client = new GoogleGenAI({
 const GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview";
 const IMAGE_ASPECT_RATIO = "16:9";
 const IMAGE_SIZE = "2K";
-const MAX_FEATURED_CHARACTERS = 5;
+// Up to 5 featured characters are drawn in one pass (the image model holds 5
+// character references at full fidelity). 6 to 10 are drawn in two passes:
+// cluster A first, then cluster B painted into the same picture. More than
+// 10 is skipped for focus selection.
+const MAX_FEATURED_CHARACTERS = 10;
+const CLUSTER_SIZE = MAX_CHARACTER_IMAGES; // 5
 
 const SPREAD_TEMPLATE_PATH = path.resolve(
   process.cwd(),
@@ -243,10 +249,15 @@ async function loadSpreadRecord(
 
 async function loadFeaturedAndBackgroundCharacterIds(
   spreadId: string
-): Promise<{ featuredIds: string[]; backgroundIds: string[] }> {
+): Promise<{ featuredIds: string[]; backgroundIds: string[]; staging: string | null }> {
   const presence = await db.query.storySpreadPresence.findFirst({
     where: eq(storySpreadPresence.spreadId, spreadId),
   });
+
+  const staging =
+    typeof presence?.reasoning === "string" && presence.reasoning.trim()
+      ? presence.reasoning.trim()
+      : null;
 
   const chars = (presence?.characters ?? []) as SpreadPresenceCharacter[];
 
@@ -261,7 +272,7 @@ async function loadFeaturedAndBackgroundCharacterIds(
       .filter((id) => !featuredIds.includes(id))
   );
 
-  return { featuredIds, backgroundIds };
+  return { featuredIds, backgroundIds, staging };
 }
 
 async function loadPageCharacterIds(pageIds: string[]) {
@@ -735,6 +746,7 @@ export const generateSingleSpread = inngest.createFunction(
       let featuredCharacterIds: string[] = [];
       let backgroundCharacterIds: string[] = [];
       let hiddenCharacterIds: string[] = [];
+      let staging: string | null = null;
 
       if (hasPlan) {
         featuredCharacterIds = uniqueIds(strategistPlan!.featuredCharacterIds);
@@ -764,6 +776,7 @@ export const generateSingleSpread = inngest.createFunction(
         );
         featuredCharacterIds = resolved.featuredIds;
         backgroundCharacterIds = resolved.backgroundIds;
+        staging = resolved.staging;
       }
 
       // Nothing marked "featured". Don't fail the whole spread: picture books
@@ -832,6 +845,12 @@ export const generateSingleSpread = inngest.createFunction(
       const featuredRefs = featuredCharacterIds
         .map((id) => allCharacterRefs.find((c) => c.id === id))
         .filter(Boolean) as CharacterRef[];
+
+      // Two-pass split for crowded spreads. Order = importance (decide-scenes
+      // lists protagonists first), so cluster A gets the clean first pass.
+      const clusterA = featuredRefs.slice(0, CLUSTER_SIZE);
+      const clusterB = featuredRefs.slice(CLUSTER_SIZE);
+      const twoPass = clusterB.length > 0;
 
       const backgroundNames = backgroundCharacterIds
         .map((id) => allCharacterRefs.find((c) => c.id === id)?.name)
@@ -922,9 +941,12 @@ export const generateSingleSpread = inngest.createFunction(
         (locationRef ? 1 : 0) +
         (existingSpreadImageUrl && !isDataUrl(existingSpreadImageUrl) ? 1 : 0) +
         1; // layout template
-      const charBudget = Math.max(featuredRefs.length, MAX_INPUT_IMAGES - fixedImages);
+      const charBudget = Math.max(
+        featuredRefs.length,
+        Math.min(MAX_CHARACTER_IMAGES, MAX_INPUT_IMAGES - fixedImages)
+      );
 
-      const refChars = featuredRefs.map((c) => ({
+      const toRefChar = (c: CharacterRef) => ({
         id: c.id,
         name: c.name,
         species: c.species,
@@ -934,13 +956,21 @@ export const generateSingleSpread = inngest.createFunction(
         referenceImageUrl: c.referenceUrl,
         fullBodyImageUrl: c.fullBodyUrl,
         visualDetails: c.visualDetails,
-      }));
+      });
+      const refCharsA = clusterA.map(toRefChar);
+      const refCharsB = clusterB.map(toRefChar);
 
       const { photoParts, missing: missingPortraits, counts } =
-        await pushCharacterReferenceParts(parts, refChars, charBudget, castSheet);
+        await pushCharacterReferenceParts(parts, refCharsA, charBudget, castSheet);
       console.log(
-        `🖼️ Character images: ${counts.portrait} portraits, ${counts.photo} photos, ${counts.fullBody} full-body (budget ${charBudget})`
+        `🖼️ Character images (pass 1): ${counts.portrait} portraits, ${counts.photo} photos, ${counts.fullBody} full-body (budget ${charBudget})${
+          twoPass ? `; cluster B of ${clusterB.length} follows in pass 2` : ""
+        }`
       );
+      // Cluster B must have images too, or pass 2 has nothing to paint from.
+      for (const c of refCharsB) {
+        if (!c.portraitImageUrl && !c.referenceImageUrl && !c.fullBodyImageUrl) missingPortraits.push(c.name);
+      }
 
       if (missingPortraits.length > 0) {
         throw new Error(
@@ -1001,6 +1031,22 @@ export const generateSingleSpread = inngest.createFunction(
         ...featuredRefs.map((c) => c.id),
         ...backgroundCharacterIds,
       ]);
+
+      // Crowded spread: cluster B is drawn now as placeholder figures with the
+      // right height, hair and outfit (so the composition is final), and their
+      // faces are painted in from references in pass 2.
+      const placement =
+        staging ??
+        `the second cluster stands together on the RIGHT page, clearly separated from the first cluster`;
+      const clusterBSection = twoPass
+        ? `
+SECOND CLUSTER (drawn now as placeholder figures; their faces are finalised in a later step):
+${clusterB
+  .map((c) => `- ${c.name}${castSheet?.lines?.[c.id] ? `: ${castSheet.lines[c.id]}` : ""}`)
+  .join("\n")}
+STAGING: ${placement}
+Give each of these figures the correct height, build, hair colour/length, skin tone and outfit from the character sheet, in natural poses. Keep their faces simple and generic for now. Do NOT merge them into the first cluster.`
+        : "";
       if (hasPlan && strategistPlan!.recommendedPrompt) {
         // Strategist plan path (manual revision flow)
         const backgroundSection =
@@ -1032,6 +1078,7 @@ ${geminiStyleBlock}
 
 ART DIRECTOR INSTRUCTIONS:
 ${strategistPlan!.recommendedPrompt}
+${clusterBSection}
 ${backgroundSection}
 ${hiddenSection}
 
@@ -1086,6 +1133,7 @@ ${scene?.mood ? `MOOD: ${scene.mood}` : ""}
 SCENE DIRECTION:
 ${scene!.illustrationPrompt}
 ${compositionBlock}
+${clusterBSection}
 ${backgroundSection}
 ${doNotIncludeSection}
 
@@ -1124,22 +1172,101 @@ AVOID: ${fullAvoidBlock}${feedback ? `\nFEEDBACK: ${feedback}` : ""}
           },
         });
 
-      let response = await callGemini(parts);
-      let image = extractInlineImage(response);
+      let response: any = null;
+      let image: ReturnType<typeof extractInlineImage> = null;
+      let firstError: unknown = null;
+      try {
+        response = await callGemini(parts);
+        image = extractInlineImage(response);
+      } catch (err) {
+        if (photoParts.length === 0) throw err;
+        firstError = err;
+      }
 
-      // Real photos occasionally make the model refuse. Rather than fail the
-      // page, draw it from the portraits alone (the old behaviour).
+      // Real photos occasionally make the model refuse (or reject the request
+      // outright). Rather than fail the page, draw it from the portraits
+      // alone, which is what every page did before.
       if (!image && photoParts.length > 0) {
         console.warn(
-          `⚠️ Spread ${pageLabel}: no image with reference photos (block: ${
-            (response as any)?.promptFeedback?.blockReason ?? "none"
-          }, finish: ${(response as any)?.candidates?.[0]?.finishReason ?? "?"}). Retrying without photos.`
+          `⚠️ Spread ${pageLabel}: no image with reference photos (${
+            firstError instanceof Error
+              ? firstError.message
+              : `block: ${response?.promptFeedback?.blockReason ?? "none"}, finish: ${
+                  response?.candidates?.[0]?.finishReason ?? "?"
+                }`
+          }). Retrying without photos.`
         );
         response = await callGemini(withoutParts(parts, photoParts));
         image = extractInlineImage(response);
       }
 
       if (!image) throw new Error("No image returned from Gemini");
+
+      /* ---------------------------------------------------------------- */
+      /* PASS 2 (crowded spreads): paint cluster B's real faces into the   */
+      /* pass-1 picture. Everything else stays identical. If this pass    */
+      /* fails, the pass-1 picture is kept rather than losing the page.   */
+      /* ---------------------------------------------------------------- */
+      if (twoPass) {
+        try {
+          const parts2: any[] = [];
+          parts2.push({ inlineData: { data: image.data, mimeType: image.mimeType } });
+          parts2.push({
+            text: `↑ CURRENT ILLUSTRATION. Keep EVERYTHING identical: layout, hand-lettered text, background, colours, lighting, style, and the figures of ${clusterA
+              .map((c) => c.name.toUpperCase())
+              .join(", ")}. ↑`,
+          });
+
+          const budget2 = Math.max(clusterB.length, Math.min(MAX_CHARACTER_IMAGES, MAX_INPUT_IMAGES - 1));
+          const { photoParts: photoParts2, counts: counts2 } =
+            await pushCharacterReferenceParts(parts2, refCharsB, budget2, castSheet);
+          console.log(
+            `🖼️ Character images (pass 2): ${counts2.portrait} portraits, ${counts2.photo} photos, ${counts2.fullBody} full-body`
+          );
+
+          const castBlockB = castSheetBlock(castSheet, clusterB.map((c) => c.id));
+          parts2.push({
+            text: `
+EDIT THIS ILLUSTRATION.
+The ${clusterB.length} placeholder figure(s) of the second cluster (${placement}) are the characters shown above: ${clusterB
+              .map((c) => c.name)
+              .join(", ")}.
+Redraw ONLY those figures so each one is unmistakably the referenced character: exact face, hair colour, length and texture, skin tone, build and outfit. Keep their positions, poses, sizes and the space between the clusters exactly as they are.
+Do not change anyone else, the text, the background or the composition. Do not add or remove people.
+${castBlockB}
+STYLE: ${geminiStyleBlock}
+            `.trim(),
+          });
+
+          let response2: any = null;
+          let image2: ReturnType<typeof extractInlineImage> = null;
+          try {
+            response2 = await callGemini(parts2);
+            image2 = extractInlineImage(response2);
+          } catch (err) {
+            if (photoParts2.length === 0) throw err;
+            console.warn(`⚠️ Spread ${pageLabel} pass 2 rejected with photos:`, err);
+          }
+          if (!image2 && photoParts2.length > 0) {
+            console.warn(`⚠️ Spread ${pageLabel} pass 2: no image with reference photos. Retrying without photos.`);
+            response2 = await callGemini(withoutParts(parts2, photoParts2));
+            image2 = extractInlineImage(response2);
+          }
+
+          if (image2) {
+            image = image2;
+            console.log(`✅ Spread ${pageLabel}: pass 2 painted ${clusterB.length} character(s) from references`);
+          } else {
+            console.error(
+              `❌ Spread ${pageLabel}: pass 2 returned no image (block: ${response2?.promptFeedback?.blockReason ?? "none"}). Keeping pass-1 picture; ${clusterB
+                .map((c) => c.name)
+                .join(", ")} may not match their references.`
+            );
+          }
+        } catch (err) {
+          console.error(`❌ Spread ${pageLabel}: pass 2 failed, keeping pass-1 picture:`, err);
+        }
+      }
 
       return saveImageToStorage(image.data, image.mimeType, storyId);
     });
