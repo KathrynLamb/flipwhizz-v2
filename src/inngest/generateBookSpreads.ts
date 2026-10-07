@@ -40,7 +40,7 @@ import {
   pushCharacterReferenceParts,
   withoutParts,
   MAX_INPUT_IMAGES,
-  MAX_CHARACTER_IMAGES,
+  MAX_PEOPLE_PER_REQUEST,
   type CastSheet,
 } from "@/lib/characters/consistency";
 
@@ -67,7 +67,7 @@ const IMAGE_SIZE = "2K";
 // cluster A first, then cluster B painted into the same picture. More than
 // 10 is skipped for focus selection.
 const MAX_FEATURED_CHARACTERS = 10;
-const CLUSTER_SIZE = MAX_CHARACTER_IMAGES; // 5
+const CLUSTER_SIZE = MAX_PEOPLE_PER_REQUEST; // 5 people per pass
 
 const SPREAD_TEMPLATE_PATH = path.resolve(
   process.cwd(),
@@ -941,9 +941,11 @@ export const generateSingleSpread = inngest.createFunction(
         (locationRef ? 1 : 0) +
         (existingSpreadImageUrl && !isDataUrl(existingSpreadImageUrl) ? 1 : 0) +
         1; // layout template
+      // Up to 5 people per pass, each with as many pictures as fit in the
+      // 14-image request (portrait, then real photo, then full body).
       const charBudget = Math.max(
-        featuredRefs.length,
-        Math.min(MAX_CHARACTER_IMAGES, MAX_INPUT_IMAGES - fixedImages)
+        Math.min(featuredRefs.length, CLUSTER_SIZE),
+        MAX_INPUT_IMAGES - fixedImages
       );
 
       const toRefChar = (c: CharacterRef) => ({
@@ -1027,6 +1029,13 @@ export const generateSingleSpread = inngest.createFunction(
       }
 
       // 6. SCENE INSTRUCTION
+      // Google's guide: put the exact text in quotes. Saying each block is
+      // lettered once stops the model repeating a passage elsewhere.
+      const quote = (t?: string | null) =>
+        t && t.trim() ? `"${t.trim()}"` : "(no text on this page)";
+      const textBlock = `TEXT TO HAND-LETTER. Letter each passage EXACTLY ONCE, word for word, exactly as written between the quotes. Do not repeat, split or add any lines. Each page has one block of text only.
+LEFT PAGE (upper-left area): ${quote(left?.text)}
+RIGHT PAGE (upper-right area): ${quote(right?.text)}`;
       const castBlock = castSheetBlock(castSheet, [
         ...featuredRefs.map((c) => c.id),
         ...backgroundCharacterIds,
@@ -1067,7 +1076,7 @@ One continuous 16:9 landscape. Left half = left page, right half = right page.
 HIGHEST PRIORITY:
 - Preserve the identity of every FEATURED character exactly
 - Do not redesign, simplify, substitute, or genericise featured characters
-- Every character appears EXACTLY ONCE in the whole spread (both pages together). Never draw the same person or animal twice, even if the text mentions them on both pages.
+- Every character appears EXACTLY ONCE in the whole spread (both pages together). Make sure to only have one of each character in the image. Never draw the same person or animal twice, even if the text mentions them on both pages.
 ${sceneOnly || featuredRefs.length === 0
   ? "- This is a SCENE-ONLY illustration: do not draw any of the story's characters. Focus on the setting, mood and objects described."
   : `- Only ${featuredRefs.length} character(s) should be drawn with full detail and accurate likeness: ${featuredRefs.map((c) => c.name).join(", ")}`}
@@ -1083,11 +1092,7 @@ ${clusterBSection}
 ${backgroundSection}
 ${hiddenSection}
 
-LEFT PAGE TEXT (upper-left area):
-${left?.text ?? ""}
-
-RIGHT PAGE TEXT (upper-right area):
-${right?.text ?? ""}
+${textBlock}
 
 Hand-letter text into the illustration. Large, high-contrast, child-friendly. ${typographyBlock}
 Keep text well inside safe zones. Outer edges will be trimmed.
@@ -1124,7 +1129,7 @@ HIGHEST PRIORITY:
 - Preserve the identity of every FEATURED character exactly
 - Do not redesign, simplify, substitute, or genericise featured characters
 - Match their face, body, colours, markings, hair/fur shape, and signature features closely
-- Every character appears EXACTLY ONCE in the whole spread (both pages together). Never draw the same person or animal twice, even if the text mentions them on both pages.
+- Every character appears EXACTLY ONCE in the whole spread (both pages together). Make sure to only have one of each character in the image. Never draw the same person or animal twice, even if the text mentions them on both pages.
 
 ${castBlock}
 
@@ -1139,11 +1144,7 @@ ${clusterBSection}
 ${backgroundSection}
 ${doNotIncludeSection}
 
-LEFT PAGE TEXT (upper-left area):
-${left?.text ?? ""}
-
-RIGHT PAGE TEXT (upper-right area):
-${right?.text ?? ""}
+${textBlock}
 
 Hand-letter text into the illustration. Large, high-contrast, child-friendly. ${typographyBlock}
 Keep text well inside safe zones. Outer edges will be trimmed.
@@ -1219,7 +1220,7 @@ AVOID: ${fullAvoidBlock}${feedback ? `\nFEEDBACK: ${feedback}` : ""}
               .join(", ")}. ↑`,
           });
 
-          const budget2 = Math.max(clusterB.length, Math.min(MAX_CHARACTER_IMAGES, MAX_INPUT_IMAGES - 1));
+          const budget2 = Math.max(clusterB.length, MAX_INPUT_IMAGES - 1);
           const { photoParts: photoParts2, counts: counts2 } =
             await pushCharacterReferenceParts(parts2, refCharsB, budget2, castSheet);
           console.log(

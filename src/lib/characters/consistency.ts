@@ -56,13 +56,12 @@ const SHEET_VERSION = 3; // bump to force every story to rebuild its sheet
 // could disagree with the character card.
 const FULL_BODY_VERSION = 2;
 
-// Gemini 3 Pro Image accepts at most 14 input images per request, and Google
-// documents "up to 5 images of characters" for character consistency. Past
-// that, likeness gets worse, not better, so character pictures are capped at
-// 5 per request: every featured character gets a portrait first, then photos
-// go to as many characters as the remaining slots allow.
+// Gemini 3 Pro Image: "blend up to 14 images" and "maintain the appearance
+// of up to five people". The limit is 5 PEOPLE per request, not 5 pictures:
+// each of those people can have several pictures (portrait, real photo,
+// full body) as long as the request stays within 14 images in total.
 export const MAX_INPUT_IMAGES = 14;
-export const MAX_CHARACTER_IMAGES = 5;
+export const MAX_PEOPLE_PER_REQUEST = 5;
 // Reference photos come straight off phones (several MB each); shrink before
 // sending so five of them don't blow the request size limit.
 const MAX_REF_PX = 1024;

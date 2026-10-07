@@ -46,7 +46,6 @@ import {
   pushCharacterReferenceParts,
   withoutParts,
   MAX_INPUT_IMAGES,
-  MAX_CHARACTER_IMAGES,
   type CastSheet,
   type RefCharacter,
 } from "@/lib/characters/consistency";
@@ -223,7 +222,7 @@ export const generateCoverSpreadV5 = inngest.createFunction(
 
     const castBlock = castSheetBlock(refs.castSheet as CastSheet | null, characterIds);
     const charBudget = (fixedImages: number) =>
-      Math.max(refs.chars.length, Math.min(MAX_CHARACTER_IMAGES, MAX_INPUT_IMAGES - fixedImages));
+      Math.max(refs.chars.length, MAX_INPUT_IMAGES - fixedImages);
 
     const missingPortraits = refs.chars.filter(c => !c.portraitImageUrl || isDataUrl(c.portraitImageUrl));
     if (missingPortraits.length > 0) {
