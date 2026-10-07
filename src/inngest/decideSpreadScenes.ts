@@ -769,7 +769,11 @@ Rules:
  
       await inngest.send({
         name: "story/build-spread-prompts",
-        data: { storyId },
+        data: {
+          storyId,
+          ...(event.data?.force ? { force: true } : {}),
+          ...(event.data?.allowUnpaid ? { allowUnpaid: true } : {}),
+        },
       });
     });
 

@@ -670,7 +670,11 @@ ${spreadContexts.join("\n\n---\n\n")}
 
       await inngest.send({
         name: "story/generate-spreads",
-        data: { storyId },
+        data: {
+          storyId,
+          ...(event.data?.force ? { force: true } : {}),
+          ...(event.data?.allowUnpaid ? { allowUnpaid: true } : {}),
+        },
       });
 
       console.log("🚀 Triggered story/generate-spreads");

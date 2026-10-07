@@ -1232,7 +1232,12 @@ Rules:
       console.log("🎬 Triggering decide-spread-scenes...");
       await inngest.send({
         name: "story/decide-spread-scenes",
-        data: { storyId },
+        // Pass admin flags down the chain (redraw-all, unpaid test books).
+        data: {
+          storyId,
+          ...(event.data?.force ? { force: true } : {}),
+          ...(event.data?.allowUnpaid ? { allowUnpaid: true } : {}),
+        },
       });
     });
 

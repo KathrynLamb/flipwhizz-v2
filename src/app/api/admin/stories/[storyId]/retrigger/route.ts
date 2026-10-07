@@ -31,6 +31,7 @@ export async function POST(
     "story/build-spread-prompts",
     "story/generate-spreads",
     "story/generate-spreads:force",
+    "story/ensure-world:force",
     "story/generate.cover.spread",
   ];
 
@@ -62,10 +63,12 @@ export async function POST(
     .set({ status: event === "story/generate.cover.spread" ? "generating_covers" : "generating", updatedAt: new Date() })
     .where(eq(stories.id, storyId));
 
-  // "story/generate-spreads:force" = redraw every spread, even finished ones.
-  const force = event === "story/generate-spreads:force";
+  // ":force" = redraw every spread, even finished ones. For ensure-world the
+  // flag is passed down the chain (decide scenes -> prompts -> drawing).
+  const force = event.endsWith(":force");
+  const name = force ? event.replace(/:force$/, "") : event;
   await inngest.send({
-    name: force ? "story/generate-spreads" : event,
+    name,
     // Admin retriggers may run on unpaid books (support/testing).
     data: force ? { storyId, force: true, allowUnpaid: true } : { storyId, allowUnpaid: true },
   });

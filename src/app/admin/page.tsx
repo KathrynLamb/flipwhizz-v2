@@ -193,6 +193,7 @@ function StoryViewer({
   defaultValue="story/generate-spreads"
 >
   <option value="story/ensure-world">ensure-world (full pipeline)</option>
+  <option value="story/ensure-world:force">ensure-world + redraw ALL pages</option>
   <option value="story/build-spreads">build-spreads</option>
   <option value="story/build-spread-prompts">build-spread-prompts</option>
   <option value="story/generate-spreads">generate-spreads (missing images only)</option>
@@ -340,6 +341,7 @@ export default function AdminPage() {
         </div>
         <div className="flex items-center gap-4">
           <a href="/admin/health" className="text-xs text-[#C4B5FD] hover:text-white">health check →</a>
+          <a href="/admin/regenerate" className="text-xs text-[#C4B5FD] hover:text-white ml-3">regenerate a book →</a>
           <span className="text-white/30 text-xs">🔒 restricted</span>
         </div>
       </div>
