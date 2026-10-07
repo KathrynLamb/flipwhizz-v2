@@ -51,6 +51,10 @@ const TEXT_MODEL = "gemini-2.5-flash";
 const IMAGE_MODEL = "gemini-3-pro-image-preview";
 const MAX_SHEET_IMAGES = 40; // flash handles many; 13 characters x 2 pictures fits
 const SHEET_VERSION = 3; // bump to force every story to rebuild its sheet
+// Bump to force every full-body image to be redrawn. v2: v1 images were drawn
+// from sheet lines that copied clothes from the written description, so they
+// could disagree with the character card.
+const FULL_BODY_VERSION = 2;
 
 // Gemini 3 Pro Image accepts at most 14 input images per request, and Google
 // documents "up to 5 images of characters" for character consistency. Past
@@ -442,7 +446,12 @@ export function fullBodyIsCurrent(c: {
   const full = c.fullBodyUrl ?? c.fullBodyImageUrl;
   const source =
     c.portraitUrl ?? c.portraitImageUrl ?? c.referenceUrl ?? c.referenceImageUrl ?? null;
-  return !!full && !!source && c.visualDetails?.fullBodyFrom === source;
+  return (
+    !!full &&
+    !!source &&
+    c.visualDetails?.fullBodyFrom === source &&
+    c.visualDetails?.fullBodyVersion === FULL_BODY_VERSION
+  );
 }
 
 async function uploadFullBody(base64: string, characterId: string) {
@@ -498,7 +507,7 @@ export async function ensureFullBody(
     const parts: any[] = [
       await imagePart(source),
       {
-        text: `↑ THIS IS ${c.name.toUpperCase()}. Reproduce exactly this character: same face, same hair colour, length and texture, same skin tone, same ${isAnimal ? "coat and markings" : "outfit"}, same art style.`,
+        text: `↑ THIS IS ${c.name.toUpperCase()}, exactly as drawn on their character card. Reproduce exactly this character: same face, same hair colour, length and texture, same skin tone, same ${isAnimal ? "coat and markings" : "clothes, colours and head covering"}, same art style. This picture overrides any written description below. ↑`,
       },
     ];
 
@@ -520,6 +529,7 @@ REQUIREMENTS:
 - Whole body visible from the top of the head to the feet${isAnimal ? " / paws and tail" : ""}, with a small margin all round
 - Standing in a relaxed neutral pose, body turned slightly towards the viewer
 - Natural, accurate proportions for their age and size; hair shown at its full length
+- Clothes, colours and head covering exactly as in the character picture above; where the picture is cropped, continue the same outfit naturally
 - Plain white background, no scenery, no props unless part of the outfit
 - Only this one character. No text, labels or watermark.`,
     });
@@ -555,7 +565,7 @@ REQUIREMENTS:
       .update(characters)
       .set({
         fullBodyImageUrl: url,
-        visualDetails: sql`jsonb_set(coalesce(${characters.visualDetails}, '{}'::jsonb), '{fullBodyFrom}', ${JSON.stringify(source)}::jsonb)`,
+        visualDetails: sql`coalesce(${characters.visualDetails}, '{}'::jsonb) || ${JSON.stringify({ fullBodyFrom: source, fullBodyVersion: FULL_BODY_VERSION })}::jsonb`,
         updatedAt: new Date(),
       })
       .where(eq(characters.id, c.id));
