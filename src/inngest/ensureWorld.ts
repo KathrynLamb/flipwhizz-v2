@@ -1237,6 +1237,7 @@ Rules:
           storyId,
           ...(event.data?.force ? { force: true } : {}),
           ...(event.data?.allowUnpaid ? { allowUnpaid: true } : {}),
+          ...(event.data?.artModel ? { artModel: event.data.artModel } : {}),
         },
       });
     });

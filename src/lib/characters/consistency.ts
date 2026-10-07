@@ -48,7 +48,7 @@ cloudinary.config({
 
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const TEXT_MODEL = "gemini-2.5-flash";
-const IMAGE_MODEL = "gemini-3-pro-image-preview";
+const IMAGE_MODEL = "gemini-3-pro-image";
 const MAX_SHEET_IMAGES = 40; // flash handles many; 13 characters x 2 pictures fits
 const SHEET_VERSION = 3; // bump to force every story to rebuild its sheet
 // Bump to force every full-body image to be redrawn. v2: v1 images were drawn

@@ -23,7 +23,12 @@ export async function POST(
   }
 
   const { storyId } = await params;
-  const { event = "story/generate-spreads" } = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => ({}));
+  const event: string = body.event ?? "story/generate-spreads";
+  // Optional: which image model draws the art ("nb21" | "pro"), and which
+  // character to refresh for story/refresh-character.
+  const artModel: string | undefined = body.artModel === "nb21" || body.artModel === "pro" ? body.artModel : undefined;
+  const characterId: string | undefined = typeof body.characterId === "string" ? body.characterId : undefined;
 
   const allowed = [
     "story/ensure-world",
@@ -33,6 +38,7 @@ export async function POST(
     "story/generate-spreads:force",
     "story/ensure-world:force",
     "story/generate.cover.spread",
+    "story/refresh-character",
   ];
 
   if (!allowed.includes(event)) {
@@ -51,6 +57,10 @@ export async function POST(
 
   // The cover function replays the strategy the cover chat saved; without
   // one there is nothing to run.
+  if (event === "story/refresh-character" && !characterId) {
+    return NextResponse.json({ error: "Choose a character to update." }, { status: 400 });
+  }
+
   if (event === "story/generate.cover.spread" && !(story.coverPlan as any)?.generationStrategy) {
     return NextResponse.json(
       { error: "This story has no saved cover strategy yet. Generate the cover from the cover chat first." },
@@ -58,10 +68,12 @@ export async function POST(
     );
   }
 
-  await db
-    .update(stories)
-    .set({ status: event === "story/generate.cover.spread" ? "generating_covers" : "generating", updatedAt: new Date() })
-    .where(eq(stories.id, storyId));
+  if (event !== "story/refresh-character") {
+    await db
+      .update(stories)
+      .set({ status: event === "story/generate.cover.spread" ? "generating_covers" : "generating", updatedAt: new Date() })
+      .where(eq(stories.id, storyId));
+  }
 
   // ":force" = redraw every spread, even finished ones. For ensure-world the
   // flag is passed down the chain (decide scenes -> prompts -> drawing).
@@ -70,7 +82,13 @@ export async function POST(
   await inngest.send({
     name,
     // Admin retriggers may run on unpaid books (support/testing).
-    data: force ? { storyId, force: true, allowUnpaid: true } : { storyId, allowUnpaid: true },
+    data: {
+      storyId,
+      allowUnpaid: true,
+      ...(force ? { force: true } : {}),
+      ...(artModel ? { artModel } : {}),
+      ...(characterId ? { characterId } : {}),
+    },
   });
 
   return NextResponse.json({ ok: true, storyId, event });

@@ -49,6 +49,9 @@ import {
   type CastSheet,
   type RefCharacter,
 } from "@/lib/characters/consistency";
+import { ensureReferenceSheet, loadCast } from "@/lib/illustrate/sheets";
+import { checkAndFix } from "@/lib/illustrate/steps";
+import type { CastRef } from "@/lib/illustrate/plan";
 
 type GenerationStrategy = {
   approach: "two-pass" | "single" | "edit";
@@ -72,7 +75,7 @@ cloudinary.config({
 });
 
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-const IMAGE_MODEL = "gemini-3-pro-image-preview";
+const IMAGE_MODEL = "gemini-3-pro-image";
 const LOGO_PATH = path.resolve(process.cwd(), "public", "Flipwhizz_logo_NEW.png");
 const COVER_TEMPLATE_PATH = path.resolve(process.cwd(), "public", "templates", "spread-text-safe-template.png");
 
@@ -164,7 +167,8 @@ export const generateCoverSpreadV5 = inngest.createFunction(
     concurrency: 1,
     triggers: [{ event: "story/generate.cover.spread" }],
     onFailure: async ({ event, error }) => {
-      const storyId = event.data?.storyId;
+      // inngest/function.failed wraps the original event.
+      const storyId = (event.data as any)?.event?.data?.storyId ?? (event.data as any)?.storyId;
       if (!storyId) return;
       console.error(`🎨 [cover-v5] ❌ FAILED for story ${storyId}:`, error.message);
       try {
@@ -194,10 +198,11 @@ export const generateCoverSpreadV5 = inngest.createFunction(
 
     console.log(`🎨 [cover-v5] Starting "${approach}" generation for story ${storyId}`);
 
-    // Full-body references are cached per portrait, so this is free after the
-    // first book generation.
+    // Reference sheets (cached; the book run normally made them already).
+    // Full-body images stay for pushCharacterReferenceParts.
     for (const characterId of characterIds) {
       await step.run(`full-body-${characterId}`, async () => ensureFullBody(characterId, storyId));
+      await step.run(`sheet-${characterId}`, async () => ensureReferenceSheet(characterId, storyId));
     }
 
     const refs = await step.run("load-refs", async () => {
@@ -229,13 +234,15 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       throw new Error(`Missing portraits for: ${missingPortraits.map(c => c.name).join(", ")}`);
     }
 
+    let artUrl: string | null = null;
+
     // ── EDIT ──
     if (approach === "edit" && strategy.existingCoverUrl && strategy.editPrompt) {
       const resizedCoverUrl = await step.run("resize-existing-cover", async () => {
         return fetchAndReupload(strategy.existingCoverUrl!, storyId, 1200, 70);
       });
 
-      return await step.run("edit-cover", async () => {
+      artUrl = await step.run("edit-cover", async () => {
         const parts: any[] = [];
         parts.push(await getImagePart(resizedCoverUrl));
         parts.push({ text: "↑ THIS IS THE EXISTING COVER. Keep EVERYTHING the same — composition, layout, text, background, colours, lighting. Only replace the characters so they match the references below exactly. ↑" });
@@ -244,13 +251,13 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         parts.push({ text: strategy.editPrompt! });
         console.log(`🎨 [edit] ${parts.filter((p: any) => p.inlineData).length} images`);
         const image = await generateWithPhotoFallback(parts, photoParts, strategy, "edit");
-        return await saveCover(image.data, storyId, strategy, refs.chars);
+        return await uploadToCloudinary(image.data, storyId);
       });
     }
 
     // ── SINGLE ──
-    if (approach === "single") {
-      return await step.run("single-pass", async () => {
+    if (!artUrl && approach === "single") {
+      artUrl = await step.run("single-pass", async () => {
         const parts: any[] = [];
         if (refs.styleRefUrl && !isDataUrl(refs.styleRefUrl)) {
           try { parts.push(await getImagePart(refs.styleRefUrl)); parts.push({ text: "↑ STYLE REFERENCE — match this illustration style. ↑" }); } catch {}
@@ -267,11 +274,12 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         parts.push({ text: strategy.pass1Prompt });
         console.log(`🎨 [single] ${parts.filter((p: any) => p.inlineData).length} images`);
         const image = await generateWithPhotoFallback(parts, photoParts, strategy, "single");
-        return await saveCover(image.data, storyId, strategy, refs.chars);
+        return await uploadToCloudinary(image.data, storyId);
       });
     }
 
     // ── TWO-PASS ──
+    if (!artUrl) {
     const pass1Url = await step.run("pass1-composition", async () => {
       const parts: any[] = [];
       if (refs.styleRefUrl && !isDataUrl(refs.styleRefUrl)) {
@@ -297,9 +305,9 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       return url;
     });
 
-    // Upload + save INSIDE the step and return only the small result. Returning
-    // the raw base64 image (several MB) exceeded Inngest's step output limit.
-    return await step.run("pass2-character-swap", async () => {
+    // Upload INSIDE the step and return only the URL. Returning the raw
+    // base64 image (several MB) exceeded Inngest's step output limit.
+    artUrl = await step.run("pass2-character-swap", async () => {
       const parts: any[] = [];
       const pass1UrlResized = pass1Url.replace("/upload/", "/upload/w_1920,q_80/");
       parts.push(await getImagePart(pass1UrlResized));
@@ -310,13 +318,44 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       console.log(`🎨 [pass2] ${parts.filter((p: any) => p.inlineData).length} images`);
       const image = await generateWithPhotoFallback(parts, photoParts, strategy, "pass 2");
       console.log("🎨 [pass2] ✅ Character swap complete");
-      return await saveCover(image.data, storyId, strategy, refs.chars);
+      return await uploadToCloudinary(image.data, storyId);
     });
+    }
+
+    // ── CHECK AND FIX every character on the cover ──
+    // Same pipeline as the spreads: find each person, compare with their
+    // reference sheet, fix one person at a time in a crop. The title sits
+    // outside the people, so the fixes leave it untouched.
+    const coverCast: CastRef[] = await step.run("cover-cast", async () => loadCast(characterIds, refs.castSheet as CastSheet | null, storyId));
+    const qa = await checkAndFix(step, {
+      prefix: "cover-qa",
+      artUrl: artUrl!,
+      cast: coverCast,
+      expectedIds: characterIds,
+      sceneHint: "This is the book's cover (front and back as one wide image).",
+      sizeNotes: (refs.castSheet as CastSheet | null)?.sizeNotes,
+      styleBlock: "Match the cover's existing illustration style exactly.",
+      modelId: IMAGE_MODEL,
+      aspectRatio: strategy.aspectRatio,
+      imageSize: strategy.imageSize,
+      folder: `flipwhizz/stories/${storyId}/covers/work`,
+      // The cover already has its title: fixes must keep it, whole-picture
+      // edits are off (they redraw the title), and a character may appear on
+      // both front and back on purpose.
+      preserveText: true,
+      allowDuplicates: true,
+      allowAdd: false,
+    });
+    if (qa.status === "flagged") console.warn(`🚩 Cover flagged for ${storyId}: ${qa.remaining.join(" | ")}`);
+
+    return await step.run("save-cover", async () => ({
+      ...(await saveCoverUrl(qa.artUrl, storyId, strategy, refs.chars)),
+      qa: { status: qa.status, remaining: qa.remaining, fixesApplied: qa.fixesApplied },
+    }));
   }
 );
 
-async function saveCover(base64: string, storyId: string, strategy: GenerationStrategy, chars: { id: string; name: string }[]) {
-  const url = await uploadToCloudinary(base64, storyId);
+async function saveCoverUrl(url: string, storyId: string, strategy: GenerationStrategy, chars: { id: string; name: string }[]) {
   await db.transaction(async (tx) => {
     await tx.update(bookCovers).set({ isSelected: false }).where(eq(bookCovers.storyId, storyId));
     await tx.insert(bookCovers).values({

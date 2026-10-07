@@ -185,7 +185,7 @@ async function _GET(
       imageCount,
       textCount,
       totalTextChars: totalChars,
-      model: "gemini-3-pro-image-preview",
+      model: "gemini-3-pro-image",
       aspectRatio: "16:9",
       imageSize: "2K",
     },

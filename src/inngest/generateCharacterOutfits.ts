@@ -19,7 +19,7 @@ const gemini = new GoogleGenAI({
   apiVersion: "v1alpha",
 });
 
-const IMAGE_MODEL = "gemini-3-pro-image-preview";
+const IMAGE_MODEL = "gemini-3-pro-image";
 
 const OUTFIT_DESCRIPTIONS: Record<string, { name: string; description: string }> = {
   casual: {

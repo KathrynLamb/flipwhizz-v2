@@ -14,7 +14,9 @@ import { buildSpreadPrompts } from "@/inngest/buildSpreadPrompts";
 
 // Visuals
 import { generateStyleSample } from "@/inngest/generateStyle";
-import { generateBookSpreads, generateSingleSpread } from "@/inngest/generateBookSpreads"; // ✅ uses story_spread_scene
+import { generateBookSpreads } from "@/inngest/generateBookSpreads";
+import { generateSingleSpread } from "@/inngest/spreadWorker"; // compose -> check and fix -> letter
+import { refreshCharacter } from "@/inngest/refreshCharacter";
 import { reviseSingleSpread } from "@/inngest/reviseSingleSpread";
 import { buildSpreads } from "@/inngest/buildSpreads";
 import { analyseReferencePhoto } from "@/inngest/analyseReferencePhoto";
@@ -39,6 +41,7 @@ export const { GET, POST, PUT } = serve({
     generateStyleSample,
     generateBookSpreads,
     generateSingleSpread,
+    refreshCharacter,
     reviseSingleSpread,
     generateCoverSpreadV5,
     analyseReferencePhoto,

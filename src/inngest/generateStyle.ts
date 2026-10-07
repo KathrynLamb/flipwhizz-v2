@@ -20,7 +20,7 @@ const client = new GoogleGenAI({
   apiVersion: "v1alpha",
 });
 
-const IMAGE_MODEL = "gemini-3-pro-image-preview";
+const IMAGE_MODEL = "gemini-3-pro-image";
 
 /* ---------------- HELPERS ---------------- */
 

@@ -18,7 +18,7 @@ cloudinary.config({
 });
 
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-const IMAGE_MODEL = "gemini-3-pro-image-preview";
+const IMAGE_MODEL = "gemini-3-pro-image";
 const TEXT_MODEL = "gemini-2.5-flash";
 
 type ColorPalette = {

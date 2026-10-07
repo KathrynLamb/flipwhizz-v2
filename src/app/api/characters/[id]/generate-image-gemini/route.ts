@@ -118,7 +118,7 @@ Description: ${character.description ?? ""}
     /* ---------------- Generate ---------------- */
 
     const response = await client.models.generateContent({
-      model: "gemini-3-pro-image-preview",
+      model: "gemini-3-pro-image",
       contents: [{ role: "user", parts }],
       config: { responseModalities: ["TEXT", "IMAGE"] },
     });

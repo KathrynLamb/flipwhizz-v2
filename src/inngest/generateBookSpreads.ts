@@ -33,16 +33,9 @@ import { z } from "zod";
 import fs from "fs/promises";
 import path from "path";
 import { generatePortraitFromDescription } from "@/lib/characters/generatePortrait";
-import {
-  getCastSheet,
-  castSheetBlock,
-  ensureFullBody,
-  pushCharacterReferenceParts,
-  withoutParts,
-  MAX_INPUT_IMAGES,
-  MAX_PEOPLE_PER_REQUEST,
-  type CastSheet,
-} from "@/lib/characters/consistency";
+import { getCastSheet, MAX_PEOPLE_PER_REQUEST } from "@/lib/characters/consistency";
+import { ensureReferenceSheet, ensureStylePlate } from "@/lib/illustrate/sheets";
+import { isArtModelKey } from "@/lib/illustrate/models";
 
 /* -------------------------------------------------------------------------- */
 /*                               CONFIGURATION                                */
@@ -59,14 +52,14 @@ const client = new GoogleGenAI({
   apiVersion: "v1alpha",
 });
 
-const GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview";
+const GEMINI_IMAGE_MODEL = "gemini-3-pro-image";
 const IMAGE_ASPECT_RATIO = "16:9";
 const IMAGE_SIZE = "2K";
 // Up to 5 featured characters are drawn in one pass (the image model holds 5
 // character references at full fidelity). 6 to 10 are drawn in two passes:
 // cluster A first, then cluster B painted into the same picture. More than
 // 10 is skipped for focus selection.
-const MAX_FEATURED_CHARACTERS = 10;
+export const MAX_FEATURED_CHARACTERS = 10;
 const CLUSTER_SIZE = MAX_PEOPLE_PER_REQUEST; // 5 people per pass
 
 const SPREAD_TEMPLATE_PATH = path.resolve(
@@ -186,7 +179,7 @@ function extractInlineImage(result: any) {
   };
 }
 
-function uniqueIds(values: string[]) {
+export function uniqueIds(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
 
@@ -215,7 +208,7 @@ type SpreadPresenceCharacter = {
 /* Now returns scene record alongside spread metadata                         */
 /* -------------------------------------------------------------------------- */
 
-async function loadSpreadRecord(
+export async function loadSpreadRecord(
   leftPageId: string,
   rightPageId: string | null | undefined
 ) {
@@ -247,7 +240,7 @@ async function loadSpreadRecord(
   return { ...spread, scene: scene ?? null };
 }
 
-async function loadFeaturedAndBackgroundCharacterIds(
+export async function loadFeaturedAndBackgroundCharacterIds(
   spreadId: string
 ): Promise<{ featuredIds: string[]; backgroundIds: string[]; staging: string | null }> {
   const presence = await db.query.storySpreadPresence.findFirst({
@@ -275,7 +268,7 @@ async function loadFeaturedAndBackgroundCharacterIds(
   return { featuredIds, backgroundIds, staging };
 }
 
-async function loadPageCharacterIds(pageIds: string[]) {
+export async function loadPageCharacterIds(pageIds: string[]) {
   const rows = await db
     .select({ characterId: storyPageCharacters.characterId })
     .from(storyPageCharacters)
@@ -302,7 +295,7 @@ type ResolvedStyleGuide = {
   typographyBlock: string;
 };
 
-function resolveStyleGuide(
+export function resolveStyleGuide(
   style: typeof storyStyleGuide.$inferSelect | null | undefined
 ): ResolvedStyleGuide {
   if (!style) {
@@ -369,10 +362,11 @@ export const generateBookSpreads = inngest.createFunction(
     triggers: [{ event: "story/generate-spreads" }],
   },
   async ({ event, step }) => {
-    const { storyId, force, allowUnpaid } = event.data as {
+    const { storyId, force, allowUnpaid, artModel: artModelKey } = event.data as {
       storyId?: string;
       force?: boolean;
       allowUnpaid?: boolean;
+      artModel?: string;
     };
     assertNonEmpty(storyId, "storyId");
 
@@ -569,11 +563,14 @@ export const generateBookSpreads = inngest.createFunction(
     /* Dispatch spread workers                                             */
     /* ------------------------------------------------------------------ */
 
-    const pages = await db.query.storyPages.findMany({
-      where: eq(storyPages.storyId, storyId),
-      orderBy: asc(storyPages.pageNumber),
-      columns: { id: true, pageNumber: true, imageUrl: true },
-    });
+    // Inside a step so replays see the same page list (it drives step ids).
+    const pages = await step.run("load-pages", async () =>
+      db.query.storyPages.findMany({
+        where: eq(storyPages.storyId, storyId),
+        orderBy: asc(storyPages.pageNumber),
+        columns: { id: true, pageNumber: true, imageUrl: true },
+      })
+    );
 
     const events: Array<{ name: string; data: any }> = [];
     const skippedForFocus: string[] = [];
@@ -611,7 +608,7 @@ export const generateBookSpreads = inngest.createFunction(
 
       events.push({
         name: "story/generate.single.spread",
-        data: { storyId, leftPageId, rightPageId, pageLabel },
+        data: { storyId, leftPageId, rightPageId, pageLabel, ...(artModelKey ? { artModel: artModelKey } : {}) },
       });
     }
 
@@ -631,9 +628,29 @@ export const generateBookSpreads = inngest.createFunction(
         };
       });
 
-      for (const characterId of mainCharacterIds ?? []) {
-        await step.run(`full-body-${characterId}`, async () =>
-          ensureFullBody(characterId, storyId)
+      // Style plate (style sample with the people removed) and a reference
+      // sheet for everyone who appears anywhere in the book, made once up
+      // front so the parallel spread workers all find them cached.
+      await step.run("style-plate", async () => ensureStylePlate(storyId, isArtModelKey(artModelKey) ? artModelKey : undefined));
+
+      const castIds: string[] = await step.run("cast-ids", async () => {
+        const rows = await db
+          .select({ characters: storySpreadPresence.characters })
+          .from(storySpreadPresence)
+          .innerJoin(storySpreads, eq(storySpreads.id, storySpreadPresence.spreadId))
+          .where(eq(storySpreads.storyId, storyId));
+        const ids = new Set<string>(mainCharacterIds ?? []);
+        for (const r of rows) for (const c of ((r.characters ?? []) as { characterId: string }[])) ids.add(c.characterId);
+        return [...ids];
+      });
+
+      const castSheet = await step.run("cast-sheet-lines", async () => getCastSheet(storyId).catch(() => null));
+      for (const characterId of castIds) {
+        await step.run(`sheet-${characterId}`, async () =>
+          ensureReferenceSheet(characterId, storyId, {
+            modelKey: isArtModelKey(artModelKey) ? artModelKey : undefined,
+            line: (castSheet as any)?.lines?.[characterId],
+          })
         );
       }
 
@@ -648,645 +665,4 @@ export const generateBookSpreads = inngest.createFunction(
   }
 );
 
-/* -------------------------------------------------------------------------- */
-/*                                  WORKER                                    */
-/* -------------------------------------------------------------------------- */
-
-export const generateSingleSpread = inngest.createFunction(
-  {
-    id: "generate-single-spread",
-    concurrency: 4,
-    retries: 2,
-    triggers: [{ event: "story/generate.single.spread" }],
-  },
-  async ({ event, step }) => {
-    const parsed = GenerateSingleSpreadEventSchema.safeParse(event.data);
-    if (!parsed.success) {
-      console.error("Invalid spread payload", parsed.error.flatten());
-      throw new Error("Invalid spread payload");
-    }
-
-    const {
-      storyId,
-      leftPageId,
-      rightPageId,
-      pageLabel,
-      feedback,
-      existingSpreadImageUrl,
-      referenceOverrides,
-      strategistPlan,
-    } = parsed.data;
-
-    assertNonEmpty(storyId, "storyId");
-    assertNonEmpty(leftPageId, "leftPageId");
-
-    const hasOverrides = !!referenceOverrides;
-    const hasPlan = !!strategistPlan;
-
-    // Cached per story; rebuilt automatically when a character changes.
-    const castSheet = (await step.run("cast-sheet", async () => {
-      try {
-        return await getCastSheet(storyId);
-      } catch (err) {
-        console.warn("⚠️ Cast sheet unavailable, continuing without it:", err);
-        return null;
-      }
-    })) as CastSheet | null;
-
-    const imageUrl = await step.run("generate-and-upload", async () => {
-      const spreadPageIds = [leftPageId, ...(rightPageId ? [rightPageId] : [])];
-
-      const left = await db.query.storyPages.findFirst({
-        where: eq(storyPages.id, leftPageId),
-        columns: { text: true },
-      });
-      const right = rightPageId
-        ? await db.query.storyPages.findFirst({
-            where: eq(storyPages.id, rightPageId),
-            columns: { text: true },
-          })
-        : null;
-
-      const style = await db.query.storyStyleGuide.findFirst({
-        where: eq(storyStyleGuide.storyId, storyId),
-      });
-      const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } =
-        resolveStyleGuide(style);
-
-      let styleRefUrl: string | null = style?.sampleIllustrationUrl ?? null;
-      if (!styleRefUrl || isDataUrl(styleRefUrl)) {
-        const firstSpread = await db
-          .select({ imageUrl: storyPages.imageUrl })
-          .from(storyPages)
-          .where(eq(storyPages.storyId, storyId))
-          .orderBy(asc(storyPages.pageNumber))
-          .limit(10)
-          .then((pp) => pp.find((p) => p.imageUrl && !isDataUrl(p.imageUrl)));
-        styleRefUrl = firstSpread?.imageUrl ?? null;
-      }
-
-      const spread = await loadSpreadRecord(leftPageId, rightPageId);
-      if (!spread) throw new Error(`No spread record found for pages ${pageLabel}`);
-
-      /* ---------------------------------------------------------------- */
-      /* HARD FAIL if scene record is missing                              */
-      /* There is no fallback. Every spread must have a locked prompt.     */
-      /* ---------------------------------------------------------------- */
-
-      if (!spread.scene && !hasPlan) {
-        throw new Error(
-          `Cannot generate spread ${pageLabel}: no story_spread_scene record found for spreadId ${spread.spreadId}. ` +
-            `Run build-spread-prompts before generating illustrations.`
-        );
-      }
-
-      const scene = spread.scene;
-
-      // ── Resolve characters ──
-      let featuredCharacterIds: string[] = [];
-      let backgroundCharacterIds: string[] = [];
-      let hiddenCharacterIds: string[] = [];
-      let staging: string | null = null;
-
-      if (hasPlan) {
-        featuredCharacterIds = uniqueIds(strategistPlan!.featuredCharacterIds);
-        backgroundCharacterIds = uniqueIds(
-          strategistPlan!.backgroundCharacterIds.filter(
-            (id) => !featuredCharacterIds.includes(id)
-          )
-        );
-        hiddenCharacterIds = uniqueIds(
-          strategistPlan!.hiddenCharacterIds.filter(
-            (id) =>
-              !featuredCharacterIds.includes(id) &&
-              !backgroundCharacterIds.includes(id)
-          )
-        );
-      } else if (
-        hasOverrides &&
-        referenceOverrides!.includedCharacterIds.length > 0
-      ) {
-        featuredCharacterIds = uniqueIds(
-          referenceOverrides!.includedCharacterIds
-        );
-        backgroundCharacterIds = [];
-      } else if (spread.spreadId) {
-        const resolved = await loadFeaturedAndBackgroundCharacterIds(
-          spread.spreadId
-        );
-        featuredCharacterIds = resolved.featuredIds;
-        backgroundCharacterIds = resolved.backgroundIds;
-        staging = resolved.staging;
-      }
-
-      // Nothing marked "featured". Don't fail the whole spread: picture books
-      // often have scene-only pages (an empty house, a moonlit garden).
-      //   1) promote background characters, else
-      //   2) use characters tagged on these two pages, else
-      //   3) draw a scene-only spread.
-      let sceneOnly = false;
-      if (featuredCharacterIds.length === 0) {
-        if (backgroundCharacterIds.length > 0) {
-          featuredCharacterIds = backgroundCharacterIds;
-          backgroundCharacterIds = [];
-          console.warn(`⚠️ Spread ${pageLabel}: no featured characters; promoting background characters`);
-        } else {
-          const pageIds = [leftPageId, rightPageId].filter(Boolean) as string[];
-          const pageChars = pageIds.length ? await loadPageCharacterIds(pageIds) : [];
-          const hidden = new Set(hiddenCharacterIds);
-          featuredCharacterIds = pageChars.filter((id) => !hidden.has(id)).slice(0, MAX_FEATURED_CHARACTERS);
-          if (featuredCharacterIds.length > 0) {
-            console.warn(`⚠️ Spread ${pageLabel}: no presence record; using page-tagged characters`);
-          } else {
-            sceneOnly = true;
-            console.warn(`⚠️ Spread ${pageLabel}: no characters at all; generating a scene-only illustration`);
-          }
-        }
-      }
-
-      featuredCharacterIds = uniqueIds(featuredCharacterIds);
-      backgroundCharacterIds = uniqueIds(
-        backgroundCharacterIds.filter(
-          (id) => !featuredCharacterIds.includes(id)
-        )
-      );
-
-      if (featuredCharacterIds.length > MAX_FEATURED_CHARACTERS) {
-        console.warn(
-          `Skipping spread ${pageLabel} — needs focus selection (${featuredCharacterIds.length} characters)`
-        );
-        return { skipped: true, reason: "needs_focus" };
-      }
-
-      const allVisibleCharacterIds = uniqueIds([
-        ...featuredCharacterIds,
-        ...backgroundCharacterIds,
-      ]);
-
-      const allCharacterRefs: CharacterRef[] =
-        allVisibleCharacterIds.length === 0
-          ? []
-          : await db
-              .select({
-                id: characters.id,
-                name: characters.name,
-                portraitUrl: characters.portraitImageUrl,
-                fullBodyUrl: characters.fullBodyImageUrl,
-                referenceUrl: characters.referenceImageUrl,
-                description: characters.description,
-                appearance: characters.appearance,
-                species: characters.species,
-                breed: characters.breed,
-                visualDetails: characters.visualDetails,
-              })
-              .from(characters)
-              .where(inArray(characters.id, allVisibleCharacterIds));
-
-      const featuredRefs = featuredCharacterIds
-        .map((id) => allCharacterRefs.find((c) => c.id === id))
-        .filter(Boolean) as CharacterRef[];
-
-      // Two-pass split for crowded spreads. Order = importance (decide-scenes
-      // lists protagonists first), so cluster A gets the clean first pass.
-      const clusterA = featuredRefs.slice(0, CLUSTER_SIZE);
-      const clusterB = featuredRefs.slice(CLUSTER_SIZE);
-      const twoPass = clusterB.length > 0;
-
-      const backgroundNames = backgroundCharacterIds
-        .map((id) => allCharacterRefs.find((c) => c.id === id)?.name)
-        .filter(Boolean) as string[];
-
-      const hiddenNames =
-        hiddenCharacterIds.length > 0
-          ? await db
-              .select({ name: characters.name })
-              .from(characters)
-              .where(inArray(characters.id, hiddenCharacterIds))
-              .then((rows) => rows.map((r) => r.name))
-          : [];
-
-      // Merge doNotInclude from scene record with hiddenNames from plan
-      const doNotIncludeNames = uniqueIds([
-        ...hiddenNames,
-        ...((scene?.doNotInclude as string[]) ?? []),
-      ]);
-
-      // ── Resolve location ──
-      let locationRef: null | {
-        name: string;
-        imageUrl: string;
-        description: string | null;
-      } = null;
-
-      const overrideLocationId =
-        referenceOverrides?.primaryLocationId ??
-        referenceOverrides?.locationId ??
-        null;
-
-      if (hasOverrides && overrideLocationId) {
-        const loc = await db
-          .select({
-            name: locations.name,
-            imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
-            description: locations.description,
-          })
-          .from(locations)
-          .where(eq(locations.id, overrideLocationId))
-          .limit(1)
-          .then((r) => r[0]);
-
-        if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) locationRef = loc;
-      } else {
-        const rows = await db
-          .select({ locationId: storyPageLocations.locationId })
-          .from(storyPageLocations)
-          .where(inArray(storyPageLocations.pageId, spreadPageIds));
-
-        const locIds = uniqueIds(rows.map((a) => a.locationId));
-
-        if (locIds.length > 0) {
-          const loc = await db
-            .select({
-              name: locations.name,
-              imageUrl: sql<string>`COALESCE(${locations.portraitImageUrl}, ${locations.referenceImageUrl})`,
-              description: locations.description,
-            })
-            .from(locations)
-            .where(eq(locations.id, locIds[0]))
-            .limit(1)
-            .then((r) => r[0]);
-
-          if (loc?.imageUrl && !isDataUrl(loc.imageUrl)) locationRef = loc;
-        }
-      }
-
-      console.log(`🎨 Scene: "${scene?.mood ?? "no mood"}" | ${scene?.sceneSummary?.slice(0, 80) ?? "no summary"}`);
-      console.log(`🗺️ Location: ${locationRef ? locationRef.name : "NONE"}`);
-      console.log(`👥 Featured (${featuredRefs.length}):`, featuredRefs.map((c) => c.name));
-      console.log(`👥 Background (${backgroundNames.length}):`, backgroundNames);
-      if (doNotIncludeNames.length > 0) {
-        console.log(`🚫 Excluded:`, doNotIncludeNames);
-      }
-
-      // ── Build Gemini prompt ──
-      const parts: any[] = [];
-
-      // 1. CHARACTER REFERENCES — images first.
-      // For each featured character: in-style portrait, then the REAL
-      // reference photo (likeness), then full body (height, proportions),
-      // within Gemini's input-image limit. Shared with the cover so both
-      // describe the characters the same way.
-      const fixedImages =
-        (styleRefUrl && !isDataUrl(styleRefUrl) ? 1 : 0) +
-        (locationRef ? 1 : 0) +
-        (existingSpreadImageUrl && !isDataUrl(existingSpreadImageUrl) ? 1 : 0) +
-        1; // layout template
-      // Up to 5 people per pass, each with as many pictures as fit in the
-      // 14-image request (portrait, then real photo, then full body).
-      const charBudget = Math.max(
-        Math.min(featuredRefs.length, CLUSTER_SIZE),
-        MAX_INPUT_IMAGES - fixedImages
-      );
-
-      const toRefChar = (c: CharacterRef) => ({
-        id: c.id,
-        name: c.name,
-        species: c.species,
-        breed: c.breed,
-        appearance: c.appearance,
-        portraitImageUrl: c.portraitUrl,
-        referenceImageUrl: c.referenceUrl,
-        fullBodyImageUrl: c.fullBodyUrl,
-        visualDetails: c.visualDetails,
-      });
-      const refCharsA = clusterA.map(toRefChar);
-      const refCharsB = clusterB.map(toRefChar);
-
-      const { photoParts, missing: missingPortraits, counts } =
-        await pushCharacterReferenceParts(parts, refCharsA, charBudget, castSheet);
-      console.log(
-        `🖼️ Character images (pass 1): ${counts.portrait} portraits, ${counts.photo} photos, ${counts.fullBody} full-body (budget ${charBudget})${
-          twoPass ? `; cluster B of ${clusterB.length} follows in pass 2` : ""
-        }`
-      );
-      // Cluster B must have images too, or pass 2 has nothing to paint from.
-      for (const c of refCharsB) {
-        if (!c.portraitImageUrl && !c.referenceImageUrl && !c.fullBodyImageUrl) missingPortraits.push(c.name);
-      }
-
-      if (missingPortraits.length > 0) {
-        throw new Error(
-          `Cannot generate spread ${pageLabel}: no AI portrait for featured characters: ${missingPortraits.join(
-            ", "
-          )}. Generate portraits before illustrating.`
-        );
-      }
-
-      // 2. STYLE REFERENCE
-      if (styleRefUrl && !isDataUrl(styleRefUrl)) {
-        try {
-          parts.push(await getImagePart(styleRefUrl));
-          parts.push({
-            text: "↑ STYLE REFERENCE — match this illustration style exactly. Same technique, line weight, colours, warmth. ↑",
-          });
-        } catch (err) {
-          console.warn("⚠️ Style ref failed:", err);
-        }
-      }
-
-      // 3. LOCATION REFERENCE
-      if (locationRef) {
-        try {
-          parts.push(await getImagePart(locationRef.imageUrl));
-          parts.push({
-            text: `↑ LOCATION: ${locationRef.name.toUpperCase()} — use this as the setting. ↑`,
-          });
-        } catch (err) {
-          console.warn("⚠️ Location ref failed:", err);
-        }
-      }
-
-      // 4. EXISTING SPREAD (for revisions)
-      if (existingSpreadImageUrl && !isDataUrl(existingSpreadImageUrl)) {
-        try {
-          parts.push(await getImagePart(existingSpreadImageUrl));
-          parts.push({
-            text: "↑ CURRENT VERSION — keep what works, fix what the feedback requests. Do not simply copy this. ↑",
-          });
-        } catch (err) {
-          console.warn("⚠️ Existing spread failed:", err);
-        }
-      }
-
-      // 5. LAYOUT TEMPLATE
-      try {
-        parts.push(await getImagePart(SPREAD_TEMPLATE_PATH));
-        parts.push({
-          text: "↑ LAYOUT GUIDE — place LEFT page text in upper-left zone, RIGHT page text in upper-right zone. Keep text away from all edges and the centre spine. Do NOT draw any guides or template markers. ↑",
-        });
-      } catch (err) {
-        console.warn("⚠️ Template failed:", err);
-      }
-
-      // 6. SCENE INSTRUCTION
-      // Google's guide: put the exact text in quotes. Saying each block is
-      // lettered once stops the model repeating a passage elsewhere.
-      const quote = (t?: string | null) =>
-        t && t.trim() ? `"${t.trim()}"` : "(no text on this page)";
-      const textBlock = `TEXT TO HAND-LETTER. Letter each passage EXACTLY ONCE, word for word, exactly as written between the quotes. Do not repeat, split or add any lines. Each page has one block of text only.
-LEFT PAGE (upper-left area): ${quote(left?.text)}
-RIGHT PAGE (upper-right area): ${quote(right?.text)}`;
-      const castBlock = castSheetBlock(castSheet, [
-        ...featuredRefs.map((c) => c.id),
-        ...backgroundCharacterIds,
-      ]);
-
-      // Crowded spread: cluster B is drawn now as placeholder figures with the
-      // right height, hair and outfit (so the composition is final), and their
-      // faces are painted in from references in pass 2.
-      const placement =
-        staging ??
-        `the second cluster stands together on the RIGHT page, clearly separated from the first cluster`;
-      const clusterBSection = twoPass
-        ? `
-SECOND CLUSTER (drawn now as placeholder figures; their faces are finalised in a later step):
-${clusterB
-  .map((c) => `- ${c.name}${castSheet?.lines?.[c.id] ? `: ${castSheet.lines[c.id]}` : ""}`)
-  .join("\n")}
-STAGING: ${placement}
-Give each of these figures the correct height, build, hair colour/length, skin tone and outfit from the character sheet, in natural poses. Keep their faces simple and generic for now. Do NOT merge them into the first cluster.`
-        : "";
-      if (hasPlan && strategistPlan!.recommendedPrompt) {
-        // Strategist plan path (manual revision flow)
-        const backgroundSection =
-          backgroundNames.length > 0
-            ? `\nBACKGROUND CHARACTERS (no portrait sent — draw as smaller, less detailed figures):\n${backgroundNames.join(", ")}.`
-            : "";
-
-        const hiddenSection =
-          doNotIncludeNames.length > 0
-            ? `\nDO NOT INCLUDE these characters in this illustration: ${doNotIncludeNames.join(", ")}.`
-            : "";
-
-        parts.push({
-          text: `
-CREATE A DOUBLE-PAGE SPREAD ILLUSTRATION.
-One continuous 16:9 landscape. Left half = left page, right half = right page.
-
-HIGHEST PRIORITY:
-- Preserve the identity of every FEATURED character exactly
-- Do not redesign, simplify, substitute, or genericise featured characters
-- Every character appears EXACTLY ONCE in the whole spread (both pages together). Make sure to only have one of each character in the image. Never draw the same person or animal twice, even if the text mentions them on both pages.
-${sceneOnly || featuredRefs.length === 0
-  ? "- This is a SCENE-ONLY illustration: do not draw any of the story's characters. Focus on the setting, mood and objects described."
-  : `- Only ${featuredRefs.length} character(s) should be drawn with full detail and accurate likeness: ${featuredRefs.map((c) => c.name).join(", ")}`}
-
-${castBlock}
-
-STYLE:
-${geminiStyleBlock}
-
-ART DIRECTOR INSTRUCTIONS:
-${strategistPlan!.recommendedPrompt}
-${clusterBSection}
-${backgroundSection}
-${hiddenSection}
-
-${textBlock}
-
-Hand-letter text into the illustration. Large, high-contrast, child-friendly. ${typographyBlock}
-Keep text well inside safe zones. Outer edges will be trimmed.
-AVOID: ${geminiAvoidBlock}${feedback ? `\nADDITIONAL FEEDBACK: ${feedback}` : ""}
-          `.trim(),
-        });
-      } else {
-        // Standard path — use locked scene record from buildSpreadPrompts
-        const compositionBlock =
-          scene && (scene.compositionNotes as string[])?.length > 0
-            ? `\nCOMPOSITION:\n${(scene.compositionNotes as string[]).map((n) => `- ${n}`).join("\n")}`
-            : "";
-
-        const backgroundSection =
-          backgroundNames.length > 0
-            ? `\nBACKGROUND CHARACTERS (no portrait sent — draw as smaller, less detailed figures):\n${backgroundNames.join(", ")}.`
-            : "";
-
-        const doNotIncludeSection =
-          doNotIncludeNames.length > 0
-            ? `\nDO NOT INCLUDE these characters in this illustration: ${doNotIncludeNames.join(", ")}.`
-            : "";
-
-        const fullAvoidBlock = [scene?.negativePrompt, geminiAvoidBlock]
-          .filter(Boolean)
-          .join(", ");
-
-        parts.push({
-          text: `
-CREATE A DOUBLE-PAGE SPREAD ILLUSTRATION.
-One continuous 16:9 landscape. Left half = left page, right half = right page.
-
-HIGHEST PRIORITY:
-- Preserve the identity of every FEATURED character exactly
-- Do not redesign, simplify, substitute, or genericise featured characters
-- Match their face, body, colours, markings, hair/fur shape, and signature features closely
-- Every character appears EXACTLY ONCE in the whole spread (both pages together). Make sure to only have one of each character in the image. Never draw the same person or animal twice, even if the text mentions them on both pages.
-
-${castBlock}
-
-STYLE:
-${geminiStyleBlock}
-${scene?.mood ? `MOOD: ${scene.mood}` : ""}
-
-SCENE DIRECTION:
-${scene!.illustrationPrompt}
-${compositionBlock}
-${clusterBSection}
-${backgroundSection}
-${doNotIncludeSection}
-
-${textBlock}
-
-Hand-letter text into the illustration. Large, high-contrast, child-friendly. ${typographyBlock}
-Keep text well inside safe zones. Outer edges will be trimmed.
-AVOID: ${fullAvoidBlock}${feedback ? `\nFEEDBACK: ${feedback}` : ""}
-          `.trim(),
-        });
-      }
-
-      const imgCount = parts.filter((p: any) => p.inlineData).length;
-      const txtLen = parts
-        .filter((p: any) => p.text)
-        .reduce((s: number, p: any) => s + p.text.length, 0);
-      console.log(`📦 Prompt: ${imgCount} images, ${txtLen} chars of text`);
-
-      const callGemini = (p: any[]) =>
-        client.models.generateContent({
-          model: GEMINI_IMAGE_MODEL,
-          contents: [{ role: "user", parts: p }],
-          config: {
-            responseModalities: ["IMAGE"],
-            imageConfig: { aspectRatio: IMAGE_ASPECT_RATIO, imageSize: IMAGE_SIZE },
-            safetySettings: [
-              {
-                category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-              },
-            ],
-          },
-        });
-
-      let response: any = null;
-      let image: ReturnType<typeof extractInlineImage> = null;
-      let firstError: unknown = null;
-      try {
-        response = await callGemini(parts);
-        image = extractInlineImage(response);
-      } catch (err) {
-        if (photoParts.length === 0) throw err;
-        firstError = err;
-      }
-
-      // Real photos occasionally make the model refuse (or reject the request
-      // outright). Rather than fail the page, draw it from the portraits
-      // alone, which is what every page did before.
-      if (!image && photoParts.length > 0) {
-        console.warn(
-          `⚠️ Spread ${pageLabel}: no image with reference photos (${
-            firstError instanceof Error
-              ? firstError.message
-              : `block: ${response?.promptFeedback?.blockReason ?? "none"}, finish: ${
-                  response?.candidates?.[0]?.finishReason ?? "?"
-                }`
-          }). Retrying without photos.`
-        );
-        response = await callGemini(withoutParts(parts, photoParts));
-        image = extractInlineImage(response);
-      }
-
-      if (!image) throw new Error("No image returned from Gemini");
-
-      /* ---------------------------------------------------------------- */
-      /* PASS 2 (crowded spreads): paint cluster B's real faces into the   */
-      /* pass-1 picture. Everything else stays identical. If this pass    */
-      /* fails, the pass-1 picture is kept rather than losing the page.   */
-      /* ---------------------------------------------------------------- */
-      if (twoPass) {
-        try {
-          const parts2: any[] = [];
-          parts2.push({ inlineData: { data: image.data, mimeType: image.mimeType } });
-          parts2.push({
-            text: `↑ CURRENT ILLUSTRATION. Keep EVERYTHING identical: layout, hand-lettered text, background, colours, lighting, style, and the figures of ${clusterA
-              .map((c) => c.name.toUpperCase())
-              .join(", ")}. ↑`,
-          });
-
-          const budget2 = Math.max(clusterB.length, MAX_INPUT_IMAGES - 1);
-          const { photoParts: photoParts2, counts: counts2 } =
-            await pushCharacterReferenceParts(parts2, refCharsB, budget2, castSheet);
-          console.log(
-            `🖼️ Character images (pass 2): ${counts2.portrait} portraits, ${counts2.photo} photos, ${counts2.fullBody} full-body`
-          );
-
-          const castBlockB = castSheetBlock(castSheet, clusterB.map((c) => c.id));
-          parts2.push({
-            text: `
-EDIT THIS ILLUSTRATION.
-The ${clusterB.length} placeholder figure(s) of the second cluster (${placement}) are the characters shown above: ${clusterB
-              .map((c) => c.name)
-              .join(", ")}.
-Redraw ONLY those figures so each one is unmistakably the referenced character: exact face, hair colour, length and texture, skin tone, build and outfit. Keep their positions, poses, sizes and the space between the clusters exactly as they are.
-Do not change anyone else, the background or the composition. Do not add or remove people or animals; every character appears exactly once.
-Keep every piece of hand-lettered text exactly as it is, in the same place. Do not redraw, move, restyle or repeat any text.
-${castBlockB}
-STYLE: ${geminiStyleBlock}
-            `.trim(),
-          });
-
-          let response2: any = null;
-          let image2: ReturnType<typeof extractInlineImage> = null;
-          try {
-            response2 = await callGemini(parts2);
-            image2 = extractInlineImage(response2);
-          } catch (err) {
-            if (photoParts2.length === 0) throw err;
-            console.warn(`⚠️ Spread ${pageLabel} pass 2 rejected with photos:`, err);
-          }
-          if (!image2 && photoParts2.length > 0) {
-            console.warn(`⚠️ Spread ${pageLabel} pass 2: no image with reference photos. Retrying without photos.`);
-            response2 = await callGemini(withoutParts(parts2, photoParts2));
-            image2 = extractInlineImage(response2);
-          }
-
-          if (image2) {
-            image = image2;
-            console.log(`✅ Spread ${pageLabel}: pass 2 painted ${clusterB.length} character(s) from references`);
-          } else {
-            console.error(
-              `❌ Spread ${pageLabel}: pass 2 returned no image (block: ${response2?.promptFeedback?.blockReason ?? "none"}). Keeping pass-1 picture; ${clusterB
-                .map((c) => c.name)
-                .join(", ")} may not match their references.`
-            );
-          }
-        } catch (err) {
-          console.error(`❌ Spread ${pageLabel}: pass 2 failed, keeping pass-1 picture:`, err);
-        }
-      }
-
-      return saveImageToStorage(image.data, image.mimeType, storyId);
-    });
-
-    await step.run("save-url", async () => {
-      await db
-        .update(storyPages)
-        .set({ imageUrl })
-        .where(
-          inArray(storyPages.id, [
-            leftPageId,
-            ...(rightPageId ? [rightPageId] : []),
-          ])
-        );
-    });
-
-    return { success: true, pageLabel, imageUrl };
-  }
-);
+// The per-spread worker (compose, check and fix, letter) lives in ./spreadWorker.ts

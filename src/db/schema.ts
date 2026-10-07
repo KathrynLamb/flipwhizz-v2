@@ -426,6 +426,10 @@ export const storyStyleGuide = pgTable("story_style_guide", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   sampleIllustrationUrl: text("sample_illustration_url"),
+  // Style sample with every person removed, used as the style reference
+  // so early-draft people never leak into pages (lib/illustrate/sheets.ts).
+  stylePlateUrl: text("style_plate_url"),
+  stylePlateFrom: text("style_plate_from"),
   negativePrompt: text("negative_prompt"),
   userNotes: text("user_notes"),
   typography: text("typography"), 
@@ -891,6 +895,10 @@ export const storySpreads = pgTable("story_spreads", {
   rightPageId: uuid("right_page_id").references(() => storyPages.id, {
     onDelete: "set null",
   }),
+
+  // Check-and-fix record for this spread: { status, artUrl (no lettering),
+  // finalUrl, remaining problems, text check, model, at }. See spreadWorker.
+  qa: jsonb("qa"),
 
   createdAt: timestamp("created_at").defaultNow(),
 });

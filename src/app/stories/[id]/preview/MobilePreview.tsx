@@ -183,15 +183,15 @@ export default function MobilePreview({
   /* ── Poll for generation status ── */
   useEffect(() => {
     if (!jobId || (status !== "queued" && status !== "generating")) return;
-    // Give up after 4 minutes: a failed Inngest job never reports "error"
+    // Give up after 9 minutes (each spread is drawn, checked, fixed and lettered): a failed Inngest job never reports "error"
     // here, so without a limit the user would watch the spinner forever.
     if (pollStartRef.current?.id !== jobId) pollStartRef.current = { id: jobId, t: Date.now() };
     pollRef.current = setInterval(async () => {
-      if (pollStartRef.current && Date.now() - pollStartRef.current.t > 4 * 60 * 1000) {
+      if (pollStartRef.current && Date.now() - pollStartRef.current.t > 9 * 60 * 1000) {
         if (pollRef.current) clearInterval(pollRef.current);
         setStatus("error");
         setError("Your illustration is taking longer than it should. We've been alerted, so please try again in a few minutes.");
-        reportClientError("generation_stalled", { storyId, message: `Preview job ${jobId} still generating after 4 minutes` });
+        reportClientError("generation_stalled", { storyId, message: `Preview job ${jobId} still generating after 9 minutes` });
         return;
       }
       try {

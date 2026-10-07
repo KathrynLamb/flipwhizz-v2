@@ -440,6 +440,7 @@ IMPORTANT RULES:
 - In illustrationPrompt, refer to characters by role/description only (e.g. "the boy", "the tuxedo cat", "the twin girl with pigtails"). Do NOT use their names — the image generator receives their portrait photos as visual reference and names add noise.
 - In doNotInclude, USE their actual names — this list is used to explicitly exclude characters from the Gemini prompt.
 - Keep illustrationPrompt focused on action, setting, and emotion — not on style (style is handled separately).
+- ONE MOMENT PER CHARACTER: a spread is one single picture, so every character appears in it exactly once. Picture-book text often has the same character doing something on the left page and something else on the right page (skipping ahead, then patting a rock). Choose ONE of those moments for that character and describe only that one; never describe the same character in two places or doing two things. This applies to animals too.
 - compositionNotes should be concrete framing instructions, not vague adjectives.
 - negativePrompt should be scene-specific (what's wrong for THIS spread) not generic avoid lists.
 - CROWDED SPREADS: when a spread lists a STAGING line, it has more than five featured characters and will be drawn in two passes: cluster A first, then cluster B painted into the same picture. Your compositionNotes MUST place every character exactly where the staging says, by role not name, with the second cluster standing together as one clearly separate group. Every character appears EXACTLY ONCE in the whole spread: if the text mentions someone on both pages, choose one place for them (where they act) and never draw them twice.
@@ -674,6 +675,7 @@ ${spreadContexts.join("\n\n---\n\n")}
           storyId,
           ...(event.data?.force ? { force: true } : {}),
           ...(event.data?.allowUnpaid ? { allowUnpaid: true } : {}),
+          ...(event.data?.artModel ? { artModel: event.data.artModel } : {}),
         },
       });
 

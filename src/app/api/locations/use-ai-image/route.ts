@@ -24,7 +24,7 @@ const gemini = new GoogleGenAI({
   apiVersion: "v1alpha",
 });
 
-const MODEL = "gemini-3-pro-image-preview";
+const MODEL = "gemini-3-pro-image";
 
 /* -------------------------------------------------------------------------- */
 /*  HELPERS                                                                   */

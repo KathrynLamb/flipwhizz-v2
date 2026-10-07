@@ -5,7 +5,7 @@ const client = new GoogleGenAI({
   apiVersion: "v1alpha",
 });
 
-const MODEL = "gemini-3-pro-image-preview";
+const MODEL = "gemini-3-pro-image";
 
 /**
  * Stateless Gemini image call.

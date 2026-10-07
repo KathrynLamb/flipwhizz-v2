@@ -37,7 +37,7 @@ const client = new GoogleGenAI({
   apiVersion: "v1alpha",
 });
 
-const GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview";
+const GEMINI_IMAGE_MODEL = "gemini-3-pro-image";
 const IMAGE_ASPECT_RATIO = "16:9";
 const IMAGE_SIZE = "2K";
 const MAX_FEATURED_CHARACTERS = 5;
