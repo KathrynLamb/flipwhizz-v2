@@ -15,6 +15,12 @@
 //              Note: edit sends existing cover + portraits to Gemini.
 //              To avoid Vercel timeouts, existing cover is pre-fetched and
 //              uploaded to Cloudinary at a reduced size before the Gemini call.
+//
+// Character likeness: every approach now sends the same character references
+// as the interior spreads (portrait + real reference photo + full body, via
+// lib/characters/consistency) plus the story's character sheet, so the cover
+// matches the inside of the book. If Gemini refuses a request containing
+// real photos, the pass is retried with portraits only.
 
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
@@ -32,6 +38,17 @@ import { Readable } from "node:stream";
 import { v4 as uuid } from "uuid";
 import fs from "fs/promises";
 import path from "path";
+import {
+  getCastSheet,
+  castSheetBlock,
+  ensureFullBody,
+  loadRefCharacters,
+  pushCharacterReferenceParts,
+  withoutParts,
+  MAX_INPUT_IMAGES,
+  type CastSheet,
+  type RefCharacter,
+} from "@/lib/characters/consistency";
 
 type GenerationStrategy = {
   approach: "two-pass" | "single" | "edit";
@@ -105,6 +122,25 @@ async function fetchAndReupload(sourceUrl: string, storyId: string, maxWidth = 1
   return uploadToCloudinary(buffer.toString("base64"), storyId);
 }
 
+/** Call Gemini; if it returns no image and real photos were included, retry without them. */
+async function generateWithPhotoFallback(parts: any[], photoParts: any[], strategy: GenerationStrategy, label: string) {
+  const call = (p: any[]) =>
+    gemini.models.generateContent({
+      model: IMAGE_MODEL,
+      contents: [{ role: "user", parts: p }],
+      config: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: strategy.aspectRatio, imageSize: strategy.imageSize }, safetySettings: SAFETY_SETTINGS },
+    });
+  let response = await call(parts);
+  let image = extractInlineImage(response);
+  if (!image && photoParts.length > 0) {
+    console.warn(`🎨 [${label}] no image with reference photos (block: ${(response as any)?.promptFeedback?.blockReason ?? "none"}). Retrying without photos.`);
+    response = await call(withoutParts(parts, photoParts));
+    image = extractInlineImage(response);
+  }
+  if (!image) throw new Error(`Gemini returned no image (${label})`);
+  return image;
+}
+
 const SAFETY_SETTINGS = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
   { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
@@ -149,11 +185,20 @@ export const generateCoverSpreadV5 = inngest.createFunction(
 
     console.log(`🎨 [cover-v5] Starting "${approach}" generation for story ${storyId}`);
 
+    // Full-body references are cached per portrait, so this is free after the
+    // first book generation.
+    for (const characterId of characterIds) {
+      await step.run(`full-body-${characterId}`, async () => ensureFullBody(characterId, storyId));
+    }
+
     const refs = await step.run("load-refs", async () => {
-      const chars = characterIds.length > 0
-        ? await db.select({ id: characters.id, name: characters.name, portraitUrl: characters.portraitImageUrl, species: characters.species, breed: characters.breed })
-            .from(characters).where(inArray(characters.id, characterIds))
-        : [];
+      const chars: RefCharacter[] = await loadRefCharacters(characterIds);
+      let castSheet: CastSheet | null = null;
+      try {
+        castSheet = await getCastSheet(storyId);
+      } catch (err) {
+        console.warn("🎨 [cover-v5] cast sheet unavailable:", err);
+      }
       const locs = locationIds.length > 0
         ? await db.select({ id: locations.id, name: locations.name, portraitUrl: locations.portraitImageUrl, refUrl: locations.referenceImageUrl })
             .from(locations).where(inArray(locations.id, locationIds))
@@ -163,10 +208,13 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         const style = await db.query.storyStyleGuide.findFirst({ where: eq(storyStyleGuide.storyId, storyId) });
         styleRefUrl = style?.sampleIllustrationUrl ?? null;
       }
-      return { chars, locs, styleRefUrl };
+      return { chars, locs, styleRefUrl, castSheet };
     });
 
-    const missingPortraits = refs.chars.filter(c => !c.portraitUrl || isDataUrl(c.portraitUrl));
+    const castBlock = castSheetBlock(refs.castSheet as CastSheet | null, characterIds);
+    const charBudget = (fixedImages: number) => Math.max(refs.chars.length, MAX_INPUT_IMAGES - fixedImages);
+
+    const missingPortraits = refs.chars.filter(c => !c.portraitImageUrl || isDataUrl(c.portraitImageUrl));
     if (missingPortraits.length > 0) {
       throw new Error(`Missing portraits for: ${missingPortraits.map(c => c.name).join(", ")}`);
     }
@@ -180,24 +228,12 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       return await step.run("edit-cover", async () => {
         const parts: any[] = [];
         parts.push(await getImagePart(resizedCoverUrl));
-        parts.push({ text: "↑ THIS IS THE EXISTING COVER. Keep EVERYTHING the same — composition, layout, text, background, colours, lighting. Only replace the character faces with the portraits below. ↑" });
-        for (const c of refs.chars) {
-          const resizedPortrait = c.portraitUrl!.includes("cloudinary.com")
-            ? c.portraitUrl!.replace("/upload/", "/upload/w_800,q_80/")
-            : c.portraitUrl!;
-          parts.push(await getImagePart(resizedPortrait));
-          const speciesNote = c.species && c.species !== "human" ? ` (${c.breed || c.species})` : "";
-          parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()}${speciesNote}. Replace the matching character in the cover with this face exactly. ↑` });
-        }
+        parts.push({ text: "↑ THIS IS THE EXISTING COVER. Keep EVERYTHING the same — composition, layout, text, background, colours, lighting. Only replace the characters so they match the references below exactly. ↑" });
+        const { photoParts } = await pushCharacterReferenceParts(parts, refs.chars, charBudget(1), refs.castSheet as CastSheet | null);
+        if (castBlock) parts.push({ text: castBlock });
         parts.push({ text: strategy.editPrompt! });
         console.log(`🎨 [edit] ${parts.filter((p: any) => p.inlineData).length} images`);
-        const response = await gemini.models.generateContent({
-          model: IMAGE_MODEL,
-          contents: [{ role: "user", parts }],
-          config: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: strategy.aspectRatio, imageSize: strategy.imageSize }, safetySettings: SAFETY_SETTINGS },
-        });
-        const image = extractInlineImage(response);
-        if (!image) throw new Error("Gemini returned no image (edit)");
+        const image = await generateWithPhotoFallback(parts, photoParts, strategy, "edit");
         return await saveCover(image.data, storyId, strategy, refs.chars);
       });
     }
@@ -209,25 +245,18 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         if (refs.styleRefUrl && !isDataUrl(refs.styleRefUrl)) {
           try { parts.push(await getImagePart(refs.styleRefUrl)); parts.push({ text: "↑ STYLE REFERENCE — match this illustration style. ↑" }); } catch {}
         }
-        for (const c of refs.chars) {
-          const resizedPortrait = c.portraitUrl!.includes("cloudinary.com") ? c.portraitUrl!.replace("/upload/", "/upload/w_800,q_80/") : c.portraitUrl!;
-          parts.push(await getImagePart(resizedPortrait));
-          parts.push({ text: `↑ This is ${c.name.toUpperCase()}. Match this face exactly. ↑` });
-        }
+        const fixed = (refs.styleRefUrl ? 1 : 0) + refs.locs.length + (strategy.includeLogo ? 1 : 0) + (strategy.includeTemplate ? 1 : 0);
+        const { photoParts } = await pushCharacterReferenceParts(parts, refs.chars, charBudget(fixed), refs.castSheet as CastSheet | null);
         for (const l of refs.locs) {
           const url = l.portraitUrl ?? l.refUrl;
           if (url && !isDataUrl(url)) { try { parts.push(await getImagePart(url)); parts.push({ text: `↑ LOCATION: ${l.name.toUpperCase()}. Use as the setting. ↑` }); } catch {} }
         }
         if (strategy.includeLogo) { try { parts.push(await getImagePart(LOGO_PATH)); parts.push({ text: '↑ FLIPWHIZZ LOGO. Place small, bottom-left of back cover. Add "flipwhizz.com" below. ↑' }); } catch {} }
         if (strategy.includeTemplate) { try { parts.push(await getImagePart(COVER_TEMPLATE_PATH)); parts.push({ text: "↑ LAYOUT GUIDE — shows safe zones only. Do NOT render guide lines. ↑" }); } catch {} }
+        if (castBlock) parts.push({ text: castBlock });
         parts.push({ text: strategy.pass1Prompt });
-        const response = await gemini.models.generateContent({
-          model: IMAGE_MODEL,
-          contents: [{ role: "user", parts }],
-          config: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: strategy.aspectRatio, imageSize: strategy.imageSize }, safetySettings: SAFETY_SETTINGS },
-        });
-        const image = extractInlineImage(response);
-        if (!image) throw new Error("Gemini returned no image (single)");
+        console.log(`🎨 [single] ${parts.filter((p: any) => p.inlineData).length} images`);
+        const image = await generateWithPhotoFallback(parts, photoParts, strategy, "single");
         return await saveCover(image.data, storyId, strategy, refs.chars);
       });
     }
@@ -264,22 +293,12 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       const parts: any[] = [];
       const pass1UrlResized = pass1Url.replace("/upload/", "/upload/w_1920,q_80/");
       parts.push(await getImagePart(pass1UrlResized));
-      parts.push({ text: "↑ THIS IS THE COVER TO RECREATE. Keep EVERYTHING the same — layout, text, background, composition, colours, style. ↑" });
-      for (const c of refs.chars) {
-        const resizedPortrait = c.portraitUrl!.includes("cloudinary.com") ? c.portraitUrl!.replace("/upload/", "/upload/w_800,q_80/") : c.portraitUrl!;
-        parts.push(await getImagePart(resizedPortrait));
-        const speciesNote = c.species && c.species !== "human" ? ` (${c.breed || c.species})` : "";
-        parts.push({ text: `↑ THIS IS ${c.name.toUpperCase()}${speciesNote}. COPY THIS FACE EXACTLY — same features, same colouring, same expression style. ↑` });
-      }
+      parts.push({ text: "↑ THIS IS THE COVER TO RECREATE. Keep EVERYTHING the same — layout, text, background, composition, colours, style. Only the characters change, to match the references below exactly. ↑" });
+      const { photoParts } = await pushCharacterReferenceParts(parts, refs.chars, charBudget(1), refs.castSheet as CastSheet | null);
+      if (castBlock) parts.push({ text: castBlock });
       parts.push({ text: strategy.pass2Prompt });
       console.log(`🎨 [pass2] ${parts.filter((p: any) => p.inlineData).length} images`);
-      const response = await gemini.models.generateContent({
-        model: IMAGE_MODEL,
-        contents: [{ role: "user", parts }],
-        config: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: strategy.aspectRatio, imageSize: strategy.imageSize }, safetySettings: SAFETY_SETTINGS },
-      });
-      const image = extractInlineImage(response);
-      if (!image) throw new Error("Gemini returned no image (pass 2)");
+      const image = await generateWithPhotoFallback(parts, photoParts, strategy, "pass 2");
       console.log("🎨 [pass2] ✅ Character swap complete");
       return await saveCover(image.data, storyId, strategy, refs.chars);
     });

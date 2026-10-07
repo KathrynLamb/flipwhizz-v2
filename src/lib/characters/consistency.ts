@@ -16,10 +16,18 @@
 //    just a face. Cached in characters.full_body_image_url and regenerated
 //    when the portrait changes (visual_details.fullBodyFrom).
 //
-// Both fail soft: on any error they return null / a text-only fallback and
-// the spread still generates exactly as before.
+// 3. loadRefCharacters / planCharacterImages / pushCharacterReferenceParts
+//    One place that decides which pictures of a character go to the image
+//    model (portrait, then the REAL reference photo, then full body) within
+//    Gemini's input-image budget, with the same wording for spreads and the
+//    cover. The reference photo is what makes the drawing look like the
+//    actual child; without it, every page is a copy of a copy.
+//
+// Everything fails soft: on any error the spread or cover still generates
+// the way it did before.
 
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import sharp from "sharp";
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { v2 as cloudinary } from "cloudinary";
@@ -41,8 +49,14 @@ cloudinary.config({
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const TEXT_MODEL = "gemini-2.5-flash";
 const IMAGE_MODEL = "gemini-3-pro-image-preview";
-const MAX_SHEET_IMAGES = 14;
-const SHEET_VERSION = 1; // bump to force every story to rebuild its sheet
+const MAX_SHEET_IMAGES = 40; // flash handles many; 13 characters x 2 pictures fits
+const SHEET_VERSION = 2; // bump to force every story to rebuild its sheet
+
+// Gemini 3 Pro Image accepts at most this many input images per request.
+export const MAX_INPUT_IMAGES = 14;
+// Reference photos come straight off phones (several MB each); shrink before
+// sending so five of them don't blow the request size limit.
+const MAX_REF_PX = 1024;
 
 export type CastSheet = {
   hash: string;
@@ -77,12 +91,31 @@ function guessMime(url: string) {
   return "image/jpeg";
 }
 
-async function imagePart(url: string) {
+async function imagePart(url: string, maxPx: number | null = null) {
   if (!url || url.startsWith("data:")) throw new Error("not a fetchable URL");
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
+  if (maxPx) {
+    try {
+      // .rotate() applies the EXIF orientation first, so phone photos taken
+      // sideways arrive the right way up.
+      const out = await sharp(buf)
+        .rotate()
+        .resize({ width: maxPx, height: maxPx, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      return { inlineData: { data: out.toString("base64"), mimeType: "image/jpeg" } };
+    } catch (err) {
+      console.warn("⚠️ Image resize failed, sending original:", err);
+    }
+  }
   return { inlineData: { data: buf.toString("base64"), mimeType: guessMime(url) } };
+}
+
+/** Public wrapper: fetch an image for Gemini, shrunk to a sane size. */
+export async function fetchImagePart(url: string, maxPx: number = MAX_REF_PX) {
+  return imagePart(url, maxPx);
 }
 
 function responseText(response: any): string {
@@ -168,7 +201,8 @@ function hashCast(cast: CastMember[]) {
     c.breed,
     clean(c.appearance),
     clean(c.description),
-    c.portraitImageUrl ?? c.referenceImageUrl ?? "",
+    c.portraitImageUrl ?? "",
+    c.referenceImageUrl ?? "",
     clean(c.defaultOutfit),
   ]);
   return createHash("sha1")
@@ -254,14 +288,27 @@ export async function getCastSheet(storyId: string): Promise<CastSheet | null> {
     });
 
     for (const c of ordered) {
-      const url = c.portraitImageUrl || c.referenceImageUrl;
-      if (!url || imagesSent >= MAX_SHEET_IMAGES) continue;
-      try {
-        parts.push(await imagePart(url));
-        parts.push({ text: `↑ This picture is ${c.name.toUpperCase()} (id ${c.id}).` });
-        imagesSent++;
-      } catch {
-        /* text-only for this character */
+      if (c.referenceImageUrl && imagesSent < MAX_SHEET_IMAGES) {
+        try {
+          parts.push(await imagePart(c.referenceImageUrl, MAX_REF_PX));
+          parts.push({
+            text: `↑ REAL PHOTO of ${c.name.toUpperCase()} (id ${c.id}). Source of truth for face, hair, skin and build.`,
+          });
+          imagesSent++;
+        } catch {
+          /* fall through to the portrait */
+        }
+      }
+      if (c.portraitImageUrl && imagesSent < MAX_SHEET_IMAGES) {
+        try {
+          parts.push(await imagePart(c.portraitImageUrl, MAX_REF_PX));
+          parts.push({
+            text: `↑ ${c.name.toUpperCase()} (id ${c.id}) as illustrated in this book. Shows outfit and art style; where it disagrees with the photo, the photo wins.`,
+          });
+          imagesSent++;
+        } catch {
+          /* text-only for this character */
+        }
       }
     }
 
@@ -292,12 +339,14 @@ For EACH character write ONE dense line (max ~70 words) covering:
 - build
 - hair: colour, LENGTH measured against the body (e.g. "falls to mid-back"), texture (e.g. "soft loose ringlet curls"), usual style. Never just "long hair".
 - skin tone, eye colour
+- face: shape, eyebrows, nose, mouth, anything that makes this person recognisable (e.g. "round face, full cheeks, wide gap-toothed smile, thick straight brows")
 - signature features (glasses, freckles, gap tooth, birthmark, accessories)
 - default outfit, only if given or clearly visible
 For animals: species/breed, size against the children (e.g. "comes up to Talia's knee"), coat colour, pattern, markings.
 
 Rules:
-- Where a picture is provided, it is the source of truth for everything it shows. Never contradict it.
+- A REAL PHOTO is the source of truth for everything it shows. Never contradict it.
+- An illustrated portrait shows the outfit and art style. Use it only for things the photo does not show.
 - Written text fills in what the picture cannot show (height, outfit, age).
 - Be concrete and visual. No personality, no story events.
 - Heights must be mutually consistent across the whole cast. If heights are not stated, infer them from age and keep them plausible.
@@ -510,4 +559,152 @@ REQUIREMENTS:
     console.warn(`⚠️ Full-body generation failed for character ${characterId}:`, err);
     return null;
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                    REFERENCE IMAGES FOR SPREADS AND COVERS                 */
+/* -------------------------------------------------------------------------- */
+
+export type RefCharacter = {
+  id: string;
+  name: string;
+  species: string | null;
+  breed: string | null;
+  appearance: string | null;
+  portraitImageUrl: string | null;
+  referenceImageUrl: string | null;
+  fullBodyImageUrl: string | null;
+  visualDetails: any;
+};
+
+export type PlannedImage = {
+  characterId: string;
+  name: string;
+  kind: "portrait" | "photo" | "fullBody";
+  url: string;
+};
+
+export async function loadRefCharacters(ids: string[]): Promise<RefCharacter[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({
+      id: characters.id,
+      name: characters.name,
+      species: characters.species,
+      breed: characters.breed,
+      appearance: characters.appearance,
+      portraitImageUrl: characters.portraitImageUrl,
+      referenceImageUrl: characters.referenceImageUrl,
+      fullBodyImageUrl: characters.fullBodyImageUrl,
+      visualDetails: characters.visualDetails,
+    })
+    .from(characters)
+    .where(inArray(characters.id, ids));
+  // Keep the caller's order (featured first).
+  return ids.map((id) => rows.find((r) => r.id === id)).filter(Boolean) as RefCharacter[];
+}
+
+function usable(url: string | null | undefined): url is string {
+  return !!url && !url.startsWith("data:");
+}
+
+/**
+ * Decide which pictures of each character to send, within `budget` images.
+ * Round-robin so every character gets its portrait before anyone gets a
+ * second picture: portrait (in-style face) -> real photo (likeness) ->
+ * full body (height, proportions, hair length).
+ * A character with no portrait falls back to photo, then full body, as the
+ * first picture, so nobody is sent with no image at all.
+ */
+export function planCharacterImages(chars: RefCharacter[], budget: number): PlannedImage[] {
+  const out: PlannedImage[] = [];
+  const sent = new Map<string, Set<string>>();
+  const mark = (c: RefCharacter, kind: PlannedImage["kind"], url: string) => {
+    if (!sent.has(c.id)) sent.set(c.id, new Set());
+    sent.get(c.id)!.add(kind);
+    out.push({ characterId: c.id, name: c.name, kind, url });
+  };
+  const has = (c: RefCharacter, kind: string) => sent.get(c.id)?.has(kind) ?? false;
+
+  // Pass 1: one picture each, best available.
+  for (const c of chars) {
+    if (usable(c.portraitImageUrl)) mark(c, "portrait", c.portraitImageUrl);
+    else if (usable(c.referenceImageUrl)) mark(c, "photo", c.referenceImageUrl);
+    else if (usable(c.fullBodyImageUrl)) mark(c, "fullBody", c.fullBodyImageUrl);
+  }
+
+  // Pass 2: the real photo for likeness.
+  for (const c of chars) {
+    if (out.length >= budget) break;
+    if (!has(c, "photo") && usable(c.referenceImageUrl)) mark(c, "photo", c.referenceImageUrl);
+  }
+
+  // Pass 3: full body for proportions, only if drawn from the current portrait.
+  for (const c of chars) {
+    if (out.length >= budget) break;
+    if (!has(c, "fullBody") && usable(c.fullBodyImageUrl) && fullBodyIsCurrent(c)) {
+      mark(c, "fullBody", c.fullBodyImageUrl);
+    }
+  }
+
+  return out;
+}
+
+export function characterImageLabel(img: PlannedImage, c: RefCharacter, sheetLine?: string | null): string {
+  const NAME = c.name.toUpperCase();
+  const isAnimal = !!c.species && c.species !== "human";
+  const kind = isAnimal ? ` (${c.breed || c.species})` : "";
+  const who = isAnimal ? "animal" : "person";
+  switch (img.kind) {
+    case "photo":
+      return `↑ REAL PHOTO of ${NAME}${kind}. This is the actual ${who} the book is about. ${c.name} must be recognisable as this ${who}: same face shape, eyes, nose, mouth, skin tone, ${
+        isAnimal ? "coat colour and markings" : "hair colour, hair length and hair texture"
+      }. Keep the book's illustration style; do not make it photorealistic. ↑`;
+    case "fullBody":
+      return `↑ ${NAME} FULL BODY: use this for height, body proportions, hair length and outfit. ↑`;
+    default:
+      return `↑ FEATURED CHARACTER: ${NAME}${kind}. This is how ${c.name} is drawn in this book.${
+        sheetLine ? ` ${sheetLine}` : ""
+      } Preserve this character's identity exactly. ↑`;
+  }
+}
+
+/**
+ * Push the planned pictures (+ labels) for these characters onto `parts`.
+ * Returns the photo parts separately so a caller can retry without them if
+ * the image model refuses a request that contains real photos.
+ */
+export async function pushCharacterReferenceParts(
+  parts: any[],
+  chars: RefCharacter[],
+  budget: number,
+  sheet?: CastSheet | null
+): Promise<{ photoParts: any[]; missing: string[]; counts: Record<string, number> }> {
+  const plan = planCharacterImages(chars, budget);
+  const photoParts: any[] = [];
+  const counts: Record<string, number> = { portrait: 0, photo: 0, fullBody: 0 };
+  const got = new Set<string>();
+
+  for (const img of plan) {
+    const c = chars.find((x) => x.id === img.characterId)!;
+    try {
+      const part = await imagePart(img.url, MAX_REF_PX);
+      const label = { text: characterImageLabel(img, c, sheet?.lines?.[c.id]) };
+      parts.push(part, label);
+      if (img.kind === "photo") photoParts.push(part, label);
+      counts[img.kind]++;
+      got.add(c.id);
+    } catch (err) {
+      console.warn(`⚠️ Could not fetch ${img.kind} for ${c.name}:`, err);
+    }
+  }
+
+  const missing = chars.filter((c) => !got.has(c.id)).map((c) => c.name);
+  return { photoParts, missing, counts };
+}
+
+/** Drop the real-photo parts (by identity) for a retry. */
+export function withoutParts(parts: any[], drop: any[]): any[] {
+  const set = new Set(drop);
+  return parts.filter((p) => !set.has(p));
 }

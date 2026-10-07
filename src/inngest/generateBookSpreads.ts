@@ -37,7 +37,9 @@ import {
   getCastSheet,
   castSheetBlock,
   ensureFullBody,
-  fullBodyIsCurrent,
+  pushCharacterReferenceParts,
+  withoutParts,
+  MAX_INPUT_IMAGES,
   type CastSheet,
 } from "@/lib/characters/consistency";
 
@@ -909,76 +911,36 @@ export const generateSingleSpread = inngest.createFunction(
 
       // ── Build Gemini prompt ──
       const parts: any[] = [];
-      const missingPortraits: string[] = [];
 
-      // 1. CHARACTER PORTRAITS — images first
-      // FIX: Fall back to referenceUrl / fullBodyUrl if portraitUrl is missing,
-      // consistent with the preflight check in generateBookSpreads orchestrator.
-      for (const c of featuredRefs) {
-        const charImageUrl = c.portraitUrl || c.referenceUrl || c.fullBodyUrl;
+      // 1. CHARACTER REFERENCES — images first.
+      // For each featured character: in-style portrait, then the REAL
+      // reference photo (likeness), then full body (height, proportions),
+      // within Gemini's input-image limit. Shared with the cover so both
+      // describe the characters the same way.
+      const fixedImages =
+        (styleRefUrl && !isDataUrl(styleRefUrl) ? 1 : 0) +
+        (locationRef ? 1 : 0) +
+        (existingSpreadImageUrl && !isDataUrl(existingSpreadImageUrl) ? 1 : 0) +
+        1; // layout template
+      const charBudget = Math.max(featuredRefs.length, MAX_INPUT_IMAGES - fixedImages);
 
-        if (!charImageUrl || isDataUrl(charImageUrl)) {
-          missingPortraits.push(c.name);
-          continue;
-        }
+      const refChars = featuredRefs.map((c) => ({
+        id: c.id,
+        name: c.name,
+        species: c.species,
+        breed: c.breed,
+        appearance: c.appearance,
+        portraitImageUrl: c.portraitUrl,
+        referenceImageUrl: c.referenceUrl,
+        fullBodyImageUrl: c.fullBodyUrl,
+        visualDetails: c.visualDetails,
+      }));
 
-        try {
-          parts.push(await getImagePart(charImageUrl));
-        } catch (err) {
-          missingPortraits.push(`${c.name} (fetch failed)`);
-          continue;
-        }
-
-        const isAnimal = c.species && c.species !== "human";
-        const animalProfile = (c.visualDetails as any)?.animalProfile;
-        const anchors = c.appearance
-          ? c.appearance
-              .split(/[,.]/)
-              .map((s: string) => s.trim())
-              .filter(Boolean)
-              .slice(0, 6)
-              .join(", ")
-          : "";
-        // Full cast-sheet line (hair length, height vs others, outfit) beats
-        // the old 6-fragment cut, which often dropped hair length entirely.
-        const sheetLine = castSheet?.lines?.[c.id];
-        const anchorNote = sheetLine
-          ? ` ${sheetLine}`
-          : anchors
-          ? ` Key features: ${anchors}.`
-          : "";
-
-        if (isAnimal) {
-          const coatNote = animalProfile?.coatColour
-            ? ` — ${animalProfile.coatColour} coat`
-            : "";
-          parts.push({
-            text: `↑ FEATURED CHARACTER: ${c.name.toUpperCase()} (${c.breed || c.species}${coatNote}).${anchorNote} Preserve this character's identity exactly. ↑`,
-          });
-        } else {
-          parts.push({
-            text: `↑ FEATURED CHARACTER: ${c.name.toUpperCase()}.${anchorNote} Preserve this character's identity exactly. ↑`,
-          });
-        }
-
-        // Full-body reference: shows height, proportions, hair length and
-        // outfit, which a head-and-shoulders portrait cannot.
-        if (
-          c.fullBodyUrl &&
-          charImageUrl !== c.fullBodyUrl &&
-          !isDataUrl(c.fullBodyUrl) &&
-          fullBodyIsCurrent(c)
-        ) {
-          try {
-            parts.push(await getImagePart(c.fullBodyUrl));
-            parts.push({
-              text: `↑ ${c.name.toUpperCase()} FULL BODY: use this for height, body proportions, hair length and outfit. ↑`,
-            });
-          } catch (err) {
-            console.warn(`⚠️ Full-body ref failed for ${c.name}:`, err);
-          }
-        }
-      }
+      const { photoParts, missing: missingPortraits, counts } =
+        await pushCharacterReferenceParts(parts, refChars, charBudget, castSheet);
+      console.log(
+        `🖼️ Character images: ${counts.portrait} portraits, ${counts.photo} photos, ${counts.fullBody} full-body (budget ${charBudget})`
+      );
 
       if (missingPortraits.length > 0) {
         throw new Error(
@@ -1146,22 +1108,37 @@ AVOID: ${fullAvoidBlock}${feedback ? `\nFEEDBACK: ${feedback}` : ""}
         .reduce((s: number, p: any) => s + p.text.length, 0);
       console.log(`📦 Prompt: ${imgCount} images, ${txtLen} chars of text`);
 
-      const response = await client.models.generateContent({
-        model: GEMINI_IMAGE_MODEL,
-        contents: [{ role: "user", parts }],
-        config: {
-          responseModalities: ["IMAGE"],
-          imageConfig: { aspectRatio: IMAGE_ASPECT_RATIO, imageSize: IMAGE_SIZE },
-          safetySettings: [
-            {
-              category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-              threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-            },
-          ],
-        },
-      });
+      const callGemini = (p: any[]) =>
+        client.models.generateContent({
+          model: GEMINI_IMAGE_MODEL,
+          contents: [{ role: "user", parts: p }],
+          config: {
+            responseModalities: ["IMAGE"],
+            imageConfig: { aspectRatio: IMAGE_ASPECT_RATIO, imageSize: IMAGE_SIZE },
+            safetySettings: [
+              {
+                category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+              },
+            ],
+          },
+        });
 
-      const image = extractInlineImage(response);
+      let response = await callGemini(parts);
+      let image = extractInlineImage(response);
+
+      // Real photos occasionally make the model refuse. Rather than fail the
+      // page, draw it from the portraits alone (the old behaviour).
+      if (!image && photoParts.length > 0) {
+        console.warn(
+          `⚠️ Spread ${pageLabel}: no image with reference photos (block: ${
+            (response as any)?.promptFeedback?.blockReason ?? "none"
+          }, finish: ${(response as any)?.candidates?.[0]?.finishReason ?? "?"}). Retrying without photos.`
+        );
+        response = await callGemini(withoutParts(parts, photoParts));
+        image = extractInlineImage(response);
+      }
+
       if (!image) throw new Error("No image returned from Gemini");
 
       return saveImageToStorage(image.data, image.mimeType, storyId);
