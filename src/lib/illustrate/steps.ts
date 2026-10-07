@@ -169,7 +169,7 @@ export async function checkAndFix(
         const patches = await Promise.all(ok.map(async (p) => ({ buf: await fetchImage(p.patchUrl), plan: p.plan, grow: p.grow })));
         const apply = async (url: string) => {
           let img = await fetchImage(url);
-          for (const p of patches) img = await pastePatch(img, p.buf, p.plan.crop, p.plan.subject, { grow: p.grow });
+          for (const p of patches) img = await pastePatch(img, p.buf, p.plan.crop, p.plan.subject, { grow: p.grow, adaptive: true });
           return upload(img, o.folder);
         };
         return { artUrl: await apply(artUrl), alsoUrls: await Promise.all(alsoUrls.map(apply)) };

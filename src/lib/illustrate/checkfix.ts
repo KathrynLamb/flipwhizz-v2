@@ -48,7 +48,7 @@ export async function inspectArt(args: {
   parts.push({
     text: `You are the continuity checker for a personalised children's picture book. Every character must look identical on every page.
 
-Find EVERY person and animal in IMAGE A, including small or partly hidden ones.
+Find EVERY person and animal in IMAGE A, including small, partly hidden, faded or half-drawn ones.
 For each one:
 - characterId: which cast member it is (use the ids above), matched by clothes, hair, colours, build, age and species. null if it is nobody from the cast.
 - name: the cast member's name, or a short description if unknown.
@@ -56,7 +56,8 @@ For each one:
 - issues: concrete differences from their REFERENCE that a parent would notice: hair colour, hair length, hair texture or style, skin tone, facial hair, glasses, head covering, each clothing item and colour, apparent age, build, height compared with the others, species, breed, coat colour and markings. Write each as "what it is in the picture; what the reference shows".
   Ignore pose, expression, viewing angle, lighting and normal art-style rendering.
   If a reference says what someone wears ON THIS PAGE, judge their clothes against that, not against the reference picture.
-- matches: true only if there are no such differences.
+- Also list as issues any rendering faults on that figure: see-through or faded parts, a half-drawn or cut-off body, a head or limb that doesn't join up, two figures merged together, extra or missing limbs.
+- matches: true only if there are no such differences or faults.
 - isDuplicate: true if this cast member appears more than once and this is NOT the copy that best matches the scene. Exactly one copy of each character is the original.
 ${args.sceneHint ? `\nScene: ${args.sceneHint}` : ""}
 Expected in this picture: ${expectedNames.length ? expectedNames.join(", ") : "(no specific cast members)"}.

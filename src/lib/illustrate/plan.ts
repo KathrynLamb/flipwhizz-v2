@@ -172,7 +172,8 @@ export function planFixes(
  * Split crop fixes into waves whose (grown) boxes don't overlap, so fixes in
  * a wave can run in parallel without one paste undoing another.
  */
-export function wavesOf<T extends { box_2d: Box2d }>(fixes: T[], grow = 0.15): T[][] {
+// grow matches the widest area a person fix may paste (adaptive mask limit).
+export function wavesOf<T extends { box_2d: Box2d }>(fixes: T[], grow = 0.5): T[][] {
   const grown = (b: Box2d) => {
     const gy = (b[2] - b[0]) * grow;
     const gx = (b[3] - b[1]) * grow;

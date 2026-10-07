@@ -120,7 +120,7 @@ export async function featherMask(
       `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" rx="${r}" ry="${r}" fill="white"/>` +
       `</svg>`
   );
-  return sharp(svg).blur(sigma).greyscale().raw().toBuffer();
+  return sharp(svg).blur(sigma).greyscale().extractChannel(0).raw().toBuffer();
 }
 
 /**
@@ -133,6 +133,14 @@ export function colourMatch(patch: Buffer, orig: Buffer, mask: Buffer, minPixels
   let count = 0;
   for (let i = 0; i < n; i++) {
     if (mask[i] > 20) continue; // only background ring
+    // ...and only pixels the model didn't really change (a redrawn person
+    // can spill into the ring; their colours must not skew the match).
+    if (
+      Math.abs(patch[i * 3] - orig[i * 3]) > 42 ||
+      Math.abs(patch[i * 3 + 1] - orig[i * 3 + 1]) > 42 ||
+      Math.abs(patch[i * 3 + 2] - orig[i * 3 + 2]) > 42
+    )
+      continue;
     count++;
     for (let c = 0; c < 3; c++) {
       const p = patch[i * 3 + c];
@@ -149,7 +157,10 @@ export function colourMatch(patch: Buffer, orig: Buffer, mask: Buffer, minPixels
     mO[c] = sumO[c] / count;
     const sP = Math.sqrt(Math.max(1, sqP[c] / count - mP[c] * mP[c]));
     const sO = Math.sqrt(Math.max(1, sqO[c] / count - mO[c] * mO[c]));
-    gain[c] = Math.max(0.75, Math.min(1.33, sO / sP));
+    // On flat backgrounds (sky, white) the spread is tiny and noisy, and a
+    // gain would wildly shift colours far from the background (faces). Only
+    // scale contrast when both sides have real texture; otherwise just shift.
+    gain[c] = sP > 12 && sO > 12 ? Math.max(0.85, Math.min(1.18, sO / sP)) : 1;
   }
   for (let i = 0; i < patch.length; i++) {
     const c = i % 3;
@@ -157,6 +168,69 @@ export function colourMatch(patch: Buffer, orig: Buffer, mask: Buffer, minPixels
     out[i] = v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
   }
   return out;
+}
+
+/** Hard (unfeathered) rectangle mask: subject grown by frac, 0/255. */
+function rectMask(w: number, h: number, subject: PxBox, frac: number): Buffer {
+  const gx = Math.round(subject.width * frac);
+  const gy = Math.round(subject.height * frac);
+  const x0 = Math.max(0, subject.left - gx);
+  const y0 = Math.max(0, subject.top - gy);
+  const x1 = Math.min(w, subject.left + subject.width + gx);
+  const y1 = Math.min(h, subject.top + subject.height + gy);
+  const m = Buffer.alloc(w * h);
+  for (let y = y0; y < y1; y++) m.fill(255, y * w + x0, y * w + x1);
+  return m;
+}
+
+async function blurThreshold(m: Buffer, w: number, h: number, sigma: number, cut: number): Promise<Buffer> {
+  // extractChannel(0): sharp otherwise returns 3 channels for a 1-channel raw input.
+  const b = await sharp(m, { raw: { width: w, height: h, channels: 1 } }).blur(sigma).extractChannel(0).raw().toBuffer();
+  const out = Buffer.alloc(w * h);
+  for (let i = 0; i < w * h; i++) out[i] = b[i] >= cut ? 255 : 0;
+  return out;
+}
+
+/**
+ * Mask that follows what the model ACTUALLY changed. The redrawn person is
+ * often a little bigger, taller or shifted compared with the old outline;
+ * a mask built only from the old box leaves part of them half-transparent
+ * (a "ghost"). So: take every pixel that changed noticeably, near the
+ * subject, close the gaps, join it to the subject box, and only then
+ * feather the outside edge. Inside, the new person is fully opaque.
+ */
+async function adaptiveMask(
+  patch: Buffer,
+  orig: Buffer,
+  w: number,
+  h: number,
+  subject: PxBox,
+  grow: number,
+  feather: number
+): Promise<Buffer> {
+  const n = w * h;
+  const limit = rectMask(w, h, subject, Math.max(0.5, grow + 0.3));
+  const changed = Buffer.alloc(n);
+  for (let i = 0; i < n; i++) {
+    if (!limit[i]) continue;
+    const d = Math.max(
+      Math.abs(patch[i * 3] - orig[i * 3]),
+      Math.abs(patch[i * 3 + 1] - orig[i * 3 + 1]),
+      Math.abs(patch[i * 3 + 2] - orig[i * 3 + 2])
+    );
+    if (d > 42) changed[i] = 255;
+  }
+  const minSide = Math.min(subject.width, subject.height);
+  // close: grow the changed area, then fill holes inside the figure
+  const closed = await blurThreshold(changed, w, h, Math.max(2, minSide * 0.04), 40);
+  const filled = await blurThreshold(closed, w, h, Math.max(2, minSide * 0.08), 90);
+  const core = rectMask(w, h, subject, grow);
+  const union = Buffer.alloc(n);
+  for (let i = 0; i < n; i++) union[i] = (filled[i] && limit[i]) || core[i] ? 255 : 0;
+  // feather OUTWARD only: grow by ~2 sigma first so the edge falloff sits outside the figure
+  const sigma = Math.max(1.5, feather);
+  const pad = await blurThreshold(union, w, h, sigma, 20);
+  return sharp(pad, { raw: { width: w, height: h, channels: 1 } }).blur(sigma).extractChannel(0).raw().toBuffer();
 }
 
 /**
@@ -171,7 +245,14 @@ export async function pastePatch(
   patch: Buffer,
   crop: PxBox,
   subject: PxBox,
-  opts: { grow?: number; growPx?: number; feather?: number; matchColours?: boolean } = {}
+  opts: {
+    grow?: number;
+    growPx?: number;
+    feather?: number;
+    matchColours?: boolean;
+    /** Follow the model's actual changes (people fixes). Off for text. */
+    adaptive?: boolean;
+  } = {}
 ): Promise<Buffer> {
   const { width: W, height: H } = await imageSize(base);
   const c = {
@@ -187,8 +268,19 @@ export async function pastePatch(
   // the mask are written back exactly as they were.
   const orig = await sharp(base).rotate().extract(c).removeAlpha().toColourspace("srgb").raw().toBuffer();
   let p = await raw(patch, w, h, 3);
-  const mask = await featherMask(w, h, subject, opts);
+  let mask = await featherMask(w, h, subject, opts);
   if (opts.matchColours !== false) p = colourMatch(p, orig, mask);
+  if (opts.adaptive) {
+    mask = await adaptiveMask(
+      p,
+      orig,
+      w,
+      h,
+      subject,
+      opts.grow ?? 0.12,
+      opts.feather ?? Math.max(1.5, Math.min(subject.width, subject.height) * 0.03)
+    );
+  }
 
   const out = Buffer.alloc(w * h * 3);
   for (let i = 0; i < w * h; i++) {

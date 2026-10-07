@@ -94,7 +94,9 @@ export function planCrop(
   imgH: number,
   opts: { padFrac?: number; minSide?: number } = {}
 ): CropPlan {
-  const padFrac = opts.padFrac ?? 0.35;
+  // Generous context: the model may redraw a person a little bigger, and the
+  // paste can only use what is inside the crop.
+  const padFrac = opts.padFrac ?? 0.42;
   const minSide = Math.min(opts.minSide ?? 384, imgW, imgH);
 
   const pad = Math.round(Math.max(person.width, person.height) * padFrac);
@@ -165,6 +167,11 @@ export function iou(a: PxBox, b: PxBox): number {
 export function normaliseText(s: string): string {
   return s
     .toLowerCase()
+    // words broken across lines ("every-\nthing", "every- thing") and
+    // hyphenated words ("grown-ups") compare as one word on both sides
+    .replace(/(\w)[-‐‑]\s*\n\s*(\w)/g, "$1$2")
+    .replace(/(\w)[-‐‑]\s+(\w)/g, "$1$2")
+    .replace(/(\w)[-‐‑](\w)/g, "$1$2")
     .replace(/[‘’‚‛′`]/g, "'")
     .replace(/[“”„‟″]/g, '"')
     .replace(/[–—―]/g, "-")
@@ -204,6 +211,9 @@ export type TextVerdict = {
   left: number; // similarity 0-1
   right: number;
   problems: string[];
+  /** What was read back (for checking a flag by eye). */
+  gotLeft?: string;
+  gotRight?: string;
 };
 
 /**
@@ -247,5 +257,5 @@ export function judgeLettering(
   check("Left", expectedLeft, gotLeft, left);
   check("Right", expectedRight, gotRight, right);
 
-  return { ok: problems.length === 0, left, right, problems };
+  return { ok: problems.length === 0, left, right, problems, gotLeft: gotLeft.slice(0, 1500), gotRight: gotRight.slice(0, 1500) };
 }

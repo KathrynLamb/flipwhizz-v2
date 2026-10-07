@@ -50,6 +50,10 @@ function isTransient(err: unknown): boolean {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Model ids Google refused in this process: skip straight to the fallback
+// instead of paying a failed round-trip on every call.
+const rejectedModels = new Set<string>();
+
 /** Last non-thought image in the response (thinking can emit interim images). */
 export function extractImage(response: any): { data: Buffer; mimeType: string } | null {
   const parts: any[] = response?.candidates?.[0]?.content?.parts ?? [];
@@ -97,7 +101,7 @@ export async function generateImage(args: GenerateImageArgs): Promise<{ data: Bu
       } as any,
     });
 
-  let model = args.model;
+  let model = rejectedModels.has(args.model) ? FALLBACK_IMAGE_MODEL : args.model;
   let parts = args.parts;
   let droppedPhotos = false;
   let lastProblem = "";
@@ -119,7 +123,8 @@ export async function generateImage(args: GenerateImageArgs): Promise<{ data: Bu
     } catch (err) {
       lastProblem = errText(err);
       if (isModelRejected(err) && model !== FALLBACK_IMAGE_MODEL) {
-        console.warn(`🖼️ [${label}] model ${model} rejected (${lastProblem.slice(0, 160)}); falling back to ${FALLBACK_IMAGE_MODEL}`);
+        console.warn(`🖼️ [${label}] model ${model} rejected (${lastProblem.slice(0, 300)}); falling back to ${FALLBACK_IMAGE_MODEL}`);
+        rejectedModels.add(model);
         model = FALLBACK_IMAGE_MODEL;
         continue;
       }
