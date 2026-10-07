@@ -50,7 +50,7 @@ const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const TEXT_MODEL = "gemini-2.5-flash";
 const IMAGE_MODEL = "gemini-3-pro-image-preview";
 const MAX_SHEET_IMAGES = 40; // flash handles many; 13 characters x 2 pictures fits
-const SHEET_VERSION = 2; // bump to force every story to rebuild its sheet
+const SHEET_VERSION = 3; // bump to force every story to rebuild its sheet
 
 // Gemini 3 Pro Image accepts at most 14 input images per request, and Google
 // documents "up to 5 images of characters" for character consistency. Past
@@ -352,6 +352,8 @@ For animals: species/breed, size against the children (e.g. "comes up to Talia's
 Rules:
 - A REAL PHOTO is the source of truth for everything it shows. Never contradict it.
 - An illustrated portrait shows the outfit and art style. Use it only for things the photo does not show.
+- OUTFIT: if a DEFAULT OUTFIT is given, use it. Otherwise describe EXACTLY the clothes, colours and head covering in the illustrated portrait. If the written APPEARANCE or DESCRIPTION mentions different clothes (e.g. "wears dresses" but the portrait shows trousers), IGNORE the written clothes. The portrait is how this character is drawn throughout the book.
+- HAIR: copy the length from the picture; if the hair runs out of frame, say it continues beyond the shoulders rather than guessing shorter.
 - Written text fills in what the picture cannot show (height, outfit, age).
 - Be concrete and visual. No personality, no story events.
 - Heights must be mutually consistent across the whole cast. If heights are not stated, infer them from age and keep them plausible.

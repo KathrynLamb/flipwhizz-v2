@@ -1067,6 +1067,7 @@ One continuous 16:9 landscape. Left half = left page, right half = right page.
 HIGHEST PRIORITY:
 - Preserve the identity of every FEATURED character exactly
 - Do not redesign, simplify, substitute, or genericise featured characters
+- Every character appears EXACTLY ONCE in the whole spread (both pages together). Never draw the same person or animal twice, even if the text mentions them on both pages.
 ${sceneOnly || featuredRefs.length === 0
   ? "- This is a SCENE-ONLY illustration: do not draw any of the story's characters. Focus on the setting, mood and objects described."
   : `- Only ${featuredRefs.length} character(s) should be drawn with full detail and accurate likeness: ${featuredRefs.map((c) => c.name).join(", ")}`}
@@ -1123,6 +1124,7 @@ HIGHEST PRIORITY:
 - Preserve the identity of every FEATURED character exactly
 - Do not redesign, simplify, substitute, or genericise featured characters
 - Match their face, body, colours, markings, hair/fur shape, and signature features closely
+- Every character appears EXACTLY ONCE in the whole spread (both pages together). Never draw the same person or animal twice, even if the text mentions them on both pages.
 
 ${castBlock}
 
@@ -1232,7 +1234,8 @@ The ${clusterB.length} placeholder figure(s) of the second cluster (${placement}
               .map((c) => c.name)
               .join(", ")}.
 Redraw ONLY those figures so each one is unmistakably the referenced character: exact face, hair colour, length and texture, skin tone, build and outfit. Keep their positions, poses, sizes and the space between the clusters exactly as they are.
-Do not change anyone else, the text, the background or the composition. Do not add or remove people.
+Do not change anyone else, the background or the composition. Do not add or remove people or animals; every character appears exactly once.
+Keep every piece of hand-lettered text exactly as it is, in the same place. Do not redraw, move, restyle or repeat any text.
 ${castBlockB}
 STYLE: ${geminiStyleBlock}
             `.trim(),

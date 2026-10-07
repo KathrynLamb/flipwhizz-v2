@@ -95,7 +95,7 @@ const decideSpreadScenesTool: Anthropic.Tool = {
             staging: {
               type: "string",
               description:
-                `Only when more than ${CLUSTER_SIZE} characters are featured: one or two sentences staging the scene as two natural clusters, one per page, each of at most ${CLUSTER_SIZE} people, using the characters' names. Say who is in cluster A, who is in cluster B, which page each cluster is on and what each cluster is doing. Cluster A (the first ${CLUSTER_SIZE} featured IDs) must be nearest the action. Omit for ${CLUSTER_SIZE} or fewer featured characters.`,
+                `Only when more than ${CLUSTER_SIZE} characters are featured: one or two sentences, using names, saying where EVERY featured character is, each exactly once. Put each character on the page where the page text has them speak or act (someone acting in the RIGHT page text stands on the right page). Cluster B (the featured IDs after the first ${CLUSTER_SIZE}) must stand together as one clearly separate group, and you must say where that group is and what it is doing. Omit for ${CLUSTER_SIZE} or fewer featured characters.`,
             },
             backgroundCharacterIds: {
               type: "array",
@@ -470,7 +470,8 @@ Illustration constraint (the image model can hold at most ${CLUSTER_SIZE} charac
 - ${CLUSTER_SIZE + 1} to ${MAX_FEATURED_CHARACTERS_HARD} featured is allowed ONLY when the text makes the whole group the point (everyone arrives, the family gathers, everyone cheers). Then:
   - order featuredCharacterIds by importance: protagonists and whoever the text is about first
   - the first ${CLUSTER_SIZE} IDs are CLUSTER A, the rest are CLUSTER B
-  - fill in "staging": two natural clusters, one per page, cluster A nearest the action, each cluster doing something that reads clearly (at the table / in the doorway / on the sofa)
+  - put in CLUSTER A everyone the page text has speaking or acting, so the people doing things get the first, most accurate pass
+  - fill in "staging": where every featured character is, each EXACTLY ONCE, on the page where the text has them act; cluster B standing together as one separate group doing something that reads clearly (at the table / in the doorway / on the sofa)
 - Never feature more than ${MAX_FEATURED_CHARACTERS_HARD}. Anyone beyond that goes in backgroundCharacterIds and will be drawn from behind, far away or half out of frame, so they need no face.
 - Background characters get no reference picture, so never put a protagonist there.
 - Do not duplicate the same character in both featuredCharacterIds and backgroundCharacterIds
