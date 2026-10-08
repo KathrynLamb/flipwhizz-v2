@@ -9,7 +9,7 @@ import BookClient, { type BookTab } from "./BookClient";
 
 export const dynamic = "force-dynamic";
 
-const TABS: BookTab[] = ["overview", "pages", "characters", "redraw", "activity"];
+const TABS: BookTab[] = ["overview", "pages", "characters", "locations", "redraw", "activity"];
 
 export default async function BookPage({
   params,

@@ -146,6 +146,9 @@ export type SpreadDetail = {
   sceneSummary: string | null;
   sceneBrief: string | null;
   location: string | null;
+  /** Place the drawing uses (from the pages) and the place the scene plan names. */
+  locationId: string | null;
+  plannedLocationId: string | null;
   present: { id: string; name: string; role: string }[];
 };
 
@@ -160,6 +163,20 @@ export type CharacterDetail = {
   sheetUrl: string | null;
   sheetStale: boolean;
   spreads: number[];
+};
+
+export type LocationDetail = {
+  id: string;
+  name: string;
+  description: string | null;
+  significance: string | null;
+  /** The picture drawings use for this place (card first, then uploaded reference). */
+  imageUrl: string | null;
+  referenceUrl: string | null;
+  /** Spreads whose pages are set here (what the drawing actually uses). */
+  spreadsDrawn: number[];
+  /** Spreads whose scene plan names this as the main place. */
+  spreadsPlanned: number[];
 };
 
 export type BookOrder = {
@@ -180,6 +197,7 @@ export type BookDetail = {
   busy: BusyState;
   spreads: SpreadDetail[];
   characters: CharacterDetail[];
+  locations: LocationDetail[];
   orders: BookOrder[];
   copies: { id: string; createdAt: string | null }[];
   progress: Record<string, boolean | null> | null;
@@ -192,13 +210,13 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
   if (!book) return null;
   const tablesReady = await adminTablesReady();
 
-  const [spreadRows, charRows, orderRows, progressRows, busy] = await Promise.all([
+  const [spreadRows, charRows, orderRows, progressRows, busy, locRows, pageLocRows] = await Promise.all([
     rows(sql`
       SELECT sp.id, sp.spread_index, sp.qa, sp.scene_summary, sp.left_page_id, sp.right_page_id,
              lp.page_number AS left_no, rp.page_number AS right_no,
              lp.image_url AS left_url, rp.image_url AS right_url,
              lp.text AS left_text, rp.text AS right_text,
-             pr.characters AS presence, loc.name AS location_name,
+             pr.characters AS presence, pr.primary_location_id, loc.name AS location_name,
              sc.scene_summary AS scene_brief
       FROM story_spreads sp
       LEFT JOIN story_pages lp ON lp.id = sp.left_page_id
@@ -224,7 +242,23 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       FROM story_workflow_progress WHERE story_id = ${storyId} LIMIT 1
     `),
     bookBusy(storyId),
+    rows(sql`
+      SELECT l.id, l.name, l.description, l.portrait_image_url, l.reference_image_url, sl.significance
+      FROM locations l JOIN story_locations sl ON sl.location_id = l.id
+      WHERE sl.story_id = ${storyId}
+      ORDER BY l.name
+    `),
+    rows(sql`
+      SELECT spl.page_id, spl.location_id
+      FROM story_page_locations spl JOIN story_pages p ON p.id = spl.page_id
+      WHERE p.story_id = ${storyId}
+    `),
   ]);
+  const locName = new Map(locRows.map((l) => [l.id as string, l.name as string]));
+  // The place a spread is drawn in: the first place linked to its pages
+  // (the same rule the spread worker uses).
+  const pageLoc = new Map<string, string>();
+  for (const r of pageLocRows) if (!pageLoc.has(r.page_id)) pageLoc.set(r.page_id, r.location_id);
 
   const nameById = new Map(charRows.map((c) => [c.id as string, c.name as string]));
   const pendingSet = new Set(busy.pendingSpreads);
@@ -261,7 +295,12 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       text: [r.left_text, r.right_text].filter(Boolean).join("\n\n"),
       sceneSummary: r.scene_summary,
       sceneBrief: r.scene_brief,
-      location: r.location_name,
+      location: (() => {
+        const id = (r.left_page_id && pageLoc.get(r.left_page_id)) || (r.right_page_id && pageLoc.get(r.right_page_id)) || null;
+        return (id && locName.get(id)) || r.location_name || null;
+      })(),
+      locationId: (r.left_page_id && pageLoc.get(r.left_page_id)) || (r.right_page_id && pageLoc.get(r.right_page_id)) || null,
+      plannedLocationId: r.primary_location_id ?? null,
       present,
     };
   });
@@ -285,6 +324,17 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       spreads: spreads.filter((s) => s.present.some((p) => p.id === c.id)).map((s) => s.index),
     };
   });
+
+  const locationsOut: LocationDetail[] = locRows.map((l) => ({
+    id: l.id,
+    name: l.name,
+    description: l.description,
+    significance: l.significance,
+    imageUrl: usable(l.portrait_image_url) ? l.portrait_image_url : usable(l.reference_image_url) ? l.reference_image_url : null,
+    referenceUrl: usable(l.reference_image_url) ? l.reference_image_url : null,
+    spreadsDrawn: spreads.filter((s) => s.locationId === l.id).map((s) => s.index),
+    spreadsPlanned: spreads.filter((s) => s.plannedLocationId === l.id).map((s) => s.index),
+  }));
 
   const orders: BookOrder[] = orderRows.map((o) => ({
     id: o.id,
@@ -315,6 +365,7 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
     busy,
     spreads,
     characters,
+    locations: locationsOut,
     orders,
     copies,
     progress: p

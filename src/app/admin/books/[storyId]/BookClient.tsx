@@ -5,10 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ACTIONS, BOOK_STATUSES, confirmNeeded, titleMatches, type ActionKey, type BookKind } from "@/lib/admin/catalog";
-import type { BookDetail, SpreadDetail, CharacterDetail } from "@/lib/admin/data";
+import type { BookDetail, SpreadDetail, CharacterDetail, LocationDetail } from "@/lib/admin/data";
 import { Card, Empty, KindBadge, MigrationBanner, Pill, thumb, when } from "../../ui";
 
-export type BookTab = "overview" | "pages" | "characters" | "redraw" | "activity";
+export type BookTab = "overview" | "pages" | "characters" | "locations" | "redraw" | "activity";
 
 type Original = { id: string; title: string; kind: BookKind; ownerEmail: string | null } | null;
 
@@ -29,6 +29,7 @@ const TAB_LABELS: Record<BookTab, string> = {
   overview: "Overview",
   pages: "Pages",
   characters: "Characters",
+  locations: "Places",
   redraw: "Redraw",
   activity: "Activity",
 };
@@ -207,6 +208,7 @@ export default function BookClient({ detail, tab, original }: { detail: BookDeta
       {tab === "overview" && <Overview detail={detail} original={original} ask={ask} sending={sending} locked={locked} />}
       {tab === "pages" && <Pages spreads={detail.spreads} ask={ask} sending={sending} />}
       {tab === "characters" && <Characters characters={detail.characters} ask={ask} sending={sending} locked={locked} />}
+      {tab === "locations" && <Places locations={detail.locations} spreads={detail.spreads} bookId={book.id} />}
       {tab === "redraw" && <Redraw detail={detail} ask={ask} sending={sending} locked={locked} />}
       {tab === "activity" && <Activity detail={detail} ask={ask} sending={sending} locked={locked} />}
 
@@ -457,6 +459,58 @@ function Characters({ characters, ask, sending, locked }: { characters: Characte
           </div>
         </Card>
       ))}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                   Places                                   */
+/* -------------------------------------------------------------------------- */
+
+function Places({ locations, spreads, bookId }: { locations: LocationDetail[]; spreads: SpreadDetail[]; bookId: string }) {
+  const unplaced = spreads.filter((s) => s.pageImageUrl && !s.locationId).map((s) => s.index);
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-400">
+        <span>The picture shown is the one every drawing uses as the setting for that place.</span>
+        <a href={`/stories/${bookId}/locations`} className={btnQuiet}>Edit places (customer view)</a>
+      </div>
+      {unplaced.length > 0 && (
+        <p className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-2 text-xs text-amber-100">
+          Spread{unplaced.length === 1 ? "" : "s"} {unplaced.join(", ")} {unplaced.length === 1 ? "has" : "have"} no place linked, so {unplaced.length === 1 ? "it was" : "they were"} drawn without a setting reference.
+        </p>
+      )}
+      {locations.length === 0 ? (
+        <Empty>No places on this book yet.</Empty>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {locations.map((l) => {
+            const mismatch = l.spreadsPlanned.filter((i) => !l.spreadsDrawn.includes(i));
+            return (
+              <Card key={l.id} title={l.name} right={l.significance ? <span className="text-xs text-slate-500">{l.significance}</span> : undefined}>
+                {l.imageUrl ? (
+                  <a href={l.imageUrl} target="_blank">
+                    <img src={thumb(l.imageUrl, 480)} alt={l.name} className="h-40 w-full rounded-lg border border-white/10 object-cover" />
+                  </a>
+                ) : (
+                  <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-white/10 text-xs text-slate-500">
+                    No picture: drawings get only the place&apos;s name
+                  </div>
+                )}
+                {l.description && <p className="mt-2 line-clamp-3 text-xs text-slate-400">{l.description}</p>}
+                <p className="mt-2 text-xs text-slate-300">
+                  {l.spreadsDrawn.length ? `Drawn here: spread${l.spreadsDrawn.length === 1 ? "" : "s"} ${l.spreadsDrawn.join(", ")}` : "Not used by any drawn spread"}
+                </p>
+                {mismatch.length > 0 && (
+                  <p className="mt-1 text-xs text-amber-200">
+                    The scene plan puts spread{mismatch.length === 1 ? "" : "s"} {mismatch.join(", ")} here, but {mismatch.length === 1 ? "it's" : "they're"} drawn with a different place.
+                  </p>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
