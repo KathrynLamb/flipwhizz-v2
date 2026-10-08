@@ -6,13 +6,6 @@ export type ExportData = {
     pageNumber: number;
     spreadImageUrl: string;
     side: "left" | "right";
-    /**
-     * Typeset spreads: the picture without text plus the text as a vector
-     * layer (SVG), so the printed text is sharp. Used instead of
-     * spreadImageUrl when both are given.
-     */
-    artUrl?: string;
-    textSvgUrl?: string;
   }[];
   storyTitle?: string;
   readerName?: string;
@@ -274,9 +267,8 @@ export async function exportCompletePDF(
   /* ---------------------------------------------------------------------- */
 
   /* The art is 16:9 and the two printed pages are 2:1. "cover" trims about
-     5.5% off the top and bottom (inside the 8% the art and text keep clear)
-     instead of stretching everything 12.5% wider. The text layer is the same
-     size as the art, so it lines up exactly. */
+     5.5% off the top and bottom (inside the 8% the art and lettering keep
+     clear) instead of stretching everything 12.5% wider. */
   .page img {
     position: absolute;
     top: ${SAFE_MARGIN_MM}mm;
@@ -324,10 +316,11 @@ ${
 ${paddingPages >= 1 ? titlePageHtml : ""}
 
 ${data.interiorPages
-  .map((p) =>
-    p.artUrl && p.textSvgUrl
-      ? `<div class="page ${p.side}"><img src="${optimizeForPrint(p.artUrl)}" /><img src="${p.textSvgUrl}" /></div>`
-      : `<div class="page ${p.side}"><img src="${optimizeForPrint(p.spreadImageUrl)}" /></div>`
+  .map(
+    (p) =>
+      `<div class="page ${p.side}"><img src="${optimizeForPrint(
+        p.spreadImageUrl
+      )}" /></div>`
   )
   .join("\n")}
 

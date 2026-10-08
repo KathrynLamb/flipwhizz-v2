@@ -24,15 +24,13 @@ import {
   restoreSnapshot,
   stopBook,
 } from "@/lib/admin/server";
-import { adminTablesReady, letteringTablesReady } from "@/lib/admin/data";
+import { adminTablesReady } from "@/lib/admin/data";
 import { copyBookTo, applyCopyToOriginal } from "@/lib/admin/copy";
 import { reExtractCharacters } from "@/lib/admin/reExtract";
 import { ensureReferenceSheet, storyCharacterIds } from "@/lib/illustrate/sheets";
 import { getCastSheet } from "@/lib/characters/consistency";
 import { createGelatoOrder } from "print/gelato/createOrder";
 import { getPrintSpec } from "@/lib/printSpecs";
-import { isTypefaceKey, TYPEFACES } from "@/lib/typeset/fonts";
-import { letteringFor, saveLettering } from "@/lib/typeset/settings";
 
 export const dynamic = "force-dynamic";
 // Copying a book, re-extracting and drawing a reference sheet run inline.
@@ -50,8 +48,6 @@ type Body = {
   status?: string;
   characters?: boolean;
   plans?: boolean;
-  typeface?: string;
-  lettering?: string;
 };
 
 const fail = (status: number, error: string) => NextResponse.json({ ok: false, error }, { status });
@@ -97,7 +93,7 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
 
   /* --------------------- 2. Everything checkable up front -------------------- */
   let spread: typeof storySpreads.$inferSelect | undefined;
-  if (action === "redraw-spread" || action === "fix-character-spread" || action === "reletter-spread") {
+  if (action === "redraw-spread" || action === "fix-character-spread") {
     spread = await db.query.storySpreads.findFirst({
       where: and(eq(storySpreads.id, body.spreadId ?? ""), eq(storySpreads.storyId, storyId)),
     });
@@ -111,14 +107,6 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
   if (action === "restore-snapshot" && !(body.snapshotId && (await snapshotExists(storyId, body.snapshotId)))) return refuse("That snapshot isn't there any more.");
   if (action === "fix-status" && !BOOK_STATUSES.some((s) => s.value === body.status)) return refuse("Choose a status.");
   if (action === "test-print-order" && !book.pdfUrl) return refuse("No PDF yet. Export the PDF first.");
-  if (action === "set-lettering" && body.typeface !== undefined && !isTypefaceKey(body.typeface)) return refuse("Choose a typeface.");
-  if (action === "set-lettering" && !(await letteringTablesReady())) {
-    return refuse("Run scripts/sql/typesetting.sql in Neon first. Until then every book uses the Classic typeface, typeset.", 409);
-  }
-  if ((action === "reletter-all" || action === "reletter-spread") && (await letteringFor(storyId)).lettering !== "typeset") {
-    return refuse("This book is set to hand-lettering. Switch it to typeset first (Redraw tab, Lettering).");
-  }
-  if (action === "reletter-spread" && !((spread?.qa as any)?.artUrl)) return refuse("This spread has no saved text-free art (drawn before the new pipeline). Redraw it instead.");
 
   const snapshotOpts =
     spread ? { spreadId: spread.id }
@@ -265,27 +253,6 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
         await db.update(stories).set({ status, updatedAt: new Date() }).where(eq(stories.id, storyId));
         await log("done", `${book.status ?? "none"} → ${status}`);
         return NextResponse.json({ ok: true, message: `Status set to ${status}.` });
-      }
-
-      case "set-lettering": {
-        const saved = await saveLettering(storyId, {
-          typeface: isTypefaceKey(body.typeface) ? body.typeface : undefined,
-          lettering: body.lettering === "gemini" || body.lettering === "typeset" ? body.lettering : undefined,
-        });
-        await log("done", `${TYPEFACES[saved.typeface].label} (${TYPEFACES[saved.typeface].family}), ${saved.lettering === "typeset" ? "typeset" : "hand-lettered"}`);
-        return NextResponse.json({
-          ok: true,
-          message: `Saved: ${TYPEFACES[saved.typeface].label}, ${saved.lettering === "typeset" ? "typeset" : "hand-lettered by the image model"}. Re-letter the pages to apply it to pages already drawn.`,
-        });
-      }
-
-      case "reletter-all":
-      case "reletter-spread": {
-        await inngest.send({
-          name: "story/reletter",
-          data: { storyId, ...(spread ? { spreadIds: [spread.id], freshPlaces: true } : {}), adminActionId: startedId },
-        });
-        return NextResponse.json({ ok: true, message: spread ? `Re-lettering spread ${spread.spreadIndex}.` : "Re-lettering every page. Follow it on the Pages tab." });
       }
 
       case "test-print-order": {

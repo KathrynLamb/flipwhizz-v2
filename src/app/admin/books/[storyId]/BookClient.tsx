@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { ACTIONS, BOOK_STATUSES, confirmNeeded, titleMatches, type ActionKey, type BookKind } from "@/lib/admin/catalog";
 import type { BookDetail, SpreadDetail, CharacterDetail, LocationDetail } from "@/lib/admin/data";
 import { Card, Empty, KindBadge, MigrationBanner, Pill, thumb, when } from "../../ui";
-import { TYPEFACES, TYPEFACE_KEYS, type TypefaceKey } from "@/lib/typeset/faces";
 
 export type BookTab = "overview" | "pages" | "characters" | "locations" | "redraw" | "activity";
 
@@ -366,22 +365,12 @@ function Pages({ spreads, ask, sending }: { spreads: SpreadDetail[]; ask: Ask; s
                   <b className="text-sm text-white">Spread {s.index}{s.pages ? ` · pages ${s.pages}` : ""}</b>
                   <Pill tone={st.tone}>{st.label}{s.fixesApplied ? ` · ${s.fixesApplied} fix${s.fixesApplied === 1 ? "" : "es"}` : ""}</Pill>
                   {s.pending && <Pill tone="violet">drawing…</Pill>}
-                  {s.textMethod === "typeset" ? (
-                    <Pill tone="green">{`typeset${s.typeface && TYPEFACES[s.typeface as TypefaceKey] ? ` · ${TYPEFACES[s.typeface as TypefaceKey].label}` : ""}`}</Pill>
-                  ) : s.pageImageUrl ? (
-                    <Pill>hand-lettered</Pill>
-                  ) : null}
                   {!s.pending && s.lastFailed && <Pill tone="amber">last redraw failed</Pill>}
                 </div>
                 {s.onPage === false && <p className="mt-1 text-xs text-rose-300">The page shows a different picture from the one this check is about. Redraw it once to settle it.</p>}
                 {problems.length > 0 && (
                   <ul className="mt-1 list-disc pl-4 text-xs text-rose-200">
                     {problems.map((p, i) => <li key={i}>{p}</li>)}
-                  </ul>
-                )}
-                {s.textWarnings.length > 0 && (
-                  <ul className="mt-1 list-disc pl-4 text-xs text-amber-200">
-                    {s.textWarnings.map((w, i) => <li key={i}>{w}</li>)}
                   </ul>
                 )}
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -400,14 +389,6 @@ function Pages({ spreads, ask, sending }: { spreads: SpreadDetail[]; ask: Ask; s
                     }
                   >
                     Fix one character
-                  </button>
-                  <button
-                    className={btnQuiet}
-                    disabled={!!sending || !s.canReletter}
-                    title={s.canReletter ? "" : "Drawn before the new pipeline: redraw it to change its text"}
-                    onClick={() => ask("reletter-spread", { spreadId: s.id }, { heading: `Re-letter spread ${s.index}` })}
-                  >
-                    Re-letter
                   </button>
                   {s.artUrl && <a href={s.artUrl} target="_blank" className="self-center text-xs text-[#C4B5FD] hover:text-white">art without text ↗</a>}
                   {s.model && <span className="self-center text-xs text-slate-500">{s.model} · {when(s.at)}</span>}
@@ -538,96 +519,10 @@ function Places({ locations, spreads, bookId }: { locations: LocationDetail[]; s
 /*                                   Redraw                                   */
 /* -------------------------------------------------------------------------- */
 
-const FACE_CSS = TYPEFACE_KEYS.map(
-  (k) => `@font-face{font-family:"fw-${k}";src:url(/fonts/book/${TYPEFACES[k].files.regular}) format("truetype");font-weight:400;font-style:normal}
-@font-face{font-family:"fw-${k}";src:url(/fonts/book/${TYPEFACES[k].files.italic}) format("truetype");font-weight:400;font-style:italic}
-@font-face{font-family:"fw-${k}";src:url(/fonts/book/${TYPEFACES[k].files.bold}) format("truetype");font-weight:700;font-style:normal}`
-).join("\n");
-
-function FaceSample({ face }: { face: TypefaceKey }) {
-  const f = { fontFamily: `"fw-${face}", Georgia, serif`, fontSize: `${18 * TYPEFACES[face].sizeScale}px`, lineHeight: 1.34 };
-  return (
-    <p style={f} className="text-slate-100">
-      The dragon was <span style={{ letterSpacing: "0.03em" }}>ENORMOUS</span>, but he went <span style={{ fontStyle: "italic", fontSize: "1.12em" }}>tiptoeing</span> past the castle.{" "}
-      <span style={{ fontWeight: 700, fontSize: "1.25em", letterSpacing: "0.02em" }}>WHOOPS!</span>
-    </p>
-  );
-}
-
-function Lettering({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
-  const L = detail.lettering;
-  const [face, setFace] = useState<TypefaceKey>(L.typeface);
-  const [mode, setMode] = useState(L.lettering);
-  const changed = face !== L.typeface || mode !== L.lettering;
-  return (
-    <Card
-      title="Lettering"
-      right={
-        <span className="text-xs text-slate-500">
-          {TYPEFACES[L.typeface].label} · {L.lettering === "typeset" ? "typeset" : "hand-lettered"}
-          {L.explicit ? "" : " (default)"}
-        </span>
-      }
-    >
-      <style>{FACE_CSS}</style>
-      {!L.ready && (
-        <p className="mb-3 rounded-lg border border-amber-400/40 bg-amber-500/10 p-2 text-xs text-amber-100">
-          Run <b>scripts/sql/typesetting.sql</b> in Neon to save a typeface per book. Until then every book is typeset in Classic.
-        </p>
-      )}
-      <div className="grid gap-2 sm:grid-cols-3">
-        {TYPEFACE_KEYS.map((k) => (
-          <button
-            key={k}
-            onClick={() => setFace(k)}
-            className={`rounded-lg border p-3 text-left ${face === k ? "border-[#C4B5FD] bg-[#8B5CF6]/15" : "border-white/10 hover:bg-white/5"}`}
-          >
-            <div className="mb-1 flex items-center justify-between text-xs">
-              <b className="text-white">{TYPEFACES[k].label}</b>
-              <span className="text-slate-500">{TYPEFACES[k].family}</span>
-            </div>
-            <FaceSample face={k} />
-            <div className="mt-1 text-[11px] text-slate-400">{TYPEFACES[k].detail}</div>
-          </button>
-        ))}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-4 text-sm">
-        <label className="flex items-center gap-2">
-          <input type="radio" checked={mode === "typeset"} onChange={() => setMode("typeset")} />
-          Typeset in this typeface <span className="text-xs text-slate-500">(recommended: same on every page, sharp in print)</span>
-        </label>
-        <label className="flex items-center gap-2">
-          <input type="radio" checked={mode === "gemini"} onChange={() => setMode("gemini")} />
-          Hand-lettered by the image model <span className="text-xs text-slate-500">(the old way)</span>
-        </label>
-      </div>
-      {!L.explicit && L.lettering === "gemini" && (
-        <p className="mt-3 text-xs text-slate-400">
-          This book&apos;s pages are already hand-lettered, so new pages match them until you choose typeset here and re-letter.
-        </p>
-      )}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button className={btnPrimary} disabled={!!sending || (!changed && L.explicit) || !L.ready} onClick={() => ask("set-lettering", { typeface: face, lettering: mode })}>
-          {sending === "set-lettering" ? "Saving…" : "Save"}
-        </button>
-        <button className={btnQuiet} disabled={!!sending || locked("reletter-all") || L.lettering !== "typeset" || changed} onClick={() => ask("reletter-all")}>
-          {sending === "reletter-all" ? "Starting…" : "Re-letter every page"}
-        </button>
-        {changed && <span className="text-xs text-amber-200">Save first, then re-letter.</span>}
-      </div>
-      <p className="mt-3 text-xs text-slate-400">
-        {L.typeset} spread{L.typeset === 1 ? "" : "s"} typeset · {L.handLettered} hand-lettered (can be re-lettered without a redraw)
-        {L.needsRedraw ? ` · ${L.needsRedraw} drawn before the new pipeline (need a redraw to change their text)` : ""}
-      </p>
-    </Card>
-  );
-}
-
 function Redraw({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
   const whole: ActionKey[] = ["draw-missing", "redraw-all", "replan-all", "redraw-cover"];
   return (
     <div className="space-y-4">
-      <Lettering detail={detail} ask={ask} sending={sending} locked={locked} />
       <Card title="Whole book">
         <div className="space-y-3">
           {whole.map((a) => {

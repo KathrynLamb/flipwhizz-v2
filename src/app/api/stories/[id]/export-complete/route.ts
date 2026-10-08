@@ -2,7 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { stories, storyPages, storyProducts, readers, storySpreads } from "@/db/schema";
+import { stories, storyPages, storyProducts, readers } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { uploadPdfToR2 } from "@/lib/uploadPdfToR2";
 import { postProcessPdf } from "@/lib/postProcessPdf";
@@ -133,33 +133,11 @@ async function _POST(
       );
     }
 
-    // Typeset spreads print as picture + vector text layer (sharp text).
-    // Only when the saved text-free art is exactly what's on the page.
-    stage = "load-text-layers";
-    const layers = new Map<string, { artUrl: string; textSvgUrl: string }>();
-    try {
-      const spreadRows = await db
-        .select({ leftPageId: storySpreads.leftPageId, qa: storySpreads.qa })
-        .from(storySpreads)
-        .where(eq(storySpreads.storyId, storyId));
-      const pageUrl = new Map(pages.map((p) => [p.id, p.imageUrl]));
-      for (const r of spreadRows) {
-        const qa = (r.qa ?? null) as { artUrl?: string; finalUrl?: string; typeset?: { svgUrl?: string | null } } | null;
-        if (r.leftPageId && qa?.artUrl && qa.typeset?.svgUrl && qa.finalUrl && qa.finalUrl === pageUrl.get(r.leftPageId)) {
-          layers.set(r.leftPageId, { artUrl: qa.artUrl, textSvgUrl: qa.typeset.svgUrl });
-        }
-      }
-    } catch (err) {
-      console.warn("export-complete: text layers unavailable, printing page pictures", err);
-    }
-
     stage = "build-interior-pages";
     const interiorPages: Array<{
       pageNumber: number;
       spreadImageUrl: string;
       side: "left" | "right";
-      artUrl?: string;
-      textSvgUrl?: string;
     }> = [];
 
     for (let i = 0; i < pages.length; i += 2) {
@@ -168,12 +146,10 @@ async function _POST(
 
       if (!leftPage?.imageUrl) continue;
 
-      const layer = layers.get(leftPage.id);
       interiorPages.push({
         pageNumber: leftPage.pageNumber,
         spreadImageUrl: leftPage.imageUrl,
         side: "left",
-        ...(layer ?? {}),
       });
 
       if (rightPage) {
@@ -181,7 +157,6 @@ async function _POST(
           pageNumber: rightPage.pageNumber,
           spreadImageUrl: leftPage.imageUrl,
           side: "right",
-          ...(layer ?? {}),
         });
       }
     }

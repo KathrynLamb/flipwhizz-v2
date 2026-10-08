@@ -21,10 +21,7 @@ export type ActionKey =
   | "stop"
   | "re-extract"
   | "fix-status"
-  | "test-print-order"
-  | "set-lettering"
-  | "reletter-all"
-  | "reletter-spread";
+  | "test-print-order";
 
 /** How hard it is to press on a customer's book. Test copies only ever need a plain confirm. */
 export type Safeguard = "none" | "confirm" | "confirm-snapshot" | "type-title-snapshot";
@@ -163,30 +160,6 @@ export const ACTIONS: Record<ActionKey, ActionInfo> = {
     snapshot: false,
     locks: false,
     long: false,
-  },
-  "set-lettering": {
-    label: "Save lettering settings",
-    detail: "Sets the book's typeface and how its text is drawn. Pages already drawn don't change until they're re-lettered or redrawn.",
-    safeguard: "none",
-    snapshot: false,
-    locks: false,
-    long: false,
-  },
-  "reletter-all": {
-    label: "Re-letter every page",
-    detail: "Sets every page's text again in the book's typeface, on the same pictures. No redraw and no image calls. Pages drawn before the new pipeline need a redraw instead.",
-    safeguard: "confirm-snapshot",
-    snapshot: true,
-    locks: true,
-    long: true,
-  },
-  "reletter-spread": {
-    label: "Re-letter this spread",
-    detail: "Sets this spread's text again in the book's typeface, on the same picture, with a fresh choice of where the text goes.",
-    safeguard: "confirm",
-    snapshot: true,
-    locks: false,
-    long: true,
   },
   "test-print-order": {
     label: "Place a test print order",

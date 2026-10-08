@@ -17,7 +17,6 @@ import { generateStyleSample } from "@/inngest/generateStyle";
 import { generateBookSpreads } from "@/inngest/generateBookSpreads";
 import { generateSingleSpread } from "@/inngest/spreadWorker"; // compose -> check and fix -> letter
 import { refreshCharacter } from "@/inngest/refreshCharacter";
-import { reletterBook } from "@/inngest/reletter";
 import { reviseSingleSpread } from "@/inngest/reviseSingleSpread";
 import { buildSpreads } from "@/inngest/buildSpreads";
 import { analyseReferencePhoto } from "@/inngest/analyseReferencePhoto";
@@ -43,7 +42,6 @@ export const { GET, POST, PUT } = serve({
     generateBookSpreads,
     generateSingleSpread,
     refreshCharacter,
-    reletterBook,
     reviseSingleSpread,
     generateCoverSpreadV5,
     analyseReferencePhoto,

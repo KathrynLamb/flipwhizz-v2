@@ -44,9 +44,6 @@ import { ensureReferenceSheet, ensureStylePlate, loadCast, storyCharacterIds } f
 import { generateImage } from "@/lib/illustrate/gemini";
 import { upload, urlToPart } from "@/lib/illustrate/images";
 import { checkAndFix, letterAndCheck } from "@/lib/illustrate/steps";
-import { typesetStep, type TypesetInfo } from "@/lib/typeset/steps";
-import { letteringFor, DEFAULT_LETTERING, type Lettering } from "@/lib/typeset/settings";
-import { typefaceOf, type TypefaceKey } from "@/lib/typeset/fonts";
 import type { CastRef } from "@/lib/illustrate/plan";
 
 const ASPECT = "16:9";
@@ -105,8 +102,6 @@ type Prepared = {
   previousArtUrl: string | null; // un-lettered art from the last run (for revisions)
   previousFinalUrl: string | null; // the lettered page that art belongs to
   outfits: Record<string, string>; // what each character wears on THIS page
-  lettering?: Lettering; // typeset (default) or hand-lettered by the image model
-  typeface?: TypefaceKey;
 };
 
 /**
@@ -321,7 +316,6 @@ export const generateSingleSpread = inngest.createFunction(
       }
 
       const direction = plan?.recommendedPrompt ?? scene!.illustrationPrompt;
-      const letterSettings = await letteringFor(storyId);
       return {
         spreadId: spread.spreadId ?? null,
         leftText: left?.text ?? "",
@@ -346,8 +340,6 @@ export const generateSingleSpread = inngest.createFunction(
         previousArtUrl,
         previousFinalUrl,
         outfits,
-        lettering: letterSettings.lettering,
-        typeface: letterSettings.typeface,
       } satisfies Prepared;
     });
 
@@ -470,7 +462,7 @@ SCENE DIRECTION:
 ${prep.direction}
 ${prep.compositionNotes.length ? `\nCOMPOSITION:\n${prep.compositionNotes.map((n) => `- ${n}`).join("\n")}` : ""}
 
-SPACE FOR TEXT: the page text is added afterwards. Keep a calm, simple area in the upper part of each page (sky, wall, plain background): no faces or busy detail there.
+SPACE FOR TEXT: this spread is hand-lettered afterwards. Keep a calm, simple area in the upper part of each page (upper-left on the left page, upper-right on the right page): no faces or busy detail there.
 Do NOT draw any text, letters, words, numbers, captions, speech bubbles or writing on signs.
 Keep important content away from the outer 8% of every edge and from the centre fold.
 AVOID: ${prep.avoidBlock}${ev.feedback ? `\nFEEDBACK TO APPLY: ${ev.feedback}` : ""}`,
@@ -508,42 +500,16 @@ AVOID: ${prep.avoidBlock}${ev.feedback ? `\nFEEDBACK TO APPLY: ${ev.feedback}` :
       return { skipped: true, reason: "superseded" };
     }
 
-    // Typeset in the book's typeface (default), or hand-lettered by the
-    // image model when the book is set to that. If typesetting fails, the
-    // page is hand-lettered rather than left without text.
-    const handLetter = () =>
-      letterAndCheck(step, {
-        prefix: "text",
-        artUrl: qa.artUrl,
-        leftText: prep.leftText,
-        rightText: prep.rightText,
-        typography: prep.typography,
-        aspectRatio: ASPECT,
-        imageSize: SPREAD_IMAGE_SIZE,
-        folder,
-      });
-    let lettered: { finalUrl: string; text: any; blocks: any[]; typeset?: TypesetInfo | null };
-    if ((prep.lettering ?? DEFAULT_LETTERING) === "gemini") {
-      lettered = await handLetter();
-    } else {
-      const ts = await typesetStep(step, {
-        prefix: "type",
-        storyId,
-        artUrl: qa.artUrl,
-        leftPageId,
-        rightPageId: rightPageId ?? null,
-        leftText: prep.leftText,
-        rightText: prep.rightText,
-        typeface: typefaceOf(prep.typeface),
-        folder,
-      });
-      if ("error" in ts) {
-        console.warn(`⚠️ Spread ${pageLabel}: typesetting failed (${ts.error}); hand-lettering instead`);
-        lettered = await handLetter();
-      } else {
-        lettered = ts;
-      }
-    }
+    const lettered = await letterAndCheck(step, {
+      prefix: "text",
+      artUrl: qa.artUrl,
+      leftText: prep.leftText,
+      rightText: prep.rightText,
+      typography: prep.typography,
+      aspectRatio: ASPECT,
+      imageSize: SPREAD_IMAGE_SIZE,
+      folder,
+    });
 
     /* ---------------------------------------------------------------- */
     /* 4. Save                                                           */
@@ -562,8 +528,6 @@ AVOID: ${prep.avoidBlock}${ev.feedback ? `\nFEEDBACK TO APPLY: ${ev.feedback}` :
       log: qa.log.slice(-30),
       text: lettered.text,
       textBlocks: lettered.blocks,
-      // Typeset text: the layout (to redraw it exactly) and the vector text layer for print.
-      typeset: lettered.typeset ?? null,
       latestRun: myRun,
       // Which request this picture came from (latestRun moves on as soon as
       // a newer request starts; savedRun only when one finishes).

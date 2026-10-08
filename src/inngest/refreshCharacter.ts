@@ -19,7 +19,6 @@ import { ensureReferenceSheet, loadCast, storyCharacterIds } from "@/lib/illustr
 import { checkAndFix } from "@/lib/illustrate/steps";
 import { compositeText } from "@/lib/illustrate/checkfix";
 import { fetchImage, upload } from "@/lib/illustrate/images";
-import { rerenderTypeset, type TypesetInfo } from "@/lib/typeset/steps";
 import type { CastRef } from "@/lib/illustrate/plan";
 import { resolveStyleGuide } from "./generateBookSpreads";
 
@@ -135,22 +134,10 @@ export const refreshCharacter = inngest.createFunction(
       });
 
       let newFinal = t.artUrl ? qa.alsoUrls[0] ?? t.finalUrl : qa.artUrl;
-      const typeset = t.artUrl && t.qa?.typeset?.layout ? (t.qa.typeset as TypesetInfo) : null;
       // Patches cut from the text-free art can cover a bit of lettering on
       // the page: put the original lettering back over them.
       const blocks = Array.isArray(t.qa?.textBlocks) ? t.qa.textBlocks : [];
-      if (typeset && qa.artUrl !== t.artUrl) {
-        // Typeset page: draw the same text again, exactly, on the fixed art.
-        const patched = newFinal;
-        newFinal = await step.run(`retype-${i}`, async () => {
-          try {
-            return await rerenderTypeset(qa.artUrl, typeset, `flipwhizz/stories/${storyId}/work`);
-          } catch (e) {
-            console.warn(`⚠️ refresh: re-typesetting failed (${e instanceof Error ? e.message : e}); keeping the patched page`);
-            return patched;
-          }
-        });
-      } else if (t.artUrl && newFinal !== t.finalUrl && blocks.length > 0) {
+      if (t.artUrl && newFinal !== t.finalUrl && blocks.length > 0) {
         newFinal = await step.run(`reletter-${i}`, async () => {
           try {
             const out = await compositeText(await fetchImage(newFinal), await fetchImage(t.finalUrl), blocks);

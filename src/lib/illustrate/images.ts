@@ -70,21 +70,6 @@ export async function upload(buf: Buffer, folder: string): Promise<string> {
   });
 }
 
-/** Upload an SVG (the typeset text layer). Returns its .svg URL. */
-export async function uploadSvg(svg: string, folder: string): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder, filename_override: uuid(), resource_type: "image", timeout: 120000 },
-      (err, res) => {
-        if (err) return reject(err);
-        if (!res?.secure_url) return reject(new Error("Cloudinary returned no URL"));
-        resolve(res.secure_url);
-      }
-    );
-    Readable.from(Buffer.from(svg, "utf8")).pipe(stream);
-  });
-}
-
 /* -------------------------------------------------------------------------- */
 /*                                  REGIONS                                   */
 /* -------------------------------------------------------------------------- */

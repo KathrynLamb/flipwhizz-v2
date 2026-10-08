@@ -197,14 +197,6 @@ BEGIN
       to_jsonb(r) || jsonb_build_object('id', gen_random_uuid(), 'story_id', new_story));
   END LOOP;
 
-  -- Lettering settings and emphasis plans (tables from typesetting.sql, if there).
-  IF to_regclass('public.book_lettering') IS NOT NULL THEN
-    EXECUTE format('INSERT INTO book_lettering (story_id, typeface, lettering) SELECT %L, typeface, lettering FROM book_lettering WHERE story_id = %L', new_story, src_story);
-  END IF;
-  IF to_regclass('public.page_text_runs') IS NOT NULL THEN
-    EXECUTE format('INSERT INTO page_text_runs (page_id, story_id, for_text, runs) SELECT pg_temp.remap(''page'', page_id), %L, for_text, runs FROM page_text_runs WHERE story_id = %L AND pg_temp.remap(''page'', page_id) IS NOT NULL', new_story, src_story);
-  END IF;
-
   INSERT INTO book_copies (copy_story_id, original_story_id) VALUES (new_story, src_story);
 END $$;
 `)
@@ -388,28 +380,6 @@ export async function applyCopyToOriginal(copyStoryId: string, opts: { character
       await tx.execute(sql`UPDATE stories SET cover_plan = ${JSON.stringify(coverPlan ?? null)}::jsonb WHERE id = ${originalId}`);
     }
   });
-
-  // The copy's lettering settings and emphasis go with its pictures, so a
-  // later re-letter of the original sets the text the same way.
-  try {
-    await db.execute(sql`
-      INSERT INTO page_text_runs (page_id, story_id, for_text, runs, updated_at)
-      SELECT op.id, ${originalId}, r.for_text, r.runs, now()
-      FROM page_text_runs r
-      JOIN story_pages cp ON cp.id = r.page_id
-      JOIN story_pages op ON op.story_id = ${originalId} AND op.page_number = cp.page_number
-      WHERE r.story_id = ${copyStoryId}
-      ON CONFLICT (page_id) DO UPDATE SET for_text = EXCLUDED.for_text, runs = EXCLUDED.runs, updated_at = now()
-    `);
-    await db.execute(sql`
-      INSERT INTO book_lettering (story_id, typeface, lettering, updated_at)
-      SELECT ${originalId}, typeface, lettering, now() FROM book_lettering WHERE story_id = ${copyStoryId}
-      ON CONFLICT (story_id) DO UPDATE SET typeface = EXCLUDED.typeface, lettering = EXCLUDED.lettering, updated_at = now()
-    `);
-  } catch (err) {
-    const code = (err as { code?: string; cause?: { code?: string } })?.code ?? (err as { cause?: { code?: string } })?.cause?.code;
-    if (code !== "42P01") warnings.push(`Lettering settings not copied: ${err instanceof Error ? err.message : String(err)}`);
-  }
 
   const drawn = copyPages.filter((p) => p.image_url).length;
   const summary = [

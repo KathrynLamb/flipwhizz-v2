@@ -22,7 +22,7 @@ export async function rows<T = Row>(q: SQL): Promise<T[]> {
 /** True when the admin tables haven't been created yet (migration not run). */
 export function isMissingTable(err: unknown): boolean {
   const e = err as { code?: string; cause?: { code?: string }; message?: string };
-  return e?.code === "42P01" || e?.cause?.code === "42P01" || /relation "(admin_actions|book_snapshots|book_copies|book_lettering|page_text_runs)" does not exist/.test(String(e?.message ?? ""));
+  return e?.code === "42P01" || e?.cause?.code === "42P01" || /relation "(admin_actions|book_snapshots|book_copies)" does not exist/.test(String(e?.message ?? ""));
 }
 
 /* -------------------------------------------------------------------------- */
