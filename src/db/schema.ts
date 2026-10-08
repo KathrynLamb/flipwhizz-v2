@@ -1093,3 +1093,58 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
 });
 
 
+/* ==================== ADMIN ==================== */
+
+// Every admin action on a book (what, when, result). Shown in the Book
+// page's Activity tab. Long jobs are "started" until the Inngest function
+// marks them done or failed (see src/lib/admin/server.ts).
+export const adminActions = pgTable(
+  "admin_actions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    storyId: uuid("story_id").references(() => stories.id, { onDelete: "cascade" }),
+    action: varchar("action", { length: 40 }).notNull(),
+    label: text("label").notNull(),
+    detail: jsonb("detail"),
+    // started | sent | done | failed | refused | stopped
+    status: varchar("status", { length: 20 }).notNull().default("started"),
+    result: text("result"),
+    snapshotId: uuid("snapshot_id"),
+    adminEmail: varchar("admin_email", { length: 255 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    finishedAt: timestamp("finished_at"),
+  },
+  (t) => ({
+    storyIdx: index("admin_actions_story_idx").on(t.storyId, t.createdAt),
+  })
+);
+
+// What a book looked like before an admin action changed it: every page's
+// picture, every spread's check record, the cover, and (when an action
+// changes them) character cards and scene plans. Restore puts it all back.
+export const bookSnapshots = pgTable(
+  "book_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    storyId: uuid("story_id")
+      .references(() => stories.id, { onDelete: "cascade" })
+      .notNull(),
+    reason: text("reason").notNull(),
+    data: jsonb("data").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    storyIdx: index("book_snapshots_story_idx").on(t.storyId, t.createdAt),
+  })
+);
+
+// Test copies made with "Copy to my account", and the book each came from.
+export const bookCopies = pgTable("book_copies", {
+  copyStoryId: uuid("copy_story_id")
+    .primaryKey()
+    .references(() => stories.id, { onDelete: "cascade" }),
+  originalStoryId: uuid("original_story_id")
+    .references(() => stories.id, { onDelete: "cascade" })
+    .notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});

@@ -1,24 +1,20 @@
 // src/app/admin/layout.tsx
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+//
+// One admin shell for every admin page: a sidebar on desktop, a bottom bar
+// on a phone. Each page still checks admin itself (requireAdminPage), since
+// a layout's redirect doesn't stop its page loading data in parallel.
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { getAuthUser } from "@/lib/authz";
+import AdminShell from "./AdminShell";
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+export const metadata: Metadata = {
+  title: "Admin",
+  robots: { index: false, follow: false },
+};
 
-export default async function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  if (!ADMIN_EMAIL) {
-    throw new Error("ADMIN_EMAIL environment variable is not set");
-  }
-
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.email || session.user.email !== ADMIN_EMAIL) {
-    redirect("/");
-  }
-
-  return <>{children}</>;
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const user = await getAuthUser();
+  if (!user?.isAdmin) redirect("/");
+  return <AdminShell email={user.email}>{children}</AdminShell>;
 }

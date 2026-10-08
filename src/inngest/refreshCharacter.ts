@@ -9,7 +9,8 @@
 // Event: story/refresh-character { storyId, characterId, artModel? }
 
 import { inngest } from "./client";
-import { and, eq, inArray } from "drizzle-orm";
+import { finishAdminAction } from "@/lib/admin/finish";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { storyPages, storySpreads, storySpreadPresence, storyStyleGuide } from "@/db/schema";
 import { getCastSheet, type CastSheet } from "@/lib/characters/consistency";
@@ -36,9 +37,19 @@ export const refreshCharacter = inngest.createFunction(
     retries: 1,
     concurrency: { limit: 1, key: "event.data.storyId" },
     triggers: [{ event: "story/refresh-character" }],
+    // Admin "Stop runs for this book" cancels this run (src/lib/admin/server.ts).
+    cancelOn: [{ event: "admin/stop-book", if: "async.data.storyId == event.data.storyId" }],
   },
   async ({ event, step }) => {
-    const { storyId, characterId } = event.data as { storyId: string; characterId: string; artModel?: string };
+    const { storyId, characterId, spreadIds, adminActionId } = event.data as {
+      storyId: string;
+      characterId: string;
+      artModel?: string;
+      /** Only these spreads ("Fix one character on this spread"). */
+      spreadIds?: string[];
+      adminActionId?: string;
+    };
+    const onlySpreads = Array.isArray(spreadIds) && spreadIds.length ? new Set(spreadIds) : null;
     if (!storyId || !characterId) throw new Error("storyId and characterId required");
     const model = artModel((event.data as any).artModel);
 
@@ -76,6 +87,7 @@ export const refreshCharacter = inngest.createFunction(
 
       const out: Target[] = [];
       for (const s of spreads) {
+        if (onlySpreads && !onlySpreads.has(s.id)) continue;
         const ids = ((presence.find((p) => p.spreadId === s.id)?.characters ?? []) as { characterId: string }[]).map((c) => c.characterId);
         if (!ids.includes(characterId)) continue;
         const finalUrl = pages.find((p) => p.id === s.leftPageId)?.imageUrl;
@@ -135,28 +147,57 @@ export const refreshCharacter = inngest.createFunction(
           }
         });
       }
-      await step.run(`save-${i}`, async () => {
+      const saved: boolean = await step.run(`save-${i}`, async () => {
         if (newFinal !== t.finalUrl) {
           // Only if nobody redrew this page while we were working.
-          await db
+          const moved = await db
             .update(storyPages)
             .set({ imageUrl: newFinal })
-            .where(and(inArray(storyPages.id, t.pageIds), eq(storyPages.imageUrl, t.finalUrl)));
+            .where(and(inArray(storyPages.id, t.pageIds), eq(storyPages.imageUrl, t.finalUrl)))
+            .returning({ id: storyPages.id });
+          // Redrawn meanwhile: the newer picture and its record stand.
+          if (moved.length === 0) return false;
         }
-        await db
+        // Merge into the CURRENT record (not the copy read at the start), so
+        // a redraw that saved meanwhile keeps its own fields.
+        const patch = {
+          // Art without text only stays valid if it matches the page.
+          artUrl: t.artUrl ? qa.artUrl : null,
+          finalUrl: newFinal,
+          refreshed: [...((t.qa?.refreshed as any[]) ?? []), { characterId, at: new Date().toISOString(), status: qa.status, fixes: qa.fixesApplied }].slice(-10),
+        };
+        // ...and only while the page really shows this picture.
+        const kept = await db
           .update(storySpreads)
-          .set({
-            qa: {
-              ...(t.qa ?? {}),
-              // Art without text only stays valid if it matches the page.
-              artUrl: t.artUrl ? qa.artUrl : null,
-              finalUrl: newFinal,
-              refreshed: [...((t.qa?.refreshed as any[]) ?? []), { characterId, at: new Date().toISOString(), status: qa.status, fixes: qa.fixesApplied }].slice(-10),
-            },
-          })
-          .where(eq(storySpreads.id, t.spreadId));
+          .set({ qa: sql`coalesce(${storySpreads.qa}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb` })
+          .where(
+            and(
+              eq(storySpreads.id, t.spreadId),
+              sql`exists (select 1 from ${storyPages} where ${storyPages.id} = ${t.pageIds[0]} and ${storyPages.imageUrl} = ${newFinal})`
+            )
+          )
+          .returning({ id: storySpreads.id });
+        return kept.length > 0;
       });
+      if (!saved) {
+        console.warn(`⏭️ refresh ${characterId}: spread ${t.spreadId} was redrawn while we worked; left as it is`);
+        results.push({ spreadId: t.spreadId, status: "skipped", fixes: 0 });
+        continue;
+      }
       results.push({ spreadId: t.spreadId, status: qa.status, fixes: qa.fixesApplied });
+    }
+
+    if (adminActionId) {
+      const fixed = results.filter((r) => r.fixes > 0).length;
+      const flagged = results.filter((r) => r.status === "flagged").length;
+      await step.run("admin-action-done", async () =>
+        finishAdminAction(adminActionId, {
+          status: "done",
+          result: targets.length
+            ? `${targets.length} spread${targets.length === 1 ? "" : "s"} checked, ${fixed} fixed${flagged ? `, ${flagged} still need attention` : ""}`
+            : "This character isn't on any drawn spread here",
+        })
+      );
     }
 
     return { characterId, pages: targets.length, results };

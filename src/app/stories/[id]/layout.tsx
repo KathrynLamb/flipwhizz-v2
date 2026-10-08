@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 
 import { getUserFromSession } from "@/lib/auth";
+import { isAdminEmail } from "@/lib/authz";
 import { db } from "@/db";
 import { stories, projects, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -35,7 +36,7 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
 
   let story: any = null;
   // Admin can open any customer's book to see exactly what they see.
-  const isAdmin = Boolean(process.env.ADMIN_EMAIL && user.email === process.env.ADMIN_EMAIL);
+  const isAdmin = isAdminEmail(user.email);
   let viewingAsCustomer: string | null = null;
 
   try {
@@ -100,10 +101,20 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
       <>
       {viewingAsCustomer && (
         <div
-          style={{ position: "sticky", top: 0, zIndex: 9999, background: "#B45309", color: "white",
+          style={{ position: "sticky", top: 0, zIndex: 9999, background: story.paymentStatus === "paid" ? "#9F1239" : "#B45309", color: "white",
                    fontSize: 13, fontWeight: 600, padding: "8px 16px", textAlign: "center" }}
         >
-          👀 Admin: viewing {viewingAsCustomer}&apos;s book. Anything you click here changes THEIR book.
+          👀 Admin: viewing {viewingAsCustomer}&apos;s {story.paymentStatus === "paid" ? "PAID" : "unpaid"} book. Anything you click here changes THEIR book.{" "}
+          <a href={`/admin/books/${story.id}`} style={{ color: "white", textDecoration: "underline" }}>Admin controls →</a>
+        </div>
+      )}
+      {isAdmin && !viewingAsCustomer && (
+        <div
+          style={{ position: "sticky", top: 0, zIndex: 9999, background: "#065F46", color: "white",
+                   fontSize: 12, fontWeight: 600, padding: "6px 16px", textAlign: "center" }}
+        >
+          Test copy (your account).{" "}
+          <a href={`/admin/books/${story.id}`} style={{ color: "white", textDecoration: "underline" }}>Admin controls →</a>
         </div>
       )}
       <StoryJourneyShell

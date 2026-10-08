@@ -183,6 +183,8 @@ export const buildSpreadPrompts = inngest.createFunction(
     timeouts: { finish: "10m" },       // ← give Claude room to breathe
     concurrency: { limit: 3 },          // ← max 3 stories at once
     triggers: [{ event: "story/build-spread-prompts" }],
+    // Admin "Stop runs for this book" cancels this run (src/lib/admin/server.ts).
+    cancelOn: [{ event: "admin/stop-book", if: "async.data.storyId == event.data.storyId" }],
   },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
@@ -676,6 +678,7 @@ ${spreadContexts.join("\n\n---\n\n")}
           ...(event.data?.force ? { force: true } : {}),
           ...(event.data?.allowUnpaid ? { allowUnpaid: true } : {}),
           ...(event.data?.artModel ? { artModel: event.data.artModel } : {}),
+          ...(event.data?.adminActionId ? { adminActionId: event.data.adminActionId } : {}),
         },
       });
 

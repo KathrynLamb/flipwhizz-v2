@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getUserFromSession } from "@/lib/auth";
+import { isAdminEmail } from "@/lib/authz";
 import { db } from "@/db";
 import { stories, storyPages, projects } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
@@ -38,7 +39,7 @@ export default async function StoryPagesPage({
     where: eq(projects.id, story.projectId),
   });
 
-  const isAdmin = Boolean(process.env.ADMIN_EMAIL && user.email === process.env.ADMIN_EMAIL);
+  const isAdmin = isAdminEmail(user.email);
   if (!project || (project.userId !== user.id && !isAdmin)) {
     redirect("/projects");
   }

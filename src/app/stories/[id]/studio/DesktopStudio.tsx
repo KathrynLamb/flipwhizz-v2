@@ -590,7 +590,7 @@ export default function DesktopStudio({
   );
   const [isExporting, setIsExporting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isOrdering, setIsOrdering] = useState(false);
+  const [isOrdering] = useState(false);
 
   const [regeneratingSpreads, setRegeneratingSpreads] = useState<Set<string>>(new Set());
 
@@ -1109,20 +1109,10 @@ export default function DesktopStudio({
     }
   }
 
-  async function handleOrderBook() {
-    if (isOrdering) return;
-    setIsOrdering(true);
-
-    try {
-      const res = await fetch(`/api/stories/${story.id}/order-test`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to place order");
-      alert(`Order placed! Gelato order ID: ${data.gelatoOrderId}`);
-    } catch (err: any) {
-      alert(err.message || "Failed to place order");
-    } finally {
-      setIsOrdering(false);
-    }
+  // Customers order through the real order page (shipping, payment,
+  // Gelato). Admin test orders live on the admin Book page.
+  function handleOrderBook() {
+    router.push(`/stories/${story.id}/order`);
   }
 
   const focusLabel = focusTarget

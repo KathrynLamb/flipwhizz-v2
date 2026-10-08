@@ -6,6 +6,7 @@
 
 import { inngest } from "./client";
 import { sendAlert } from "@/lib/alerts";
+import { finishAdminAction } from "@/lib/admin/finish";
 
 export const alertOnFunctionFailure = inngest.createFunction(
   {
@@ -25,6 +26,8 @@ export const alertOnFunctionFailure = inngest.createFunction(
     const pick = (k: string) => (typeof original[k] === "string" ? (original[k] as string) : null);
 
     const fn = data.function_id ?? "unknown-function";
+    // A job started from the admin Book page: show it as failed there too.
+    await finishAdminAction(pick("adminActionId"), { status: "failed", result: `${fn}: ${data.error?.message ?? "failed"}` });
     const err = new Error(data.error?.message || "Inngest function failed");
     if (data.error?.stack) err.stack = data.error.stack;
 

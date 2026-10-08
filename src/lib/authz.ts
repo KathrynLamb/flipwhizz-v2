@@ -53,13 +53,29 @@ export interface AuthUser {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * The ONE admin rule. ADMIN_EMAIL is the admin (and where alerts go);
+ * ADMIN_EMAILS (comma separated, optional) adds more admins without
+ * changing where alerts are sent.
+ */
+export function adminEmailList(): string[] {
+  return [process.env.ADMIN_EMAIL ?? "", ...(process.env.ADMIN_EMAILS ?? "").split(",")]
+    .map((e) => e.trim())
+    .filter(Boolean);
+}
+
+/** Exact match on the signed-in email, as before (no case folding: emails aren't normalised at sign-up). */
+export function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return adminEmailList().includes(email);
+}
+
 export async function getAuthUser(): Promise<AuthUser | null> {
   const session = await getServerSession(authOptions);
   const id = (session?.user as { id?: string } | undefined)?.id;
   if (!id) return null;
   const email = session?.user?.email ?? null;
-  const admin = process.env.ADMIN_EMAIL;
-  return { id, email, isAdmin: Boolean(admin && email === admin) };
+  return { id, email, isAdmin: isAdminEmail(email) };
 }
 
 type Row = Record<string, unknown>;

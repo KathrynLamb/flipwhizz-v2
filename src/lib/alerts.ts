@@ -89,8 +89,8 @@ export async function sendAlert(input: AlertInput): Promise<void> {
   }
 
   const links: string[] = [];
-  if (input.userId) links.push(`User: ${SITE}/api/admin/users/${input.userId}`);
-  if (input.storyId) links.push(`Story: ${SITE}/stories/${input.storyId}/pages`);
+  if (input.userId) links.push(`Customer: ${SITE}/admin/customers/${input.userId}`);
+  if (input.storyId) links.push(`Book (admin): ${SITE}/admin/books/${input.storyId}`);
   if (input.projectId) links.push(`Project chat: ${SITE}/chat?project=${input.projectId}`);
 
   const lines = [

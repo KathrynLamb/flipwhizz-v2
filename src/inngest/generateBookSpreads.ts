@@ -7,6 +7,7 @@
 // 4. FIX: Portrait check falls back to referenceUrl / fullBodyUrl before failing,
 //    consistent with the preflight check in generateBookSpreads orchestrator.
 
+import { finishAdminAction } from "@/lib/admin/finish";
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { eq, inArray, asc, desc, or, sql, and } from "drizzle-orm";
@@ -360,13 +361,17 @@ export const generateBookSpreads = inngest.createFunction(
     // seconds of each other; merge them into one run per story.
     debounce: { key: "event.data.storyId", period: "20s" },
     triggers: [{ event: "story/generate-spreads" }],
+    // Admin "Stop runs for this book" cancels this run (src/lib/admin/server.ts).
+    cancelOn: [{ event: "admin/stop-book", if: "async.data.storyId == event.data.storyId" }],
   },
   async ({ event, step }) => {
-    const { storyId, force, allowUnpaid, artModel: artModelKey } = event.data as {
+    const { storyId, force, allowUnpaid, artModel: artModelKey, adminActionId } = event.data as {
       storyId?: string;
       force?: boolean;
       allowUnpaid?: boolean;
       artModel?: string;
+      /** Set when an admin started this from the Book page (marks the job done). */
+      adminActionId?: string;
     };
     assertNonEmpty(storyId, "storyId");
 
@@ -425,7 +430,14 @@ export const generateBookSpreads = inngest.createFunction(
         );
         await inngest.send({
           name: "story/build-spread-prompts",
-          data: { storyId },
+          // Keep the caller's flags (admin redraw-all, unpaid test books, model, job id).
+          data: {
+            storyId,
+            ...(force ? { force: true } : {}),
+            ...(allowUnpaid ? { allowUnpaid: true } : {}),
+            ...(artModelKey ? { artModel: artModelKey } : {}),
+            ...(adminActionId ? { adminActionId } : {}),
+          },
         });
         return { deferred: true, reason: "missing_scene_records" };
       }
@@ -454,7 +466,14 @@ export const generateBookSpreads = inngest.createFunction(
         );
         await inngest.send({
           name: "story/build-spread-prompts",
-          data: { storyId },
+          // Keep the caller's flags (admin redraw-all, unpaid test books, model, job id).
+          data: {
+            storyId,
+            ...(force ? { force: true } : {}),
+            ...(allowUnpaid ? { allowUnpaid: true } : {}),
+            ...(artModelKey ? { artModel: artModelKey } : {}),
+            ...(adminActionId ? { adminActionId } : {}),
+          },
         });
         return { deferred: true, reason: "empty_prompts" };
       }
@@ -654,7 +673,61 @@ export const generateBookSpreads = inngest.createFunction(
         );
       }
 
+      // Stopped from the admin while this run waited (debounce) or prepared?
+      // Then don't hand anything out.
+      const stopped = await step.run("check-not-stopped", async () => {
+        const myTs = Number((event as any).ts) || 0;
+        const [row] = (await db.execute(sql`
+          SELECT max(coalesce((qa->>'stopRun')::bigint, 0)) AS stop FROM story_spreads WHERE story_id = ${storyId}
+        `)) as unknown as { stop: string | number | null }[];
+        if (myTs && Number(row?.stop ?? 0) > myTs) return true;
+        if (adminActionId) {
+          const [a] = (await db.execute(sql`SELECT status FROM admin_actions WHERE id = ${adminActionId}`)) as unknown as { status: string }[];
+          if (a?.status === "stopped") return true;
+        }
+        return false;
+      });
+      if (stopped) {
+        console.log(`⏹️ [generate-spreads] ${storyId} was stopped by an admin; not dispatching`);
+        return { stopped: true };
+      }
+
+      // Mark the spreads as asked for now, so the admin shows them as drawing
+      // (and keeps whole-book actions locked) while they wait in the queue.
+      // Each worker claims its spread again with its own, later, time.
+      await step.run("mark-queued", async () => {
+        const now = Date.now();
+        await db.execute(sql`
+          UPDATE story_spreads
+          SET qa = jsonb_set(coalesce(qa, '{}'::jsonb), '{latestRun}',
+                     to_jsonb(greatest(coalesce((qa->>'latestRun')::bigint, 0), ${now}::bigint)))
+          WHERE story_id = ${storyId} AND left_page_id IN (${sql.join(events.map((e) => sql`${e.data.leftPageId}`), sql`, `)})
+        `);
+        return now;
+      });
+
       await step.sendEvent("dispatch-spread-workers", events);
+    }
+
+    if (adminActionId) {
+      // The admin job is "planned and handed out"; the Book page follows the
+      // spreads themselves from here.
+      await step.run("admin-action-done", async () => {
+        if (events.length === 0) {
+          // Nothing to draw: don't leave the book showing "generating".
+          await db.execute(sql`
+            UPDATE stories SET status = CASE
+                WHEN cover_spread_url IS NOT NULL AND NOT EXISTS (SELECT 1 FROM story_pages p WHERE p.story_id = stories.id AND p.image_url IS NULL) THEN 'covers_complete'
+                ELSE 'ready' END,
+              updated_at = now()
+            WHERE id = ${storyId} AND status = 'generating'
+          `);
+        }
+        await finishAdminAction(adminActionId, {
+          status: "done",
+          result: events.length ? `${events.length} spread${events.length === 1 ? "" : "s"} sent to draw` : "Nothing to draw",
+        });
+      });
     }
 
     return {

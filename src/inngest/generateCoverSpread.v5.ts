@@ -22,6 +22,7 @@
 // matches the inside of the book. If Gemini refuses a request containing
 // real photos, the pass is retried with portraits only.
 
+import { finishAdminAction } from "@/lib/admin/finish";
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { db } from "@/db";
@@ -166,6 +167,8 @@ export const generateCoverSpreadV5 = inngest.createFunction(
     retries: 1,
     concurrency: 1,
     triggers: [{ event: "story/generate.cover.spread" }],
+    // Admin "Stop runs for this book" cancels this run (src/lib/admin/server.ts).
+    cancelOn: [{ event: "admin/stop-book", if: "async.data.storyId == event.data.storyId" }],
     onFailure: async ({ event, error }) => {
       // inngest/function.failed wraps the original event.
       const storyId = (event.data as any)?.event?.data?.storyId ?? (event.data as any)?.storyId;
@@ -348,10 +351,20 @@ export const generateCoverSpreadV5 = inngest.createFunction(
     });
     if (qa.status === "flagged") console.warn(`🚩 Cover flagged for ${storyId}: ${qa.remaining.join(" | ")}`);
 
-    return await step.run("save-cover", async () => ({
+    const saved = await step.run("save-cover", async () => ({
       ...(await saveCoverUrl(qa.artUrl, storyId, strategy, refs.chars)),
       qa: { status: qa.status, remaining: qa.remaining, fixesApplied: qa.fixesApplied },
     }));
+    const adminActionId = (event.data as { adminActionId?: string }).adminActionId;
+    if (adminActionId) {
+      await step.run("admin-action-done", async () =>
+        finishAdminAction(adminActionId, {
+          status: "done",
+          result: qa.status === "flagged" ? `Cover saved; still needs attention: ${qa.remaining.join("; ")}` : `Cover saved (${qa.status})`,
+        })
+      );
+    }
+    return saved;
   }
 );
 

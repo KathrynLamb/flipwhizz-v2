@@ -310,6 +310,8 @@ export const decideScenes = inngest.createFunction(
     timeouts: { finish: "10m" },
     concurrency: { limit: 3 },
     triggers: [{ event: "story/decide-spread-scenes" }],
+    // Admin "Stop runs for this book" cancels this run (src/lib/admin/server.ts).
+    cancelOn: [{ event: "admin/stop-book", if: "async.data.storyId == event.data.storyId" }],
   },
   async ({ event, step }) => {
     const { storyId } = event.data as { storyId: string };
@@ -774,6 +776,7 @@ Rules:
           ...(event.data?.force ? { force: true } : {}),
           ...(event.data?.allowUnpaid ? { allowUnpaid: true } : {}),
           ...(event.data?.artModel ? { artModel: event.data.artModel } : {}),
+          ...(event.data?.adminActionId ? { adminActionId: event.data.adminActionId } : {}),
         },
       });
     });

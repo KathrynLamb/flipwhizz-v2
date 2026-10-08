@@ -104,6 +104,21 @@ type Prepared = {
   outfits: Record<string, string>; // what each character wears on THIS page
 };
 
+/**
+ * This request ended without saving (failed, or nothing it could draw).
+ * Unless a newer request owns the spread, stamp failedRun so the admin stops
+ * counting it as drawing. The page keeps whatever picture it had.
+ */
+async function markGaveUp(leftPageId: string, run: number) {
+  await db.execute(sql`
+    UPDATE story_spreads
+    SET qa = jsonb_set(coalesce(qa, '{}'::jsonb), '{failedRun}',
+               to_jsonb(greatest(coalesce((qa->>'failedRun')::bigint, 0), ${run}::bigint)))
+    WHERE left_page_id = ${leftPageId}
+      AND coalesce((qa->>'latestRun')::bigint, 0) <= ${run}::bigint
+  `);
+}
+
 export const generateSingleSpread = inngest.createFunction(
   {
     id: "generate-single-spread",
@@ -112,6 +127,16 @@ export const generateSingleSpread = inngest.createFunction(
     concurrency: 3,
     retries: 2,
     triggers: [{ event: "story/generate.single.spread" }],
+    // Admin "Stop runs for this book" cancels this run (src/lib/admin/server.ts).
+    cancelOn: [{ event: "admin/stop-book", if: "async.data.storyId == event.data.storyId" }],
+    // A run that dies after its retries mustn't leave its spread looking
+    // "still drawing" in the admin (and the book locked): record the failure.
+    onFailure: async ({ event }) => {
+      const original = (event.data as any)?.event;
+      const ts = Number(original?.ts) || 0;
+      const leftPageId = original?.data?.leftPageId;
+      if (ts && typeof leftPageId === "string") await markGaveUp(leftPageId, ts);
+    },
   },
   async ({ event, step }) => {
     const parsed = EventSchema.safeParse(event.data);
@@ -120,6 +145,10 @@ export const generateSingleSpread = inngest.createFunction(
       throw new Error("Invalid spread payload");
     }
     const ev = parsed.data;
+    // When this run was asked for. If the same spread is asked for again
+    // (another click, another full-book run) the NEWEST request wins: older
+    // runs stop early and can never overwrite a newer picture.
+    const myRun = Number((event as any).ts) || 0;
     const { storyId, leftPageId, rightPageId, pageLabel } = ev;
     const model = artModel(ev.artModel);
     const folder = `flipwhizz/stories/${storyId}/work`;
@@ -316,8 +345,30 @@ export const generateSingleSpread = inngest.createFunction(
 
     if ("skipped" in prep) {
       console.warn(`Skipping spread ${pageLabel}: ${prep.reason}`);
+      await step.run("gave-up", async () => markGaveUp(leftPageId, myRun));
       return { skipped: true, reason: prep.reason };
     }
+
+    // Register this run as the latest for the spread (never moves backwards).
+    if (prep.spreadId) {
+      await step.run("claim", async () => {
+        await db
+          .update(storySpreads)
+          .set({
+            qa: sql`jsonb_set(coalesce(${storySpreads.qa}, '{}'::jsonb), '{latestRun}', to_jsonb(GREATEST(coalesce((${storySpreads.qa}->>'latestRun')::bigint, 0), ${myRun}::bigint)))`,
+          })
+          .where(eq(storySpreads.id, prep.spreadId!));
+        return true;
+      });
+    }
+    const superseded = async (id: string): Promise<boolean> => {
+      if (!prep.spreadId) return false;
+      return step.run(id, async () => {
+        const row = await db.query.storySpreads.findFirst({ where: eq(storySpreads.id, prep.spreadId!), columns: { qa: true } });
+        const latest = Number((row?.qa as any)?.latestRun) || 0;
+        return latest > myRun;
+      });
+    };
 
     // Reference sheets (cached; only the first run for a character costs anything)
     const castIds = uniqueIds([...prep.featuredIds, ...prep.backgroundIds, ...prep.forbiddenIds]);
@@ -335,6 +386,11 @@ export const generateSingleSpread = inngest.createFunction(
     const artMatchesPage = !!prep.previousArtUrl && prep.previousFinalUrl === ev.existingSpreadImageUrl;
     const revisionBase = ev.existingSpreadImageUrl ? (artMatchesPage ? prep.previousArtUrl! : ev.existingSpreadImageUrl) : null;
     const baseHasText = !!revisionBase && !artMatchesPage;
+
+    if (await superseded("superseded-before-compose")) {
+      console.warn(`⏭️ Spread ${pageLabel}: a newer request for this spread exists; stopping this one`);
+      return { skipped: true, reason: "superseded" };
+    }
 
     const composed: { url: string; model: string } = await step.run("compose", async () => {
       const parts: any[] = [];
@@ -439,6 +495,11 @@ AVOID: ${prep.avoidBlock}${ev.feedback ? `\nFEEDBACK TO APPLY: ${ev.feedback}` :
     /* 3. Letter                                                         */
     /* ---------------------------------------------------------------- */
 
+    if (await superseded("superseded-before-letter")) {
+      console.warn(`⏭️ Spread ${pageLabel}: a newer request for this spread exists; stopping this one`);
+      return { skipped: true, reason: "superseded" };
+    }
+
     const lettered = await letterAndCheck(step, {
       prefix: "text",
       artUrl: qa.artUrl,
@@ -467,18 +528,38 @@ AVOID: ${prep.avoidBlock}${ev.feedback ? `\nFEEDBACK TO APPLY: ${ev.feedback}` :
       log: qa.log.slice(-30),
       text: lettered.text,
       textBlocks: lettered.blocks,
+      latestRun: myRun,
+      // Which request this picture came from (latestRun moves on as soon as
+      // a newer request starts; savedRun only when one finishes).
+      savedRun: myRun,
       at: new Date().toISOString(),
     };
 
-    await step.run("save", async () => {
+    const saved: boolean = await step.run("save", async () => {
+      // Only if no newer run has claimed this spread in the meantime.
+      if (prep.spreadId) {
+        const won = await db
+          .update(storySpreads)
+          .set({ qa: record })
+          .where(
+            and(
+              eq(storySpreads.id, prep.spreadId),
+              sql`coalesce((${storySpreads.qa}->>'latestRun')::bigint, 0) <= ${myRun}::bigint`
+            )
+          )
+          .returning({ id: storySpreads.id });
+        if (won.length === 0) return false;
+      }
       await db
         .update(storyPages)
         .set({ imageUrl: lettered.finalUrl })
         .where(inArray(storyPages.id, [leftPageId, ...(rightPageId ? [rightPageId] : [])]));
-      if (prep.spreadId) {
-        await db.update(storySpreads).set({ qa: record }).where(eq(storySpreads.id, prep.spreadId));
-      }
+      return true;
     });
+    if (!saved) {
+      console.warn(`⏭️ Spread ${pageLabel}: finished, but a newer request owns this spread; not saving`);
+      return { skipped: true, reason: "superseded" };
+    }
 
     if (record.status === "flagged") {
       console.warn(`🚩 Spread ${pageLabel} flagged: ${[...qa.remaining, ...(lettered.text?.problems ?? [])].join(" | ")}`);
