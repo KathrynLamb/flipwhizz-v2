@@ -24,6 +24,7 @@ export type ActionKey =
   | "make-pdf-preview"
   | "make-print-pdf"
   | "use-pdf"
+  | "send-pdf"
   | "test-print-order";
 
 /** How hard it is to press on a customer's book. Test copies only ever need a plain confirm. */
@@ -174,23 +175,31 @@ export const ACTIONS: Record<ActionKey, ActionInfo> = {
   },
   "make-print-pdf": {
     label: "Make the print PDF",
-    detail: "Builds the whole book and saves it as this book's print PDF: the file new print orders send to Gelato. Orders already placed keep the PDF they were sent with. Needs the cover and every page drawn.",
+    detail: "Builds the whole book and saves it as this book's print PDF: the file new print orders send to Gelato. Orders already placed keep the PDF they were sent with. Needs the cover and every page drawn. A digital book is laid out as the standard softcover.",
     safeguard: "confirm",
     snapshot: false,
     locks: true,
     long: false,
   },
   "use-pdf": {
-    label: "Make this the print PDF",
+    label: "Save as the print PDF",
     detail: "Saves this PDF as the book's print PDF (the file new print orders send to Gelato) without building it again. Use it to keep a preview you've checked, or to go back to an earlier print PDF. Orders already placed keep theirs.",
     safeguard: "confirm",
     snapshot: false,
     locks: true,
     long: false,
   },
+  "send-pdf": {
+    label: "Save and send to Gelato",
+    detail: "Saves this PDF as the book's print PDF, then sends it to Gelato as a REAL, PAID print order, shipped to your address.",
+    safeguard: "confirm",
+    snapshot: false,
+    locks: true,
+    long: false,
+  },
   "test-print-order": {
-    label: "Place a test print order",
-    detail: "Sends this book's PDF to Gelato as a REAL, PAID print order, shipped to your address.",
+    label: "Send to Gelato",
+    detail: "Sends this book's print PDF to Gelato as a REAL, PAID print order, shipped to your address.",
     safeguard: "confirm",
     snapshot: false,
     locks: false,

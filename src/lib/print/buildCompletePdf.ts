@@ -9,8 +9,9 @@
 //
 // A preview is never saved on the book. It also works for books that
 // aren't finished (a page or cover without a picture is a grey placeholder
-// page, so everything stays in its place) and for digital books (laid out
-// as the standard printed book).
+// page, so everything stays in its place). Previews, and admin print PDFs
+// with fallbackToPrint, lay a digital book out as the standard printed book
+// (softcover), the product a test print of a digital book is ordered as.
 
 import { db } from "@/db";
 import { stories, storyPages, storyProducts, readers } from "@/db/schema";
@@ -44,14 +45,17 @@ export type PdfBuildResult = {
   hasCover: boolean;
   /** A digital book laid out as the standard printed book (previews only). */
   specFallback: boolean;
-  /** Same file a print build would make right now: cover, every page, the book's own product. */
+  /** Printable as it is: it has the cover and every page (no placeholders). */
   complete: boolean;
   /** The pictures it was made from, to tell later whether they've changed since. */
   sources: { cover: string | null; pictures: string[] };
   saved: boolean;
 };
 
-export async function buildCompletePdf(storyId: string, opts: { save: boolean; preview?: boolean }): Promise<PdfBuildResult> {
+export async function buildCompletePdf(
+  storyId: string,
+  opts: { save: boolean; preview?: boolean; fallbackToPrint?: boolean }
+): Promise<PdfBuildResult> {
   const preview = !!opts.preview;
   let stage = "load-story";
   try {
@@ -72,8 +76,8 @@ export async function buildCompletePdf(storyId: string, opts: { save: boolean; p
     try {
       printSpec = getPrintSpec(storyProduct?.productType);
     } catch (err) {
-      // A digital book has no print product; a preview lays it out as the standard printed book.
-      if (!preview) throw err;
+      // A digital book has no print product: lay it out as the standard printed book.
+      if (!preview && !opts.fallbackToPrint) throw err;
       printSpec = getPrintSpec("print");
       specFallback = true;
     }
@@ -156,7 +160,7 @@ export async function buildCompletePdf(storyId: string, opts: { save: boolean; p
       missingPages,
       hasCover: !!story.coverSpreadUrl,
       specFallback,
-      complete: !!story.coverSpreadUrl && missingPages.length === 0 && !specFallback,
+      complete: !!story.coverSpreadUrl && missingPages.length === 0,
       sources: { cover: story.coverSpreadUrl ?? null, pictures },
       saved: opts.save,
     };

@@ -353,7 +353,7 @@ function Overview({ detail, original, ask, sending, locked }: { detail: BookDeta
         <div className="mt-4 border-t border-white/10 pt-3">
           <p className="mb-2 text-xs text-slate-400">{ACTIONS["test-print-order"].detail}</p>
           <button className={btnQuiet} disabled={!!sending || !book.pdfUrl || locked("test-print-order")} onClick={() => ask("test-print-order")}>
-            {sending === "test-print-order" ? "Ordering…" : book.pdfUrl ? ACTIONS["test-print-order"].label : "Test print order (needs a PDF)"}
+            {sending === "test-print-order" ? "Sending to Gelato…" : book.pdfUrl ? ACTIONS["test-print-order"].label : "Send to Gelato (needs a print PDF)"}
           </button>
         </div>
       </Card>
@@ -668,7 +668,7 @@ function Pdfs({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; 
     }
     if (row.missingPages.length) notes.push({ tone: "amber", text: `${row.missingPages.length} page${row.missingPages.length === 1 ? " is a grey placeholder" : "s are grey placeholders"} (not drawn yet).` });
     if (!row.hasCover) notes.push({ tone: "amber", text: "No cover yet: the cover is a grey placeholder." });
-    if (row.specFallback) notes.push({ tone: "slate", text: "A digital book, so it's laid out as the standard printed book." });
+    if (row.specFallback) notes.push({ tone: "slate", text: "A digital book, so it's laid out (and sent to Gelato) as the standard softcover." });
   }
   if (shown && !row) notes.push({ tone: "slate", text: "Made by the book's own Export PDF, so this page can't tell whether pictures changed since. Make a new print PDF to be sure." });
 
@@ -706,20 +706,9 @@ function Pdfs({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; 
         className="lg:col-start-2 lg:row-span-2 lg:row-start-1"
         right={
           shown && (
-            <div className="flex flex-wrap gap-2">
-              {row?.complete && !shown.isPrintPdf && (
-                <button
-                  className={btnQuiet}
-                  disabled={!!sending || locked("use-pdf")}
-                  onClick={() => ask("use-pdf", { pdfActionId: row.id }, { warning: printWarning })}
-                >
-                  {sending === "use-pdf" ? "Saving…" : ACTIONS["use-pdf"].label}
-                </button>
-              )}
-              <a href={shown.url} target="_blank" rel="noopener noreferrer" className={wide ? btnQuiet : btnPrimary}>
-                {wide ? "Open full screen ↗" : "Open the PDF ↗"}
-              </a>
-            </div>
+            <a href={shown.url} target="_blank" rel="noopener noreferrer" className={btnQuiet}>
+              {wide ? "Open full screen ↗" : "Open the PDF ↗"}
+            </a>
           )
         }
       >
@@ -737,6 +726,37 @@ function Pdfs({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; 
                 <p key={i} className={n.tone === "amber" ? "text-amber-200" : "text-slate-400"}>{n.text}</p>
               ))}
             </div>
+
+            {/* Checked it? Save it as the print PDF, and send it to Gelato. */}
+            {(shown.isPrintPdf || row?.printable) && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {shown.isPrintPdf ? (
+                  <button className={btnPrimary} disabled={!!sending || locked("test-print-order")} onClick={() => ask("test-print-order")}>
+                    {sending === "test-print-order" ? "Sending to Gelato…" : ACTIONS["test-print-order"].label}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className={btnPrimary}
+                      disabled={!!sending || locked("send-pdf")}
+                      onClick={() => ask("send-pdf", { pdfActionId: row!.id }, { warning: printWarning })}
+                    >
+                      {sending === "send-pdf" ? "Sending to Gelato…" : ACTIONS["send-pdf"].label}
+                    </button>
+                    <button
+                      className={btnQuiet}
+                      disabled={!!sending || locked("use-pdf")}
+                      onClick={() => ask("use-pdf", { pdfActionId: row!.id }, { warning: printWarning })}
+                    >
+                      {sending === "use-pdf" ? "Saving…" : "Save only"}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {row && !row.printable && !shown.isPrintPdf && (
+              <p className="mb-3 text-xs text-slate-400">Draw the missing pictures and make a new preview to save it or send it to Gelato.</p>
+            )}
             {wide ? (
               <iframe key={shown.url} src={shown.url} title={`${shown.title} PDF`} className="h-[78vh] w-full rounded-lg border border-white/10 bg-white" />
             ) : (
@@ -979,7 +999,7 @@ function ConfirmDialog({
         {error && !sending && (
           <p className="mt-4 rounded-lg border border-rose-400/40 bg-rose-500/10 p-2 text-sm text-rose-100">
             {error}
-            {dialog.action === "test-print-order" && " Check Gelato before trying again, in case the order went through."}
+            {(dialog.action === "test-print-order" || dialog.action === "send-pdf") && " Check Gelato before trying again, in case the order went through."}
           </p>
         )}
 

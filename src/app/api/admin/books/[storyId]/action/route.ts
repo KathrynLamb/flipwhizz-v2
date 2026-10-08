@@ -111,7 +111,7 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
   if (action === "fix-status" && !BOOK_STATUSES.some((s) => s.value === body.status)) return refuse("Choose a status.");
   if (action === "test-print-order" && !book.pdfUrl) return refuse("No print PDF yet. Make one on the PDF tab first.");
   let pickedPdf: { url: string } | null = null;
-  if (action === "use-pdf") {
+  if (action === "use-pdf" || action === "send-pdf") {
     const [row] = /^[0-9a-f-]{36}$/i.test(body.pdfActionId ?? "")
       ? await rows(sql`
           SELECT detail -> 'pdf' AS pdf FROM admin_actions
@@ -120,10 +120,12 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
           LIMIT 1
         `)
       : [];
-    const pdf = row?.pdf as { url?: string; complete?: boolean } | null | undefined;
+    const pdf = row?.pdf as { url?: string; hasCover?: boolean; missingPages?: unknown[] } | null | undefined;
     if (!pdf?.url) return refuse("That PDF isn't in this book's list.");
-    if (!pdf.complete) return refuse("That PDF has placeholder pages or no cover, so it can't be printed. Make the print PDF instead.");
-    if (pdf.url === book.pdfUrl) return refuse("That's already the print PDF.");
+    if (!pdf.hasCover || (Array.isArray(pdf.missingPages) && pdf.missingPages.length > 0)) {
+      return refuse("That PDF has grey placeholder pages or no cover, so it can't be printed. Draw the missing pictures, then make a new PDF.");
+    }
+    if (action === "use-pdf" && pdf.url === book.pdfUrl) return refuse("That's already the print PDF.");
     pickedPdf = { url: pdf.url };
   }
 
@@ -281,7 +283,7 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
         const { buildCompletePdf, PdfBuildError } = await import("@/lib/print/buildCompletePdf");
         let r: Awaited<ReturnType<typeof buildCompletePdf>>;
         try {
-          r = await buildCompletePdf(storyId, { save, preview: !save });
+          r = await buildCompletePdf(storyId, { save, preview: !save, fallbackToPrint: true });
         } catch (err) {
           if (err instanceof PdfBuildError && err.status !== 500) {
             const why =
@@ -319,48 +321,29 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
         });
       }
 
-      case "use-pdf": {
-        await db.update(stories).set({ pdfUrl: pickedPdf!.url, pdfUpdatedAt: new Date() }).where(eq(stories.id, storyId));
-        await logAction({
-          storyId,
-          action,
-          label: info.label,
-          status: "done",
-          result: "Print PDF changed. New print orders will use it.",
-          adminEmail: user.email,
-          detail: { ...body, url: pickedPdf!.url, previousUrl: book.pdfUrl },
-        });
-        return NextResponse.json({ ok: true, message: "That PDF is now the print PDF. New print orders will use it." });
+      case "use-pdf":
+      case "send-pdf": {
+        const url = pickedPdf!.url;
+        const changed = url !== book.pdfUrl;
+        if (changed) await db.update(stories).set({ pdfUrl: url, pdfUpdatedAt: new Date() }).where(eq(stories.id, storyId));
+        const saved = changed ? "Saved as the print PDF." : "It was already the print PDF.";
+        if (action === "use-pdf") {
+          await logAction({ storyId, action, label: info.label, status: "done", result: `${saved} New print orders will use it.`, adminEmail: user.email, detail: { ...body, url, previousUrl: book.pdfUrl } });
+          return NextResponse.json({ ok: true, message: `${saved} New print orders will use it.` });
+        }
+        try {
+          const msg = await placeTestOrder(storyId, url, user.email);
+          await logAction({ storyId, action, label: info.label, status: "done", result: `${saved} ${msg}`, adminEmail: user.email, detail: { ...body, url, previousUrl: book.pdfUrl } });
+          return NextResponse.json({ ok: true, message: `${saved} ${msg}` });
+        } catch (err) {
+          const why = `${saved} But the Gelato order failed: ${err instanceof Error ? err.message : String(err)}`;
+          await logAction({ storyId, action, label: info.label, status: "failed", result: why.slice(0, 1000), adminEmail: user.email, detail: { ...body, url, previousUrl: book.pdfUrl } });
+          return fail(502, why);
+        }
       }
 
       case "test-print-order": {
-        const [product] = await db.select().from(storyProducts).where(eq(storyProducts.storyId, storyId)).limit(1);
-        let spec;
-        try {
-          spec = getPrintSpec(product?.productType);
-        } catch {
-          spec = getPrintSpec("print");
-        }
-        const result = await createGelatoOrder({
-          orderReferenceId: `flipwhizz-test-${uuidv4()}`,
-          customerReferenceId: "admin-test",
-          pdfUrl: book.pdfUrl!,
-          productUid: spec.gelatoProductUid,
-          pageCount: spec.totalProductPageCount,
-          currency: product?.currency ?? "GBP",
-          shippingAddress: {
-            firstName: "Katy",
-            lastName: "Lamb",
-            addressLine1: "Manor House",
-            city: "Stockton-on-tees",
-            postCode: "TS16 0QT",
-            countryIsoCode: "GB",
-            email: process.env.ADMIN_EMAIL ?? user.email ?? "",
-          },
-        });
-        const msg = result.draft
-          ? `Gelato saved it as a draft (${result.id ?? "no id"}): check the address in Gelato.`
-          : `Gelato order ${result.id} placed (${result.fulfillmentStatus}).`;
+        const msg = await placeTestOrder(storyId, book.pdfUrl!, user.email);
         await log("done", msg);
         return NextResponse.json({ ok: true, message: msg });
       }
@@ -373,6 +356,41 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
     return fail(500, message);
   }
   return fail(400, "Unknown action");
+}
+
+/**
+ * A REAL, PAID Gelato order for this PDF, shipped to Katy: to check how a
+ * book prints. A digital book is ordered as the standard softcover, which is
+ * how its PDF is laid out. Returns what Gelato said.
+ */
+async function placeTestOrder(storyId: string, pdfUrl: string, adminEmail: string | null | undefined): Promise<string> {
+  const [product] = await db.select().from(storyProducts).where(eq(storyProducts.storyId, storyId)).limit(1);
+  let spec;
+  try {
+    spec = getPrintSpec(product?.productType);
+  } catch {
+    spec = getPrintSpec("print");
+  }
+  const result = await createGelatoOrder({
+    orderReferenceId: `flipwhizz-test-${uuidv4()}`,
+    customerReferenceId: "admin-test",
+    pdfUrl,
+    productUid: spec.gelatoProductUid,
+    pageCount: spec.totalProductPageCount,
+    currency: product?.currency ?? "GBP",
+    shippingAddress: {
+      firstName: "Katy",
+      lastName: "Lamb",
+      addressLine1: "Manor House",
+      city: "Stockton-on-tees",
+      postCode: "TS16 0QT",
+      countryIsoCode: "GB",
+      email: process.env.ADMIN_EMAIL ?? adminEmail ?? "",
+    },
+  });
+  return result.draft
+    ? `Gelato saved it as a draft (${result.id ?? "no id"}): check the address in Gelato.`
+    : `Gelato order ${result.id} placed (${result.fulfillmentStatus}).`;
 }
 
 export const POST = withAccess({ admin: true }, _POST);

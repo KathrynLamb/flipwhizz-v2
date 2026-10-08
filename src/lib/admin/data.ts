@@ -203,8 +203,8 @@ export type PdfRow = {
   hasCover: boolean;
   /** Laid out as the standard printed book because this book is digital. */
   specFallback: boolean;
-  /** What a print build would make right now: it can become the print PDF as it is. */
-  complete: boolean;
+  /** Has the cover and every page (no grey placeholders): it can be saved as the print PDF and sent to Gelato as it is. */
+  printable: boolean;
   /** It's the book's print PDF right now. */
   isPrintPdf: boolean;
   /** Pictures changed since it was made (null when unknown). */
@@ -409,7 +409,7 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       missingPages: Array.isArray(pdf.missingPages) ? pdf.missingPages : [],
       hasCover: !!pdf.hasCover,
       specFallback: !!pdf.specFallback,
-      complete: !!pdf.complete,
+      printable: !!pdf.hasCover && Array.isArray(pdf.missingPages) && pdf.missingPages.length === 0,
       isPrintPdf: !!book.pdfUrl && pdf.url === book.pdfUrl,
       changed,
     };
