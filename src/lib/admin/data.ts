@@ -191,6 +191,26 @@ export type BookOrder = {
   createdAt: string | null;
 };
 
+/** A PDF made from the admin Book page (preview or print), newest first. */
+export type PdfRow = {
+  /** The admin_actions row that made it. */
+  id: string;
+  kind: "preview" | "print";
+  url: string;
+  createdAt: string;
+  interiorPages: number;
+  missingPages: number[];
+  hasCover: boolean;
+  /** Laid out as the standard printed book because this book is digital. */
+  specFallback: boolean;
+  /** What a print build would make right now: it can become the print PDF as it is. */
+  complete: boolean;
+  /** It's the book's print PDF right now. */
+  isPrintPdf: boolean;
+  /** Pictures changed since it was made (null when unknown). */
+  changed: { cover: boolean; spreads: number[] } | null;
+};
+
 export type BookDetail = {
   book: BookIdentity;
   tablesReady: boolean;
@@ -203,6 +223,7 @@ export type BookDetail = {
   progress: Record<string, boolean | null> | null;
   actions: ActionRow[];
   snapshots: SnapshotRow[];
+  pdfs: PdfRow[];
 };
 
 export async function loadBookDetail(storyId: string): Promise<BookDetail | null> {
@@ -348,15 +369,51 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
     createdAt: iso(o.created_at),
   }));
 
-  const [copies, actions, snapshots] = tablesReady
+  const [copies, actions, snapshots, pdfRows] = tablesReady
     ? await Promise.all([
         rows(sql`SELECT copy_story_id, created_at FROM book_copies WHERE original_story_id = ${storyId} ORDER BY created_at DESC`).then((l) =>
           l.map((c) => ({ id: c.copy_story_id as string, createdAt: iso(c.created_at) }))
         ),
         recentActions(storyId),
         listSnapshots(storyId),
+        rows(sql`
+          SELECT id, action, detail, created_at FROM admin_actions
+          WHERE story_id = ${storyId} AND status = 'done'
+            AND action IN ('make-pdf-preview', 'make-print-pdf')
+            AND detail -> 'pdf' ->> 'url' IS NOT NULL
+          ORDER BY created_at DESC
+          LIMIT 15
+        `),
       ])
-    : [[], [], []];
+    : [[], [], [], []];
+
+  // Which pictures changed since each PDF was made: compare what it was built from with what's on the pages now.
+  const pdfs: PdfRow[] = pdfRows.map((r) => {
+    const pdf = (r.detail as any).pdf ?? {};
+    const pictures: unknown = pdf.sources?.pictures;
+    const changed = Array.isArray(pictures)
+      ? {
+          cover: !!book.coverSpreadUrl && book.coverSpreadUrl !== (pdf.sources?.cover ?? null),
+          spreads: (() => {
+            const had = new Set(pictures as string[]);
+            return spreads.filter((sp) => sp.pageImageUrl && !had.has(sp.pageImageUrl)).map((sp) => sp.index);
+          })(),
+        }
+      : null;
+    return {
+      id: r.id,
+      kind: r.action === "make-print-pdf" ? "print" : "preview",
+      url: pdf.url,
+      createdAt: iso(r.created_at)!,
+      interiorPages: Number(pdf.interiorPages ?? 0),
+      missingPages: Array.isArray(pdf.missingPages) ? pdf.missingPages : [],
+      hasCover: !!pdf.hasCover,
+      specFallback: !!pdf.specFallback,
+      complete: !!pdf.complete,
+      isPrintPdf: !!book.pdfUrl && pdf.url === book.pdfUrl,
+      changed,
+    };
+  });
 
   const p = progressRows[0];
   return {
@@ -379,6 +436,7 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       : null,
     actions,
     snapshots,
+    pdfs,
   };
 }
 

@@ -1,15 +1,24 @@
+// print/gelato/exportCompletePDF.ts
+
 import { fetchGelatoCoverDimensions } from "@/lib/fetchGelatoCoverDimensions";
 
 export type ExportData = {
   coverSpreadUrl: string | null;
+  /** Previews only: with no cover, a grey cover page saying this instead. */
+  coverLabel?: string;
   interiorPages: {
     pageNumber: number;
-    spreadImageUrl: string;
+    /** null (previews only): a grey page saying `label`, for a page not drawn yet. */
+    spreadImageUrl: string | null;
     side: "left" | "right";
+    label?: string;
   }[];
   storyTitle?: string;
   readerName?: string;
 };
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export type PrintSpec = {
   productType: "print" | "gift";
@@ -159,8 +168,8 @@ export async function exportCompletePDF(
     const titlePageHtml = `
 <div class="page dedication">
   <div class="dedication-content">
-    ${data.storyTitle ? `<p class="dedication-title">${data.storyTitle}</p>` : ""}
-    ${data.readerName ? `<p class="dedication-sub">Made especially for ${data.readerName}</p>` : ""}  </div>
+    ${data.storyTitle ? `<p class="dedication-title">${escapeHtml(data.storyTitle)}</p>` : ""}
+    ${data.readerName ? `<p class="dedication-sub">Made especially for ${escapeHtml(data.readerName)}</p>` : ""}  </div>
 </div>`;
 
     const endPageHtml = `
@@ -223,6 +232,23 @@ export async function exportCompletePDF(
 
   .page.blank {
     background: white;
+  }
+
+  /* Previews of unfinished books: a grey page where a picture will go. */
+  .cover.missing,
+  .page.missing {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f1f1f1;
+  }
+
+  .missing-text {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 14pt;
+    color: #999;
+    text-align: center;
+    padding: 20mm;
   }
 
   .page.dedication,
@@ -308,7 +334,9 @@ export async function exportCompletePDF(
 ${
   data.coverSpreadUrl
     ? `<div class="cover"><img src="${optimizeForPrint(data.coverSpreadUrl)}" /></div>`
-    : ""
+    : data.coverLabel
+      ? `<div class="cover missing"><p class="missing-text">${escapeHtml(data.coverLabel)}</p></div>`
+      : ""
 }
 
 <div class="page blank"></div>
@@ -316,11 +344,10 @@ ${
 ${paddingPages >= 1 ? titlePageHtml : ""}
 
 ${data.interiorPages
-  .map(
-    (p) =>
-      `<div class="page ${p.side}"><img src="${optimizeForPrint(
-        p.spreadImageUrl
-      )}" /></div>`
+  .map((p) =>
+    p.spreadImageUrl
+      ? `<div class="page ${p.side}"><img src="${optimizeForPrint(p.spreadImageUrl)}" /></div>`
+      : `<div class="page missing"><p class="missing-text">${escapeHtml(p.label ?? "")}</p></div>`
   )
   .join("\n")}
 

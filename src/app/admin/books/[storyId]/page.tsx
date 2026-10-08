@@ -1,6 +1,6 @@
 // src/app/admin/books/[storyId]/page.tsx
 //
-// The Book page: every control for one book, in five tabs.
+// The Book page: every control for one book, in tabs.
 import { notFound } from "next/navigation";
 import { requireAdminPage } from "@/lib/pageGuards";
 import { loadBookDetail } from "@/lib/admin/data";
@@ -9,7 +9,7 @@ import BookClient, { type BookTab } from "./BookClient";
 
 export const dynamic = "force-dynamic";
 
-const TABS: BookTab[] = ["overview", "pages", "characters", "locations", "redraw", "activity"];
+const TABS: BookTab[] = ["overview", "pages", "characters", "locations", "redraw", "pdf", "activity"];
 
 export default async function BookPage({
   params,

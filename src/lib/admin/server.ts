@@ -36,6 +36,7 @@ export type BookIdentity = {
   paymentStatus: string | null;
   orderStatus: string | null;
   pdfUrl: string | null;
+  pdfUpdatedAt: string | null;
   coverSpreadUrl: string | null;
   hasCoverStrategy: boolean;
   ownerId: string | null;
@@ -52,7 +53,7 @@ export type BookIdentity = {
 
 export async function loadBookIdentity(storyId: string): Promise<BookIdentity | null> {
   const [r] = await rows(sql`
-    SELECT s.id, s.title, s.status, s.payment_status, s.order_status, s.pdf_url, s.cover_spread_url,
+    SELECT s.id, s.title, s.status, s.payment_status, s.order_status, s.pdf_url, s.pdf_updated_at, s.cover_spread_url,
            (s.cover_plan -> 'generationStrategy') IS NOT NULL AS has_cover_strategy,
            s.project_id, s.created_at, s.updated_at,
            u.id AS owner_id, u.email AS owner_email, u.name AS owner_name
@@ -79,6 +80,7 @@ export async function loadBookIdentity(storyId: string): Promise<BookIdentity | 
     paymentStatus: r.payment_status,
     orderStatus: r.order_status,
     pdfUrl: r.pdf_url,
+    pdfUpdatedAt: iso(r.pdf_updated_at),
     coverSpreadUrl: r.cover_spread_url,
     hasCoverStrategy: !!r.has_cover_strategy,
     ownerId: r.owner_id,

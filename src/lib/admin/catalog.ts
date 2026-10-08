@@ -21,6 +21,9 @@ export type ActionKey =
   | "stop"
   | "re-extract"
   | "fix-status"
+  | "make-pdf-preview"
+  | "make-print-pdf"
+  | "use-pdf"
   | "test-print-order";
 
 /** How hard it is to press on a customer's book. Test copies only ever need a plain confirm. */
@@ -159,6 +162,30 @@ export const ACTIONS: Record<ActionKey, ActionInfo> = {
     safeguard: "confirm",
     snapshot: false,
     locks: false,
+    long: false,
+  },
+  "make-pdf-preview": {
+    label: "Make a preview PDF",
+    detail: "Builds the whole book exactly as it would print: cover, every page, at Gelato's sizes. Only for you to look at: it isn't saved on the book, sent to Gelato or shown to the customer. Pages without a picture yet show as grey placeholders.",
+    safeguard: "none",
+    snapshot: false,
+    locks: false,
+    long: false,
+  },
+  "make-print-pdf": {
+    label: "Make the print PDF",
+    detail: "Builds the whole book and saves it as this book's print PDF: the file new print orders send to Gelato. Orders already placed keep the PDF they were sent with. Needs the cover and every page drawn.",
+    safeguard: "confirm",
+    snapshot: false,
+    locks: true,
+    long: false,
+  },
+  "use-pdf": {
+    label: "Make this the print PDF",
+    detail: "Saves this PDF as the book's print PDF (the file new print orders send to Gelato) without building it again. Use it to keep a preview you've checked, or to go back to an earlier print PDF. Orders already placed keep theirs.",
+    safeguard: "confirm",
+    snapshot: false,
+    locks: true,
     long: false,
   },
   "test-print-order": {

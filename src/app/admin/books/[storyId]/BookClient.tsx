@@ -1,14 +1,14 @@
 // src/app/admin/books/[storyId]/BookClient.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ACTIONS, BOOK_STATUSES, confirmNeeded, titleMatches, type ActionKey, type BookKind } from "@/lib/admin/catalog";
-import type { BookDetail, SpreadDetail, CharacterDetail, LocationDetail } from "@/lib/admin/data";
+import type { BookDetail, SpreadDetail, CharacterDetail, LocationDetail, PdfRow } from "@/lib/admin/data";
 import { Card, Empty, KindBadge, MigrationBanner, Pill, thumb, when } from "../../ui";
 
-export type BookTab = "overview" | "pages" | "characters" | "locations" | "redraw" | "activity";
+export type BookTab = "overview" | "pages" | "characters" | "locations" | "redraw" | "pdf" | "activity";
 
 type Original = { id: string; title: string; kind: BookKind; ownerEmail: string | null } | null;
 
@@ -23,6 +23,8 @@ type Dialog = {
   kind: BookKind;
   fields?: Fields;
   characterOptions?: { id: string; name: string }[];
+  /** An extra warning for this book, shown above the buttons. */
+  warning?: string;
 };
 
 const TAB_LABELS: Record<BookTab, string> = {
@@ -31,6 +33,7 @@ const TAB_LABELS: Record<BookTab, string> = {
   characters: "Characters",
   locations: "Places",
   redraw: "Redraw",
+  pdf: "PDF",
   activity: "Activity",
 };
 
@@ -105,7 +108,7 @@ export default function BookClient({ detail, tab, original }: { detail: BookDeta
   }
 
   /** Ask first when the action's safeguard (or its extra fields) needs it. */
-  function ask(action: ActionKey, payload: Record<string, unknown> = {}, opts: { heading?: string; fields?: Fields; characterOptions?: { id: string; name: string }[] } = {}) {
+  function ask(action: ActionKey, payload: Record<string, unknown> = {}, opts: AskOpts = {}) {
     const forOriginal = action === "apply-to-original" && original;
     const kind = forOriginal ? original.kind : book.kind;
     const need = confirmNeeded(action, kind);
@@ -123,6 +126,7 @@ export default function BookClient({ detail, tab, original }: { detail: BookDeta
       kind,
       fields: opts.fields,
       characterOptions: opts.characterOptions,
+      warning: opts.warning,
     });
   }
 
@@ -210,6 +214,8 @@ export default function BookClient({ detail, tab, original }: { detail: BookDeta
       {tab === "characters" && <Characters characters={detail.characters} ask={ask} sending={sending} locked={locked} />}
       {tab === "locations" && <Places locations={detail.locations} spreads={detail.spreads} bookId={book.id} />}
       {tab === "redraw" && <Redraw detail={detail} ask={ask} sending={sending} locked={locked} />}
+      {/* Keyed on the newest PDF, so a PDF just made is the one shown. */}
+      {tab === "pdf" && <Pdfs key={detail.pdfs[0]?.id ?? "none"} detail={detail} ask={ask} sending={sending} locked={locked} />}
       {tab === "activity" && <Activity detail={detail} ask={ask} sending={sending} locked={locked} />}
 
       {dialog && (
@@ -227,7 +233,9 @@ export default function BookClient({ detail, tab, original }: { detail: BookDeta
   );
 }
 
-type Ask = (action: ActionKey, payload?: Record<string, unknown>, opts?: { heading?: string; fields?: Fields; characterOptions?: { id: string; name: string }[] }) => void;
+type AskOpts = { heading?: string; fields?: Fields; characterOptions?: { id: string; name: string }[]; warning?: string };
+
+type Ask = (action: ActionKey, payload?: Record<string, unknown>, opts?: AskOpts) => void;
 
 /* -------------------------------------------------------------------------- */
 /*                                  Overview                                  */
@@ -243,7 +251,21 @@ function Overview({ detail, original, ask, sending, locked }: { detail: BookDeta
     ["Payment", book.paymentStatus ?? "none"],
     ["Print order", book.orderStatus ?? "none"],
     ["Spreads drawn", `${drawn} of ${detail.spreads.length}${flagged ? `, ${flagged} need attention` : ""}`],
-    ["PDF", book.pdfUrl ? <a href={book.pdfUrl} target="_blank" className="text-[#C4B5FD] hover:text-white">open ↗</a> : "not exported"],
+    [
+      "Print PDF",
+      <span key="pdf">
+        {book.pdfUrl ? (
+          <>
+            <a href={book.pdfUrl} target="_blank" rel="noopener noreferrer" className="text-[#C4B5FD] hover:text-white">open ↗</a>
+            {book.pdfUpdatedAt ? ` · made ${when(book.pdfUpdatedAt)}` : ""}
+          </>
+        ) : (
+          "none yet"
+        )}
+        {" · "}
+        <Link href={`/admin/books/${book.id}?tab=pdf`} className="text-[#C4B5FD] hover:text-white">PDF tab</Link>
+      </span>,
+    ],
     ["Created", when(book.createdAt)],
     ["Updated", when(book.updatedAt)],
     ["Story id", <span key="id" className="font-mono text-xs">{book.id}</span>],
@@ -576,6 +598,186 @@ function Redraw({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask
 }
 
 /* -------------------------------------------------------------------------- */
+/*                                    PDF                                     */
+/* -------------------------------------------------------------------------- */
+
+/** True on screens wide enough to show the PDF inline (phones get "Open" instead, and don't download it until asked). */
+function useWideScreen() {
+  return useSyncExternalStore(
+    (onChange) => {
+      const m = window.matchMedia("(min-width: 768px)");
+      m.addEventListener("change", onChange);
+      return () => m.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia("(min-width: 768px)").matches,
+    () => false
+  );
+}
+
+type PdfItem = { id: string; url: string; title: string; createdAt: string | null; row: PdfRow | null; isPrintPdf: boolean };
+
+const changedSince = (row: PdfRow | null) => !!row?.changed && (row.changed.cover || row.changed.spreads.length > 0);
+
+function Pdfs({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
+  const { book } = detail;
+  const wide = useWideScreen();
+
+  // Every PDF made here, plus the print PDF when it was made elsewhere (the book's own Export PDF).
+  const items: PdfItem[] = [
+    ...detail.pdfs.map((p) => ({
+      id: p.id,
+      url: p.url,
+      title: p.kind === "preview" ? "Preview" : p.isPrintPdf ? "Print PDF" : "Earlier print PDF",
+      createdAt: p.createdAt,
+      row: p,
+      isPrintPdf: p.isPrintPdf,
+    })),
+    ...(book.pdfUrl && !detail.pdfs.some((p) => p.isPrintPdf)
+      ? [{ id: "print", url: book.pdfUrl, title: "Print PDF", createdAt: book.pdfUpdatedAt, row: null, isPrintPdf: true }]
+      : []),
+  ].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+
+  const [picked, setPicked] = useState<string | null>(null);
+  const shown = items.find((i) => i.id === picked) ?? items[0] ?? null;
+
+  const undrawn = detail.spreads.filter((s) => !s.pageImageUrl).map((s) => s.index);
+  const printBlock = !book.coverSpreadUrl
+    ? "Needs a cover first."
+    : detail.spreads.length === 0
+      ? "No pages yet."
+      : undrawn.length
+        ? `Spread${undrawn.length === 1 ? "" : "s"} ${undrawn.join(", ")} still need${undrawn.length === 1 ? "s" : ""} a picture.`
+        : null;
+  const printWarning =
+    book.kind === "customer-paid" && !book.pdfUrl
+      ? "This customer has paid. Once the book has a print PDF, their studio switches to the finished book and they can't edit it any more."
+      : book.pdfUrl
+        ? `This replaces the current print PDF${book.pdfUpdatedAt ? ` (made ${when(book.pdfUpdatedAt)})` : ""}.`
+        : undefined;
+  const making = sending === "make-pdf-preview" || sending === "make-print-pdf";
+
+  const row = shown?.row ?? null;
+  const notes: { tone: "amber" | "slate"; text: string }[] = [];
+  if (shown && row) {
+    if (row.changed?.spreads.length || row.changed?.cover) {
+      const what = [
+        row.changed.spreads.length ? `spread${row.changed.spreads.length === 1 ? "" : "s"} ${row.changed.spreads.join(", ")}` : "",
+        row.changed.cover ? "the cover" : "",
+      ].filter(Boolean);
+      notes.push({ tone: "amber", text: `Pictures changed since this was made: ${what.join(" and ")}. Make a new one to include them.` });
+    }
+    if (row.missingPages.length) notes.push({ tone: "amber", text: `${row.missingPages.length} page${row.missingPages.length === 1 ? " is a grey placeholder" : "s are grey placeholders"} (not drawn yet).` });
+    if (!row.hasCover) notes.push({ tone: "amber", text: "No cover yet: the cover is a grey placeholder." });
+    if (row.specFallback) notes.push({ tone: "slate", text: "A digital book, so it's laid out as the standard printed book." });
+  }
+  if (shown && !row) notes.push({ tone: "slate", text: "Made by the book's own Export PDF, so this page can't tell whether pictures changed since. Make a new print PDF to be sure." });
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)] lg:grid-rows-[auto_1fr] lg:items-start">
+      <Card title="Make a PDF" className="lg:col-start-1 lg:row-start-1">
+        <div className="space-y-4 text-sm">
+          <div>
+            <p className="mb-2 text-xs text-slate-400">{ACTIONS["make-pdf-preview"].detail}</p>
+            <button className={btnPrimary} disabled={!!sending || !detail.tablesReady} onClick={() => ask("make-pdf-preview")}>
+              {sending === "make-pdf-preview" ? "Making the PDF… about a minute" : ACTIONS["make-pdf-preview"].label}
+            </button>
+          </div>
+          <div className="border-t border-white/10 pt-3">
+            <p className="mb-1 text-xs text-slate-400">{ACTIONS["make-print-pdf"].detail}</p>
+            <p className="mb-2 text-xs text-slate-300">
+              {book.pdfUrl ? `This book's print PDF was made ${book.pdfUpdatedAt ? when(book.pdfUpdatedAt) : "earlier (date unknown)"}.` : "This book has no print PDF yet."}
+            </p>
+            <button
+              className={btnQuiet}
+              disabled={!!sending || !!printBlock || locked("make-print-pdf") || !detail.tablesReady}
+              onClick={() => ask("make-print-pdf", {}, { warning: printWarning })}
+            >
+              {sending === "make-print-pdf" ? "Making the PDF… about a minute" : ACTIONS["make-print-pdf"].label}
+            </button>
+            {printBlock && <p className="mt-1 text-xs text-amber-200">{printBlock}</p>}
+            {!printBlock && locked("make-print-pdf") && <p className="mt-1 text-xs text-amber-200">Wait until the book isn&apos;t busy.</p>}
+          </div>
+          {making && <p className="text-xs text-violet-200">Keep this page open until it finishes.</p>}
+        </div>
+      </Card>
+
+      <Card
+        title={shown ? shown.title : "PDF"}
+        className="lg:col-start-2 lg:row-span-2 lg:row-start-1"
+        right={
+          shown && (
+            <div className="flex flex-wrap gap-2">
+              {row?.complete && !shown.isPrintPdf && (
+                <button
+                  className={btnQuiet}
+                  disabled={!!sending || locked("use-pdf")}
+                  onClick={() => ask("use-pdf", { pdfActionId: row.id }, { warning: printWarning })}
+                >
+                  {sending === "use-pdf" ? "Saving…" : ACTIONS["use-pdf"].label}
+                </button>
+              )}
+              <a href={shown.url} target="_blank" rel="noopener noreferrer" className={wide ? btnQuiet : btnPrimary}>
+                {wide ? "Open full screen ↗" : "Open the PDF ↗"}
+              </a>
+            </div>
+          )
+        }
+      >
+        {!shown ? (
+          <Empty>No PDF yet. Make a preview to see the whole book as it would print.</Empty>
+        ) : (
+          <>
+            <div className="mb-3 space-y-1 text-xs">
+              <div className="flex flex-wrap items-center gap-2 text-slate-400">
+                <span>{shown.createdAt ? when(shown.createdAt) : "date unknown"}</span>
+                {row && <span>· {row.interiorPages} inside pages</span>}
+                {shown.isPrintPdf && <Pill tone="green">the print PDF now</Pill>}
+              </div>
+              {notes.map((n, i) => (
+                <p key={i} className={n.tone === "amber" ? "text-amber-200" : "text-slate-400"}>{n.text}</p>
+              ))}
+            </div>
+            {wide ? (
+              <iframe key={shown.url} src={shown.url} title={`${shown.title} PDF`} className="h-[78vh] w-full rounded-lg border border-white/10 bg-white" />
+            ) : (
+              <p className="text-xs text-slate-400">Open the PDF to see every page in your phone&apos;s PDF viewer.</p>
+            )}
+          </>
+        )}
+      </Card>
+
+      <Card title="All PDFs" className="lg:col-start-1 lg:row-start-2">
+        {items.length === 0 ? (
+          <p className="text-sm text-slate-500">None yet.</p>
+        ) : (
+          <ul className="space-y-2">
+            {items.map((it) => (
+              <li
+                key={it.id}
+                className={`flex items-center gap-2 rounded-lg border p-2 text-sm ${it.id === shown?.id ? "border-[#C4B5FD]/60 bg-violet-500/10" : "border-white/10"}`}
+              >
+                <button className="min-w-0 flex-1 text-left" onClick={() => setPicked(it.id)}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-white">{it.title}</span>
+                    {it.isPrintPdf && <Pill tone="green">print PDF now</Pill>}
+                    {changedSince(it.row) && <Pill tone="amber">pictures changed</Pill>}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {it.createdAt ? when(it.createdAt) : "date unknown"}
+                    {it.row ? ` · ${it.row.interiorPages} pages${it.row.missingPages.length ? `, ${it.row.missingPages.length} placeholders` : ""}${it.row.hasCover ? "" : ", no cover"}` : " · made outside admin"}
+                  </div>
+                </button>
+                <a href={it.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-xs text-[#C4B5FD] hover:text-white">Open ↗</a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                  Activity                                  */
 /* -------------------------------------------------------------------------- */
 
@@ -713,6 +915,7 @@ function ConfirmDialog({
         <div className="mt-2"><KindBadge kind={dialog.kind} /></div>
         <p className="mt-3 text-sm text-slate-300">{info.detail}</p>
         {info.snapshot && <p className="mt-2 text-xs text-slate-400">A snapshot is taken first, so you can undo this from Activity.</p>}
+        {dialog.warning && <p className="mt-3 rounded-lg border border-amber-400/40 bg-amber-500/10 p-2 text-sm text-amber-100">{dialog.warning}</p>}
 
         {dialog.fields === "note" && (
           <label className="mt-4 block text-xs text-slate-400">
@@ -779,6 +982,8 @@ function ConfirmDialog({
             {dialog.action === "test-print-order" && " Check Gelato before trying again, in case the order went through."}
           </p>
         )}
+
+        {sending && dialog.action === "make-print-pdf" && <p className="mt-4 text-xs text-violet-200">Making the PDF: about a minute. Keep this page open.</p>}
 
         <div className="mt-5 flex justify-end gap-2">
           <button className={btnQuiet} onClick={onCancel} disabled={sending}>Cancel</button>

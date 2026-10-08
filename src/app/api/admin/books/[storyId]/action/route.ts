@@ -14,6 +14,7 @@ import { inngest } from "@/inngest/client";
 import { withAccess, getAuthUser } from "@/lib/authz";
 import { ACTIONS, BOOK_STATUSES, confirmNeeded, isActionKey, titleMatches, type ActionKey } from "@/lib/admin/catalog";
 import {
+  rows,
   loadBookIdentity,
   bookBusy,
   describeBusy,
@@ -33,7 +34,7 @@ import { createGelatoOrder } from "print/gelato/createOrder";
 import { getPrintSpec } from "@/lib/printSpecs";
 
 export const dynamic = "force-dynamic";
-// Copying a book, re-extracting and drawing a reference sheet run inline.
+// Copying a book, re-extracting, drawing a reference sheet and making a PDF run inline.
 export const maxDuration = 300;
 
 type Body = {
@@ -48,6 +49,8 @@ type Body = {
   status?: string;
   characters?: boolean;
   plans?: boolean;
+  /** "Make this the print PDF": the admin_actions row that made the PDF. */
+  pdfActionId?: string;
 };
 
 const fail = (status: number, error: string) => NextResponse.json({ ok: false, error }, { status });
@@ -106,7 +109,23 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
   if (action === "redraw-cover" && !book.hasCoverStrategy) return refuse("This book has no saved cover plan yet. Make the cover in the cover chat first.");
   if (action === "restore-snapshot" && !(body.snapshotId && (await snapshotExists(storyId, body.snapshotId)))) return refuse("That snapshot isn't there any more.");
   if (action === "fix-status" && !BOOK_STATUSES.some((s) => s.value === body.status)) return refuse("Choose a status.");
-  if (action === "test-print-order" && !book.pdfUrl) return refuse("No PDF yet. Export the PDF first.");
+  if (action === "test-print-order" && !book.pdfUrl) return refuse("No print PDF yet. Make one on the PDF tab first.");
+  let pickedPdf: { url: string } | null = null;
+  if (action === "use-pdf") {
+    const [row] = /^[0-9a-f-]{36}$/i.test(body.pdfActionId ?? "")
+      ? await rows(sql`
+          SELECT detail -> 'pdf' AS pdf FROM admin_actions
+          WHERE id = ${body.pdfActionId} AND story_id = ${storyId} AND status = 'done'
+            AND action IN ('make-pdf-preview', 'make-print-pdf')
+          LIMIT 1
+        `)
+      : [];
+    const pdf = row?.pdf as { url?: string; complete?: boolean } | null | undefined;
+    if (!pdf?.url) return refuse("That PDF isn't in this book's list.");
+    if (!pdf.complete) return refuse("That PDF has placeholder pages or no cover, so it can't be printed. Make the print PDF instead.");
+    if (pdf.url === book.pdfUrl) return refuse("That's already the print PDF.");
+    pickedPdf = { url: pdf.url };
+  }
 
   const snapshotOpts =
     spread ? { spreadId: spread.id }
@@ -253,6 +272,65 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
         await db.update(stories).set({ status, updatedAt: new Date() }).where(eq(stories.id, storyId));
         await log("done", `${book.status ?? "none"} → ${status}`);
         return NextResponse.json({ ok: true, message: `Status set to ${status}.` });
+      }
+
+      case "make-pdf-preview":
+      case "make-print-pdf": {
+        const save = action === "make-print-pdf";
+        // Loaded here so the PDF tools (puppeteer) only load for these two.
+        const { buildCompletePdf, PdfBuildError } = await import("@/lib/print/buildCompletePdf");
+        let r: Awaited<ReturnType<typeof buildCompletePdf>>;
+        try {
+          r = await buildCompletePdf(storyId, { save, preview: !save });
+        } catch (err) {
+          if (err instanceof PdfBuildError && err.status !== 500) {
+            const why =
+              err.message === "Cover not generated yet" ? "There's no cover yet, so it can't be printed. Make a preview PDF to see it so far."
+              : err.message === "Not all pages have been illustrated yet" ? "Some pages have no picture yet, so it can't be printed. Make a preview PDF to see it so far."
+              : err.message;
+            return refuse(why, err.status);
+          }
+          const why = `Couldn't make the PDF (${err instanceof PdfBuildError ? err.stage : "unknown step"}): ${err instanceof Error ? err.message : String(err)}`;
+          console.error(`[admin ${action}] ${storyId}:`, err);
+          await log("failed", why.slice(0, 1000));
+          return fail(500, why);
+        }
+        const pdf = {
+          url: r.url,
+          interiorPages: r.interiorPages,
+          missingPages: r.missingPages,
+          hasCover: r.hasCover,
+          specFallback: r.specFallback,
+          complete: r.complete,
+          sources: r.sources,
+          ...(save ? { previousUrl: book.pdfUrl } : {}),
+        };
+        const notes = [
+          r.missingPages.length ? `${r.missingPages.length} page${r.missingPages.length === 1 ? "" : "s"} not drawn yet (grey placeholders)` : "",
+          r.hasCover ? "" : "no cover yet",
+          r.specFallback ? "a digital book, laid out as the standard printed book" : "",
+        ].filter(Boolean);
+        const result = `${save ? "Print PDF saved" : "Preview made"}: ${r.interiorPages} inside pages${notes.length ? `; ${notes.join("; ")}` : ""}.`;
+        await logAction({ storyId, action, label: info.label, status: "done", result, adminEmail: user.email, detail: { ...body, pdf } });
+        return NextResponse.json({
+          ok: true,
+          message: save ? `${result} New print orders will use it.` : result,
+          pdfUrl: r.url,
+        });
+      }
+
+      case "use-pdf": {
+        await db.update(stories).set({ pdfUrl: pickedPdf!.url, pdfUpdatedAt: new Date() }).where(eq(stories.id, storyId));
+        await logAction({
+          storyId,
+          action,
+          label: info.label,
+          status: "done",
+          result: "Print PDF changed. New print orders will use it.",
+          adminEmail: user.email,
+          detail: { ...body, url: pickedPdf!.url, previousUrl: book.pdfUrl },
+        });
+        return NextResponse.json({ ok: true, message: "That PDF is now the print PDF. New print orders will use it." });
       }
 
       case "test-print-order": {
