@@ -6,6 +6,8 @@
 import { sql, type SQL } from "drizzle-orm";
 import { adminEmailList, isAdminEmail } from "@/lib/authz";
 import { currentSheetUrl } from "@/lib/illustrate/sheets";
+import type { TypefaceKey } from "@/lib/typeset/faces";
+import { letteringFor, type Lettering } from "@/lib/typeset/settings";
 import { bookKind, type BookKind } from "./catalog";
 import { rows, isMissingTable, loadBookIdentity, bookBusy, recentActions, listSnapshots, type BookIdentity, type BusyState, type ActionRow, type SnapshotRow } from "./server";
 
@@ -28,6 +30,18 @@ export async function adminTablesReady(): Promise<boolean> {
       await rows(sql`SELECT 1 FROM admin_actions LIMIT 1`);
       await rows(sql`SELECT 1 FROM book_snapshots LIMIT 1`);
       await rows(sql`SELECT 1 FROM book_copies LIMIT 1`);
+      return true;
+    },
+    async () => false
+  );
+}
+
+/** The typesetting tables (scripts/sql/typesetting.sql). Typesetting works without them, with the defaults. */
+export async function letteringTablesReady(): Promise<boolean> {
+  return tolerant(
+    async () => {
+      await rows(sql`SELECT 1 FROM book_lettering LIMIT 1`);
+      await rows(sql`SELECT 1 FROM page_text_runs LIMIT 1`);
       return true;
     },
     async () => false
@@ -134,9 +148,16 @@ export type SpreadDetail = {
   pending: boolean;
   /** The last redraw asked for ended without saving (failed or gave up). */
   lastFailed: boolean;
+  /** How the text on the page was drawn: "typeset", or the image model's lettering. */
+  textMethod: string | null;
+  typeface: string | null;
+  /** Has saved text-free art matching the page, so it can be re-lettered without a redraw. */
+  canReletter: boolean;
   status: string | null;
   remaining: string[];
   textProblems: string[];
+  /** Notes from typesetting (set a little smaller to fit, needed more room...). */
+  textWarnings: string[];
   fixesApplied: number;
   model: string | null;
   finalUrl: string | null;
@@ -203,6 +224,18 @@ export type BookDetail = {
   progress: Record<string, boolean | null> | null;
   actions: ActionRow[];
   snapshots: SnapshotRow[];
+  lettering: {
+    typeface: TypefaceKey;
+    lettering: Lettering;
+    /** False: nobody has chosen, these are the book's defaults. */
+    explicit: boolean;
+    /** The typesetting tables exist (settings can be saved). */
+    ready: boolean;
+    /** Spreads by how their text is drawn now. */
+    typeset: number;
+    handLettered: number;
+    needsRedraw: number;
+  };
 };
 
 export async function loadBookDetail(storyId: string): Promise<BookDetail | null> {
@@ -280,6 +313,9 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       pageImageUrl,
       onPage: !finalUrl || !pageImageUrl ? null : finalUrl === pageImageUrl,
       pending: pendingSet.has(Number(r.spread_index)),
+      textMethod: qa?.typeset ? "typeset" : qa?.text?.method ?? null,
+      typeface: qa?.typeset?.typeface ?? null,
+      canReletter: typeof qa?.artUrl === "string" && !!finalUrl && finalUrl === pageImageUrl,
       lastFailed:
         Number(qa?.failedRun ?? 0) > 0 &&
         Number(qa?.failedRun ?? 0) >= Number(qa?.latestRun ?? 0) &&
@@ -287,6 +323,7 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       status: qa?.status ?? null,
       remaining: Array.isArray(qa?.remaining) ? qa.remaining : [],
       textProblems: Array.isArray(qa?.text?.problems) ? qa.text.problems : [],
+      textWarnings: Array.isArray(qa?.text?.warnings) ? qa.text.warnings.filter((w: string) => !(qa?.text?.problems ?? []).includes(w)) : [],
       fixesApplied: Number(qa?.fixesApplied ?? 0),
       model: qa?.model ?? null,
       finalUrl,
@@ -358,6 +395,7 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       ])
     : [[], [], []];
 
+  const [letterSettings, letterReady] = await Promise.all([letteringFor(storyId), letteringTablesReady()]);
   const p = progressRows[0];
   return {
     book,
@@ -379,6 +417,15 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       : null,
     actions,
     snapshots,
+    lettering: {
+      typeface: letterSettings.typeface,
+      lettering: letterSettings.lettering,
+      explicit: !!letterSettings.explicit,
+      ready: letterReady,
+      typeset: spreads.filter((s) => s.pageImageUrl && s.textMethod === "typeset").length,
+      handLettered: spreads.filter((s) => s.pageImageUrl && s.textMethod !== "typeset" && s.canReletter).length,
+      needsRedraw: spreads.filter((s) => s.pageImageUrl && !s.canReletter).length,
+    },
   };
 }
 

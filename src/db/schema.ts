@@ -1148,3 +1148,37 @@ export const bookCopies = pgTable("book_copies", {
     .notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/* ==================== BOOK LETTERING ==================== */
+
+// How a book's text is set: the typeface for the whole book, and whether
+// it is typeset (default) or hand-lettered by the image model. A missing
+// row means the defaults (src/lib/typeset/settings.ts).
+export const bookLettering = pgTable("book_lettering", {
+  storyId: uuid("story_id")
+    .primaryKey()
+    .references(() => stories.id, { onDelete: "cascade" }),
+  typeface: varchar("typeface", { length: 40 }),
+  lettering: varchar("lettering", { length: 20 }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Which words on a page get emphasis (capitals, italic, bigger...), planned
+// for the exact text in for_text. A changed page text makes it stale.
+export const pageTextRuns = pgTable(
+  "page_text_runs",
+  {
+    pageId: uuid("page_id")
+      .primaryKey()
+      .references(() => storyPages.id, { onDelete: "cascade" }),
+    storyId: uuid("story_id")
+      .references(() => stories.id, { onDelete: "cascade" })
+      .notNull(),
+    forText: text("for_text").notNull(),
+    runs: jsonb("runs").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    storyIdx: index("page_text_runs_story_idx").on(t.storyId),
+  })
+);

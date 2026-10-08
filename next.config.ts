@@ -35,6 +35,13 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
 
+  // The book typefaces are read from disk by the typesetter, which runs in
+  // the Inngest route (spread worker, re-letter) and the admin routes.
+  outputFileTracingIncludes: {
+    "/api/inngest": ["./public/fonts/book/**/*"],
+    "/api/admin/**/*": ["./public/fonts/book/**/*"],
+  },
+
   images: {
     remotePatterns: [
       {

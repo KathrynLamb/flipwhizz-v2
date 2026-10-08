@@ -8,6 +8,7 @@
 //    consistent with the preflight check in generateBookSpreads orchestrator.
 
 import { finishAdminAction } from "@/lib/admin/finish";
+import { ensureEmphasis, letteringFor } from "@/lib/typeset/settings";
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { eq, inArray, asc, desc, or, sql, and } from "drizzle-orm";
@@ -672,6 +673,19 @@ export const generateBookSpreads = inngest.createFunction(
           })
         );
       }
+
+      // Plan the book's emphasis (which words get capitals, italic...) in one
+      // go before the spreads are drawn, so the loud moments are spread
+      // sensibly across the book. Spreads fall back to their own plan.
+      await step.run("plan-emphasis", async () => {
+        try {
+          const s = await letteringFor(storyId);
+          if (s.lettering !== "typeset") return { skipped: "hand-lettered" };
+          return { pages: Object.keys(await ensureEmphasis(storyId)).length };
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : String(err) };
+        }
+      });
 
       // Stopped from the admin while this run waited (debounce) or prepared?
       // Then don't hand anything out.
