@@ -19,10 +19,13 @@ import {
 } from "lucide-react";
 
 // 1. Font Setup
-const playfair = Playfair_Display({ 
-  subsets: ["latin"], 
+// Same weights as the home and about pages: Google Fonts sent this page's
+// old set (with 600, which nothing here uses) in a form Next 16.0.8 can't
+// build, and broke the deploy.
+const playfair = Playfair_Display({
+  subsets: ["latin"],
   variable: "--font-serif",
-  weight: ["400", "600", "700"]
+  weight: ["400", "700", "900"]
 });
 
 const lato = Lato({ 
