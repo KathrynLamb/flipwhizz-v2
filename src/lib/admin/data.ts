@@ -7,6 +7,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { adminEmailList, isAdminEmail } from "@/lib/authz";
 import { currentSheetUrl } from "@/lib/illustrate/sheets";
 import { bookKind, type BookKind } from "./catalog";
+import { isOldLayout } from "@/lib/print/layout";
 import { rows, isMissingTable, loadBookIdentity, bookBusy, recentActions, listSnapshots, type BookIdentity, type BusyState, type ActionRow, type SnapshotRow } from "./server";
 
 const iso = (v: unknown) => (v ? new Date(v as string).toISOString() : null);
@@ -205,6 +206,8 @@ export type PdfRow = {
   specFallback: boolean;
   /** Has the cover and every page (no grey placeholders): it can be saved as the print PDF and sent to Gelato as it is. */
   printable: boolean;
+  /** Built with an older print layout (see src/lib/print/layout.ts): make a new one before printing. */
+  oldLayout: boolean;
   /** It's the book's print PDF right now. */
   isPrintPdf: boolean;
   /** Pictures changed since it was made (null when unknown). */
@@ -410,6 +413,7 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       hasCover: !!pdf.hasCover,
       specFallback: !!pdf.specFallback,
       printable: !!pdf.hasCover && Array.isArray(pdf.missingPages) && pdf.missingPages.length === 0,
+      oldLayout: isOldLayout(pdf.layout),
       isPrintPdf: !!book.pdfUrl && pdf.url === book.pdfUrl,
       changed,
     };

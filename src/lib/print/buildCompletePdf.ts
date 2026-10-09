@@ -20,6 +20,7 @@ import { uploadPdfToR2 } from "@/lib/uploadPdfToR2";
 import { postProcessPdf } from "@/lib/postProcessPdf";
 import { exportCompletePDF, type ExportData } from "print/gelato/exportCompletePDF";
 import { getPrintSpec } from "@/lib/printSpecs";
+import { PDF_LAYOUT } from "./layout";
 
 /** A refusal the caller should show as it is (status 400/404), or a failure (500). */
 export class PdfBuildError extends Error {
@@ -49,6 +50,8 @@ export type PdfBuildResult = {
   complete: boolean;
   /** The pictures it was made from, to tell later whether they've changed since. */
   sources: { cover: string | null; pictures: string[] };
+  /** Print layout version (./layout). */
+  layout: number;
   saved: boolean;
 };
 
@@ -162,6 +165,7 @@ export async function buildCompletePdf(
       specFallback,
       complete: !!story.coverSpreadUrl && missingPages.length === 0,
       sources: { cover: story.coverSpreadUrl ?? null, pictures },
+      layout: PDF_LAYOUT,
       saved: opts.save,
     };
   } catch (err) {

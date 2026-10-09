@@ -33,9 +33,14 @@ export type PrintSpec = {
 /*  Optimize Cloudinary URLs for print                                        */
 /* -------------------------------------------------------------------------- */
 
+/* Gelato wants pictures between 150 and 300 dpi at print size. A spread
+   prints about 37cm wide and the cover about 41cm, so 300 dpi is about
+   4400px. "c_limit" never enlarges, so a 2K picture (2752px) keeps every
+   pixel (about 170-190 dpi) instead of being shrunk to 2400px (149 dpi on
+   the cover, under Gelato's minimum). */
 function optimizeForPrint(url: string): string {
   if (!url.includes("res.cloudinary.com")) return url;
-  return url.replace("/upload/", "/upload/q_85,w_2400,f_jpg/");
+  return url.replace("/upload/", "/upload/c_limit,w_4400,q_90,f_jpg/");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -60,6 +65,54 @@ function getCoverCanvasSize(dims: any): { width: number; height: number } {
   throw new Error(
     `Gelato response missing usable cover dimensions: ${JSON.stringify(dims)}`
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Interior page size, from Gelato's own numbers                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Gelato wants each inner page at the product's trim size plus bleed on all
+ * four sides. The trim size is in the product UID ("pf_200x200-mm"); the
+ * bleed is what Gelato's cover-dimensions API reports for the softcover
+ * (bleedSize.thickness: 3mm for the 20x20cm photo books). So a 20x20cm book
+ * has 206 x 206mm inner pages.
+ */
+export function interiorGeometry(productUid: string, dims: any) {
+  const m = /_pf_(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)-mm/.exec(productUid);
+  const trimW = m ? Number(m[1]) : 200;
+  const trimH = m ? Number(m[2]) : 200;
+  const bleed = Number(dims?.bleedSize?.thickness) > 0 ? Number(dims.bleedSize.thickness) : 3;
+  const front = dims?.contentFrontSize;
+  if (dims?.bleedSize && front?.width && (Math.abs(front.width - trimW) > 0.5 || Math.abs(front.height - trimH) > 0.5)) {
+    console.warn(`⚠️ Gelato's front cover is ${front.width}x${front.height}mm but the product UID says ${trimW}x${trimH}mm`);
+  }
+  return { trimW, trimH, bleed, pageW: trimW + bleed * 2, pageH: trimH + bleed * 2 };
+}
+
+/**
+ * Where the cover picture goes on the cover sheet. Softcover: the whole
+ * sheet (only the 3mm bleed is trimmed off). Hardcover: the sheet also has
+ * turn-ins that fold behind the boards (about 17mm a side), so the picture
+ * goes on the visible outside (boards, spine and their edges) and a
+ * zoomed copy fills the turn-ins, so no title or face disappears round
+ * the back of the board.
+ */
+export function coverArtRect(dims: any, canvas: { width: number; height: number }) {
+  const full = { left: 0, top: 0, width: canvas.width, height: canvas.height };
+  if (dims?.bleedSize?.width) return { art: full, turnIns: false };
+  const edge = dims?.wraparoundEdgeSize;
+  if (edge?.width && edge?.height) {
+    return { art: { left: Number(edge.left) || 0, top: Number(edge.top) || 0, width: Number(edge.width), height: Number(edge.height) }, turnIns: true };
+  }
+  const back = dims?.contentBackSize;
+  const front = dims?.contentFrontSize;
+  if (back?.width && front?.width) {
+    const left = Number(back.left) || 0;
+    const top = Number(front.top) || 0;
+    return { art: { left, top, width: Number(front.left) + Number(front.width) - left, height: Number(front.height) }, turnIns: true };
+  }
+  return { art: full, turnIns: false };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -129,26 +182,28 @@ export async function exportCompletePDF(
   const coverCanvas = getCoverCanvasSize(dims);
   const coverWidth = coverCanvas.width;
   const coverHeight = coverCanvas.height;
+  const coverPlacement = coverArtRect(dims, coverCanvas);
 
   /* ------------------------------------------------------------------------ */
   /*  Interior page geometry                                                  */
   /* ------------------------------------------------------------------------ */
-  /* 8x8 book:
-     - trim/content area = 206 x 206 mm
-     - bleed = 4 mm each side
-     - full PDF page = 214 x 214 mm
-  */
+  /* 20x20cm book (Gelato's numbers): trim 200 x 200mm, bleed 3mm a side, so
+     each PDF page is 206 x 206mm. (Until Oct 2026 this was 214mm: 206 was
+     taken as the trim and 4mm bleed added, so Gelato had to shrink every
+     page to fit.) */
 
-  const BLEED_MM = 4;
-  const CONTENT_MM = 206;
+  const geo = interiorGeometry(gelatoProductUid, dims);
+  // The picture sits 10mm in from the page edge on the top, bottom and
+  // outer side: after the 3mm bleed is trimmed that's a 7mm white frame,
+  // clear of Gelato's 4mm safe zone and of trimming wobble. At the spine
+  // each page carries 10mm of the other half, so the binding doesn't
+  // swallow the middle of the picture.
   const SAFE_MARGIN_MM = 10;
 
-  const interiorPageSize = CONTENT_MM + BLEED_MM * 2; // 214mm
-  const spreadWidth = interiorPageSize * 2; // 428mm
-  const spreadHeight = interiorPageSize; // 214mm
+  const interiorPageSize = geo.pageW; // 206mm for 20x20cm
 
-  // We render the spread slightly smaller inside the page so text stays away
-  // from trim. This creates a safety inset all around each page.
+  console.log("📐 Interior pages", { ...geo, safeMarginMm: SAFE_MARGIN_MM });
+
   const insetPageWidth = interiorPageSize - SAFE_MARGIN_MM * 2;
   const insetPageHeight = interiorPageSize - SAFE_MARGIN_MM * 2;
   const insetSpreadWidth = insetPageWidth * 2;
@@ -189,6 +244,7 @@ export async function exportCompletePDF(
 <html>
 <head>
 <meta charset="UTF-8" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=block" />
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { background: white; }
@@ -214,10 +270,26 @@ export async function exportCompletePDF(
   }
 
   .cover img {
+    position: absolute;
+    display: block;
+  }
+
+  /* The picture, stretched to its area like the inside pages. */
+  .cover img.cover-art {
+    left: ${coverPlacement.art.left}mm;
+    top: ${coverPlacement.art.top}mm;
+    width: ${coverPlacement.art.width}mm;
+    height: ${coverPlacement.art.height}mm;
+    object-fit: fill;
+  }
+
+  /* Hardcover only: a zoomed copy under it fills the turn-ins. */
+  .cover img.cover-turnins {
+    left: 0;
+    top: 0;
     width: 100%;
     height: 100%;
-    object-fit: fill;
-    display: block;
+    object-fit: cover;
   }
 
   .page {
@@ -244,7 +316,7 @@ export async function exportCompletePDF(
   }
 
   .missing-text {
-    font-family: Georgia, "Times New Roman", serif;
+    font-family: "Playfair Display", Georgia, "Times New Roman", serif;
     font-size: 14pt;
     color: #999;
     text-align: center;
@@ -265,7 +337,7 @@ export async function exportCompletePDF(
   }
 
   .dedication-title {
-    font-family: Georgia, "Times New Roman", serif;
+    font-family: "Playfair Display", Georgia, "Times New Roman", serif;
     font-size: 24pt;
     color: #333;
     margin-bottom: 8mm;
@@ -273,7 +345,7 @@ export async function exportCompletePDF(
   }
 
   .dedication-sub {
-    font-family: Georgia, "Times New Roman", serif;
+    font-family: "Playfair Display", Georgia, "Times New Roman", serif;
     font-size: 14pt;
     font-style: italic;
     color: #666;
@@ -281,7 +353,7 @@ export async function exportCompletePDF(
   }
 
   .end-text {
-    font-family: Georgia, "Times New Roman", serif;
+    font-family: "Playfair Display", Georgia, "Times New Roman", serif;
     font-size: 28pt;
     font-style: italic;
     color: #333;
@@ -292,19 +364,18 @@ export async function exportCompletePDF(
   /* Interior spread slicing with safety inset                              */
   /* ---------------------------------------------------------------------- */
 
-  /* The art is 16:9 and the two printed pages are 2:1. "contain" prints the
-     whole picture, undistorted: nothing is trimmed (Gemini's lettering can
-     sit right at the top edge, and "cover" cut it off) and nothing is
-     stretched ("fill" made everything 12.5% wider). The cost is a wider
-     white margin at the outer edges (about 31mm, against 10mm top and
-     bottom). */
+  /* The art is 16:9 and the two printed pages are 2:1. "fill" stretches the
+     whole picture to the box (about 12.5% wider), so the margins stay 10mm
+     all round and nothing is trimmed. Don't use "cover": it trims the top
+     and bottom, and Gemini's lettering can sit right at the top edge
+     (tried twice, Apr and Oct 2026). "contain" keeps the shape but leaves a
+     31mm white margin at the outer edges. */
   .page img {
     position: absolute;
     top: ${SAFE_MARGIN_MM}mm;
     width: ${insetSpreadWidth}mm;
     height: ${insetSpreadHeight}mm;
-    object-fit: contain;
-    object-position: center;
+    object-fit: fill;
     display: block;
   }
 
@@ -336,7 +407,9 @@ export async function exportCompletePDF(
 
 ${
   data.coverSpreadUrl
-    ? `<div class="cover"><img src="${optimizeForPrint(data.coverSpreadUrl)}" /></div>`
+    ? `<div class="cover">${
+        coverPlacement.turnIns ? `<img class="cover-turnins" src="${optimizeForPrint(data.coverSpreadUrl)}" />` : ""
+      }<img class="cover-art" src="${optimizeForPrint(data.coverSpreadUrl)}" /></div>`
     : data.coverLabel
       ? `<div class="cover missing"><p class="missing-text">${escapeHtml(data.coverLabel)}</p></div>`
       : ""

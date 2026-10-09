@@ -32,6 +32,7 @@ import { ensureReferenceSheet, storyCharacterIds } from "@/lib/illustrate/sheets
 import { getCastSheet } from "@/lib/characters/consistency";
 import { createGelatoOrder } from "print/gelato/createOrder";
 import { getPrintSpec } from "@/lib/printSpecs";
+import { isOldLayout } from "@/lib/print/layout";
 
 export const dynamic = "force-dynamic";
 // Copying a book, re-extracting, drawing a reference sheet and making a PDF run inline.
@@ -110,6 +111,14 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
   if (action === "restore-snapshot" && !(body.snapshotId && (await snapshotExists(storyId, body.snapshotId)))) return refuse("That snapshot isn't there any more.");
   if (action === "fix-status" && !BOOK_STATUSES.some((s) => s.value === body.status)) return refuse("Choose a status.");
   if (action === "test-print-order" && !book.pdfUrl) return refuse("No print PDF yet. Make one on the PDF tab first.");
+  if (action === "test-print-order") {
+    const [made] = await rows(sql`
+      SELECT detail -> 'pdf' -> 'layout' AS layout FROM admin_actions
+      WHERE story_id = ${storyId} AND status = 'done' AND detail -> 'pdf' ->> 'url' = ${book.pdfUrl}
+      LIMIT 1
+    `);
+    if (made && isOldLayout(made.layout)) return refuse("This print PDF was made with an older print layout. Make the print PDF again first.");
+  }
   let pickedPdf: { url: string } | null = null;
   if (action === "use-pdf" || action === "send-pdf") {
     const [row] = /^[0-9a-f-]{36}$/i.test(body.pdfActionId ?? "")
@@ -120,8 +129,9 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
           LIMIT 1
         `)
       : [];
-    const pdf = row?.pdf as { url?: string; hasCover?: boolean; missingPages?: unknown[] } | null | undefined;
+    const pdf = row?.pdf as { url?: string; hasCover?: boolean; missingPages?: unknown[]; layout?: unknown } | null | undefined;
     if (!pdf?.url) return refuse("That PDF isn't in this book's list.");
+    if (isOldLayout(pdf.layout)) return refuse("That PDF was made with an older print layout. Make a new one.");
     if (!pdf.hasCover || (Array.isArray(pdf.missingPages) && pdf.missingPages.length > 0)) {
       return refuse("That PDF has grey placeholder pages or no cover, so it can't be printed. Draw the missing pictures, then make a new PDF.");
     }
@@ -305,6 +315,7 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
           specFallback: r.specFallback,
           complete: r.complete,
           sources: r.sources,
+          layout: r.layout,
           ...(save ? { previousUrl: book.pdfUrl } : {}),
         };
         const notes = [

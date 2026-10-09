@@ -80,6 +80,15 @@ const IMAGE_MODEL = "gemini-3-pro-image";
 const LOGO_PATH = path.resolve(process.cwd(), "public", "Flipwhizz_logo_NEW.png");
 const COVER_TEMPLATE_PATH = path.resolve(process.cwd(), "public", "templates", "spread-text-safe-template.png");
 
+/**
+ * How the printed cover really folds (Gelato 20x20cm photo book, 30 pages):
+ * back cover = left half, front cover = right half, and the spine is a fold
+ * under 3mm wide in the exact centre. Spine text can't fit there and would
+ * print across the edges of the front and back covers, so there is none.
+ * Added after every new cover prompt, whatever the cover chat wrote.
+ */
+const PRINT_LAYOUT = `PRINT LAYOUT (must follow, overrides anything above): this is a wrap-around cover. The LEFT HALF is the back cover and the RIGHT HALF is the front cover; they meet at a very thin spine fold in the exact centre. Put NO text on the spine and no text, faces or important details within 8% of the centre line. Keep all text at least 8% from every outer edge.`;
+
 function isDataUrl(v: string) { return v.startsWith("data:image/"); }
 function guessMimeType(f: string) {
   const s = f.toLowerCase();
@@ -275,6 +284,7 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         if (strategy.includeTemplate) { try { parts.push(await getImagePart(COVER_TEMPLATE_PATH)); parts.push({ text: "↑ LAYOUT GUIDE — shows safe zones only. Do NOT render guide lines. ↑" }); } catch {} }
         if (castBlock) parts.push({ text: castBlock });
         parts.push({ text: strategy.pass1Prompt });
+        parts.push({ text: PRINT_LAYOUT });
         console.log(`🎨 [single] ${parts.filter((p: any) => p.inlineData).length} images`);
         const image = await generateWithPhotoFallback(parts, photoParts, strategy, "single");
         return await uploadToCloudinary(image.data, storyId);
@@ -295,6 +305,7 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       if (strategy.includeLogo) { try { parts.push(await getImagePart(LOGO_PATH)); parts.push({ text: '↑ FLIPWHIZZ LOGO. Place small, bottom-left of back cover. Add "flipwhizz.com" below. ↑' }); } catch {} }
       if (strategy.includeTemplate) { try { parts.push(await getImagePart(COVER_TEMPLATE_PATH)); parts.push({ text: "↑ LAYOUT GUIDE — shows safe zones only. Do NOT render guide lines. ↑" }); } catch {} }
       parts.push({ text: strategy.pass1Prompt });
+      parts.push({ text: PRINT_LAYOUT });
       console.log(`🎨 [pass1] ${parts.filter((p: any) => p.inlineData).length} images`);
       const response = await gemini.models.generateContent({
         model: IMAGE_MODEL,

@@ -659,6 +659,9 @@ function Pdfs({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; 
   const row = shown?.row ?? null;
   const notes: { tone: "amber" | "slate"; text: string }[] = [];
   if (shown && row) {
+    if (row.oldLayout) {
+      notes.push({ tone: "amber", text: "Made with an older print layout (before Gelato's exact page sizes). This file won't change: make a new one to print." });
+    }
     if (row.changed?.spreads.length || row.changed?.cover) {
       const what = [
         row.changed.spreads.length ? `spread${row.changed.spreads.length === 1 ? "" : "s"} ${row.changed.spreads.join(", ")}` : "",
@@ -728,7 +731,7 @@ function Pdfs({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; 
             </div>
 
             {/* Checked it? Save it as the print PDF, and send it to Gelato. */}
-            {(shown.isPrintPdf || row?.printable) && (
+            {(shown.isPrintPdf || row?.printable) && !row?.oldLayout && (
               <div className="mb-3 flex flex-wrap gap-2">
                 {shown.isPrintPdf ? (
                   <button className={btnPrimary} disabled={!!sending || locked("test-print-order")} onClick={() => ask("test-print-order")}>
@@ -754,8 +757,16 @@ function Pdfs({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; 
                 )}
               </div>
             )}
-            {row && !row.printable && !shown.isPrintPdf && (
+            {row && !row.oldLayout && !row.printable && !shown.isPrintPdf && (
               <p className="mb-3 text-xs text-slate-400">Draw the missing pictures and make a new preview to save it or send it to Gelato.</p>
+            )}
+            {row?.oldLayout && (
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <button className={btnPrimary} disabled={!!sending || !detail.tablesReady} onClick={() => ask("make-pdf-preview")}>
+                  {sending === "make-pdf-preview" ? "Making the PDF… about a minute" : "Make a new preview"}
+                </button>
+                <span className="text-xs text-slate-400">Then save it and send it to Gelato from there.</span>
+              </div>
             )}
             {wide ? (
               <iframe key={shown.url} src={shown.url} title={`${shown.title} PDF`} className="h-[78vh] w-full rounded-lg border border-white/10 bg-white" />
@@ -780,6 +791,7 @@ function Pdfs({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; 
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-white">{it.title}</span>
                     {it.isPrintPdf && <Pill tone="green">print PDF now</Pill>}
+                    {it.row?.oldLayout && <Pill tone="amber">old layout</Pill>}
                     {changedSince(it.row) && <Pill tone="amber">pictures changed</Pill>}
                   </div>
                   <div className="text-xs text-slate-500">
