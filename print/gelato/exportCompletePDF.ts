@@ -292,15 +292,18 @@ export async function exportCompletePDF(
   /* Interior spread slicing with safety inset                              */
   /* ---------------------------------------------------------------------- */
 
-  /* The art is 16:9 and the two printed pages are 2:1. "cover" trims about
-     5.5% off the top and bottom (inside the 8% the art and lettering keep
-     clear) instead of stretching everything 12.5% wider. */
+  /* The art is 16:9 and the two printed pages are 2:1. "contain" prints the
+     whole picture, undistorted: nothing is trimmed (Gemini's lettering can
+     sit right at the top edge, and "cover" cut it off) and nothing is
+     stretched ("fill" made everything 12.5% wider). The cost is a wider
+     white margin at the outer edges (about 31mm, against 10mm top and
+     bottom). */
   .page img {
     position: absolute;
     top: ${SAFE_MARGIN_MM}mm;
     width: ${insetSpreadWidth}mm;
     height: ${insetSpreadHeight}mm;
-    object-fit: cover;
+    object-fit: contain;
     object-position: center;
     display: block;
   }
