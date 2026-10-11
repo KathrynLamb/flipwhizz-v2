@@ -25,6 +25,22 @@ export const PRICES: Record<CurrencyCode, Record<ProductType, number>> = {
   AUD: { digital: 2200, print: 4500, gift: 5900 },
 };
 
+// Colouring book add-on (PDF). Kept separate from ProductType on purpose so
+// adding it can't break existing checkout, promo or print code that switches
+// on ProductType. Checkout code should read from here so the site and the
+// basket always show the same price.
+// PLACEHOLDER PRICES: change these four numbers to set the real price.
+export const COLOURING_ADDON_PRICES: Record<CurrencyCode, number> = {
+  GBP: 500,
+  USD: 700,
+  EUR: 600,
+  AUD: 900,
+};
+
+export function getColouringPriceCents(currency: CurrencyCode): number {
+  return COLOURING_ADDON_PRICES[currency] ?? COLOURING_ADDON_PRICES.GBP;
+}
+
 /** Map country ISO code → currency */
 const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
   // GBP

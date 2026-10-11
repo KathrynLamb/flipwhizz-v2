@@ -23,6 +23,7 @@ const body = `# FlipWhizz
 - Print at home PDF: a fully illustrated, downloadable storybook
 - Printed Storybook: a premium printed keepsake book, shipped to you
 - Gift Edition: a deluxe printed book with a personal dedication page, made for birthdays and special occasions
+- Colouring Book add-on: every illustration from the child's own story as printable line-art colouring pages (PDF). Added to any book at checkout or later from the library. The parent authors the story; the child colours it.
 - Pricing is shown per region (GBP, USD, EUR, AUD) and is a one-off cost per book. No subscriptions.
 
 ## Who it is for
@@ -37,8 +38,9 @@ const body = `# FlipWhizz
 ## Key pages
 - Home: https://flipwhizz.com
 - Create a story (free preview): https://flipwhizz.com/projects/create
-- How it works: https://flipwhizz.com/how-it-works
-- Examples / gallery: https://flipwhizz.com/examples
+- Personalised colouring book: https://flipwhizz.com/personalised-colouring-book
+- How it works: https://flipwhizz.com/#how-it-works
+- Examples / gallery: https://flipwhizz.com/#gallery
 - Pricing: https://flipwhizz.com/#pricing
 - About: https://flipwhizz.com/about
 - FAQ: https://flipwhizz.com/faq

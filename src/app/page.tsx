@@ -12,7 +12,8 @@ import { projects } from "@/db/schema";
 import { stories, bookCovers } from "@/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import GallerySection from "@/components/GallerySection";
-import { getPriceCents, formatPrice, countryToCurrency } from "@/lib/pricing";
+import ColouringPreview from "@/components/ColouringPreview";
+import { getPriceCents, getColouringPriceCents, formatPrice, countryToCurrency } from "@/lib/pricing";
 
 const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-serif", weight: ["400", "700", "900"] });
 const lato = Lato({ subsets: ["latin"], variable: "--font-sans", weight: ["400", "700"] });
@@ -29,6 +30,7 @@ export default async function Home() {
   const priceDigital = formatPrice(getPriceCents("digital", currency), currency);
   const pricePrint = formatPrice(getPriceCents("print", currency), currency);
   const priceGift = formatPrice(getPriceCents("gift", currency), currency);
+  const priceColouring = formatPrice(getColouringPriceCents(currency), currency);
 
   const publicStories = await db
     .select({ id: stories.id, title: stories.title, description: stories.description, coverSpreadUrl: stories.coverSpreadUrl, updatedAt: stories.updatedAt })
@@ -60,7 +62,7 @@ export default async function Home() {
     // Swap for a square logo asset if you have one; og-image works as a fallback.
     logo: "https://flipwhizz.com/og-image.png",
     description:
-      "Personalised children's book platform where parents author original, co-created stories for their child. Built by an educator with 30 years working with children.",
+      "Personalised children's book platform where parents author original, co-created stories for their child. Built by an educator with 20 years working with children.",
     founder: { "@type": "Person", name: "Katy" },
     // Add your TikTok / Facebook URLs here as you confirm the handles.
     sameAs: ["https://www.instagram.com/flipwhizz_kate"],
@@ -211,6 +213,51 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* ── COLOURING BOOK ── */}
+      <section id="colouring-book" className="relative py-20 lg:py-28 px-6 lg:px-12 overflow-hidden bg-white">
+        <div
+          className="absolute -bottom-32 -right-32 w-[400px] h-[400px] rounded-full opacity-[0.06] pointer-events-none blur-3xl"
+          style={{ background: "radial-gradient(circle, #F7A93E, #A270C9)" }}
+        />
+        <div className="relative mx-auto max-w-5xl grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+          <div className="text-center lg:text-left">
+            <p className="text-sm font-semibold tracking-[0.2em] uppercase mb-4" style={{ color: "#D94590" }}>
+              ✦ New: Colouring Book ✦
+            </p>
+            <h2 className="font-serif text-4xl lg:text-5xl font-bold leading-tight" style={{ color: "#2D2235" }}>
+              You wrote the story. Now they get to finish it.
+            </h2>
+            <p className="mt-5 text-lg leading-relaxed" style={{ color: "#6B5D52" }}>
+              Add a colouring book to any story and every illustration comes back as
+              line art, ready for crayons. Same characters, same adventure, and your
+              child decides what colour the dragon is.
+            </p>
+            <ul className="mt-6 space-y-2 text-base text-left inline-block" style={{ color: "#4A4038" }}>
+              {[
+                "Every page of their story, as colouring pages",
+                "Print it as many times as you like",
+                `Just ${priceColouring} added to any book`,
+              ].map((f) => (
+                <li key={f} className="flex items-start gap-2">
+                  <span style={{ color: "#D94590" }} className="mt-0.5">✦</span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-8 flex flex-col sm:flex-row gap-4 items-center lg:items-start justify-center lg:justify-start">
+              <Link
+                href="/personalised-colouring-book"
+                className="px-8 py-4 rounded-full text-base font-bold text-white transition-all duration-300 hover:scale-105"
+                style={{ background: "#D94590", boxShadow: "0 6px 24px rgba(217,69,144,0.3)" }}
+              >
+                See the colouring book
+              </Link>
+            </div>
+          </div>
+          <ColouringPreview />
+        </div>
+      </section>
+
       {/* ── GALLERY ── */}
       <GallerySection stories={publicStories} coverByStoryId={coverByStoryId} session={session} hasProjects={hasProjects} />
 
@@ -251,7 +298,7 @@ export default async function Home() {
             </h2>
             <p className="mt-6 text-lg leading-relaxed" style={{ color: "#6B5D52" }}>
               Each story is crafted once, then yours forever.<br />
-              No subscriptions. No upsells. Just a beautiful book.
+              No subscriptions. No surprises. Just a beautiful book.
             </p>
           </div>
 
@@ -323,6 +370,29 @@ export default async function Home() {
                 <HeroButton session={session} hasProjects={hasProjects} intent="gift" className="w-full" variant="primary" />
               </div>
             </div>
+          </div>
+
+          {/* COLOURING ADD-ON */}
+          <div
+            className="mt-16 mx-auto max-w-3xl rounded-[22px] bg-white p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left"
+            style={{ border: "1px dashed #D94590", boxShadow: "0 4px 24px rgba(45,34,53,0.05)" }}
+          >
+            <div className="text-4xl" aria-hidden="true">🖍️</div>
+            <div className="flex-1">
+              <h3 className="font-serif text-xl font-bold" style={{ color: "#2D2235" }}>
+                Add the Colouring Book: <span style={{ color: "#D94590" }}>{priceColouring}</span>
+              </h3>
+              <p className="mt-1 text-sm leading-relaxed" style={{ color: "#6B5D52" }}>
+                Every illustration in their story as printable line art. Add it to any book at checkout, or later from your library.
+              </p>
+            </div>
+            <Link
+              href="/personalised-colouring-book"
+              className="shrink-0 text-sm font-bold hover:underline"
+              style={{ color: "#D94590" }}
+            >
+              Find out more →
+            </Link>
           </div>
 
           <div className="mt-20 text-center text-sm" style={{ color: "#6B5D52" }}>

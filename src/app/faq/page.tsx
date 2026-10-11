@@ -1,10 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getPriceCents, getColouringPriceCents, formatPrice } from "@/lib/pricing";
+
+// FAQ is static, so prices are shown in GBP here. The homepage and checkout
+// show each visitor's local currency.
+const gbp = (cents: number) => formatPrice(cents, "GBP");
+const P = {
+  digital: gbp(getPriceCents("digital", "GBP")),
+  print: gbp(getPriceCents("print", "GBP")),
+  gift: gbp(getPriceCents("gift", "GBP")),
+  colouring: gbp(getColouringPriceCents("GBP")),
+};
 
 export const metadata: Metadata = {
   title: "FAQ — Personalised Children's Books | FlipWhizz",
   description:
-    "Answers to common questions about FlipWhizz: how it works, what ages it's for, how it's different from other personalised children's books, printing options, pricing, and more.",
+    "Answers to common questions about FlipWhizz: how it works, what ages it's for, how it's different from other personalised children's books, printing options, the personalised colouring book, pricing, and more.",
   alternates: {
     canonical: "https://flipwhizz.com/faq",
   },
@@ -23,7 +34,7 @@ const faqs = [
   {
     question: "What is FlipWhizz?",
     answer:
-      "FlipWhizz is an AI-powered tool that helps families create personalised children's storybooks. You tell FlipWhizz about your child — their name, age, interests, and personality — and it builds a unique story from scratch, complete with custom illustrations. You can then order a professionally printed hardcover book or download a print-at-home PDF.",
+      "FlipWhizz is an AI-powered tool that helps families create personalised children's storybooks. You tell FlipWhizz about your child — their name, age, interests, and personality — and it builds a unique story from scratch, complete with custom illustrations. You can then download a print-at-home PDF, order a professionally printed book, and add a colouring book version of the same story.",
   },
   {
     question: "How does FlipWhizz work?",
@@ -68,7 +79,37 @@ const faqs = [
   {
     question: "Can I order a printed copy of the book?",
     answer:
-      "Yes. Once your storybook is complete, you can order a professionally printed hardcover delivered to your door. Books are produced by a professional print-on-demand partner and ship worldwide. You can also download a print-at-home PDF if you'd prefer to print it yourself.",
+      "Yes. Once your storybook is complete, you can order a printed softcover book, or the Gift Edition hardcover with a personal dedication page, delivered to your door. Books are produced by a professional print-on-demand partner and ship worldwide. You can also download a print-at-home PDF if you'd prefer to print it yourself.",
+  },
+  {
+    question: "What is the FlipWhizz colouring book?",
+    answer:
+      "It's your child's own story turned into colouring pages. Every illustration from their book comes back as clean line art, so they can colour in the characters, places, and moments you created together. You wrote the story; they get to finish it.",
+  },
+  {
+    question: "Is the colouring book the same story as my book?",
+    answer:
+      "Yes. It uses the same pages, characters, and scenes as your illustrated storybook, so your child will recognise every picture. It isn't a generic colouring book with their name added.",
+  },
+  {
+    question: "How do I get the colouring book?",
+    answer:
+      `Add it to any story at checkout for ${P.colouring}. If you've already bought a book, you can add the colouring book later from your library.`,
+  },
+  {
+    question: "Is the colouring book printed or a download?",
+    answer:
+      "It's a PDF you download and print at home. That means you can print a page again whenever it's been coloured, scribbled on, or loved to pieces, and print extra copies for siblings or friends.",
+  },
+  {
+    question: "What paper should I print the colouring pages on?",
+    answer:
+      "Ordinary printer paper works well for crayons and colouring pencils. If your child likes felt tips or paint, a thicker paper (around 120gsm or more) stops colours bleeding through. Print single-sided so every page can be coloured.",
+  },
+  {
+    question: "What age is the colouring book suitable for?",
+    answer:
+      "It suits the same ages as our storybooks, roughly 2 to 10. Younger children enjoy colouring the big characters and shapes; older children often go back in for the details. It's also a lovely way to revisit a story together after bedtime reading.",
   },
   {
     question: "How long does it take to create a book?",
@@ -88,7 +129,7 @@ const faqs = [
   {
     question: "How much does FlipWhizz cost?",
     answer:
-      "The story demo is completely free with no sign-up required. Creating a full illustrated book requires an account. Pricing for the book creation and printing options is shown during the creation flow.",
+      `You can see your first illustrated spread for free, with no card needed. After that, each book is a one-off price: ${P.digital} for the print-at-home PDF, ${P.print} for the printed storybook, or ${P.gift} for the hardcover Gift Edition. The colouring book can be added to any of these for ${P.colouring}. Prices are shown in your local currency on the homepage and at checkout. No subscriptions.`,
   },
   {
     question: "Is my child's data safe?",
@@ -103,7 +144,7 @@ const faqs = [
   {
     question: "Who created FlipWhizz?",
     answer:
-      "FlipWhizz was created by Katy, a self-taught developer with over 30 years of experience working with children across schools, early years settings, ESL classrooms, and outdoor education. The platform is built on the belief that the best children's stories are the ones shaped around who a child actually is.",
+      "FlipWhizz was created by Katy, a self-taught developer with 20 years of experience working with children across schools, early years settings, ESL classrooms, and outdoor education. The platform is built on the belief that the best children's stories are the ones shaped around who a child actually is.",
   },
 ];
 
@@ -221,12 +262,16 @@ export default function FAQPage() {
             About
           </Link>
           <span className="text-slate-300">·</span>
-          <Link href="/how-it-works" className="transition hover:text-slate-700">
+          <Link href="/#how-it-works" className="transition hover:text-slate-700">
             How it works
           </Link>
           <span className="text-slate-300">·</span>
-          <Link href="/examples" className="transition hover:text-slate-700">
+          <Link href="/#gallery" className="transition hover:text-slate-700">
             Examples
+          </Link>
+          <span className="text-slate-300">·</span>
+          <Link href="/personalised-colouring-book" className="transition hover:text-slate-700">
+            Colouring book
           </Link>
         </div>
       </div>
