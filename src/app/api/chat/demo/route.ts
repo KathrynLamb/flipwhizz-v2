@@ -1,3 +1,4 @@
+import { BOOK_TYPE_TOOL, bookTypeChatContext, bookTypeFromToolBlocks, normalizeBookType, isBookType } from "@/lib/books/bookType";
 // /api/chat/demo/route.ts
 // Fixed version with proper sessionId handling
 
@@ -52,6 +53,8 @@ const DEMO_SERVER_MESSAGE_CAP = 4;
 async function _POST(req: NextRequest) {
   try {
     const body = await req.json();
+    if (body.bookType !== undefined && !isBookType(body.bookType)) return NextResponse.json({ error: "Invalid book type" }, { status: 400 });
+    const bookType = normalizeBookType(body.bookType);
     const message =
       typeof body?.message === "string" ? body.message.trim() : "";
     const history = body?.history;
@@ -137,7 +140,8 @@ async function _POST(req: NextRequest) {
     // Call Claude
     const completion = await client.messages.create({
       model: "claude-sonnet-4-6",
-      system: buildDemoSystemPrompt(),
+      system: buildDemoSystemPrompt() + "\n" + bookTypeChatContext(bookType),
+      tools: [BOOK_TYPE_TOOL],
       max_tokens: 300,
       messages: [
         ...trimmedHistory,
@@ -186,7 +190,7 @@ async function _POST(req: NextRequest) {
       // Don't throw—this is just a timestamp update
     }
 
-    return NextResponse.json({ reply });
+    return NextResponse.json({ reply, bookType: bookTypeFromToolBlocks(completion.content, bookType) });
   } catch (error) {
     console.error("[demo chat] error:", error);
 

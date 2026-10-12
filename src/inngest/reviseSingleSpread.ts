@@ -1,3 +1,4 @@
+import { requireConfirmedBookType } from "@/lib/books/storyFormat";
 import { inngest } from "./client";
 import { eq, inArray, sql } from "drizzle-orm";
 import {
@@ -66,6 +67,7 @@ export const reviseSingleSpread = inngest.createFunction(
     }
 
     const imageUrl = await step.run("revise-image", async () => {
+      const format = await requireConfirmedBookType(storyId);
       /* 1️⃣ Existing image */
       const page = await db.query.storyPages.findFirst({
         where: eq(storyPages.id, leftPageId),
@@ -141,6 +143,7 @@ ABSOLUTE RULES:
 - If a requested change conflicts with these rules, make the MINIMAL possible adjustment
 
 This is a controlled revision, not a new illustration.
+${format.interiorStyle}
         `.trim(),
       });
 

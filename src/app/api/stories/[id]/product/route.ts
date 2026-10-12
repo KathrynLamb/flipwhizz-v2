@@ -1,8 +1,9 @@
+import { colouringPurchaseError } from "@/lib/lulu/client";
 // src/app/api/stories/[id]/product/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { storyProducts } from "@/db/schema";
+import { stories, storyProducts } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import {
   getPriceCents,
@@ -39,6 +40,9 @@ async function _GET(
 ) {
   const { id } = await params;
 
+  const formatStory = await db.query.stories.findFirst({ where: eq(stories.id, id) });
+  const availableProductTypes = ALLOWED_PRODUCT_TYPES.filter(type => !colouringPurchaseError(formatStory?.bookType ?? "storybook", type));
+
   const [product] = await db
     .select()
     .from(storyProducts)
@@ -53,6 +57,8 @@ async function _GET(
       currency: null,
       requiresShipping: null,
       productSelected: false,
+      bookType: formatStory?.bookType ?? "storybook",
+      availableProductTypes,
     });
   }
 
@@ -67,6 +73,8 @@ async function _GET(
     currency,
     requiresShipping: requiresShipping(productType),
     productSelected: true,
+    bookType: formatStory?.bookType ?? "storybook",
+    availableProductTypes,
   });
 }
 
@@ -87,6 +95,9 @@ async function _PUT(
   }
 
   const productType = rawProductType;
+    const formatStory = await db.query.stories.findFirst({ where: eq(stories.id, id) });
+    const formatError = colouringPurchaseError(formatStory?.bookType ?? "storybook", productType ?? "");
+    if (formatError) return NextResponse.json({ error: formatError }, { status: 409 });
   const currency: CurrencyCode = isValidCurrency(rawCurrency) ? rawCurrency : "GBP";
   const cents = getPriceCents(productType, currency);
 

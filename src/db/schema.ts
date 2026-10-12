@@ -1,3 +1,4 @@
+import type { BookType } from "@/lib/books/bookType";
 import {
   pgTable,
   text,
@@ -32,6 +33,7 @@ export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 200 }).notNull(),
+  bookType: varchar("book_type", { length: 30 }).$type<BookType>().notNull().default("storybook"),
   storyBrief: text("story_brief"),
   storyBasePrompt: text("story_base_prompt"),
   fullAiStory: text("full_ai_story"),
@@ -61,6 +63,12 @@ export const stories = pgTable("stories", {
   tone: varchar("tone", { length: 80 }),
   length: integer("length"),
   fullDraft: text("full_draft"),
+  bookType: varchar("book_type", { length: 30 }).$type<BookType>().notNull().default("storybook"),
+  bookTypeConfirmedAt: timestamp("book_type_confirmed_at"),
+  luluInteriorPdfUrl: text("lulu_interior_pdf_url"),
+  luluCoverPdfUrl: text("lulu_cover_pdf_url"),
+  luluPodPackageId: text("lulu_pod_package_id"),
+  luluPageCount: integer("lulu_page_count"),
 
   status: varchar("status", { length: 30 }).default("planning"),
   storyConfirmed: boolean("story_confirmed").default(false).notNull(),
@@ -798,6 +806,9 @@ export const orders = pgTable("orders", {
 
   shippingAddress: jsonb("shipping_address"),
 
+  printProvider: varchar("print_provider", { length: 20 }).notNull().default("gelato"),
+  providerOrderId: text("provider_order_id"),
+  providerStatus: text("provider_status"),
   gelatoOrderId: text("gelato_order_id"),
   gelatoStatus: text("gelato_status"),
 

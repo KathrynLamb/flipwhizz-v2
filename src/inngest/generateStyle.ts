@@ -1,3 +1,4 @@
+import { requireConfirmedBookType } from "@/lib/books/storyFormat";
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { eq } from "drizzle-orm";
@@ -123,6 +124,7 @@ export const generateStyleSample = inngest.createFunction(
     });
 
     if (!style) throw new Error("No style guide found");
+    const format = await requireConfirmedBookType(storyId);
 
     // 2. Build prompt parts (MATCHING WORKING SPREAD GENERATION ORDER)
     const parts: any[] = [];
@@ -211,6 +213,7 @@ The style reference image defines the visual technique. Match it exactly. Do not
 Additional style notes: ${description || style.summary || ""}
 
 Avoid: ${style.negativePrompt || "Logos, watermarks"}
+FINAL FORMAT OVERRIDE: ${format.interiorStyle || "Follow the style above."}
       `.trim(),
     });
 

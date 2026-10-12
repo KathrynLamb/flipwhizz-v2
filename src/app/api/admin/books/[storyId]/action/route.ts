@@ -382,6 +382,8 @@ async function placeTestOrder(storyId: string, pdfUrl: string, adminEmail: strin
   } catch {
     spec = getPrintSpec("print");
   }
+  const formatStory = await db.query.stories.findFirst({ where: eq(stories.id, storyId) });
+  if (formatStory?.bookType === "colouring_storybook") throw new Error("Use the Lulu colouring-book order route; this test action is for Gelato books.");
   const result = await createGelatoOrder({
     orderReferenceId: `flipwhizz-test-${uuidv4()}`,
     customerReferenceId: "admin-test",

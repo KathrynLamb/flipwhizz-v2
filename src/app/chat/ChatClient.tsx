@@ -1,6 +1,9 @@
 // /src/app/chat/ChatClient.tsx
 
 "use client";
+import BookTypeSelector from "@/components/books/BookTypeSelector";
+import { useBookTypeDraft } from "@/lib/books/useBookTypeDraft";
+import { isBookType, type BookType } from "@/lib/books/bookType";
 
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
@@ -62,11 +65,13 @@ export default function ChatClient() {
   // no opener is injected, and there is no message limit.
   const projectId = searchParams.get("project");
   const isProjectMode = Boolean(projectId);
+  const { bookType, selectBookType } = useBookTypeDraft(searchParams.get("bookType"), isProjectMode);
 
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [messagesLoaded, setMessagesLoaded] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [savingBookType, setSavingBookType] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasAttemptedResume, setHasAttemptedResume] = useState(false);
@@ -137,6 +142,7 @@ export default function ChatClient() {
           );
           const data = await res.json().catch(() => null);
 
+          if (!cancelled && isBookType(data?.bookType)) selectBookType(data.bookType);
           if (!cancelled && Array.isArray(data?.messages)) {
             setMessages(
               data.messages.map((m: ChatMsg) => ({
@@ -297,7 +303,7 @@ export default function ChatClient() {
     window.location.href = `/stories/${nextStoryId}/pages`;
   }
 
-  async function createStoryFromChat() {
+  async function createStoryFromChat(selectedBookType: BookType = bookType) {
     if (!projectId) return;
     if (creationTriggeredRef.current) return;
     creationTriggeredRef.current = true;
@@ -310,7 +316,7 @@ export default function ChatClient() {
       const res = await fetch("/api/stories/create-from-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({ projectId, bookType: selectedBookType }),
       });
       const data = await res.json().catch(() => null);
 
@@ -352,7 +358,7 @@ export default function ChatClient() {
   }
 
   async function sendMessage() {
-    if (!input.trim() || loading || reachedLimit) return;
+    if (!input.trim() || savingBookType || loading || reachedLimit) return;
 
     const text = input.trim();
     const userMessage: ChatMsg = { role: "user", content: text };
@@ -379,8 +385,8 @@ export default function ChatClient() {
       // go somewhere that can persist into the project's chat session.
       const endpoint = isProjectMode ? "/api/chat" : "/api/chat/demo";
       const payload = isProjectMode
-        ? { projectId, message: text, history: nextHistory }
-        : { message: text, history: nextHistory, sessionId: demoSessionId() };
+        ? { projectId, message: text, history: nextHistory, bookType }
+        : { message: text, history: nextHistory, sessionId: demoSessionId(), bookType };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -402,6 +408,8 @@ export default function ChatClient() {
         );
       }
 
+      if (isBookType(data?.bookType)) selectBookType(data.bookType);
+
       setMessages((prev) => [
         ...prev,
         {
@@ -416,7 +424,7 @@ export default function ChatClient() {
       // moment to read the reply, then create the story.
       if (isProjectMode && data?.readyToGenerate) {
         window.setTimeout(() => {
-          void createStoryFromChat();
+          void createStoryFromChat(isBookType(data?.bookType) ? data.bookType : bookType);
         }, 1500);
       }
     } catch (err) {
@@ -462,7 +470,7 @@ export default function ChatClient() {
       const res = await fetch("/api/projects/create-from-demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ messages, bookType }),
       });
 
       const data = await res.json().catch(() => null);
@@ -517,11 +525,25 @@ export default function ChatClient() {
     sessionStorage.removeItem("flipwhizz_create_demo_messages");
     sessionStorage.removeItem("flipwhizz_demo_pending_resume");
     resetDemoSessionId();
+    selectBookType("storybook");
     requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  async function changeBookType(value: BookType) {
+    if (!projectId) { selectBookType(value); return; }
+    setSavingBookType(true); setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/book-type`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookType: value }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not save book format");
+      selectBookType(value);
+    } catch (e) { setError(e instanceof Error ? e.message : "Please try again."); }
+    finally { setSavingBookType(false); }
   }
 
   return (
     <div className="flex h-full flex-col">
+      <BookTypeSelector value={bookType} onChange={changeBookType} disabled={savingBookType || loading || creatingProject || storyCreating || !messagesLoaded} />
       {/* Messages, full width, no card, no border, sits directly on the page */}
       <div className="flex-1 overflow-y-auto px-6 pb-32 pt-6">
         <div className="mx-auto w-full max-w-xl space-y-3">

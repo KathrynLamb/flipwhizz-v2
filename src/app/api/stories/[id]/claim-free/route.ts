@@ -1,3 +1,4 @@
+import { colouringPurchaseError } from "@/lib/lulu/client";
 // src/app/api/stories/[id]/claim-free/route.ts
 //
 // When a promo code makes a product free (e.g. Friends & Family digital),
@@ -47,6 +48,10 @@ async function _POST(
     }
 
     const productType = storyProduct.productType as ProductType;
+    const formatStory = await db.query.stories.findFirst({ where: eq(stories.id, storyId) });
+    if (formatStory?.bookType === "colouring_storybook" && !formatStory.bookTypeConfirmedAt) return NextResponse.json({ error: "Confirm your colouring storybook format before checkout." }, { status: 409 });
+    const formatError = colouringPurchaseError(formatStory?.bookType ?? "storybook", productType ?? "");
+    if (formatError) return NextResponse.json({ error: formatError }, { status: 409 });
     if (!VALID_PRODUCTS.includes(productType)) {
       return NextResponse.json({ error: "Invalid product type" }, { status: 400 });
     }
