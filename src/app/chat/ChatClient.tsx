@@ -202,6 +202,17 @@ export default function ChatClient() {
     };
   }, [isProjectMode, projectId]);
 
+  const resumedProjectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isProjectMode || !projectId || !messagesLoaded || storyCreating || loading) return;
+    if (resumedProjectRef.current === projectId) return;
+    if (messages.at(-1)?.role !== "user") return;
+    resumedProjectRef.current = projectId;
+    void sendMessage(true);
+    // Resume only a saved unanswered turn, once per project visit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isProjectMode, projectId, messagesLoaded, storyCreating, loading]);
+
   // Inject the fake AI opener, only on a genuinely fresh, empty demo start.
   // Never in project mode: an empty project chat means history is still
   // loading or genuinely empty, and an opener on top of a real saved
@@ -358,12 +369,11 @@ export default function ChatClient() {
     }
   }
 
-  async function sendMessage() {
-    if (!input.trim() || savingBookType || loading || reachedLimit) return;
-
-    const text = input.trim();
+  async function sendMessage(resumeLastMessage = false) {
+    const text = resumeLastMessage ? messages.at(-1)?.content ?? "" : input.trim();
+    if (!text || savingBookType || loading || reachedLimit) return;
     const userMessage: ChatMsg = { role: "user", content: text };
-    const nextHistory = [...messages, userMessage];
+    const nextHistory = resumeLastMessage ? messages : [...messages, userMessage];
 
     // Track first message as demo_started, demo only.
     if (!isProjectMode && messages.filter((m) => m.role === "user").length === 0) {
@@ -386,7 +396,7 @@ export default function ChatClient() {
       // go somewhere that can persist into the project's chat session.
       const endpoint = isProjectMode ? "/api/chat" : "/api/chat/demo";
       const payload = isProjectMode
-        ? { projectId, message: text, history: nextHistory, bookType }
+        ? { projectId, message: text, history: messages, bookType, resumeLastMessage }
         : { message: text, history: nextHistory, sessionId: demoSessionId(), bookType };
 
       const res = await fetch(endpoint, {
@@ -395,6 +405,7 @@ export default function ChatClient() {
         body: JSON.stringify(payload),
       });
 
+      if (res.status === 204) return;
       const data = await res.json().catch(() => null);
 
       // Server-side demo cap reached: show its friendly nudge, not an error.
