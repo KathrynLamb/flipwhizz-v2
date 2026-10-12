@@ -554,11 +554,13 @@ export default function ChatClient() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <BookTypeSelector value={bookType} onChange={changeBookType} disabled={savingBookType || loading || creatingProject || storyCreating || !messagesLoaded} />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 justify-center px-4 py-3 sm:py-4">
+      <BookTypeSelector compact value={bookType} onChange={changeBookType} disabled={savingBookType || loading || creatingProject || storyCreating || !messagesLoaded} />
+      </div>
       {/* Messages, full width, no card, no border, sits directly on the page */}
-      <div className="flex-1 overflow-y-auto px-6 pb-32 pt-6">
-        <div className="mx-auto w-full max-w-xl space-y-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 pt-4 sm:px-8 sm:pt-6">
+        <div className="mx-auto w-full max-w-3xl space-y-6">
           {/* Loading state while project history comes back from the database.
               Without this the page flashes empty and looks like the chat was
               lost, which is the bug this replaces. */}
@@ -579,9 +581,9 @@ export default function ChatClient() {
               }`}
             >
               {msg.role === "user" ? (
-                <div className="flex max-w-[85%] items-end gap-2">
-                  <div className="rounded-[20px] rounded-tr-[4px] bg-[#DB79AC] px-5 py-3 text-white shadow-sm">
-                    <p className="whitespace-pre-wrap break-words text-[16px] font-normal leading-[1.4]">
+                <div className="flex max-w-[90%] items-start gap-3">
+                  <div className="rounded-2xl rounded-tr-md bg-[#EEE8F6] px-5 py-3.5 text-slate-800">
+                    <p className="whitespace-pre-wrap break-words text-[15px] font-normal leading-7 sm:text-base">
                       {msg.content}
                     </p>
                   </div>
@@ -590,12 +592,12 @@ export default function ChatClient() {
                   </div>
                 </div>
               ) : (
-                <div className="flex max-w-[85%] items-end gap-2">
+                <div className="flex max-w-[90%] items-start gap-3">
                   <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
                     <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
                   </div>
-                  <div className="rounded-[20px] rounded-bl-[4px] bg-[#9B88CF] px-5 py-3 shadow-sm">
-                    <p className="whitespace-pre-wrap break-words text-[16px] font-normal leading-[1.4] text-white">
+                  <div className="rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200/60">
+                    <p className="whitespace-pre-wrap break-words text-[15px] font-normal leading-7 sm:text-base text-slate-700">
                       {msg.content}
                     </p>
                   </div>
@@ -613,7 +615,7 @@ export default function ChatClient() {
               <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
                 <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
               </div>
-              <div className="flex gap-1.5 rounded-[20px] rounded-bl-[4px] bg-[#9B88CF] px-5 py-3 shadow-sm">
+              <div className="flex gap-1.5 rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200/60">
                 <BouncingDot delay={0} />
                 <BouncingDot delay={0.1} />
                 <BouncingDot delay={0.2} />
@@ -630,10 +632,10 @@ export default function ChatClient() {
               <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
                 <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
               </div>
-              <div className="rounded-[20px] rounded-bl-[4px] bg-[#9B88CF] px-5 py-3 shadow-sm">
+              <div className="rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200/60">
                 <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-white" />
-                  <p className="text-[16px] font-semibold leading-[1.4] text-white">
+                  <Loader2 className="h-4 w-4 animate-spin text-[#7655A3]" />
+                  <p className="text-sm font-medium leading-6 text-slate-700">
                     Welcome back, creating your book…
                   </p>
                 </div>
@@ -700,8 +702,8 @@ export default function ChatClient() {
               <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
                 <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
               </div>
-              <div className="max-w-[85%] rounded-[20px] rounded-bl-[4px] bg-[#9B88CF] px-5 py-3 shadow-sm">
-                <p className="text-[16px] leading-[1.4] text-white">
+              <div className="max-w-[85%] rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200/60">
+                <p className="text-base leading-7 text-slate-700">
                   Hi! I&apos;m your co-author. Tell me who this story is for
                   and what they love, and we&apos;ll shape it together.
                 </p>
@@ -718,10 +720,10 @@ export default function ChatClient() {
               <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
                 <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
               </div>
-              <div className="rounded-[20px] rounded-bl-[4px] bg-[#9B88CF] px-5 py-3 shadow-sm">
+              <div className="rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200/60">
                 <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-white" />
-                  <p className="text-[16px] font-semibold leading-[1.4] text-white">
+                  <Loader2 className="h-4 w-4 animate-spin text-[#7655A3]" />
+                  <p className="text-sm font-medium leading-6 text-slate-700">
                     Writing your story… this takes about a minute.
                   </p>
                 </div>
@@ -747,19 +749,9 @@ export default function ChatClient() {
         </div>
       </div>
 
-      {/* Input, fixed to the bottom of the screen now that there's no card
-          or footer below it to collide with. A thin gradient edge ties it
-          back to the header title; the bar itself stays white so the
-          textarea and send button stay legible. */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 px-6 py-3 backdrop-blur-xl">
-        <div
-          className="absolute left-0 right-0 top-0 h-[3px]"
-          style={{
-            background:
-              "linear-gradient(90deg, #F2546A, #F7A93E, #8AC7E0, #A270C9)",
-          }}
-        />
-        <div className="mx-auto w-full max-w-xl">
+      {/* Composer stays in the flex layout, so messages never sit behind it. */}
+      <div className="shrink-0 px-4 pb-3 pt-2 sm:px-8 sm:pb-5">
+        <div className="mx-auto w-full max-w-3xl">
           {!isProjectMode && userMessageCount > 0 && !reachedLimit && (
             <div className="mb-2 px-1">
               <div className="flex items-center gap-2 text-xs font-semibold text-[#DB79AC]">
@@ -781,8 +773,8 @@ export default function ChatClient() {
             </div>
           )}
 
-          <div className="flex items-end gap-2">
-            <div className="flex min-h-[44px] flex-1 items-center rounded-[20px] border border-slate-200 bg-white px-4 py-2 shadow-sm transition focus-within:border-[#9B88CF]/50 focus-within:ring-2 focus-within:ring-[#9B88CF]/20">
+          <div className="flex items-end gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_24px_rgba(30,20,50,0.06)] focus-within:border-[#9B88CF] focus-within:ring-2 focus-within:ring-[#9B88CF]/10">
+            <div className="flex min-h-[44px] min-w-0 flex-1 items-center px-2 py-2">
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -801,11 +793,11 @@ export default function ChatClient() {
                 placeholder={
                   reachedLimit
                     ? "Demo complete. Continue to create your book"
-                    : "Type your reply… a name, an age, what they love, anything"
+                    : "Tell me more about your story…"
                 }
                 disabled={loading || reachedLimit || creatingProject || storyCreating}
                 rows={1}
-                className="max-h-[100px] w-full resize-none border-0 bg-transparent text-[16px] font-normal text-gray-900 outline-none placeholder:text-gray-500 focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60"
+                className="max-h-[160px] w-full resize-none border-0 bg-transparent text-[16px] font-normal text-gray-900 outline-none placeholder:text-gray-500 focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ lineHeight: "1.4" }}
               />
             </div>
@@ -820,7 +812,7 @@ export default function ChatClient() {
               style={{
                 background:
                   input.trim() && !reachedLimit && !creatingProject
-                    ? "#DB79AC"
+                    ? "#7655A3"
                     : "#E5E7EB",
                 color:
                   input.trim() && !reachedLimit && !creatingProject
@@ -859,7 +851,7 @@ function BouncingDot({ delay }: { delay: number }) {
     <motion.div
       animate={{ y: [0, -4, 0] }}
       transition={{ repeat: Infinity, duration: 0.6, delay }}
-      className="h-2 w-2 rounded-full bg-white/80"
+      className="h-2 w-2 rounded-full bg-[#9B88CF]"
     />
   );
 }

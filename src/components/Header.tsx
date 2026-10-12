@@ -21,11 +21,13 @@ const NAV_COLORS = ["#E8457A", "#F5A623", "#7BC67E", "#5EAED4"];
 export default function Header({
   session,
   minimal = false,
+  workspace = false,
   title,
   subtitle,
 }: {
   session: any;
   minimal?: boolean;
+  workspace?: boolean;
   title?: string;
   subtitle?: string;
 }) {
@@ -35,6 +37,24 @@ export default function Header({
     setIsOpen(false);
     await signOut({ callbackUrl: "/" });
   };
+
+  if (workspace) return (
+    <header className="z-20 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-slate-200/70 bg-white px-4 sm:px-8">
+      <div className="flex min-w-0 items-center gap-4">
+        <Link href="/" aria-label="FlipWhizz home" className="shrink-0">
+          <Image src="/Flipwhizz_logo_NEW.png" alt="FlipWhizz" width={92} height={56} className="h-12 w-24 object-contain" />
+        </Link>
+        <div className="hidden h-6 w-px bg-slate-200 sm:block" />
+        <p className="truncate text-sm font-semibold tracking-tight text-slate-700">Story studio</p>
+      </div>
+      <nav aria-label="Account" className="flex shrink-0 items-center gap-3 sm:gap-5">
+        {session ? <>
+          <Link href="/projects" className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">My library</Link>
+          <button onClick={handleSignOut} className="hidden rounded-lg px-2 py-2 text-xs text-slate-500 hover:bg-slate-100 sm:block">Sign out</button>
+        </> : <SignInButton />}
+      </nav>
+    </header>
+  );
 
   const navLinks = [
     { href: "#how-it-works", label: "How It Works" },

@@ -43,13 +43,14 @@ export default async function ChatPage({
   const isProjectMode = Boolean(project);
 
   return (
-    <main className="relative flex h-screen flex-col overflow-hidden bg-white text-slate-900">
+    <main className="relative flex h-dvh flex-col overflow-hidden bg-[#FAF9F7] text-slate-900">
       {/* Real shared header, stripped for the conversion flow, title in-bar.
           In project mode the demo pitch is wrong: the visitor has already
           signed in and created the book, so the subtitle would be selling
           them something they've bought. */}
       <Header
         session={session}
+        workspace
         minimal
         title={
           isProjectMode
@@ -66,7 +67,7 @@ export default async function ChatPage({
       {/* Full-height app surface: h-screen on main (not min-h-screen) so this
           flex-1 region has a real, fixed height for ChatClient's h-full to
           resolve against. No card, no footer, the chat is the page. */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         <Suspense fallback={null}>
           <ChatClient />
         </Suspense>
