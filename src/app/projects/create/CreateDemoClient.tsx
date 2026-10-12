@@ -57,6 +57,7 @@ export default function CreateDemoClient() {
 
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [messagesLoaded, setMessagesLoaded] = useState(false);
+  const [serverLimitReached, setServerLimitReached] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
@@ -74,8 +75,12 @@ export default function CreateDemoClient() {
     [messages],
   );
 
-  const reachedLimit = userMessageCount >= MAX_USER_MESSAGES;
-  const remaining = Math.max(0, MAX_USER_MESSAGES - userMessageCount);
+  // A returning visitor may have no visible messages yet. Let them enter
+  // their idea before showing the sign-in handoff, even if the server cap is known.
+  const reachedLimit =
+    (serverLimitReached && userMessageCount > 0) ||
+    userMessageCount >= MAX_USER_MESSAGES;
+  const remaining = serverLimitReached ? 0 : Math.max(0, MAX_USER_MESSAGES - userMessageCount);
 
   const searchParams = useSearchParams();
   const seed = searchParams.get("seed");
@@ -85,6 +90,7 @@ export default function CreateDemoClient() {
   useEffect(() => {
     const id = getDemoSessionId();
     setSessionId(id);
+    setServerLimitReached(sessionStorage.getItem("flipwhizz_demo_limit_session") === id);
   }, []);
 
   // Load any saved conversation first. This must run before we decide whether
@@ -135,7 +141,6 @@ export default function CreateDemoClient() {
     if (!messagesLoaded) return;
     if (hasAttemptedResume) return;
     if (authStatus !== "authenticated") return;
-    if (!reachedLimit) return;
     if (messages.length === 0) return;
 
     const pendingResume = sessionStorage.getItem("flipwhizz_demo_pending_resume");
@@ -211,6 +216,16 @@ export default function CreateDemoClient() {
       });
 
       const data = await res.json().catch(() => null);
+
+      if (res.status === 429 && data?.error === "demo_limit") {
+        setServerLimitReached(true);
+        sessionStorage.setItem("flipwhizz_demo_limit_session", sessionId);
+        setMessages((prev) => [...prev, {
+          role: "assistant",
+          content: "You’ve used the free messages for this demo. Your story idea is saved here—continue below to sign in and keep creating your book.",
+        }]);
+        return;
+      }
 
       if (!res.ok) {
         throw new Error(
@@ -405,18 +420,17 @@ export default function CreateDemoClient() {
 
                 <div className="min-w-0 flex-1">
                   <h4 className="text-lg font-black tracking-tight text-slate-900">
-                    Your story is taking shape
+                    {serverLimitReached ? "Continue your story" : "Your story is taking shape"}
                   </h4>
                   <p className="mt-1 text-sm leading-6 text-slate-600">
-                    Sign in to continue, with illustrated pages, a custom
-                    cover, and print options.
+                    Sign in to continue shaping your story and create its illustrated pages and custom cover.
                   </p>
 
                   <div className="mt-4 flex flex-wrap gap-3">
                     <button
                       type="button"
                       onClick={continueToFullProject}
-                      disabled={creatingProject}
+                      disabled={creatingProject || userMessageCount === 0}
                       className="inline-flex items-center justify-center gap-2 rounded-full bg-[#DE2E4A] px-5 py-3 text-sm font-bold text-white shadow-[0_8px_28px_rgba(222,46,74,0.25)] transition-transform active:scale-[0.98] disabled:opacity-60"
                     >
                       {creatingProject ? (
