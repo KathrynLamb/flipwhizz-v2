@@ -122,6 +122,7 @@ export default function CheckoutPage() {
   const [processing, setProcessing] = useState(false);
   const [generationStarted, setGenerationStarted] = useState(false);
   const [selectedTier, setSelectedTier] = useState<TierKey>('print');
+  const [availableTiers, setAvailableTiers] = useState<TierKey[]>(['digital', 'print', 'gift']);
   const [savingProduct, setSavingProduct] = useState(false);
   const [productReady, setProductReady] = useState(false);
 
@@ -191,6 +192,8 @@ export default function CheckoutPage() {
         if (!storyRes.ok) throw new Error(storyData?.error || 'Failed to load story');
         if (cancelled) return;
     
+        const allowed: TierKey[] = Array.isArray(productData?.availableProductTypes) ? productData.availableProductTypes : ['digital', 'print', 'gift'];
+        setAvailableTiers(allowed);
         const s = storyData.story;
         setStory(s);
         setCompletedSteps((s.completedSteps as StepKey[]) || []);
@@ -200,7 +203,7 @@ export default function CheckoutPage() {
           return;
         }
     
-        if (productRes.ok && productData?.productSelected && productData?.productType) {
+        if (productRes.ok && productData?.productSelected && productData?.productType && allowed.includes(productData.productType)) {
           setSelectedTier(productData.productType as TierKey);
           const savedCurrency =
             productData.currency && productData.currency in CURRENCIES
@@ -216,7 +219,7 @@ export default function CheckoutPage() {
         } else {
           const initial = geoCurrency ?? 'GBP';
           setCurrency(initial);
-          await saveProductSelection('print', initial); // stamp the right currency on first save
+          await saveProductSelection(allowed.includes('print') ? 'print' : 'digital', initial); // stamp the right currency on first save
         }
     
         if (!cancelled) setLoading(false);
@@ -476,7 +479,7 @@ export default function CheckoutPage() {
 
               {/* Tier dropdown */}
               <div className="px-6 py-4">
-                <TierDropdown selected={selectedTier} onChange={handleTierChange} disabled={savingProduct || processing} currency={currency} promoState={promoState} />
+                <TierDropdown availableTiers={availableTiers} selected={selectedTier} onChange={handleTierChange} disabled={savingProduct || processing} currency={currency} promoState={promoState} />
                 {savingProduct && (
                   <div className="mt-2 flex items-center gap-2 text-xs" style={{ color: '#7B6E90' }}>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving book format…
@@ -798,8 +801,8 @@ function PromoCodeInput({ promoInput, setPromoInput, promoState, promoError, pro
 /*  TIER DROPDOWN                                                              */
 /* -------------------------------------------------------------------------- */
 
-function TierDropdown({ selected, onChange, disabled = false, currency, promoState }: {
-  selected: TierKey; onChange: (t: TierKey) => void; disabled?: boolean; currency: CurrencyCode; promoState: PromoState;
+function TierDropdown({ availableTiers, selected, onChange, disabled = false, currency, promoState }: {
+  availableTiers: TierKey[]; selected: TierKey; onChange: (t: TierKey) => void; disabled?: boolean; currency: CurrencyCode; promoState: PromoState;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -841,7 +844,7 @@ function TierDropdown({ selected, onChange, disabled = false, currency, promoSta
       <AnimatePresence>
         {open && !disabled && (
           <motion.div initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.98 }} transition={{ duration: 0.15 }} className="absolute z-50 left-0 right-0 mt-2 rounded-2xl overflow-hidden" style={{ background: 'white', border: '1.5px solid rgba(180,150,210,0.15)', boxShadow: '0 8px 32px rgba(100,60,140,0.12), 0 2px 8px rgba(100,60,140,0.06)' }}>
-            {TIER_DEFS.map((t, i) => {
+            {TIER_DEFS.filter(t => availableTiers.includes(t.key)).map((t, i) => {
               const isSelected = t.key === selected;
               const cents = getPriceCents(t.key, currency);
               return (

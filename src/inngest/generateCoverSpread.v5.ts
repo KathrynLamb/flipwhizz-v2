@@ -1,3 +1,4 @@
+import { COLOUR_COVER_STYLE } from "@/lib/books/bookType";
 // src/inngest/generateCoverSpread.v5.ts
 //
 // v5: Two-pass cover generation.
@@ -205,7 +206,11 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       throw new Error("No generationStrategy in coverPlan. The cover chat must set this before triggering generation.");
     }
 
-    const strategy: GenerationStrategy = coverPlan.generationStrategy;
+    const strategy: GenerationStrategy = { ...coverPlan.generationStrategy };
+    if (story.bookType === "colouring_storybook") {
+      strategy.pass1Prompt = `${strategy.pass1Prompt ?? ""}\n${COLOUR_COVER_STYLE}`;
+      strategy.pass2Prompt = `${strategy.pass2Prompt ?? ""}\n${COLOUR_COVER_STYLE}`;
+    }
     const { approach, characterIds, locationIds } = strategy;
 
     console.log(`🎨 [cover-v5] Starting "${approach}" generation for story ${storyId}`);
@@ -232,7 +237,7 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       let styleRefUrl: string | null = null;
       if (strategy.includeStyleRef) {
         const style = await db.query.storyStyleGuide.findFirst({ where: eq(storyStyleGuide.storyId, storyId) });
-        styleRefUrl = style?.sampleIllustrationUrl ?? null;
+        styleRefUrl = story.bookType === "colouring_storybook" ? null : style?.sampleIllustrationUrl ?? null;
       }
       return { chars, locs, styleRefUrl, castSheet };
     });

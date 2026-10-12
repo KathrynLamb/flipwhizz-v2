@@ -1,3 +1,4 @@
+import { isBookType, normalizeBookType } from "@/lib/books/bookType";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { v4 as uuid } from "uuid";
@@ -65,6 +66,8 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const messages = body?.messages;
+    if (body.bookType !== undefined && !isBookType(body.bookType)) return NextResponse.json({ error: "Invalid book type" }, { status: 400 });
+    const bookType = normalizeBookType(body.bookType);
 
     if (!isValidMessageArray(messages)) {
       return NextResponse.json(
@@ -85,6 +88,7 @@ export async function POST(req: NextRequest) {
       userId: session.user.id,
       name: projectName,
       storyBrief,
+      bookType,
     });
 
     await db.insert(chatSessions).values({

@@ -1,3 +1,5 @@
+export const maxDuration = 300;
+import { submitColouringOrder } from "@/lib/lulu/order";
 // src/app/api/stories/[id]/order/route.ts
 
 import { NextResponse } from "next/server";
@@ -44,6 +46,8 @@ async function _POST(
     if (!story) {
       return NextResponse.json({ error: "Story not found" }, { status: 404 });
     }
+
+    if (story.bookType === "colouring_storybook") return NextResponse.json(await submitColouringOrder(storyId, shippingAddress));
 
     if (!story.pdfUrl) {
       return NextResponse.json(

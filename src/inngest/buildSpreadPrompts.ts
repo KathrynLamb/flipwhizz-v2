@@ -1,3 +1,4 @@
+import { getStoryFormat } from "@/lib/books/storyFormat";
 // src/inngest/buildSpreadPrompts.ts
 //
 // Phase between decideSpreadScenes and generateBookSpreads.
@@ -389,7 +390,8 @@ export const buildSpreadPrompts = inngest.createFunction(
     /* Build Claude system prompt                                          */
     /* ------------------------------------------------------------------ */
 
-    const styleDescription = [
+    const format = await step.run("load-book-format", () => getStoryFormat(storyId));
+    const styleDescription = format.interiorStyle || [
       style?.artStyle,
       style?.userNotes,
       style?.visualThemes,

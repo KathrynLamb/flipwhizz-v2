@@ -1,3 +1,4 @@
+import { getStoryFormat } from "@/lib/books/storyFormat";
 import { NextResponse } from "next/server";
 import { inngest } from "@/inngest/client";
 import { db } from "@/db";
@@ -11,6 +12,8 @@ async function _POST(
 ) {
   try {
     const { id: storyId } = await context.params;
+    const format = await getStoryFormat(storyId);
+    if (!format.confirmed) return NextResponse.json({ error: "Confirm your colouring storybook format using the banner above before generating illustrations." }, { status: 409 });
 
     console.log("🚀 Starting illustration generation for story:", storyId);
 

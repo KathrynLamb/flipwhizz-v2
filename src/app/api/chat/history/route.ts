@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { chatSessions, chatMessages } from "@/db/schema";
+import { chatSessions, chatMessages, projects } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { withAccess } from "@/lib/authz";
 
@@ -16,6 +16,8 @@ async function _GET(req: Request) {
       );
     }
 
+    const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
+
     // 1. Find the chat session for this project
     const session = await db
       .select()
@@ -26,6 +28,7 @@ async function _GET(req: Request) {
 
     if (!session) {
       return NextResponse.json({
+        bookType: project?.bookType ?? "storybook",
         sessionId: null,
         messages: [],
       });
@@ -43,6 +46,7 @@ async function _GET(req: Request) {
       .orderBy(chatMessages.createdAt); // chronological
 
     return NextResponse.json({
+      bookType: project?.bookType ?? "storybook",
       sessionId: session.id,
       messages,
     });

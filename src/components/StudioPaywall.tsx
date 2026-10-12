@@ -1,7 +1,7 @@
 // src/app/stories/[id]/studio/components/StudioPaywall.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -79,25 +79,43 @@ export default function StudioPaywall({
   const router = useRouter();
   const [selectedTier, setSelectedTier] = useState<Tier>("print");
   const [saving, setSaving] = useState(false);
+  const [availableTiers, setAvailableTiers] = useState<Tier[]>([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/stories/${storyId}/product`).then(async res => {
+      if (!res.ok) throw new Error("Could not load book formats. Please refresh.");
+      return res.json();
+    }).then(data => {
+      if (cancelled) return;
+      const allowed: Tier[] = data.availableProductTypes ?? ["digital", "print", "gift"];
+      setAvailableTiers(allowed);
+      setSelectedTier(allowed.includes("print") ? "print" : "digital");
+    }).catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [storyId]);
 
   async function handleContinue() {
-    if (saving) return;
+    if (saving || !availableTiers.includes(selectedTier)) return;
+    setError("");
     setSaving(true);
 
     try {
       // Update the story product with the selected tier
-      await fetch(`/api/stories/${storyId}/product`, {
+      const response = await fetch(`/api/stories/${storyId}/product`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productType: selectedTier }),
       });
 
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not save your selection.");
+
       // Route to checkout
       router.push(`/stories/${storyId}/checkout`);
-    } catch {
-      // Still route to checkout even if product update fails
-      router.push(`/stories/${storyId}/checkout`);
-    }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Please try again.");
+    } finally { setSaving(false); }
   }
 
   return (
@@ -165,9 +183,10 @@ export default function StudioPaywall({
         </motion.div>
       )}
 
+      {error && <p role="alert" className="mb-4 text-center text-red-700">{error}</p>}
       {/* Tier cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-4xl mx-auto mb-10">
-        {TIERS.map((tier, i) => {
+        {TIERS.filter(t => availableTiers.includes(t.key)).map((tier, i) => {
           const isSelected = selectedTier === tier.key;
           const Icon = tier.icon;
 

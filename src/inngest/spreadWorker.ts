@@ -1,3 +1,4 @@
+import { requireConfirmedBookType } from "@/lib/books/storyFormat";
 // src/inngest/spreadWorker.ts
 //
 // Draws ONE double-page spread. Every spread in the product goes through
@@ -174,9 +175,10 @@ export const generateSingleSpread = inngest.createFunction(
           : Promise.resolve(null),
       ]);
 
+      const format = await requireConfirmedBookType(storyId);
       const style = await db.query.storyStyleGuide.findFirst({ where: eq(storyStyleGuide.storyId, storyId) });
       const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } = resolveStyleGuide(style);
-      const plate = await ensureStylePlate(storyId, model.key);
+      const plate = format.interiorStyle ? { url: null, clean: true } : await ensureStylePlate(storyId, model.key);
 
       const spread = await loadSpreadRecord(leftPageId, rightPageId);
       if (!spread) throw new Error(`No spread record found for pages ${pageLabel}`);
@@ -320,9 +322,9 @@ export const generateSingleSpread = inngest.createFunction(
         spreadId: spread.spreadId ?? null,
         leftText: left?.text ?? "",
         rightText: right?.text ?? "",
-        styleBlock: geminiStyleBlock,
+        styleBlock: format.interiorStyle || geminiStyleBlock,
         avoidBlock: [scene?.negativePrompt, geminiAvoidBlock].filter(Boolean).join(", "),
-        typography: typographyBlock,
+        typography: format.interiorStyle ? "Plain legible black lettering on pure white. No colour, decorative shading or coloured panels. Preserve all outline artwork as black lines on white." : typographyBlock,
         stylePlateUrl: plate.url,
         stylePlateClean: plate.clean,
         sceneOnly,
@@ -331,7 +333,7 @@ export const generateSingleSpread = inngest.createFunction(
         forbiddenIds,
         doNotIncludeNames,
         location,
-        direction,
+        direction: `${direction}\n${format.interiorStyle}`,
         compositionNotes: ((scene?.compositionNotes as string[]) ?? []).filter(Boolean),
         mood: scene?.mood ?? null,
         negativePrompt: scene?.negativePrompt ?? null,
@@ -465,7 +467,8 @@ ${prep.compositionNotes.length ? `\nCOMPOSITION:\n${prep.compositionNotes.map((n
 SPACE FOR TEXT: this spread is hand-lettered afterwards. Keep a calm, simple area in the upper part of each page (upper-left on the left page, upper-right on the right page): no faces or busy detail there.
 Do NOT draw any text, letters, words, numbers, captions, speech bubbles or writing on signs.
 Keep important content away from the outer 8% of every edge and from the centre fold.
-AVOID: ${prep.avoidBlock}${ev.feedback ? `\nFEEDBACK TO APPLY: ${ev.feedback}` : ""}`,
+AVOID: ${prep.avoidBlock}${ev.feedback ? `\nFEEDBACK TO APPLY: ${ev.feedback}` : ""}
+FINAL STYLE REQUIREMENT (overrides colours in references and scene direction): ${prep.styleBlock}`,
       });
 
       const out = await generateImage({ model: model.id, parts, aspectRatio: ASPECT, imageSize: SPREAD_IMAGE_SIZE, label: `compose-${pageLabel}`, photoParts });

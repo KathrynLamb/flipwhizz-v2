@@ -1,3 +1,4 @@
+import { BOOK_TYPE_TOOL, bookTypeChatContext, bookTypeFromToolBlocks, normalizeBookType, isBookType } from "@/lib/books/bookType";
 //api/chat/route.ts
 
 import { NextResponse } from "next/server";
@@ -426,7 +427,8 @@ TONE: Warm, collaborative, genuinely interested. You're building something toget
 
 async function _POST(req: Request) {
   try {
-    const { message, history = [], projectId, worldId, readerId } = await req.json();
+    const { message, history = [], projectId, worldId, readerId, bookType: requestedBookType } = await req.json();
+    if (requestedBookType !== undefined && !isBookType(requestedBookType)) return NextResponse.json({ error: "Invalid book type" }, { status: 400 });
 
     if (!message || !projectId) {
       return NextResponse.json({ reply: "(invalid request)" });
@@ -442,6 +444,7 @@ async function _POST(req: Request) {
       return NextResponse.json({ reply: "(project not found)" }, { status: 404 });
     }
 
+    const bookType = normalizeBookType(requestedBookType ?? project.bookType);
     const worldCtx = worldId ? await loadWorldContextForChat(worldId) : null;
 
     // Load reader directly if no world context but readerId is provided
@@ -548,7 +551,7 @@ async function _POST(req: Request) {
 
     const completion = await client.messages.create({
       model: "claude-sonnet-4-6", // ← update this too
-      system: buildChatSystemPrompt(project, worldCtx, standaloneReaderCtx, lateConversation),
+      system: buildChatSystemPrompt(project, worldCtx, standaloneReaderCtx, lateConversation) + "\n" + bookTypeChatContext(bookType),
       max_tokens: 1200,
       tools: [
         {
@@ -556,9 +559,13 @@ async function _POST(req: Request) {
           name: "web_search",
         },
         START_WRITING_TOOL,
+        BOOK_TYPE_TOOL,
       ],
       messages: claudeMessages,
     });
+
+    const selectedBookType = bookTypeFromToolBlocks(completion.content, bookType);
+    await db.update(projects).set({ bookType: selectedBookType, updatedAt: new Date() }).where(eq(projects.id, projectId));
 
     // Extract text reply and check for tool use
     let reply = "";
@@ -596,6 +603,7 @@ async function _POST(req: Request) {
       reply,
       sessionId: session.id,
       readyToGenerate,
+      bookType: selectedBookType,
     });
   } catch (err) {
     console.error("Claude API error:", err);

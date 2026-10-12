@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { luluPrintEnabled } from "@/lib/lulu/client";
 import { db } from "@/db";
 import { stories, orders, reviews, storyProducts, promoCodes, projects } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
@@ -26,6 +28,10 @@ export default async function OrderRoute({
   if (!story) return notFound();
   if (story.paymentStatus !== "paid") redirect(`/stories/${id}/studio`);
 
+  if (story.bookType === "colouring_storybook" && !luluPrintEnabled()) {
+    return <main className="mx-auto max-w-xl p-8"><h1 className="text-2xl font-bold">Your colouring storybook</h1><p className="my-4">Printed colouring storybooks are not available yet. You can download your book and print it at home.</p><Link href={`/stories/${id}/book`} className="text-purple-700 underline">Back to your book</Link></main>;
+  }
+
   const project = await db.query.projects.findFirst({
     where: eq(projects.id, story.projectId!),
     columns: { userId: true },
@@ -39,6 +45,8 @@ export default async function OrderRoute({
       id: orders.id,
       createdAt: orders.createdAt,
       gelatoStatus: orders.gelatoStatus,
+      printProvider: orders.printProvider,
+      status: orders.status,
       shippingAddress: orders.shippingAddress,
       promoCode: orders.promoCode,
     })
@@ -47,7 +55,7 @@ export default async function OrderRoute({
     .orderBy(desc(orders.createdAt));
 
   const hasPrintOrder = previousOrders.some(
-    (o) => o.gelatoStatus && o.gelatoStatus !== "cancelled"
+    (o) => o.printProvider === "lulu" ? !["failed", "cancelled"].includes(o.status) : o.gelatoStatus && o.gelatoStatus !== "cancelled"
   );
 
   // Check if user has a used BETAREAD-style promo (digitalOverride = 0, discountPercent > 0)

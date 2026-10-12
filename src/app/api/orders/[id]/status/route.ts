@@ -1,3 +1,4 @@
+import { luluClient } from "@/lib/lulu/client";
 // api/orders/[id]/status/route.ts - Check order status
 import { NextResponse } from "next/server";
 import { db } from "@/db";
@@ -19,8 +20,21 @@ async function _GET(
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
+  if (order.printProvider === "lulu" && order.providerOrderId) {
+    try {
+      const job = await luluClient().request<{ status: { name: string } }>(`/print-jobs/${encodeURIComponent(order.providerOrderId)}/`);
+      const statusMap: Record<string, string> = { SHIPPED: "shipped", REJECTED: "failed", CANCELED: "cancelled", IN_PRODUCTION: "printing", UNPAID: "pending_manual" };
+      order.providerStatus = job.status.name;
+      order.status = statusMap[job.status.name] ?? order.status;
+      await db.update(orders).set({ providerStatus: order.providerStatus, status: order.status, updatedAt: new Date() }).where(eq(orders.id, order.id));
+    } catch { /* Preserve last known status while Lulu is unavailable. */ }
+  }
+
   return NextResponse.json({
     orderId: order.id,
+    printProvider: order.printProvider,
+    providerOrderId: order.providerOrderId,
+    providerStatus: order.providerStatus,
     status: order.status,
     gelatoOrderId: order.gelatoOrderId,
     gelatoStatus: order.gelatoStatus,

@@ -1,3 +1,5 @@
+export const maxDuration = 300;
+import { submitColouringOrder } from "@/lib/lulu/order";
 // api/orders/create/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
@@ -50,6 +52,8 @@ async function _POST(req: Request) {
         { status: 404 }
       );
     }
+
+    if (story.bookType === "colouring_storybook") return NextResponse.json(await submitColouringOrder(storyId, shippingAddress));
 
     const storyProduct = await db.query.storyProducts.findFirst({
       where: eq(storyProducts.storyId, storyId),

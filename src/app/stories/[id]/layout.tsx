@@ -1,3 +1,4 @@
+import BookFormatNotice from "@/components/books/BookFormatNotice";
 // src/app/stories/[id]/layout.tsx
 // ❌ DO NOT add "use client"
 
@@ -117,6 +118,7 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
           <a href={`/admin/books/${story.id}`} style={{ color: "white", textDecoration: "underline" }}>Admin controls →</a>
         </div>
       )}
+      {story.bookType === "colouring_storybook" && <BookFormatNotice storyId={story.id} confirmed={Boolean(story.bookTypeConfirmedAt)} />}
       <StoryJourneyShell
         storyConfirmed={story.storyConfirmed}
         storyId={story.id}

@@ -1,3 +1,4 @@
+import { isBookType, normalizeBookType, bookTypeChatContext, COLOURING_STYLE, type BookType } from "@/lib/books/bookType";
 // src/app/api/stories/create-from-chat/route.ts
 export const maxDuration = 300; // two sequential Claude calls; long chats exceed 60s
 
@@ -563,6 +564,7 @@ function computeAge(dob: string | null, fallbackAge: number | null): number | nu
 async function _POST(req: Request) {
   console.log("🟢 [create-from-chat] Story creation request received");
 
+  let requestedBookType: BookType | undefined;
   let projectId: string;
   let pageCount: number;
   let explicitWorldId: string | null;
@@ -571,6 +573,8 @@ async function _POST(req: Request) {
   try {
     const body = await req.json();
     projectId = body.projectId;
+    if (body.bookType !== undefined && !isBookType(body.bookType)) return NextResponse.json({ error: "Invalid book type" }, { status: 400 });
+    requestedBookType = body.bookType;
     pageCount = Number(body.pageCount) || DEFAULT_PAGE_COUNT;
     explicitWorldId = body.worldId ?? null;
   } catch (err) {
@@ -582,10 +586,10 @@ async function _POST(req: Request) {
   }
 
   // ── Load project ─────────────────────────────────────────────────────────
-  let project: { purchaseIntent: string | null; userId: string } | undefined;
+  let project: { purchaseIntent: string | null; userId: string | null; bookType: BookType } | undefined;
   try {
     const rows = await db
-      .select({ purchaseIntent: projects.purchaseIntent, userId: projects.userId })
+      .select({ purchaseIntent: projects.purchaseIntent, userId: projects.userId, bookType: projects.bookType })
       .from(projects)
       .where(eq(projects.id, projectId))
       .limit(1);
@@ -693,7 +697,11 @@ async function _POST(req: Request) {
   // ── Generate story ───────────────────────────────────────────────────────
   const readerAge = computeAge(extraction.reader.dateOfBirth, extraction.reader.age);
 
-  const SYSTEM = `You are FlipWhizz — a children's story generator that creates SPECIFIC, VOICE-DRIVEN stories.
+  const bookType = requestedBookType ?? normalizeBookType(project.bookType);
+  const SYSTEM = `${bookTypeChatContext(bookType)}
+${bookType === "colouring_storybook" ? COLOURING_STYLE : ""}
+
+You are FlipWhizz — a children's story generator that creates SPECIFIC, VOICE-DRIVEN stories.
 
 You've just had a conversation with a parent about a story for their child. Everything they told you matters. This story should feel like it could ONLY be about this specific child.
 
@@ -796,6 +804,7 @@ JSON OUTPUT — no markdown, no preamble, ONLY this structure:
       title: title || "Untitled Story",
       length: pageCount,
       fullDraft: JSON.stringify(json),
+      bookType,
       status: "paged",
       readerId,
       worldId,

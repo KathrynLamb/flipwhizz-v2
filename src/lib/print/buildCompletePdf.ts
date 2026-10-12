@@ -1,3 +1,4 @@
+import { buildColouringFiles } from "@/lib/lulu/export";
 // src/lib/print/buildCompletePdf.ts
 //
 // Builds the complete book PDF (cover + interior, at Gelato's sizes),
@@ -64,6 +65,11 @@ export async function buildCompletePdf(
   try {
     const story = await db.query.stories.findFirst({ where: eq(stories.id, storyId) });
     if (!story) throw new PdfBuildError(404, "Story not found", stage);
+
+    if (story.bookType === "colouring_storybook") {
+      const result = await buildColouringFiles(storyId, false, opts.save && !preview);
+      return { url: result.interiorUrl, productType: "print", coverType: "colouring-digital", readerName: null, interiorPages: result.pageCount, missingPages: [], hasCover: true, specFallback: false, complete: true, sources: result.sources, layout: 1, saved: opts.save && !preview };
+    }
 
     stage = "load-reader";
     const reader = story.readerId

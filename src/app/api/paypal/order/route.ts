@@ -1,9 +1,10 @@
+import { colouringPurchaseError } from "@/lib/lulu/client";
 // src/app/api/paypal/order/route.ts
 
 import { NextResponse } from "next/server";
 import { paypalCreateOrder } from "@/lib/paypal";
 import { db } from "@/db";
-import { storyProducts, promoCodes } from "@/db/schema";
+import { stories, storyProducts, promoCodes } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import {
   getPriceCents,
@@ -55,6 +56,10 @@ async function _POST(req: Request) {
     }
 
     const productType = storyProduct.productType as ProductType;
+    const formatStory = await db.query.stories.findFirst({ where: eq(stories.id, storyId) });
+    if (formatStory?.bookType === "colouring_storybook" && !formatStory.bookTypeConfirmedAt) return NextResponse.json({ error: "Confirm your colouring storybook format before checkout." }, { status: 409 });
+    const formatError = colouringPurchaseError(formatStory?.bookType ?? "storybook", productType ?? "");
+    if (formatError) return NextResponse.json({ error: formatError }, { status: 409 });
 
     if (!productType || !VALID_PRODUCTS.includes(productType)) {
       return NextResponse.json(
