@@ -114,7 +114,9 @@ export default function CreateDemoClient() {
     openerInjectedRef.current = true;
 
     const seedOpener = seed ? SEED_OPENERS[seed] : undefined;
-    const opener = seedOpener ?? pickGenericOpener();
+    const opener = bookType === "colouring_storybook"
+      ? "Hi! Let’s make a colouring storybook starring your child, with a full-colour cover and outline pictures inside for them to colour. What’s their name, how old are they, and what do they love?"
+      : seedOpener ?? pickGenericOpener();
 
     setMessages([{ role: "assistant", content: opener }]);
 
@@ -126,7 +128,7 @@ export default function CreateDemoClient() {
     // Focus the box so the cursor is already there. The proven failure mode
     // was visitors never moving to the input at all.
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [messagesLoaded, seed, messages.length]);
+  }, [messagesLoaded, seed, messages.length, bookType]);
 
   // Resume effect, gate on messagesLoaded
   useEffect(() => {
@@ -502,7 +504,9 @@ export default function CreateDemoClient() {
                 placeholder={
                   reachedLimit
                     ? "Demo complete. Continue to create your book"
-                    : "Type your reply… a name, an age, what they love, anything"
+                    : bookType === "colouring_storybook"
+                      ? "Who’s our colouring-book hero? Their name, age, favourite things…"
+                      : "Type your reply… a name, an age, what they love, anything"
                 }
                 disabled={loading || reachedLimit || creatingProject}
                 rows={1}

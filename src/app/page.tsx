@@ -165,6 +165,34 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* ── COLOURING STORYBOOKS ── */}
+      <section id="colouring-books" aria-labelledby="colouring-title" className="px-6 py-16 lg:px-12 lg:py-24" style={{ background: "#F3EDF8" }}>
+        <div className="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[1.3fr_1fr] lg:items-center">
+          <div>
+            <p className="mb-4 text-sm font-bold uppercase tracking-[0.18em] text-[#7960AF]">Their story. Their colours.</p>
+            <h2 id="colouring-title" className="font-serif text-4xl font-bold leading-tight text-[#2D2235] lg:text-5xl">Read it. Colour it.<br />Make it yours.</h2>
+            <p className="mt-6 max-w-xl text-lg leading-relaxed text-[#6B5D52]">An adventure starring your child, with pictures they can colour themselves. Bring their favourite things, family jokes and big ideas. We&apos;ll turn them into a story they can make their own.</p>
+            <Link href="/projects/create?bookType=colouring_storybook" className="mt-8 inline-flex rounded-full bg-[#7960AF] px-7 py-4 text-center font-bold text-white transition-colors hover:bg-[#654D96] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7960AF]">Create a colouring storybook <span aria-hidden="true" className="ml-3">→</span></Link>
+            <p className="mt-3 text-sm text-[#6B5D52]">Start with a free story conversation. Colouring-book mode is already selected.</p>
+          </div>
+          <div className="rounded-[24px] border border-[#E3D6ED] bg-white p-7 shadow-sm sm:p-9">
+            <p className="font-serif text-2xl font-bold text-[#2D2235]">A story to read.<br />A world to colour.</p>
+            <ul className="mt-7 space-y-6">
+              {[
+                ["01", "They’re the hero", "An original story built around your child and their imagination."],
+                ["02", "They bring the colours", "A full-colour cover, with black-outline pictures and story text inside."],
+                ["03", "Print. Pick up pencils. Play.", "Choose the downloadable edition to print and colour at home."],
+              ].map(([number, title, description]) => (
+                <li key={number} className="flex gap-4">
+                  <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F3EDF8] text-sm font-bold text-[#7960AF]">{number}</span>
+                  <div><h3 className="font-bold text-[#2D2235]">{title}</h3><p className="mt-1 text-sm leading-relaxed text-[#6B5D52]">{description}</p></div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
       {/* ── HOW IT WORKS ── */}
 
       
