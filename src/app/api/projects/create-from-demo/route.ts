@@ -1,3 +1,4 @@
+import { isDemoNotice } from "@/lib/demo-notices";
 import { isBookType, normalizeBookType } from "@/lib/books/bookType";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
@@ -65,16 +66,18 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const messages = body?.messages;
+    const submittedMessages = body?.messages;
     if (body.bookType !== undefined && !isBookType(body.bookType)) return NextResponse.json({ error: "Invalid book type" }, { status: 400 });
     const bookType = normalizeBookType(body.bookType);
 
-    if (!isValidMessageArray(messages)) {
+    if (!isValidMessageArray(submittedMessages)) {
       return NextResponse.json(
         { error: "Invalid demo messages." },
         { status: 400 }
       );
     }
+
+    const messages = submittedMessages.filter((message) => !isDemoNotice(message));
 
     const now = new Date();
     const projectId = uuid();
@@ -101,7 +104,7 @@ export async function POST(req: NextRequest) {
       createdAt: now,
     });
 
-    await db.insert(chatMessages).values(
+    if (messages.length > 0) await db.insert(chatMessages).values(
       messages.map((msg, index) => ({
         id: uuid(),
         sessionId: chatSessionId,

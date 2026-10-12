@@ -220,7 +220,7 @@ export default function CreateDemoClient() {
       if (res.status === 429 && data?.error === "demo_limit") {
         setServerLimitReached(true);
         sessionStorage.setItem("flipwhizz_demo_limit_session", sessionId);
-        setMessages((prev) => [...prev, {
+        if (authStatus !== "authenticated") setMessages((prev) => [...prev, {
           role: "assistant",
           content: "You’ve used the free messages for this demo. Your story idea is saved here—continue below to sign in and keep creating your book.",
         }]);
@@ -423,7 +423,9 @@ export default function CreateDemoClient() {
                     {serverLimitReached ? "Continue your story" : "Your story is taking shape"}
                   </h4>
                   <p className="mt-1 text-sm leading-6 text-slate-600">
-                    Sign in to continue shaping your story and create its illustrated pages and custom cover.
+                    {authStatus === "authenticated"
+                      ? "Continue shaping your story and create its illustrated pages and custom cover."
+                      : "Sign in to continue shaping your story and create its illustrated pages and custom cover."}
                   </p>
 
                   <div className="mt-4 flex flex-wrap gap-3">
