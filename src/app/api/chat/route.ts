@@ -1,3 +1,4 @@
+import { isDemoNotice } from "@/lib/demo-notices";
 import { BOOK_TYPE_TOOL, bookTypeChatContext, bookTypeFromToolBlocks, normalizeBookType, isBookType } from "@/lib/books/bookType";
 //api/chat/route.ts
 
@@ -16,7 +17,7 @@ import {
 } from "@/db/schema";
 import { worlds, worldReaders, worldNarrativeMemory } from "@/db/schema-worlds";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
-import { v4 as uuid } from "uuid";
+import { v4 as uuid, v5 as uuidv5 } from "uuid";
 import type { InferSelectModel } from "drizzle-orm";
 import { withAlerts } from "@/lib/alerts";
 import { withAccess } from "@/lib/authz";
@@ -427,7 +428,9 @@ TONE: Warm, collaborative, genuinely interested. You're building something toget
 
 async function _POST(req: Request) {
   try {
-    const { message, history = [], projectId, worldId, readerId, bookType: requestedBookType } = await req.json();
+    const body = await req.json();
+    const { projectId, worldId, readerId, bookType: requestedBookType, resumeLastMessage } = body;
+    let { message, history = [] } = body;
     if (requestedBookType !== undefined && !isBookType(requestedBookType)) return NextResponse.json({ error: "Invalid book type" }, { status: 400 });
 
     if (!message || !projectId) {
@@ -531,7 +534,20 @@ async function _POST(req: Request) {
       };
     }
 
-    await db.insert(chatMessages).values({
+    let resumedMessageId: string | undefined;
+    if (resumeLastMessage === true) {
+      const saved = (await db.select().from(chatMessages)
+        .where(eq(chatMessages.sessionId, session.id))
+        .orderBy(asc(chatMessages.createdAt)))
+        .filter((m) => !isDemoNotice(m));
+      const last = saved.at(-1);
+      if (!last || last.role !== "user") return new NextResponse(null, { status: 204 });
+      resumedMessageId = last.id;
+      message = last.content;
+      history = saved.slice(0, -1);
+    }
+
+    if (!resumedMessageId) await db.insert(chatMessages).values({
       id: uuid(),
       sessionId: session.id,
       role: "user",
@@ -592,12 +608,12 @@ async function _POST(req: Request) {
     }
 
     await db.insert(chatMessages).values({
-      id: uuid(),
+      id: resumedMessageId ? uuidv5(resumedMessageId, uuidv5.URL) : uuid(),
       sessionId: session.id,
       role: "assistant",
       content: reply,
       createdAt: new Date(),
-    });
+    }).onConflictDoNothing();
 
     return NextResponse.json({
       reply,
