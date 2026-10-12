@@ -1,6 +1,7 @@
 // /src/app/chat/ChatClient.tsx
 
 "use client";
+import { isDemoNotice } from "@/lib/demo-notices";
 import BookTypeSelector from "@/components/books/BookTypeSelector";
 import { useBookTypeDraft } from "@/lib/books/useBookTypeDraft";
 import { isBookType, type BookType } from "@/lib/books/bookType";
@@ -145,7 +146,7 @@ export default function ChatClient() {
           if (!cancelled && isBookType(data?.bookType)) selectBookType(data.bookType);
           if (!cancelled && Array.isArray(data?.messages)) {
             setMessages(
-              data.messages.map((m: ChatMsg) => ({
+              data.messages.filter((m: ChatMsg) => !isDemoNotice(m)).map((m: ChatMsg) => ({
                 role: m.role,
                 content: m.content,
               })),
