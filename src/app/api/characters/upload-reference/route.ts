@@ -26,6 +26,9 @@ async function _POST(req: Request) {
       .update(characters)
       .set({
         referenceImageUrl: imageUrl,
+        portraitImageUrl: null,
+        locked: false,
+        lockedAt: null,
         updatedAt: new Date(),
       })
       .where(eq(characters.id, characterId));

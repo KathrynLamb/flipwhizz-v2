@@ -1,3 +1,4 @@
+import { confirmCast } from '@/lib/characters/confirmCast';
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -13,6 +14,13 @@ async function _POST(
 
   if (!step || typeof step !== "string") {
     return NextResponse.json({ error: "Missing step" }, { status: 400 });
+  }
+
+  if (step === 'characters') {
+    const result = await confirmCast(storyId);
+    return NextResponse.json(result.ok ? result : {
+      error: 'Generate and approve every character appearance before continuing.', missing: result.missing,
+    }, { status: result.ok ? 200 : 409 });
   }
 
   // Get current completedSteps

@@ -2,10 +2,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { generatePortraitFromDescription } from "@/lib/characters/generatePortrait";
+import { hasPortrait } from "@/lib/characters/readiness";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { characterId } = await req.json();
+  const { characterId, portraitImageUrl } = await req.json();
   if (!characterId) {
     return NextResponse.json({ error: "Missing characterId" }, { status: 400 });
   }
@@ -37,27 +37,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (character.locked) {
-    // Idempotent — safe to call twice
-    return NextResponse.json({ ok: true });
+  if (!hasPortrait(character)) {
+    return NextResponse.json({ error: 'Generate an appearance and review it before approving.' }, { status: 409 });
+  }
+  if (portraitImageUrl && portraitImageUrl !== character.portraitImageUrl) {
+    return NextResponse.json({ error: 'The appearance changed. Refresh and review the latest image.' }, { status: 409 });
   }
 
-  // Auto-generate portrait from description if missing
-  if (!character.portraitImageUrl) {
-    console.log(`🖼️ No portrait for character ${characterId} — auto-generating before lock`);
-    try {
-      await generatePortraitFromDescription(characterId);
-    } catch (err) {
-      console.error("❌ Auto portrait generation failed during lock:", err);
-      // Don't block the lock — let it proceed without a portrait
-      // The illustration pipeline's preflight (future) will catch it
-    }
-  }
-
-  await db
+  const approved = await db
     .update(characters)
-    .set({ locked: true, updatedAt: new Date() })
-    .where(eq(characters.id, characterId));
+    .set({ locked: true, lockedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(characters.id, characterId), eq(characters.portraitImageUrl, character.portraitImageUrl!)))
+    .returning({ id: characters.id });
+  if (!approved.length) return NextResponse.json({ error: "Appearance changed. Please review it again." }, { status: 409 });
 
   return NextResponse.json({ ok: true });
 }

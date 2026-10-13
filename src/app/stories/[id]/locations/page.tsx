@@ -1,7 +1,7 @@
+import { isCastReady } from '@/lib/characters/readiness';
 import { notFound, redirect } from "next/navigation";
 import { getStoryForHub } from "@/lib/story/getStoryForHub";
 import LocationsClient from "@/app/stories/[id]/locations/locationsClient";
-import { stepNumberToKey } from "@/lib/storySteps";
 import type { StepKey } from "@/lib/storySteps";
 import { requireStoryOwnerPage } from "@/lib/pageGuards";
 
@@ -18,13 +18,12 @@ export default async function LocationsPage({ params }: Props) {
   if (!data) notFound();
   const { story, locations: dbLocations } = data;
 
-  const completedSteps = story.completedSteps as StepKey[];
+  // Direct navigation must not bypass the same appearance review as the CTA.
+  if (!isCastReady(data.characters)) redirect(`/stories/${storyId}/characters`);
+  const completedSteps = (story.completedSteps as StepKey[]) || [];
 
-  const currentStep: StepKey =
-    story.currentStep != null
-      ? stepNumberToKey(story.currentStep)
-      : "extract"; // safe fallback
-  
+  const currentStep: StepKey = "locations";
+
   const locations = dbLocations.map((l) => ({
     id: l.id,
     name: l.name,

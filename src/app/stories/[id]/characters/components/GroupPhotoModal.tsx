@@ -127,11 +127,13 @@ export default function GroupPhotoModal({
   onComplete,
   onClose,
   onGeneratingStart,
+  onFailure,
 }: {
   storyId: string;
   characters: Character[];
   /** Called after EACH character portrait is done so parent can router.refresh() */
   onComplete: () => void;
+  onFailure?: (characterId: string) => void;
   onClose: () => void;
   /** Called once before generation starts — parent should show banner & can close modal */
   onGeneratingStart?: (characterIds: string[]) => void;
@@ -254,6 +256,7 @@ export default function GroupPhotoModal({
       } catch (err) {
         console.error(`Generation failed for ${characterId}:`, err);
         setStatuses((p) => ({ ...p, [characterId]: 'error' }));
+        onFailure?.(characterId);
       }
     }
 

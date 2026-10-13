@@ -16,12 +16,13 @@ async function _PATCH(
     const body = await req.json();
 
     console.log("Updating character:", characterId);
-    console.log("Payload:", body);
+
 
     const update: Record<string, any> = {};
 
     if (body.name !== undefined) update.name = body.name;
     if (body.description !== undefined) update.description = body.description;
+    if (body.personalityTraits !== undefined) update.personalityTraits = body.personalityTraits;
     if (body.appearance !== undefined) update.appearance = body.appearance;
     if (body.referenceImageUrl !== undefined)
       update.referenceImageUrl = body.referenceImageUrl;
@@ -30,9 +31,16 @@ async function _PATCH(
       return NextResponse.json({ success: true });
     }
 
+    const current = await db.query.characters.findFirst({ where: eq(characters.id, characterId) });
+    if (!current) return NextResponse.json({ error: 'Character not found' }, { status: 404 });
+    const appearanceChanged = ['appearance', 'description', 'referenceImageUrl'].some(
+      key => body[key] !== undefined && body[key] !== current[key as keyof typeof current]
+    );
+    if (appearanceChanged) update.portraitImageUrl = null;
+
     await db
       .update(characters)
-      .set(update)
+      .set({ ...update, locked: false, lockedAt: null, updatedAt: new Date() })
       .where(eq(characters.id, characterId));
 
     return NextResponse.json({ success: true });

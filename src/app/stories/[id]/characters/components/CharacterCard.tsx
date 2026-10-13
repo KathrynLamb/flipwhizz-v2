@@ -1,687 +1,140 @@
-// src/app/stories/[id]/characters/components/CharacterCard.tsx
 'use client';
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "@/lib/firebaseClient";
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '@/lib/firebaseClient';
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Lock,
-  Unlock,
-  Upload,
-  Sparkles,
-  Check,
-  ChevronDown,
-  Loader2,
-  Shirt,
-  Camera,
-  Save,
-  X,
-  Eye,
-  ArrowRight,
-  Pencil,
-  MessageSquare,
-  User,
-  AlertTriangle,
-} from 'lucide-react';
-import PhotoSuggestions from './PhotoSuggestions';
-import { CharacterOutfit } from '@/app/stories/[id]/characters/CharactersClient';
+import { Sparkles, Check, Loader2, Camera, Pencil, RefreshCw, User, ChevronDown } from 'lucide-react';
+import type { Character } from '../CharactersClient';
+import { hasPortrait } from '@/lib/characters/readiness';
 
-/* ------------------------------------------------------------------ */
-/* TYPES                                                               */
-/* ------------------------------------------------------------------ */
-
-type Character = {
-  id: string;
-  name: string;
-  description: string | null;
-  appearance: string | null;
-  personalityTraits: string | null;
-  portraitImageUrl: string | null;
-  referenceImageUrl: string | null;
-  locked: boolean;
-  role?: string | null;
-  age?: string | null;
-  outfits?: CharacterOutfit[];
-  visualDetails?: any;
-};
-
-/* ------------------------------------------------------------------ */
-/* HELPERS                                                             */
-/* ------------------------------------------------------------------ */
-
-const GRADIENTS = [
-  { from: '#C77DFF', to: '#E07ABA' },
-  { from: '#FFB347', to: '#FF8A65' },
-  { from: '#A78BFA', to: '#67E8F9' },
-  { from: '#F472B6', to: '#C084FC' },
-  { from: '#34D399', to: '#60A5FA' },
-  { from: '#FBBF24', to: '#F472B6' },
-];
-
-function formatOutfitKey(key: string): string {
-  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-/* ------------------------------------------------------------------ */
-/* MAIN CARD                                                           */
-/* ------------------------------------------------------------------ */
-
-export default function CharacterCard({
-  character,
-  storyId,
-  index = 0,
-  onUpdate,
-}: {
-  character: Character;
-  storyId: string;
-  index?: number;
-  onUpdate?: () => void;
+export default function CharacterCard({ character, storyId, onUpdate, disabled = false, generating = false,
+  externalError, onBusyChange,
+}: { character: Character; storyId: string; index?: number; onUpdate?: () => void;
+  disabled?: boolean; generating?: boolean; externalError?: string;
+  onBusyChange?: (id: string, busy: boolean) => void;
 }) {
-  const router = useRouter();
-  const grad = GRADIENTS[index % GRADIENTS.length];
-
-  const [locked, setLocked] = useState(character.locked);
-  const [uploading, setUploading] = useState(false);
-  const [validating, setValidating] = useState(false);       // NEW
-  const [drawing, setDrawing] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null); // NEW
-  const [expanded, setExpanded] = useState(false);
+  const [portrait, setPortrait] = useState(character.portraitImageUrl);
+  const [approved, setApproved] = useState(character.locked && hasPortrait(character));
+  const [action, setAction] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [showOutfitChoice, setShowOutfitChoice] = useState(false);
-
-  const [currentImageUrl, setCurrentImageUrl] = useState(
-    character.portraitImageUrl || character.referenceImageUrl
-  );
-
-  // Editable state
-  const [editName, setEditName] = useState(character.name);
-  const [editDescription, setEditDescription] = useState(character.description || '');
-  const [editAppearance, setEditAppearance] = useState(character.appearance || '');
-  const [editTraits, setEditTraits] = useState(character.personalityTraits || '');
-  const [outfitEdits, setOutfitEdits] = useState<Record<string, string>>(
-    Object.fromEntries((character.outfits || []).map((o) => [o.id, o.outfitDescription]))
-  );
-
-  const traits = character.personalityTraits
-    ? character.personalityTraits.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 4)
-    : [];
-
-  const outfits = character.outfits || [];
-
-  const photoAnalysis = (character.visualDetails as any)?.photoAnalysis as {
-    status: 'pending' | 'ready' | 'handled';
-    suggestions?: any;
-    imageUrl?: string;
-  } | null;
-
-  /* ── Actions ── */
-
-  async function toggleLock() {
-    const endpoint = locked ? '/api/characters/unlock' : '/api/characters/lock';
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId: character.id }),
-    });
-    if (res.ok) {
-      setLocked(!locked);
-      onUpdate?.();
-    }
-  }
-
-  // A new photo or a redraw should never be blocked by the lock: unlock
-  // quietly first (the user can lock again once they like the result).
-  async function ensureUnlocked() {
-    if (!locked) return;
-    try {
-      const res = await fetch('/api/characters/unlock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ characterId: character.id }),
-      });
-      if (res.ok) setLocked(false);
-    } catch { /* generation does not depend on the lock */ }
-  }
-
-  async function uploadReference(file: File) {
-    await ensureUnlocked();
-    setUploadError(null);
-    setUploading(true);
-
-    try {
-      // ── HEIC conversion ──
-      let uploadFile = file;
-      if (
-        file.name.toLowerCase().endsWith('.heic') ||
-        file.name.toLowerCase().endsWith('.heif') ||
-        file.type === 'image/heic' ||
-        file.type === 'image/heif'
-      ) {
-        const heic2any = (await import('heic2any')).default;
-        const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-        uploadFile = new File(
-          [blob as Blob],
-          file.name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg'),
-          { type: 'image/jpeg' }
-        );
-      }
-
-      // ── Upload to Firebase ──
-      const path = `story-references/${storyId}/${crypto.randomUUID()}-${uploadFile.name}`;
-      const storageRef = ref(storage, path);
-      await uploadBytes(storageRef, uploadFile, { contentType: uploadFile.type });
-      const publicUrl = await getDownloadURL(storageRef);
-
-      // ── Validate via Claude vision ──
-      setUploading(false);
-      setValidating(true);
-
-      const validationRes = await fetch('/api/characters/validate-reference', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: publicUrl, characterName: character.name }),
-      });
-
-      const validation = validationRes.ok ? await validationRes.json() : { valid: true };
-
-      if (!validation.valid) {
-        setUploadError(
-          validation.message ||
-            (validation.issue === 'group_photo'
-              ? `Looks like a group photo — upload one with just ${character.name}`
-              : 'Photo not suitable — try a clear solo photo')
-        );
-        // Orphaned Firebase upload — will be cleaned up by storage lifecycle rules
-        return;
-      }
-
-      // ── Accepted — save to DB ──
-      const res = await fetch('/api/characters/upload-reference', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ characterId: character.id, imageUrl: publicUrl, storagePath: path }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setCurrentImageUrl(data.url);
-        // Previously the old portrait stayed in use after a new photo, so
-        // the book kept drawing the old look. Redraw from the new photo now.
-        setUploading(false);
-        setValidating(false);
-        await useAiImage('story', true);
-      }
-    } catch (err) {
-      console.error('Photo upload failed:', err);
-      setUploadError('Photo upload failed — please try again');
-    } finally {
-      setUploading(false);
-      setValidating(false);
-    }
-  }
-
+  const [details, setDetails] = useState(false);
+  const [name, setName] = useState(character.name);
+  const [description, setDescription] = useState(character.description ?? '');
+  const [appearance, setAppearance] = useState(character.appearance ?? '');
+  const [traits, setTraits] = useState(character.personalityTraits ?? '');
+  const [outfits, setOutfits] = useState<Record<string, string>>({});
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const actionRunning = useRef(false);
+  const busy = Boolean(action) || disabled || generating;
   useEffect(() => {
-    setEditName(character.name);
-    setEditDescription(character.description || '');
-    setEditAppearance(character.appearance || '');
-    setEditTraits(character.personalityTraits || '');
-    setCurrentImageUrl(character.portraitImageUrl || character.referenceImageUrl);
-    setOutfitEdits(Object.fromEntries((character.outfits || []).map((o) => [o.id, o.outfitDescription])));
-  }, [character]);
+    setPortrait(character.portraitImageUrl);
+    setApproved(character.locked && hasPortrait({ portraitImageUrl: character.portraitImageUrl, locked: character.locked }));
+  }, [character.portraitImageUrl, character.locked]);
 
-  async function useAiImage(outfitMode?: 'story' | 'reference', alreadyUnlocked = false) {
-    if (currentImageUrl && !outfitMode) {
-      setShowOutfitChoice(true);
-      return;
-    }
-    if (!alreadyUnlocked) await ensureUnlocked();
-    setShowOutfitChoice(false);
-    setDrawing(true);
-    try {
-      const res = await fetch('/api/characters/use-ai-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ characterId: character.id, outfitMode }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.url) setCurrentImageUrl(data.url);
-      } else {
-        setUploadError(`Couldn't draw ${character.name} this time. Please try again.`);
+  async function request(url: string, body: unknown, method = 'POST') {
+    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error || 'That didn’t work. Please try again.');
+    return data;
+  }
+  async function run(label: string, work: () => Promise<void>) {
+    if (busy || actionRunning.current) return;
+    actionRunning.current = true; setAction(label); setError(null); onBusyChange?.(character.id, true);
+    try { await work(); onUpdate?.(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Please try again.'); onUpdate?.(); }
+    finally { setAction(null); actionRunning.current = false; onBusyChange?.(character.id, false); }
+  }
+  async function generate() {
+    const data = await request('/api/characters/use-ai-image', { characterId: character.id, outfitMode: 'story' });
+    if (!data?.url) throw new Error('No image was returned. Please try again.');
+    setPortrait(data.url); setApproved(false);
+  }
+  function startEdit() {
+    setName(character.name); setDescription(character.description ?? ''); setAppearance(character.appearance ?? '');
+    setTraits(character.personalityTraits ?? '');
+    setOutfits(Object.fromEntries((character.outfits ?? []).map(o => [o.id, o.outfitDescription])));
+    setEditing(true);
+  }
+  async function saveDetails() {
+    if (!name.trim() || !(appearance.trim() || description.trim())) throw new Error('Add a name and an appearance or description.');
+    await request(`/api/characters/${character.id}`, { name: name.trim(), description, appearance, personalityTraits: traits }, 'PATCH');
+    for (const outfit of character.outfits ?? []) {
+      if (outfits[outfit.id] !== outfit.outfitDescription) {
+        await request(`/api/stories/${storyId}/outfits/${outfit.id}`, { outfitDescription: outfits[outfit.id] }, 'PATCH');
       }
-      onUpdate?.();
-      router.refresh();
-    } catch {
-      setUploadError(`Couldn't draw ${character.name} this time. Please try again.`);
-    } finally {
-      setDrawing(false);
     }
+    setApproved(false); setEditing(false);
   }
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      await fetch(`/api/characters/${character.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: editName,
-          description: editDescription,
-          appearance: editAppearance,
-          personalityTraits: editTraits,
-        }),
-      });
-
-      const outfitPromises = outfits
-        .filter((o) => outfitEdits[o.id] !== o.outfitDescription)
-        .map((o) =>
-          fetch(`/api/stories/${storyId}/outfits/${o.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ outfitDescription: outfitEdits[o.id] }),
-          })
-        );
-      await Promise.all(outfitPromises);
-
-      setEditing(false);
-      onUpdate?.();
-      router.refresh();
-    } finally {
-      setSaving(false);
+  async function upload(file: File) {
+    if (file.size > 15 * 1024 * 1024) throw new Error('Choose a photo smaller than 15 MB.');
+    let uploadFile = file;
+    if (/\.(heic|heif)$/i.test(file.name) || /image\/hei[cf]/.test(file.type)) {
+      const heic2any = (await import('heic2any')).default;
+      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+      uploadFile = new File([Array.isArray(blob) ? blob[0] : blob], 'reference.jpg', { type: 'image/jpeg' });
     }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(uploadFile.type)) throw new Error('Choose a JPG, PNG, WebP or HEIC photo.');
+    const path = `story-references/${storyId}/${crypto.randomUUID()}`;
+    const object = ref(storage, path);
+    await uploadBytes(object, uploadFile, { contentType: uploadFile.type });
+    const imageUrl = await getDownloadURL(object);
+    setAction('Checking photo…');
+    const validation = await request('/api/characters/validate-reference', { imageUrl, characterName: character.name });
+    if (!validation?.valid) throw new Error(validation?.message || 'Please choose a clear photo of one character.');
+    await request('/api/characters/unlock', { characterId: character.id });
+    setApproved(false);
+    await request('/api/characters/upload-reference', { characterId: character.id, imageUrl, storagePath: path });
+    setAction('Creating appearance…');
+    await generate();
   }
-
-  function cancelEdit() {
-    setEditName(character.name);
-    setEditDescription(character.description || '');
-    setEditAppearance(character.appearance || '');
-    setEditTraits(character.personalityTraits || '');
-    setOutfitEdits(Object.fromEntries(outfits.map((o) => [o.id, o.outfitDescription])));
-    setEditing(false);
-  }
-
-  const isBusy = uploading || validating || drawing;
-
-  /* ── Render ── */
-
-  function openUploadPicker() {
-    setUploadError(null);
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/jpeg,image/png,image/webp,image/heic';
-    input.onchange = (e) => {
-      const f = (e.target as HTMLInputElement).files?.[0];
-      if (f) uploadReference(f);
-    };
-    input.click();
-  }
-
-  return (
-    <div
-      className="relative overflow-hidden transition-all duration-300"
-      style={{
-        background: 'white',
-        borderRadius: 20,
-        border: locked ? '2px solid rgba(67,184,156,0.25)' : '1px solid rgba(180,150,210,0.1)',
-        boxShadow: '0 2px 8px rgba(100,60,140,0.04), 0 8px 28px rgba(100,60,140,0.06)',
-      }}
-    >
-      {/* ── Image area ── */}
-      <div className="relative aspect-[4/3] overflow-hidden group">
-        {currentImageUrl ? (
-          <img src={currentImageUrl} alt={character.name}
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center"
-            style={{ background: `linear-gradient(135deg, ${grad.from}, ${grad.to})` }}>
-            <span className="text-7xl font-extrabold text-white/20 select-none">
-              {character.name.charAt(0)}
-            </span>
-          </div>
-        )}
-
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-
-        {/* Lock badge */}
-        {locked && (
-          <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold"
-            style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(8px)', color: '#2FA482' }}>
-            <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#43B89C' }} />
-            Locked
-          </div>
-        )}
-
-        {/* No image yet: show all three paths clearly (matches location cards) */}
-        {!currentImageUrl && !locked && !isBusy && (
-          <div className="absolute inset-x-3 bottom-3 z-10 rounded-2xl overflow-hidden bg-white/95 backdrop-blur"
-            style={{ boxShadow: '0 4px 18px rgba(100,60,140,0.12)' }}>
-            {[
-              { key: 'upload', icon: <Camera className="w-4 h-4" style={{ color: '#8B5CF6' }} />, title: `Upload a photo of ${character.name}`, sub: "Best likeness. AI illustrates it in your book's style", onClick: openUploadPicker },
-              { key: 'ai', icon: <Sparkles className="w-4 h-4" style={{ color: '#D946EF' }} />, title: 'Generate from description', sub: `No photo needed. AI imagines ${character.name}`, onClick: () => useAiImage() },
-              { key: 'edit', icon: <Pencil className="w-4 h-4" style={{ color: '#8B7BA0' }} />, title: 'Edit description first', sub: 'Hair, clothes, age, breed: get the details right', onClick: () => { setExpanded(true); setEditing(true); } },
-            ].map((o, i) => (
-              <button key={o.key} onClick={o.onClick}
-                className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left hover:bg-violet-50 transition-colors"
-                style={{ borderTop: i ? '1px solid rgba(180,150,210,0.15)' : 'none' }}>
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(139,92,246,0.08)' }}>
-                  {o.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-bold leading-tight" style={{ color: '#2D2235' }}>{o.title}</p>
-                  <p className="text-[10.5px] leading-snug mt-0.5" style={{ color: '#8B7BA0' }}>{o.sub}</p>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#B8A9CC' }} />
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Change controls: always visible (not hover-only) and available
-            even when locked. A new photo unlocks and redraws the portrait. */}
-        {currentImageUrl && !isBusy && (
-          <div className="absolute top-3 left-3 z-10 flex gap-1.5">
-            <button onClick={openUploadPicker}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold"
-              style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(8px)', color: '#2D2235', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
-              <Camera className="w-3.5 h-3.5" style={{ color: '#8B5CF6' }} /> New photo
-            </button>
-            <button onClick={() => useAiImage()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-white"
-              style={{ background: 'linear-gradient(135deg, #B05CE6, #D45DA0)', boxShadow: '0 2px 8px rgba(176,92,230,0.3)' }}>
-              <Sparkles className="w-3.5 h-3.5" /> Redraw
-            </button>
-          </div>
-        )}
-
-        {/* Uploading overlay */}
-        {uploading && (
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center gap-2 z-20">
-            <Loader2 className="w-7 h-7 text-white animate-spin" />
-            <span className="text-xs font-semibold text-white">Uploading…</span>
-          </div>
-        )}
-
-        {/* Drawing overlay */}
-        {drawing && (
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center gap-2 z-20">
-            <Loader2 className="w-7 h-7 text-white animate-spin" />
-            <span className="text-xs font-semibold text-white">Drawing {character.name}…</span>
-          </div>
-        )}
-
-        {/* Validating overlay — NEW */}
-        {validating && (
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center gap-2 z-20">
-            <Loader2 className="w-7 h-7 text-white animate-spin" />
-            <span className="text-xs font-semibold text-white">Checking photo…</span>
-          </div>
-        )}
-
-        {/* Outfit choice overlay */}
-        <AnimatePresence>
-          {showOutfitChoice && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="absolute inset-0 z-30 flex items-center justify-center p-4"
-              style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-              onClick={(e) => { if (e.target === e.currentTarget) setShowOutfitChoice(false); }}>
-              <div className="w-full max-w-[260px] p-4 space-y-2.5 bg-white rounded-2xl shadow-2xl"
-                style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}>
-                <p className="text-xs font-bold text-center" style={{ color: '#2D2235' }}>What should they wear?</p>
-                <button onClick={() => useAiImage('story')}
-                  className="w-full py-2 rounded-xl text-[11px] font-bold text-white"
-                  style={{ background: 'linear-gradient(135deg, #B05CE6, #D45DA0)' }}>
-                  <Shirt className="w-3 h-3 inline mr-1" style={{ verticalAlign: '-1px' }} /> Story outfit
-                </button>
-                <button onClick={() => useAiImage('reference')}
-                  className="w-full py-2 rounded-xl text-[11px] font-semibold"
-                  style={{ border: '1px solid rgba(180,150,210,0.2)', color: '#6B5C80', background: 'white' }}>
-                  <Upload className="w-3 h-3 inline mr-1" style={{ verticalAlign: '-1px' }} /> Keep photo outfit
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Name overlay */}
-        <div className="absolute bottom-0 left-0 right-0 px-4 pb-3.5 pt-8">
-          <h3 className="text-lg font-extrabold text-white drop-shadow-lg leading-tight">
-            {character.name}
-          </h3>
-          {character.role && (
-            <p className="text-[11px] text-white/75 mt-0.5"
-              style={{ fontFamily: "'Lora', serif", fontStyle: 'italic' }}>
-              {character.role}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* ── Upload error banner — NEW ── */}
-      <AnimatePresence>
-        {uploadError && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="mx-4 mt-3 flex items-start gap-2 px-3 py-2.5 rounded-xl text-[11px] font-semibold"
-              style={{ background: 'rgba(217,119,6,0.07)', color: '#B45309', border: '1px solid rgba(217,119,6,0.18)' }}>
-              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-              <span className="flex-1 leading-relaxed">{uploadError}</span>
-              <button onClick={() => setUploadError(null)} className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Collapsed body — always visible ── */}
-      <div className="px-4 pt-3.5 pb-1">
-        {/* Traits */}
-        {traits.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-2.5">
-            {traits.map((trait, i) => (
-              <span key={i} className="px-2 py-0.5 rounded-md text-[10px] font-semibold"
-                style={{ background: 'rgba(199,125,255,0.08)', color: '#9B59D0' }}>
-                {trait}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Appearance preview */}
-        {character.appearance && (
-          <p className="text-[12px] leading-relaxed line-clamp-5 mb-2" style={{ color: '#5A4D6B' }}>
-            {character.appearance}
-          </p>
-        )}
-
-        {/* Quick stats row */}
-        <div className="flex items-center gap-3 text-[10px] mb-2" style={{ color: '#A897BD' }}>
-          {character.description && (
-            <span className="flex items-center gap-1">
-              <MessageSquare className="w-3 h-3" /> Description
-            </span>
-          )}
-          {outfits.length > 0 && (
-            <span className="flex items-center gap-1">
-              <Shirt className="w-3 h-3" /> {outfits.length} outfit{outfits.length !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* ── Expand toggle ── */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] font-semibold transition-colors hover:bg-[rgba(180,150,210,0.04)]"
-        style={{ color: '#A897BD', borderTop: '1px solid rgba(180,150,210,0.08)' }}
-      >
-        {expanded ? 'Less detail' : 'See all details'}
-        <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-      </button>
-
-      {/* ── Expanded details ── */}
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-4 space-y-3" style={{ borderTop: '1px solid rgba(180,150,210,0.06)' }}>
-
-              {/* Photo suggestions */}
-              {photoAnalysis && photoAnalysis.status !== 'handled' && (
-                <PhotoSuggestions
-                  characterId={character.id} storyId={storyId} analysis={photoAnalysis}
-                  currentAppearance={character.appearance} currentDescription={character.description}
-                  onAccepted={() => { onUpdate?.(); router.refresh(); }}
-                />
-              )}
-
-              {/* Description */}
-              {(character.description || editing) && (
-                <DetailSection label="Description" icon={<MessageSquare className="w-3 h-3" />}>
-                  {editing ? (
-                    <textarea value={editDescription}
-                      onChange={(e) => setEditDescription(e.target.value)}
-                      rows={3} className="w-full text-[12px] leading-relaxed p-2.5 rounded-lg border outline-none resize-y transition-colors focus:border-[#C77DFF] focus:ring-2 focus:ring-[rgba(199,125,255,0.1)]"
-                      style={{ borderColor: 'rgba(180,150,210,0.15)', background: '#FDFBFF', color: '#2D2235' }}
-                      placeholder="Who is this character?" />
-                  ) : (
-                    <p className="text-[12px] leading-relaxed" style={{ color: '#5A4D6B' }}>
-                      {character.description}
-                    </p>
-                  )}
-                </DetailSection>
-              )}
-
-              {/* Appearance (full) */}
-              {(character.appearance || editing) && (
-                <DetailSection label="Appearance" icon={<Eye className="w-3 h-3" />}>
-                  {editing ? (
-                    <textarea value={editAppearance}
-                      onChange={(e) => setEditAppearance(e.target.value)}
-                      rows={3} className="w-full text-[12px] leading-relaxed p-2.5 rounded-lg border outline-none resize-y transition-colors focus:border-[#C77DFF] focus:ring-2 focus:ring-[rgba(199,125,255,0.1)]"
-                      style={{ borderColor: 'rgba(180,150,210,0.15)', background: '#FDFBFF', color: '#2D2235' }}
-                      placeholder="Physical features, hair, eyes, build..." />
-                  ) : (
-                    <p className="text-[12px] leading-relaxed" style={{ color: '#5A4D6B' }}>
-                      {character.appearance}
-                    </p>
-                  )}
-                </DetailSection>
-              )}
-
-              {/* Outfits */}
-              {outfits.length > 0 && (
-                <DetailSection label={`${outfits.length} outfit${outfits.length !== 1 ? 's' : ''}`} icon={<Shirt className="w-3 h-3" />}>
-                  <div className="space-y-2">
-                    {outfits.map((outfit) => (
-                      <div key={outfit.id} className="rounded-lg p-2.5"
-                        style={{ background: 'rgba(200,180,220,0.05)', border: '1px solid rgba(180,150,210,0.06)' }}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#C77DFF' }} />
-                          <span className="text-[11px] font-bold" style={{ color: '#6B5C80' }}>
-                            {formatOutfitKey(outfit.outfitKey)}
-                          </span>
-                          {outfit.triggerConditions && (
-                            <span className="text-[9px] ml-auto px-1.5 py-0.5 rounded-full"
-                              style={{ background: 'rgba(199,125,255,0.06)', color: '#9B59D0' }}>
-                              {outfit.triggerConditions}
-                            </span>
-                          )}
-                        </div>
-                        {editing ? (
-                          <textarea value={outfitEdits[outfit.id] || ''}
-                            onChange={(e) => setOutfitEdits((prev) => ({ ...prev, [outfit.id]: e.target.value }))}
-                            rows={2} className="w-full text-[11px] leading-relaxed p-2 rounded-md border outline-none resize-y transition-colors focus:border-[#C77DFF]"
-                            style={{ borderColor: 'rgba(180,150,210,0.1)', background: 'white', color: '#2D2235' }} />
-                        ) : (
-                          <p className="text-[11px] leading-relaxed" style={{ color: '#8B7BA0' }}>
-                            {outfit.outfitDescription}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </DetailSection>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Action bar ── */}
-      <div className="px-4 pb-4 flex gap-2">
-        {editing ? (
-          <>
-            <button onClick={cancelEdit}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-semibold transition-all"
-              style={{ border: '1.5px solid rgba(180,150,210,0.15)', background: 'white', color: '#6B5C80' }}>
-              <X className="w-3.5 h-3.5" /> Cancel
-            </button>
-            <button onClick={handleSave} disabled={saving}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold text-white transition-all disabled:opacity-50"
-              style={{ background: 'linear-gradient(135deg, #B05CE6, #D45DA0)', boxShadow: '0 3px 12px rgba(176,92,230,0.2)' }}>
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-          </>
-        ) : (
-          <>
-            {!locked && (
-              <button onClick={() => { setExpanded(true); setEditing(true); }}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-semibold transition-all"
-                style={{ border: '1.5px solid rgba(180,150,210,0.15)', background: 'white', color: '#6B5C80' }}>
-                <Save className="w-3.5 h-3.5" /> Edit
-              </button>
-            )}
-            <button onClick={toggleLock}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold transition-all"
-              style={{
-                background: locked ? '#E8F5F0' : 'linear-gradient(135deg, #B05CE6, #D45DA0)',
-                color: locked ? '#2FA482' : 'white',
-                boxShadow: locked ? 'none' : '0 3px 12px rgba(176,92,230,0.2)',
-                border: locked ? '1.5px solid rgba(67,184,156,0.2)' : 'none',
-              }}>
-              {locked ? <><Unlock className="w-3.5 h-3.5" /> Unlock</> : <><Lock className="w-3.5 h-3.5" /> Lock In</>}
-            </button>
-          </>
-        )}
-      </div>
+  const shownError = error || externalError;
+  const fieldClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-[#7655A3] focus:ring-2 focus:ring-[#7655A3]/15';
+  return <article aria-label={character.name} aria-busy={Boolean(action) || generating} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
+      <div><h2 className="text-xl font-semibold tracking-tight">{character.name}</h2>{character.role && <p className="mt-1 text-xs text-slate-500">{character.role}</p>}</div>
+      <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${approved ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+        {generating || action ? 'In progress' : approved ? 'Approved' : portrait ? 'Review appearance' : 'Needs an appearance'}
+      </span>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* DETAIL SECTION — reusable labeled container                         */
-/* ------------------------------------------------------------------ */
-
-function DetailSection({
-  label,
-  icon,
-  children,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="pt-2.5">
-      <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-bold uppercase"
-        style={{ color: '#A897BD', letterSpacing: '0.08em' }}>
-        <span className="text-[#B8A5D0]">{icon}</span>
-        {label}
-      </div>
-      {children}
+    <div className="px-5">
+      {portrait ? <div className="relative aspect-square overflow-hidden rounded-xl bg-[#F5F3F7]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={portrait} alt={`Generated appearance of ${character.name}`} className="h-full w-full object-contain" />
+        {(generating || action) && <div role="status" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/85 px-4 text-center text-sm font-medium"><Loader2 className="h-6 w-6 animate-spin text-[#7655A3]" />{generating ? 'Creating appearance…' : action}</div>}
+      </div> : <div className="flex min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-[#FAF9FC] px-5 py-6 text-center">
+        {generating || action ? <Loader2 className="h-7 w-7 animate-spin text-[#7655A3]" /> : <User className="h-7 w-7 text-[#9B88CF]" />}
+        <p role="status" className="text-sm text-slate-600">{generating ? 'Creating appearance…' : action || 'Their appearance starts with your description'}</p>
+      </div>}
     </div>
-  );
+    <div className="space-y-4 p-5">
+      {editing ? <div className="space-y-3">
+        <label className="block text-xs font-medium">Name<input value={name} onChange={e => setName(e.target.value)} className={fieldClass} disabled={busy} /></label>
+        <label className="block text-xs font-medium">Appearance<textarea value={appearance} onChange={e => setAppearance(e.target.value)} rows={4} className={fieldClass} disabled={busy} placeholder="Hair, eyes, clothes, size, distinctive features…" /></label>
+        <details><summary className="cursor-pointer py-2 text-sm text-slate-600">Story details and outfits</summary>
+          <label className="mt-2 block text-xs font-medium">Description<textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={fieldClass} disabled={busy} /></label>
+          <label className="mt-2 block text-xs font-medium">Personality<input value={traits} onChange={e => setTraits(e.target.value)} className={fieldClass} disabled={busy} /></label>
+          {(character.outfits ?? []).map(o => <label key={o.id} className="mt-2 block text-xs font-medium">{o.outfitKey.replace(/_/g, ' ')}<textarea value={outfits[o.id] ?? o.outfitDescription} onChange={e => setOutfits(prev => ({ ...prev, [o.id]: e.target.value }))} rows={2} className={fieldClass} disabled={busy} /></label>)}
+        </details>
+        {portrait && <p className="text-xs leading-5 text-slate-500">Changing the appearance, description or outfits means generating a new image to review.</p>}
+        <div className="flex gap-2"><button disabled={busy} onClick={() => void run('Saving details…', saveDetails)} className="min-h-11 flex-1 rounded-xl bg-[#7655A3] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Save details</button><button disabled={busy} onClick={() => setEditing(false)} className="min-h-11 rounded-xl px-3 text-sm text-slate-600">Cancel</button></div>
+      </div> : <>
+        <p className="text-sm leading-6 text-slate-600">{character.appearance || character.description || 'Add a description to help us imagine this character.'}</p>
+        {portrait ? <button disabled={busy || approved} onClick={() => void run('Approving appearance…', async () => {
+          await request('/api/characters/lock', { characterId: character.id, portraitImageUrl: portrait }); setApproved(true);
+        })} className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold disabled:cursor-default ${approved ? 'bg-emerald-50 text-emerald-700' : 'bg-[#7655A3] text-white hover:bg-[#62438F] disabled:opacity-50'}`}><Check className="h-4 w-4" />{approved ? 'Appearance approved' : 'Use this appearance'}</button>
+          : <button disabled={busy} onClick={() => void run('Creating appearance…', generate)} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-4 py-3 text-sm font-semibold text-white hover:bg-[#62438F] disabled:opacity-50"><Sparkles className="h-4 w-4" />Generate appearance</button>}
+        <div className="flex flex-wrap gap-1">
+          <button disabled={busy} onClick={startEdit} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Change details</button>
+          {portrait && <button disabled={busy} onClick={() => void run('Creating another appearance…', generate)} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" />Try another</button>}
+          <button disabled={busy} onClick={() => uploadRef.current?.click()} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Camera className="h-3.5 w-3.5" />Use a photo</button>
+        </div>
+        {(character.outfits?.length || character.personalityTraits || character.description !== character.appearance) ? <div className="border-t border-slate-100 pt-2">
+          <button aria-expanded={details} onClick={() => setDetails(!details)} className="flex min-h-11 w-full items-center justify-between text-xs text-slate-500">Story details{character.outfits?.length ? ` · ${character.outfits.length} outfits` : ''}<ChevronDown className={`h-4 w-4 ${details ? 'rotate-180' : ''}`} /></button>
+          {details && <div className="space-y-2 pb-2 text-xs leading-6 text-slate-600"><p>{character.description}</p><p>{character.personalityTraits}</p>{character.outfits?.map(o => <p key={o.id}><strong>{o.outfitKey.replace(/_/g, ' ')}:</strong> {o.outfitDescription}</p>)}</div>}
+        </div> : null}
+      </>}
+      {shownError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm leading-6 text-rose-700">{shownError}</p>}
+      <input ref={uploadRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" className="hidden" aria-label={`Choose a photo of ${character.name}`} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void run('Uploading photo…', () => upload(file)); }} />
+    </div>
+  </article>;
 }
