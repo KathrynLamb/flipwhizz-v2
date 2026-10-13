@@ -997,6 +997,8 @@ Do not drift into a generic face and do not make it photorealistic.`,
       .update(characters)
       .set({
         portraitImageUrl: imageUrl,
+        locked: false,
+        lockedAt: null,
         appearance: nextAppearance || character.appearance,
         description: nextDescription || character.description,
         // Stamp how this portrait was generated.

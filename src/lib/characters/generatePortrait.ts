@@ -329,7 +329,7 @@ export async function generatePortraitFromDescription(
 
   await db
     .update(characters)
-    .set({ portraitImageUrl: imageUrl, updatedAt: new Date() })
+    .set({ portraitImageUrl: imageUrl, locked: false, lockedAt: null, updatedAt: new Date() })
     .where(eq(characters.id, characterId));
 
   console.log(`✅ Portrait saved for "${character.name}": ${imageUrl}`);

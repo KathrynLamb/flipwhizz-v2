@@ -1,552 +1,151 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  CheckCircle,
-  Lock,
-  Users,
-  ChevronRight,
-  Loader2,
-  Zap,
-  Sparkles,
-  Paintbrush,
-} from 'lucide-react';
+import Link from 'next/link';
+import { ArrowLeft, ArrowRight, Loader2, Sparkles, Users, Check } from 'lucide-react';
 import type { StepKey } from '@/lib/storySteps';
-import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
-import CharactersCard from '@/app/stories/[id]/characters/components/CharacterCard';
-import MobileCharacterStack from '@/app/stories/[id]/characters/components/MobileCharacterStack';
-import GroupPhotoModal from '@/app/stories/[id]/characters/components/GroupPhotoModal';
+import { hasPortrait, isAppearanceApproved, isCastReady } from '@/lib/characters/readiness';
+import CharactersCard from './components/CharacterCard';
+import GroupPhotoModal from './components/GroupPhotoModal';
 
-/* ------------------------------------------------------------------ */
-/* TYPES                                                               */
-/* ------------------------------------------------------------------ */
-
-export type CharacterOutfit = {
-  id: string;
-  outfitKey: string;
-  outfitDescription: string;
-  triggerConditions: string | null;
-};
-
+export type CharacterOutfit = { id: string; outfitKey: string; outfitDescription: string; triggerConditions: string | null };
 export type Character = {
-  id: string;
-  name: string;
-  description: string | null;
-  appearance: string | null;
-  personalityTraits: string | null;
-  portraitImageUrl: string | null;
-  fullBodyImageUrl: string | null;
-  referenceImageUrl: string | null;
-  locked: boolean;
-  role?: string | null;
-  age?: string | null;
-  species?: string | null;
-  breed?: string | null;
-  outfits?: CharacterOutfit[];
-  visualDetails?: Record<string, any> | null;
+  id: string; name: string; description: string | null; appearance: string | null;
+  personalityTraits: string | null; portraitImageUrl: string | null;
+  fullBodyImageUrl?: string | null; referenceImageUrl: string | null; locked: boolean;
+  role?: string | null; age?: string | null; species?: string | null; breed?: string | null;
+  outfits?: CharacterOutfit[]; visualDetails?: Record<string, unknown> | null;
 };
 
-/* ------------------------------------------------------------------ */
-/* FONT LOADER                                                         */
-/* ------------------------------------------------------------------ */
-
-function FontLoader() {
-  return (
-    <link
-      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,600;12..96,700;12..96,800&family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap"
-      rel="stylesheet"
-    />
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* PAGE                                                                */
-/* ------------------------------------------------------------------ */
-
-export default function CharactersClient({
-  storyId,
-  storyTitle = 'Characters',
-  storyConfirmed,
-  characters,
-  currentStep = 'characters',
-  completedSteps = [],
-}: {
-  storyId: string;
-  storyTitle?: string;
-  storyConfirmed: boolean;
-  characters: Character[];
-  currentStep?: StepKey;
-  completedSteps?: StepKey[];
+export default function CharactersClient({ storyId, storyTitle = 'Your story', characters,
+  bookType = 'storybook',
+}: { storyId: string; storyTitle?: string; characters: Character[]; bookType?: string;
+  storyConfirmed?: boolean; currentStep?: StepKey; completedSteps?: StepKey[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const styleChanged = searchParams.get('styleChanged') === 'true';
-
+  const [cast, setCast] = useState(characters);
+  const [busyIds, setBusyIds] = useState<string[]>([]);
+  const [batch, setBatch] = useState(false);
+  const batchRunning = useRef(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [batchDone, setBatchDone] = useState(0);
+  const [batchTotal, setBatchTotal] = useState(0);
+  const [failures, setFailures] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [charactersLocal, setCharactersLocal] = useState(characters);
-  const [isPurchased, setIsPurchased] = useState<boolean | null>(null);
-  const [generatingAvatars, setGeneratingAvatars] = useState(false);
-
-  // Style-change auto-redraw state
-  const [styleRedrawing, setStyleRedrawing] = useState(false);
-  const [styleRedrawTotal, setStyleRedrawTotal] = useState(0);
-  const [styleRedrawDone, setStyleRedrawDone] = useState(0);
-  const styleRedrawFired = useRef(false);
-
-  // Group photo state
   const [showGroupPhoto, setShowGroupPhoto] = useState(false);
-  const [groupPhotoGenerating, setGroupPhotoGenerating] = useState(false);
-  const [groupPhotoRemaining, setGroupPhotoRemaining] = useState(0);
-
-  useEffect(() => {
-    if (!storyId) return;
-    let cancelled = false;
-    async function checkPurchase() {
-      const res = await fetch(`/api/stories/${storyId}/purchase-status`);
-      if (!res.ok) return;
-      const data = await res.json();
-      if (!cancelled) setIsPurchased(data.purchased);
-    }
-    checkPurchase();
-    return () => { cancelled = true; };
-  }, [storyId]);
-
-  useEffect(() => { setCharactersLocal(characters); }, [characters]);
-
-  useEffect(() => {
-    const lock = async () => {
-      try { await (screen.orientation as any)?.lock?.('portrait'); } catch {}
-    };
-    lock();
-    return () => { try { (screen.orientation as any)?.unlock?.(); } catch {} };
+  const [groupRemaining, setGroupRemaining] = useState(0);
+  const [styleReviewed, setStyleReviewed] = useState(false);
+  useEffect(() => { setCast(characters); }, [characters]);
+  const onBusyChange = useCallback((id: string, busy: boolean) => {
+    setBusyIds(prev => busy ? [...new Set([...prev, id])] : prev.filter(v => v !== id));
   }, []);
+  const approved = cast.filter(isAppearanceApproved).length;
+  const missing = cast.filter(c => !hasPortrait(c));
+  const busy = batch || busyIds.length > 0 || groupRemaining > 0 || confirming;
+  const styleChanged = searchParams.get('styleChanged') === 'true' && !styleReviewed;
+  const ready = isCastReady(cast) && !styleChanged;
 
-  /* ── Auto-redraw portraits when coming from style change ── */
-  useEffect(() => {
-    if (!styleChanged) return;
-    if (styleRedrawFired.current) return;
-    if (characters.length === 0) return;
-
-    styleRedrawFired.current = true;
-
-    const lockedChars = characters.filter((c) => c.locked);
-    if (lockedChars.length === 0) return;
-
-    setStyleRedrawing(true);
-    setStyleRedrawTotal(lockedChars.length);
-    setStyleRedrawDone(0);
-
-    // Fire sequentially to avoid hammering Gemini rate limits
-    const redrawAll = async () => {
-      for (const char of lockedChars) {
-        try {
-          await fetch('/api/characters/use-ai-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ characterId: char.id }),
-          });
-        } catch (err) {
-          console.warn(`⚠️ Failed to redraw portrait for ${char.name}:`, err);
-        }
-        setStyleRedrawDone((prev) => prev + 1);
-      }
-      setStyleRedrawing(false);
-      router.refresh();
-    };
-
-    redrawAll();
-  }, [styleChanged, characters]);
-
-  async function generateAIAvatars() {
-    if (!confirm('Generate AI portraits for all characters? This will use AI credits.')) return;
-    setGeneratingAvatars(true);
+  async function generateAppearances(redraw = false) {
+    if (busy || batchRunning.current) return;
+    const targets = redraw ? cast : missing;
+    if (!targets.length) return;
+    batchRunning.current = true;
+    setBatch(true); setBatchDone(0); setBatchTotal(targets.length); setError(null);
+    let failed = 0;
     try {
-      const res = await fetch(`/api/stories/${storyId}/generate-all-avatars`, { method: 'POST' });
-      if (res.ok) router.refresh();
-      else alert('Failed to generate avatars. Please try again.');
-    } catch (err) {
-      console.error(err);
-      alert('Error generating avatars');
+      for (const character of targets) {
+        setActiveId(character.id);
+        setFailures(prev => { const next = { ...prev }; delete next[character.id]; return next; });
+        try {
+          const res = await fetch('/api/characters/use-ai-image', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ characterId: character.id, outfitMode: 'story' }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.url) throw new Error('Could not generate this appearance. Try again.');
+          setCast(prev => prev.map(c => c.id === character.id ? { ...c, portraitImageUrl: data.url, locked: false,
+            appearance: data.updatedAppearance ?? c.appearance, description: data.updatedDescription ?? c.description } : c));
+        } catch {
+          failed++;
+          setFailures(prev => ({ ...prev, [character.id]: `Couldn't generate ${character.name}. Try generating this appearance again.` }));
+        }
+        setBatchDone(n => n + 1);
+      }
+      if (redraw && failed === 0) setStyleReviewed(true);
     } finally {
-      setGeneratingAvatars(false);
+      setActiveId(null); setBatch(false); batchRunning.current = false;
+      router.refresh();
     }
   }
 
-  const lockedCount = charactersLocal.filter((c) => c.locked).length;
-  const totalCount = charactersLocal.length;
-  const allLocked = lockedCount === totalCount && totalCount > 0;
+  async function continueToLocations() {
+    if (!ready || busy) return;
+    setConfirming(true); setError(null);
+    try {
+      const res = await fetch(`/api/stories/${storyId}/confirm-characters`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not save your approvals. Please try again.');
+      router.push(`/stories/${storyId}/locations`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Please try again.');
+      setConfirming(false); router.refresh();
+    }
+  }
 
-  return (
-    <>
-      <FontLoader />
-
-      <div className="min-h-screen relative" style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}>
-
-        <div className="fixed inset-0 -z-10" style={{
-          background: `
-            radial-gradient(ellipse 80% 60% at 20% 10%, rgba(232,190,255,0.3) 0%, transparent 60%),
-            radial-gradient(ellipse 70% 50% at 85% 80%, rgba(255,182,210,0.25) 0%, transparent 55%),
-            radial-gradient(ellipse 50% 40% at 50% 50%, rgba(200,210,255,0.15) 0%, transparent 50%),
-            #F9F5FF
-          `,
-        }}>
-          <div className="absolute inset-0 opacity-50" style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c4b5d4' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-          }} />
+  return <div className="min-h-screen bg-[#FAF9F7] text-slate-800">
+    <header className="border-b border-slate-200/70 bg-white">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link href={`/stories/${storyId}/design`} aria-label="Back to book design" className="rounded-xl p-2 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" /></Link>
+          <div className="min-w-0"><p className="text-xs font-medium text-[#7655A3]">Story studio</p><p className="truncate text-sm font-semibold">{storyTitle}</p></div>
         </div>
-
-        <style jsx global>{`
-          .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-          .scrollbar-hide::-webkit-scrollbar { display: none; }
-          @media (orientation: landscape) and (max-height: 500px) {
-            html { transform: rotate(-90deg); transform-origin: left top; width: 100vh; height: 100vw; overflow-x: hidden; position: absolute; top: 100%; left: 0; }
-          }
-        `}</style>
-
-        <UnifiedStoryHeader
-          storyId={storyId}
-          title={storyTitle}
-          currentStep={currentStep}
-          completedSteps={completedSteps}
-          showProgress={!storyConfirmed && totalCount > 0}
-          progressCurrent={lockedCount}
-          progressTotal={totalCount}
-          showGenerateAll={isPurchased === true && !allLocked && !storyConfirmed}
-          onGenerateAll={generateAIAvatars}
-          isGenerating={generatingAvatars}
-          hasPages
-          storyConfirmed
-        />
-
-        <main className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-
-          {/* ── Style-change redraw banner ── */}
-          <AnimatePresence>
-            {styleRedrawing && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                className="flex items-center gap-3 px-4 py-3.5 rounded-2xl mb-5"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(176,92,230,0.08), rgba(212,93,160,0.06))',
-                  border: '1.5px solid rgba(176,92,230,0.2)',
-                }}
-              >
-                <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'linear-gradient(135deg, #B05CE6, #D45DA0)' }}
-                >
-                  <Paintbrush className="w-4 h-4 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold" style={{ color: '#2D2235' }}>
-                    Redrawing portraits in your new style…
-                  </p>
-                  <p className="text-xs mt-0.5" style={{ color: '#9B59D0' }}>
-                    {styleRedrawDone} of {styleRedrawTotal} done
-                  </p>
-                </div>
-                {/* Progress bar */}
-                <div className="w-24 h-1.5 rounded-full overflow-hidden flex-shrink-0" style={{ background: 'rgba(180,150,210,0.15)' }}>
-                  <motion.div
-                    className="h-full rounded-full"
-                    style={{ background: 'linear-gradient(90deg, #B05CE6, #D45DA0)' }}
-                    animate={{ width: `${styleRedrawTotal > 0 ? (styleRedrawDone / styleRedrawTotal) * 100 : 0}%` }}
-                    transition={{ duration: 0.4 }}
-                  />
-                </div>
-                <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: '#B05CE6' }} />
-              </motion.div>
-            )}
-
-            {/* Done banner — show briefly after redraw completes */}
-            {!styleRedrawing && styleRedrawDone > 0 && styleRedrawDone === styleRedrawTotal && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="flex items-center gap-3 px-4 py-3 rounded-2xl mb-5"
-                style={{
-                  background: 'rgba(67,184,156,0.08)',
-                  border: '1.5px solid rgba(67,184,156,0.2)',
-                }}
-              >
-                <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: '#2FA482' }} />
-                <p className="text-sm font-semibold" style={{ color: '#2D2235' }}>
-                  All portraits redrawn in the new style.
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Intro */}
-          {totalCount > 0 && !storyConfirmed && (
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-6">
-              <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold mb-3"
-                style={{ background: 'rgba(199,125,255,0.1)', color: '#9B59D0' }}>
-                ✨ Auto-extracted from your story
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-extrabold mb-2" style={{ color: '#2D2235', letterSpacing: '-0.03em' }}>
-                Meet the Cast
-              </h2>
-              <p className="text-sm sm:text-base max-w-lg mx-auto leading-relaxed" style={{ color: '#7B6E90' }}>
-                Review each character's details and lock them in — they'll guide the illustrations throughout your book.
-              </p>
-
-              <div className="flex items-center justify-center gap-3 mt-5">
-                <span className="text-xs font-semibold" style={{ color: '#8B7BA0' }}>{lockedCount} of {totalCount} locked</span>
-                <div className="w-40 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(180,150,210,0.15)' }}>
-                  <motion.div className="h-full rounded-full" style={{ background: 'linear-gradient(90deg, #43B89C, #2FA482)' }}
-                    initial={{ width: 0 }} animate={{ width: `${(lockedCount / totalCount) * 100}%` }}
-                    transition={{ duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }} />
-                </div>
-                {allLocked && <span className="text-xs font-bold" style={{ color: '#2FA482' }}>✓ All ready!</span>}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Group photo banner (mobile) */}
-          {storyConfirmed && !groupPhotoGenerating && (
-            <div className="md:hidden mb-4">
-              <button
-                onClick={() => setShowGroupPhoto(true)}
-                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all active:scale-[0.98]"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(199,125,255,0.12), rgba(217,69,144,0.08))',
-                  border: '1.5px solid rgba(199,125,255,0.2)',
-                  fontFamily: "'Bricolage Grotesque', sans-serif",
-                }}
-              >
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'linear-gradient(135deg, #B05CE6, #D94590)' }}>
-                  <Users className="w-4 h-4 text-white" />
-                </div>
-                <div className="text-left flex-1">
-                  <p className="text-sm font-bold" style={{ color: '#2D2235' }}>Everyone in one photo?</p>
-                  <p className="text-xs" style={{ color: '#9B59D0' }}>Tap to match faces from a group shot</p>
-                </div>
-                <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: '#C77DFF' }} />
-              </button>
-            </div>
-          )}
-
-          {/* Group photo generating banner */}
-          {groupPhotoGenerating && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-3 px-4 py-3.5 rounded-2xl mb-4"
-              style={{ background: 'rgba(176,92,230,0.08)', border: '1.5px solid rgba(176,92,230,0.18)' }}
-            >
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: 'linear-gradient(135deg, #B05CE6, #D45DA0)' }}>
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold" style={{ color: '#2D2235' }}>Generating portraits…</p>
-                <p className="text-xs" style={{ color: '#9B59D0' }}>
-                  {groupPhotoRemaining > 0 ? `${groupPhotoRemaining} remaining` : 'Almost done'}
-                </p>
-              </div>
-              <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: '#B05CE6' }} />
-            </motion.div>
-          )}
-
-          {/* Desktop group photo button */}
-          {storyConfirmed && (
-            <div className="hidden md:flex justify-end mb-4">
-              <button
-                onClick={() => setShowGroupPhoto(true)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all active:scale-[0.97]"
-                style={{
-                  background: 'white',
-                  border: '1.5px solid rgba(180,150,210,0.25)',
-                  color: '#6B5C80',
-                  boxShadow: '0 2px 8px rgba(100,60,140,0.06)',
-                  fontFamily: "'Bricolage Grotesque', sans-serif",
-                }}
-              >
-                <Users className="w-4 h-4" style={{ color: '#C77DFF' }} />
-                Use group photo
-              </button>
-            </div>
-          )}
-
-          {/* Mobile Generate All */}
-          {isPurchased && !allLocked && storyConfirmed && (
-            <motion.button
-              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-              onClick={generateAIAvatars} disabled={generatingAvatars}
-              className="md:hidden w-full flex items-center justify-center gap-2.5 px-5 py-3.5 rounded-2xl text-sm font-bold text-white mb-4 active:scale-[0.98] transition-all disabled:opacity-40"
-              style={{ background: 'linear-gradient(135deg, #B05CE6, #D45DA0)', boxShadow: '0 4px 16px rgba(176,92,230,0.25)', border: 'none', fontFamily: 'inherit' }}
-            >
-              {generatingAvatars
-                ? <><Loader2 className="w-5 h-5 animate-spin" /> Generating Portraits…</>
-                : <><Zap className="w-5 h-5" /> Generate All Portraits</>
-              }
-            </motion.button>
-          )}
-
-          {/* Mobile stack */}
-          <div className="md:hidden">
-            {charactersLocal.length > 0
-              ? <MobileCharacterStack storyId={storyId} characters={charactersLocal} onUpdate={() => router.refresh()} />
-              : <EmptyState storyId={storyId} router={router} />
-            }
-          </div>
-
-          {/* Desktop grid */}
-          {charactersLocal.length > 0 && (
-            <AnimatePresence mode="popLayout">
-              <div className="hidden md:grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {charactersLocal.map((char, idx) => (
-                  <motion.div key={char.id} layout
-                    initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                    transition={{ duration: 0.4, delay: idx * 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}>
-                    <CharactersCard character={char} storyId={storyId} index={idx} onUpdate={() => router.refresh()} />
-                  </motion.div>
-                ))}
-              </div>
-            </AnimatePresence>
-          )}
-
-          {charactersLocal.length === 0 && (
-            <div className="hidden md:block"><EmptyState storyId={storyId} router={router} /></div>
-          )}
-
-          {/* Bottom CTA */}
-          <AnimatePresence mode="wait">
-            {!storyConfirmed && charactersLocal.length > 0 && (
-              <motion.div key="cta-lock" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="mt-10">
-                <div className="rounded-[22px] p-7 sm:p-10 text-center relative overflow-hidden"
-                  style={{
-                    background: 'white',
-                    border: allLocked ? '2px solid rgba(67,184,156,0.3)' : '1px solid rgba(180,150,210,0.12)',
-                    boxShadow: allLocked ? '0 4px 24px rgba(67,184,156,0.1)' : '0 2px 8px rgba(100,60,140,0.05)',
-                  }}>
-                  {allLocked ? (
-                    <>
-                      <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }}
-                        transition={{ type: 'spring', stiffness: 200, delay: 0.1 }}
-                        className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5"
-                        style={{ background: 'linear-gradient(135deg, #43B89C, #2FA482)', boxShadow: '0 4px 16px rgba(67,184,156,0.25)' }}>
-                        <CheckCircle className="w-7 h-7 text-white" />
-                      </motion.div>
-                      <h2 className="text-xl sm:text-2xl font-extrabold mb-2" style={{ color: '#2D2235' }}>Ready to Confirm</h2>
-                      <p className="text-sm mb-8 max-w-md mx-auto" style={{ color: '#7B6E90' }}>
-                        All characters are locked. Confirm to ensure visual consistency throughout your story.
-                      </p>
-                      <button disabled={confirming}
-                        onClick={async () => {
-                          setConfirming(true);
-                          await fetch(`/api/stories/${storyId}/confirm-characters`, { method: 'POST' });
-                          await fetch(`/api/stories/${storyId}/complete-step`, {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ step: 'characters' }),
-                          });
-                          router.push(`/stories/${storyId}/locations`);
-                        }}
-                        className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white transition-all disabled:opacity-40 active:scale-[0.98]"
-                        style={{ background: 'linear-gradient(135deg, #43B89C, #2FA482)', boxShadow: '0 6px 24px rgba(67,184,156,0.25)', border: 'none', fontFamily: 'inherit' }}>
-                        {confirming ? <><Loader2 className="w-5 h-5 animate-spin" /> Confirming…</> : <><Lock className="w-5 h-5" /> Confirm Character Cast</>}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(180,150,210,0.1)' }}>
-                        <Lock className="w-6 h-6" style={{ color: '#A897BD' }} />
-                      </div>
-                      <h2 className="text-lg sm:text-xl font-bold mb-2" style={{ color: '#2D2235' }}>Lock All Characters to Continue</h2>
-                      <p className="text-sm max-w-md mx-auto" style={{ color: '#7B6E90' }}>
-                        Review each character's details, then tap <span className="font-semibold" style={{ color: '#2D2235' }}>Lock In</span> on each card.
-                      </p>
-                    </>
-                  )}
-                </div>
-              </motion.div>
-            )}
-
-            {storyConfirmed && (
-              <motion.div key="cta-confirmed" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mt-10">
-                <div className="rounded-[22px] p-7 sm:p-10 text-center relative overflow-hidden"
-                  style={{ background: 'white', border: '2px solid rgba(176,92,230,0.2)', boxShadow: '0 4px 24px rgba(176,92,230,0.08)' }}>
-                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5"
-                    style={{ background: 'linear-gradient(135deg, #B05CE6, #D45DA0)', boxShadow: '0 4px 16px rgba(176,92,230,0.25)' }}>
-                    <CheckCircle className="w-7 h-7 text-white" />
-                  </div>
-                  <h2 className="text-xl sm:text-2xl font-extrabold mb-2" style={{ color: '#2D2235' }}>Character Cast Confirmed</h2>
-                  <p className="text-sm mb-8 max-w-md mx-auto" style={{ color: '#7B6E90' }}>
-                    Your characters are locked in. All illustrations will maintain perfect visual consistency.
-                  </p>
-                  <button
-                    onClick={async () => {
-                      await fetch(`/api/stories/${storyId}/complete-step`, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ step: 'characters' }),
-                      });
-                      router.push(`/stories/${storyId}/locations`);
-                    }}
-                    className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 transition-all shadow-xl shadow-violet-500/25 active:scale-[0.98]">
-                    Continue to Locations
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </main>
+        <Link href="/projects" className="shrink-0 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100">My library</Link>
       </div>
-
-      {showGroupPhoto && (
-        <GroupPhotoModal
-          storyId={storyId}
-          characters={charactersLocal}
-          onGeneratingStart={(charIds) => {
-            setGroupPhotoRemaining(charIds.length);
-            setGroupPhotoGenerating(true);
-            setShowGroupPhoto(false);
-          }}
-          onComplete={() => {
-            setGroupPhotoRemaining((prev) => {
-              const next = Math.max(0, prev - 1);
-              if (next === 0) setGroupPhotoGenerating(false);
-              return next;
-            });
-            router.refresh();
-          }}
-          onClose={() => setShowGroupPhoto(false)}
-        />
-      )}
-    </>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* EMPTY STATE                                                         */
-/* ------------------------------------------------------------------ */
-
-function EmptyState({ storyId, router }: { storyId: string; router: any }) {
-  return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col items-center justify-center py-20 sm:py-32">
-      <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }}
-        transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
-        className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
-        style={{ background: 'rgba(199,125,255,0.1)' }}>
-        <Users className="w-8 h-8" style={{ color: '#C77DFF' }} />
-      </motion.div>
-      <h3 className="text-xl font-bold mb-2" style={{ color: '#2D2235' }}>No Characters Yet</h3>
-      <p className="text-sm text-center max-w-xs mb-8 px-4" style={{ color: '#7B6E90' }}>
-        Characters will appear here after extraction.
-      </p>
-      <button onClick={() => router.push(`/stories/${storyId}/extract`)}
-        className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all active:scale-95"
-        style={{ color: '#6B5C80', background: 'white', border: '1.5px solid rgba(180,150,210,0.2)', fontFamily: 'inherit' }}>
-        Back to Hub
-      </button>
-    </motion.div>
-  );
+    </header>
+    <main className="mx-auto max-w-6xl px-5 pb-32 pt-8 sm:px-8 sm:pt-10">
+      <nav aria-label="Book setup" className="mb-6 flex items-center gap-2 text-xs text-slate-500">
+        <Link href={`/stories/${storyId}/design`} className="hover:underline">Design</Link><span aria-hidden="true">/</span>
+        <span aria-current="step" className="font-semibold text-[#7655A3]">Characters</span><span aria-hidden="true">/</span><span>Locations</span>
+      </nav>
+      <div className="mb-7 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+        <div className="max-w-xl">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Bring your characters to life</h1>
+          <p className="mt-3 text-base leading-7 text-slate-600">Start with their descriptions, generate an appearance, then choose the looks you love. No photos needed.</p>
+          {bookType === 'colouring_storybook' && <p className="mt-2 text-sm leading-6 text-[#7655A3]">These references establish each character’s look. Your book’s inside pages will use outlines for colouring.</p>}
+        </div>
+        <div className="flex shrink-0 flex-col gap-2">
+          <button onClick={() => void generateAppearances()} disabled={busy || missing.length === 0} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-5 py-3 text-sm font-semibold text-white hover:bg-[#62438F] disabled:opacity-50">
+            {batch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {batch ? 'Generating appearances…' : `Generate missing appearances${missing.length ? ` (${missing.length})` : ''}`}
+          </button>
+          <button onClick={() => setShowGroupPhoto(true)} disabled={busy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm text-slate-600 hover:bg-white disabled:opacity-50"><Users className="h-4 w-4" /> Use a group photo instead</button>
+        </div>
+      </div>
+      {styleChanged && <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm"><p>Your book style changed. Regenerate the appearances, then review them in the new style.</p><button disabled={busy} onClick={() => void generateAppearances(true)} className="mt-2 min-h-11 font-semibold underline disabled:opacity-50">Regenerate for this style</button></div>}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 text-sm" role="status" aria-live="polite">
+        <p><span className="font-semibold">{approved} of {cast.length}</span> appearances approved</p>
+        {batch ? <p className="text-[#7655A3]">{batchDone} of {batchTotal} processed · Generating {cast.find(c => c.id === activeId)?.name}</p> : groupRemaining > 0 ? <p>Generating from your photo · {groupRemaining} remaining</p> : <p className="text-slate-500">{missing.length ? `${missing.length} still need an appearance` : 'Review each image before continuing'}</p>}
+      </div>
+      <div className="grid items-start gap-6 md:grid-cols-2 xl:grid-cols-3">
+        {cast.map(character => <CharactersCard key={character.id} character={character} storyId={storyId}
+          disabled={batch || confirming || groupRemaining > 0} generating={activeId === character.id}
+          externalError={failures[character.id]} onBusyChange={onBusyChange}
+          onUpdate={() => { setFailures(prev => { const next = { ...prev }; delete next[character.id]; return next; }); router.refresh(); }} />)}
+      </div>
+      {!cast.length && <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center"><h2 className="text-lg font-semibold">Your cast isn’t ready yet</h2><p className="mt-2 text-sm text-slate-600">Return to your story to prepare its characters.</p><Link href={`/stories/${storyId}/extract`} className="mt-4 inline-block text-[#7655A3] underline">Back to your story</Link></div>}
+    </main>
+    <footer className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur sm:px-8" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
+        <div className="text-sm"><p className="flex items-center gap-2 font-semibold">{ready && <Check className="h-4 w-4 text-emerald-600" />}{ready ? 'Your cast is ready' : `${cast.length - approved} appearances left to approve`}</p><p className="mt-1 text-xs text-slate-500">{ready ? 'Next, choose the places in your story.' : 'Generate an image, then select “Use this appearance”.'}</p>{error && <p role="alert" className="mt-1 text-sm text-rose-700">{error}</p>}</div>
+        <button onClick={() => void continueToLocations()} disabled={!ready || busy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Continue to locations<ArrowRight className="h-4 w-4" /></button>
+      </div>
+    </footer>
+    {showGroupPhoto && <GroupPhotoModal storyId={storyId} characters={cast}
+      onGeneratingStart={ids => { setGroupRemaining(ids.length); }}
+      onFailure={id => { setGroupRemaining(n => Math.max(0, n - 1)); setFailures(prev => ({ ...prev, [id]: 'Could not generate from this photo. Try again on this card.' })); router.refresh(); }}
+      onComplete={() => { setGroupRemaining(n => Math.max(0, n - 1)); router.refresh(); }} onClose={() => setShowGroupPhoto(false)} />}
+  </div>;
 }

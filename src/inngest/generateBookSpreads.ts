@@ -560,20 +560,17 @@ export const generateBookSpreads = inngest.createFunction(
         }
       }
 
-      const totalWithImage =
-        charRecords.filter(
-          (c) => c.portraitImageUrl || c.referenceImageUrl || c.fullBodyImageUrl
-        ).length + missingPortrait.length;
-
-      if (totalWithImage === 0) {
-        throw new Error(
-          "Generate blocked: no character images available after auto-generation attempt"
-        );
+      // Re-read persisted results: attempted generation is not evidence of success.
+      const refreshed = await db.select({ name: characters.name,
+        portraitImageUrl: characters.portraitImageUrl,
+        referenceImageUrl: characters.referenceImageUrl,
+        fullBodyImageUrl: characters.fullBodyImageUrl,
+      }).from(characters).where(inArray(characters.id, Array.from(featuredIds)));
+      const stillMissing = refreshed.filter(c => !c.portraitImageUrl && !c.referenceImageUrl && !c.fullBodyImageUrl);
+      if (stillMissing.length > 0) {
+        throw new Error(`Generate blocked: character images missing for ${stillMissing.map(c => c.name).join(', ')}. Return to Characters and generate their appearances.`);
       }
-
-      console.log(
-        `✅ Portrait preflight: ${totalWithImage}/${charRecords.length} characters have images`
-      );
+      console.log(`✅ Portrait preflight: ${refreshed.length} characters have images`);
 
       return Array.from(featuredIds);
     });

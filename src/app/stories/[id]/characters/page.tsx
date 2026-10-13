@@ -75,7 +75,7 @@ export default async function CharactersPage({ params }: Props) {
     <CharactersClient
       storyId={storyId}
       storyTitle={story.title}
-      storyConfirmed={story.storyConfirmed === true}
+      bookType={story.bookType ?? "storybook"}
       characters={characters}
       currentStep="characters"
       completedSteps={(story.completedSteps as StepKey[]) || []}
