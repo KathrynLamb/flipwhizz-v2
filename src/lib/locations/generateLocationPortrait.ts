@@ -168,7 +168,7 @@ export async function generateLocationPortraitFromDescription(
 
   await db
     .update(locations)
-    .set({ portraitImageUrl: imageUrl, updatedAt: new Date() })
+    .set({ portraitImageUrl: imageUrl, locked: false, lockedAt: null, updatedAt: new Date() })
     .where(eq(locations.id, locationId));
 
   console.log(`✅ Location portrait saved for "${location.name}": ${imageUrl}`);

@@ -44,6 +44,7 @@ export default async function LocationsPage({ params }: Props) {
       storyTitle={story.title}
       storyConfirmed={completedSteps.includes("locations")}
       locations={locations}
+      bookType={story.bookType ?? "storybook"}
       currentStep={currentStep}
       completedSteps={completedSteps}
     />

@@ -159,7 +159,7 @@ function buildStyleBlock(style: {
 
 async function _POST(req: Request) {
   try {
-    const { locationId } = await req.json();
+    const { locationId, mode } = await req.json();
 
     if (!locationId) {
       return NextResponse.json(
@@ -168,6 +168,9 @@ async function _POST(req: Request) {
       );
     }
 
+    if (mode !== undefined && !['description', 'reference'].includes(mode)) {
+      return NextResponse.json({ error: 'Invalid generation mode' }, { status: 400 });
+    }
     // ── 1. Fetch location ─────────────────────────────────────────────────
     const location = await db.query.locations.findFirst({
       where: eq(locations.id, locationId),
@@ -177,6 +180,9 @@ async function _POST(req: Request) {
       return NextResponse.json({ error: "Location not found" }, { status: 404 });
     }
 
+    if (mode === 'reference' && !location.referenceImageUrl) {
+      return NextResponse.json({ error: 'Upload a reference photo first.' }, { status: 400 });
+    }
     // ── 2. Fetch story + FULL style guide ─────────────────────────────────
     // 🔒 Select userNotes (promptBase) NOT summary — summary is UI copy only
     const linkedStory = await db
@@ -236,7 +242,7 @@ REQUIREMENTS:
 - Render in the EXACT art style shown in the STYLE REFERENCE IMAGE above
   Match: pencil/brush technique, line weight, colour temperature, paper texture
 ${
-  location.referenceImageUrl
+  mode !== "description" && location.referenceImageUrl
     ? "- Use the LOCATION REFERENCE IMAGE below for architecture, colours, and spatial layout"
     : ""
 }
@@ -279,9 +285,10 @@ the same book as this image — drawn by the same artist.
     parts.push({ text: textPrompt });
 
     // 3️⃣ Location reference image (spatial/architectural anchor)
-    if (location.referenceImageUrl) {
+    if (mode !== "description" && location.referenceImageUrl) {
       console.log("📷 Attaching location reference image...");
       const locPart = await getImagePart(location.referenceImageUrl);
+      if (!locPart) throw new Error("Could not load your reference photo. Please upload it again.");
       if (locPart) {
         parts.push(locPart);
         parts.push({
@@ -333,7 +340,7 @@ not as a photographic reproduction.
     // ── 9. Save to DB ─────────────────────────────────────────────────────
     await db
       .update(locations)
-      .set({ portraitImageUrl: imageUrl, updatedAt: new Date() })
+      .set({ portraitImageUrl: imageUrl, locked: false, lockedAt: null, updatedAt: new Date() })
       .where(eq(locations.id, locationId));
 
     return NextResponse.json({ ok: true, url: imageUrl });

@@ -2,10 +2,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { locations } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { generateLocationPortraitFromDescription } from "@/lib/locations/generateLocationPortrait";
+import { hasPortrait } from "@/lib/characters/readiness";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { locationId } = await req.json();
+  const { locationId, portraitImageUrl } = await req.json();
   if (!locationId) {
     return NextResponse.json({ error: "Missing locationId" }, { status: 400 });
   }
@@ -24,7 +24,6 @@ export async function POST(req: Request) {
       userId: locations.userId,
       locked: locations.locked,
       portraitImageUrl: locations.portraitImageUrl,
-      referenceImageUrl: locations.referenceImageUrl,
     })
     .from(locations)
     .where(eq(locations.id, locationId))
@@ -38,34 +37,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const newLocked = !location.locked;
-
-  // When locking: auto-generate a portrait if none exists
-  // (reference image takes priority — only generate from description if both are missing)
-  if (newLocked && !location.portraitImageUrl && !location.referenceImageUrl) {
-    try {
-      console.log(
-        `🏞️ No portrait for location ${locationId} — auto-generating from description`
-      );
-      await generateLocationPortraitFromDescription(locationId);
-      console.log(`✅ Auto-generated portrait for location ${locationId}`);
-    } catch (err) {
-      // Log but don't block the lock — illustrator will handle missing location refs gracefully
-      console.error(
-        `⚠️ Failed to auto-generate portrait for location ${locationId}:`,
-        err
-      );
-    }
+  if (!hasPortrait(location)) {
+    return NextResponse.json({ error: 'Generate an scene and review it before approving.' }, { status: 409 });
+  }
+  if (portraitImageUrl && portraitImageUrl !== location.portraitImageUrl) {
+    return NextResponse.json({ error: 'The scene changed. Refresh and review the latest image.' }, { status: 409 });
   }
 
-  await db
+  const approved = await db
     .update(locations)
-    .set({
-      locked: newLocked,
-      lockedAt: newLocked ? new Date() : null,
-      updatedAt: new Date(),
-    })
-    .where(eq(locations.id, locationId));
+    .set({ locked: true, lockedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(locations.id, locationId), eq(locations.portraitImageUrl, location.portraitImageUrl!)))
+    .returning({ id: locations.id });
+  if (!approved.length) return NextResponse.json({ error: "Scene changed. Please review it again." }, { status: 409 });
 
-  return NextResponse.json({ ok: true, locked: newLocked });
+  return NextResponse.json({ ok: true });
 }

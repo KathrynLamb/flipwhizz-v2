@@ -1,52 +1,18 @@
-// src/app/api/stories/[id]/confirm-locations/route.ts
-import { NextResponse } from "next/server";
-import { db } from "@/db";
-import { stories, locations, storyLocations } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
-import { withAccess } from "@/lib/authz";
+import { NextResponse } from 'next/server';
+import { withAccess } from '@/lib/authz';
+import { confirmLocations } from '@/lib/locations/confirmLocations';
 
-async function _POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id: storyId } = await params;
-
-  // 1. Lock all locations linked to this story
-  await db
-    .update(locations)
-    .set({ locked: true, lockedAt: new Date() })
-    .where(
-      // inArray, not eq: a story has several locations, and "= (subquery)"
-      // errors in Postgres when the subquery returns more than one row.
-      inArray(
-        locations.id,
-        db
-          .select({ id: storyLocations.locationId })
-          .from(storyLocations)
-          .where(eq(storyLocations.storyId, storyId))
-      )
-    );
-
-  // 2. Add "locations" to completedSteps
-  const story = await db.query.stories.findFirst({
-    where: eq(stories.id, storyId),
-  });
-
-  if (story) {
-    const currentSteps = (story.completedSteps as string[]) || [];
-
-    if (!currentSteps.includes("locations")) {
-      await db
-        .update(stories)
-        .set({
-          completedSteps: [...currentSteps, "locations"],
-          updatedAt: new Date(),
-        })
-        .where(eq(stories.id, storyId));
-    }
+async function _POST(_req: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  try {
+    const result = await confirmLocations(id);
+    return NextResponse.json(result.ok ? result : {
+      error: 'Generate and approve every location image before continuing.',
+      missing: result.missing,
+    }, { status: result.ok ? 200 : 409 });
+  } catch (error) {
+    console.error('Confirm cast failed', error);
+    return NextResponse.json({ error: 'Could not save your approvals. Please try again.' }, { status: 500 });
   }
-
-  return NextResponse.json({ ok: true });
 }
-
-export const POST = withAccess({ story: { param: "id" } }, _POST);
+export const POST = withAccess({ story: { param: 'id' } }, _POST);

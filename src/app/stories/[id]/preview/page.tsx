@@ -1,12 +1,13 @@
+import { isCastReady } from '@/lib/characters/readiness';
 // app/stories/[id]/preview/page.tsx
 
 import { db } from "@/db";
-import { stories } from "@/db/schema";
+import { stories, locations, storyLocations } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import PreviewPageClient from "./PreviewPageClient";
 import type { StepKey } from "@/lib/storySteps";
-import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
+import { requireStoryOwnerPage } from "@/lib/pageGuards";
 
 export default async function PreviewPage({
   params,
@@ -31,6 +32,11 @@ export default async function PreviewPage({
 
   const story = rows[0];
   if (!story) notFound();
+
+  const scenes = await db.select({ portraitImageUrl: locations.portraitImageUrl, locked: locations.locked })
+    .from(storyLocations).innerJoin(locations, eq(storyLocations.locationId, locations.id))
+    .where(eq(storyLocations.storyId, storyId));
+  if (!isCastReady(scenes)) redirect(`/stories/${storyId}/locations`);
 
   const completedSteps = (story.completedSteps ?? []) as StepKey[];
 
