@@ -7,9 +7,9 @@ import type { Location } from '../locationsClient';
 import { hasPortrait } from '@/lib/characters/readiness';
 
 export default function LocationCard({ location, storyId, onUpdate, disabled = false, generating = false,
-  externalError, onBusyChange,
+  externalError, onBusyChange, bookType,
 }: { location: Location; storyId: string; index?: number; onUpdate?: () => void;
-  disabled?: boolean; generating?: boolean; externalError?: string;
+  disabled?: boolean; generating?: boolean; externalError?: string; bookType?: string;
   onBusyChange?: (id: string, busy: boolean) => void;
 }) {
   const [portrait, setPortrait] = useState(location.portraitImageUrl);
@@ -103,7 +103,7 @@ export default function LocationCard({ location, storyId, onUpdate, disabled = f
           : <button disabled={busy} onClick={() => void run('Creating scene…', () => generate())} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-4 py-3 text-sm font-semibold text-white hover:bg-[#62438F] disabled:opacity-50"><Sparkles className="h-4 w-4" />Generate scene</button>}
         <div className="flex flex-wrap gap-1">
           <button disabled={busy} onClick={startEdit} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Change details</button>
-          {portrait && <button disabled={busy} onClick={() => void run('Creating another scene…', () => generate())} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" />Try another</button>}
+          {portrait && <button disabled={busy} onClick={() => void run('Creating another scene…', () => generate())} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" />{bookType === 'colouring_storybook' ? 'Regenerate as outlines' : 'Try another'}</button>}
           <button disabled={busy} onClick={() => uploadRef.current?.click()} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Camera className="h-3.5 w-3.5" />Use a photo</button>
         </div>
       </>}

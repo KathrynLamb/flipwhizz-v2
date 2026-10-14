@@ -106,7 +106,7 @@ export default function LocationsClient({ storyId, storyTitle = 'Your story', lo
         <div className="max-w-xl">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Set the scene for your story</h1>
           <p className="mt-3 text-base leading-7 text-slate-600">Start with their descriptions, generate an image, then choose the scenes you love. No photos needed.</p>
-          {bookType === 'colouring_storybook' && <p className="mt-2 text-sm leading-6 text-[#7655A3]">These references establish each place’s look. Your book’s inside pages will use outlines for colouring.</p>}
+          {bookType === 'colouring_storybook' && <p className="mt-2 text-sm leading-6 text-[#7655A3]">Your references will use black outlines on white, matching the colouring pages inside your book. Photos are used for identity and shape only.</p>}
         </div>
         <div className="flex shrink-0 flex-col gap-2">
           <button onClick={() => void generateScenes()} disabled={busy || missing.length === 0} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-5 py-3 text-sm font-semibold text-white hover:bg-[#62438F] disabled:opacity-50">
@@ -115,13 +115,17 @@ export default function LocationsClient({ storyId, storyTitle = 'Your story', lo
           </button>
         </div>
       </div>
+      {bookType === 'colouring_storybook' && cast.some(hasPortrait) && <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 text-sm">
+        <p className="text-slate-600">Have coloured references from earlier? Regenerate them as outlines, then approve the new images.</p>
+        <button disabled={busy} onClick={() => void generateScenes(true)} className="mt-2 min-h-11 font-semibold text-[#7655A3] underline disabled:opacity-50">Regenerate all as outlines</button>
+      </div>}
       {styleChanged && <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm"><p>Your book style changed. Regenerate the scenes, then review them in the new style.</p><button disabled={busy} onClick={() => void generateScenes(true)} className="mt-2 min-h-11 font-semibold underline disabled:opacity-50">Regenerate for this style</button></div>}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 text-sm" role="status" aria-live="polite">
         <p><span className="font-semibold">{approved} of {cast.length}</span> scenes approved</p>
         {batch ? <p className="text-[#7655A3]">{batchDone} of {batchTotal} processed · Generating {cast.find(c => c.id === activeId)?.name}</p> : <p className="text-slate-500">{missing.length ? `${missing.length} still need a scene` : 'Review each image before continuing'}</p>}
       </div>
       <div className="grid items-start gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {cast.map(location => <LocationsCard key={location.id} location={location} storyId={storyId}
+        {cast.map(location => <LocationsCard key={location.id} location={location} storyId={storyId} bookType={bookType}
           disabled={batch || confirming} generating={activeId === location.id}
           externalError={failures[location.id]} onBusyChange={onBusyChange}
           onUpdate={() => { setFailures(prev => { const next = { ...prev }; delete next[location.id]; return next; }); router.refresh(); }} />)}

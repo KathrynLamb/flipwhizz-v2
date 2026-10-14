@@ -1,3 +1,4 @@
+import { referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
 // src/lib/characters/generatePortrait.ts
 import { v2 as cloudinary } from "cloudinary";
 import { db } from "@/db";
@@ -90,6 +91,7 @@ export async function getLinkedStory(characterId: string) {
       artStyle: storyStyleGuide.artStyle,
       colorPalette: storyStyleGuide.colorPalette,
       sampleIllustrationUrl: storyStyleGuide.sampleIllustrationUrl,
+      bookType: stories.bookType,
     })
     .from(storyCharacters)
     .innerJoin(stories, eq(storyCharacters.storyId, stories.id))
@@ -292,12 +294,12 @@ export async function generatePortraitFromDescription(
     ? await getDefaultOutfit(linkedStory.storyId, characterId)
     : null;
 
-  const { styleBlock, avoidBlock } = buildStyleBlock(linkedStory ?? {});
+  const { styleBlock, avoidBlock } = referenceStyleForBook(linkedStory?.bookType, buildStyleBlock(linkedStory ?? {}));
 
   const parts: any[] = [];
 
   // Include style reference image if available
-  if (linkedStory?.sampleIllustrationUrl && !linkedStory.sampleIllustrationUrl.startsWith("data:image")) {
+  if (linkedStory?.bookType !== "colouring_storybook" && linkedStory?.sampleIllustrationUrl && !linkedStory.sampleIllustrationUrl.startsWith("data:image")) {
     const stylePart = await getImagePart(linkedStory.sampleIllustrationUrl);
     if (stylePart) {
       parts.push(stylePart);
@@ -317,7 +319,7 @@ export async function generatePortraitFromDescription(
     defaultOutfit,
   });
 
-  parts.push({ text: prompt });
+  parts.push({ text: referencePromptForBook(linkedStory?.bookType, prompt) });
 
   console.log(`🎨 Generating portrait for "${character.name}" (description-only)`);
 

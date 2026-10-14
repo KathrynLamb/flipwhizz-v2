@@ -1,3 +1,4 @@
+import { referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
 // src/lib/locations/generateLocationPortrait.ts
 //
 // Generates and saves an AI portrait for a location from its text description.
@@ -41,6 +42,7 @@ async function getLinkedStoryForLocation(locationId: string) {
       artStyle: storyStyleGuide.artStyle,
       colorPalette: storyStyleGuide.colorPalette,
       sampleIllustrationUrl: storyStyleGuide.sampleIllustrationUrl,
+      bookType: stories.bookType,
     })
     .from(storyLocations)
     .innerJoin(stories, eq(storyLocations.storyId, stories.id))
@@ -122,13 +124,13 @@ export async function generateLocationPortraitFromDescription(
   if (!location) throw new Error(`Location ${locationId} not found`);
 
   const linkedStory = await getLinkedStoryForLocation(locationId);
-  const { styleBlock, avoidBlock } = buildStyleBlock(linkedStory ?? {});
+  const { styleBlock, avoidBlock } = referenceStyleForBook(linkedStory?.bookType, buildStyleBlock(linkedStory ?? {}));
 
   const parts: any[] = [];
 
   // Style reference image first if available
   if (
-    linkedStory?.sampleIllustrationUrl &&
+    linkedStory?.bookType !== "colouring_storybook" && linkedStory?.sampleIllustrationUrl &&
     !linkedStory.sampleIllustrationUrl.startsWith("data:image")
   ) {
     const stylePart = await getImagePart(linkedStory.sampleIllustrationUrl);
@@ -148,7 +150,7 @@ export async function generateLocationPortraitFromDescription(
     avoidBlock,
   });
 
-  parts.push({ text: prompt });
+  parts.push({ text: referencePromptForBook(linkedStory?.bookType, prompt) });
 
   console.log(
     `🏞️ Generating location portrait for "${location.name}" (description-only)`
