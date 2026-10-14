@@ -23,6 +23,7 @@ export async function POST(req: Request) {
       id: locations.id,
       userId: locations.userId,
       locked: locations.locked,
+      description: locations.description,
     })
     .from(locations)
     .where(eq(locations.id, locationId))
@@ -36,17 +37,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (location.locked) {
-    return NextResponse.json(
-      { error: "Location is locked" },
-      { status: 403 }
-    );
+  if (typeof description !== 'string' || !description.trim()) {
+    return NextResponse.json({ error: 'Add a description for this location.' }, { status: 400 });
   }
 
   await db
     .update(locations)
     .set({
-      description,
+      description: description.trim(),
+      ...(description.trim() !== location.description ? { portraitImageUrl: null } : {}),
+      locked: false, lockedAt: null,
       updatedAt: new Date(),
     })
     .where(eq(locations.id, locationId));

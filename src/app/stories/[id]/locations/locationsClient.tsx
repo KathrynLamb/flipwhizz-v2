@@ -1,294 +1,138 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  CheckCircle,
-  Lock,
-  MapPin,
-  ChevronRight,
-  Loader2,
-} from 'lucide-react';
-// import { MobileLocationStack } from '@/app/stories/[id]/locations/components/MobileLocationStack';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { ArrowLeft, ArrowRight, Loader2, Sparkles, Check } from 'lucide-react';
 import type { StepKey } from '@/lib/storySteps';
-import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
-import LocationCard from '@/app/stories/[id]/locations/components/LocationCard';
-import { MobileLocationStack } from '@/app/stories/[id]/locations/components/MobileLocationStack';
+import { hasPortrait, isAppearanceApproved, isCastReady } from '@/lib/characters/readiness';
+import LocationsCard from './components/LocationCard';
 
-/* ------------------------------------------------------------------ */
-/* TYPES                                                               */
-/* ------------------------------------------------------------------ */
-
-type Location = {
-  id: string;
-  name: string;
-  description: string | null;
-  referenceImageUrl: string | null;
-  portraitImageUrl: string | null;
-  locked: boolean;
-  portraitSource?: string | null;
+export type Location = {
+  id: string; name: string; description: string | null;
+  portraitImageUrl: string | null; referenceImageUrl: string | null; locked: boolean;
 };
 
-/* ------------------------------------------------------------------ */
-/* PAGE                                                                */
-/* ------------------------------------------------------------------ */
-
-export default function LocationsClient({
-  storyId,
-  storyTitle,
-  storyConfirmed,
-  locations,
-  currentStep,
-  completedSteps,
-}: {
-  storyId: string;
-  storyTitle: string;
-  storyConfirmed: boolean;
-  locations: Location[];
-  currentStep: StepKey;
-  completedSteps: StepKey[];
+export default function LocationsClient({ storyId, storyTitle = 'Your story', locations,
+  bookType = 'storybook',
+}: { storyId: string; storyTitle?: string; locations: Location[]; bookType?: string;
+  storyConfirmed?: boolean; currentStep?: StepKey; completedSteps?: StepKey[];
 }) {
   const router = useRouter();
-  const [locationsLocal, setLocationsLocal] = useState(locations);
-  const [lockingAll, setLockingAll] = useState(false);
+  const searchParams = useSearchParams();
+  const [cast, setCast] = useState(locations);
+  const [busyIds, setBusyIds] = useState<string[]>([]);
+  const [batch, setBatch] = useState(false);
+  const batchRunning = useRef(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [batchDone, setBatchDone] = useState(0);
+  const [batchTotal, setBatchTotal] = useState(0);
+  const [failures, setFailures] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [styleReviewed, setStyleReviewed] = useState(false);
+  useEffect(() => { setCast(locations); }, [locations]);
+  const onBusyChange = useCallback((id: string, busy: boolean) => {
+    setBusyIds(prev => busy ? [...new Set([...prev, id])] : prev.filter(v => v !== id));
+  }, []);
+  const approved = cast.filter(isAppearanceApproved).length;
+  const missing = cast.filter(c => !hasPortrait(c));
+  const busy = batch || busyIds.length > 0 || confirming;
+  const styleChanged = searchParams.get('styleChanged') === 'true' && !styleReviewed;
+  const ready = isCastReady(cast) && !styleChanged;
 
-  useEffect(() => {
-    setLocationsLocal(locations);
-  }, [locations]);
-
-  const lockedCount = locationsLocal.filter((l) => l.locked).length;
-  const totalCount = locationsLocal.length;
-  const allLocked = lockedCount === totalCount && totalCount > 0;
-
-  /* ── Lock all → confirm → complete step → navigate ── */
-  async function lockConfirmAndContinue() {
-    setLockingAll(true);
+  async function generateScenes(redraw = false) {
+    if (busy || batchRunning.current) return;
+    const targets = redraw ? cast : missing;
+    if (!targets.length) return;
+    batchRunning.current = true;
+    setBatch(true); setBatchDone(0); setBatchTotal(targets.length); setError(null);
+    let failed = 0;
     try {
-      const unlocked = locationsLocal.filter((l) => !l.locked);
-      if (unlocked.length > 0) {
-        await Promise.all(
-          unlocked.map((l) =>
-            fetch('/api/locations/lock', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ locationId: l.id }),
-            })
-          )
-        );
+      for (const location of targets) {
+        setActiveId(location.id);
+        setFailures(prev => { const next = { ...prev }; delete next[location.id]; return next; });
+        try {
+          const res = await fetch('/api/locations/use-ai-image', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locationId: location.id, mode: 'description' }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.url) throw new Error('Could not generate this scene. Try again.');
+          setCast(prev => prev.map(c => c.id === location.id ? { ...c, portraitImageUrl: data.url, locked: false } : c));
+        } catch {
+          failed++;
+          setFailures(prev => ({ ...prev, [location.id]: `Couldn't generate ${location.name}. Try generating this scene again.` }));
+        }
+        setBatchDone(n => n + 1);
       }
-
-      await fetch(`/api/stories/${storyId}/confirm-locations`, { method: 'POST' });
-
-      await fetch(`/api/stories/${storyId}/complete-step`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ step: 'locations' }),
-      });
-
-      router.push(`/stories/${storyId}/preview`);
-    } catch (err) {
-      console.error(err);
-      alert('Failed to confirm locations');
-      setLockingAll(false);
+      if (redraw && failed === 0) setStyleReviewed(true);
+    } finally {
+      setActiveId(null); setBatch(false); batchRunning.current = false;
+      router.refresh();
     }
   }
 
-  /* -------------------------------------------------------- */
-  /* RENDER                                                    */
-  /* -------------------------------------------------------- */
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-white to-stone-50">
-      <style jsx global>{`
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-      `}</style>
+  async function continueToPreview() {
+    if (!ready || busy) return;
+    setConfirming(true); setError(null);
+    try {
+      const res = await fetch(`/api/stories/${storyId}/confirm-locations`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not save your approvals. Please try again.');
+      router.push(`/stories/${storyId}/preview`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Please try again.');
+      setConfirming(false); router.refresh();
+    }
+  }
 
-      {/* HEADER */}
-      <UnifiedStoryHeader
-        storyId={storyId}
-        title={storyTitle}
-        currentStep={currentStep}
-        completedSteps={completedSteps}
-        showProgress={!storyConfirmed && totalCount > 0}
-        progressCurrent={lockedCount}
-        progressTotal={totalCount}
-        hasPages
-        storyConfirmed
-      />
-
-      {/* BODY */}
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-
-        {/* MOBILE: Tinder-style stack */}
-        <div className="md:hidden">
-          {locationsLocal.length > 0 ? (
-            <MobileLocationStack
-              storyId={storyId}
-              locations={locationsLocal}
-              onUpdate={() => router.refresh()}
-              onConfirmAndContinue={lockConfirmAndContinue}
-            />
-          ) : (
-            <MobileEmptyState storyId={storyId} />
-          )}
+  return <div className="min-h-screen bg-[#FAF9F7] text-slate-800">
+    <header className="border-b border-slate-200/70 bg-white">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link href={`/stories/${storyId}/characters`} aria-label="Back to characters" className="rounded-xl p-2 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" /></Link>
+          <div className="min-w-0"><p className="text-xs font-medium text-[#7655A3]">Story studio</p><p className="truncate text-sm font-semibold">{storyTitle}</p></div>
         </div>
-
-        {/* DESKTOP: Grid */}
-        {locationsLocal.length > 0 && (
-          <AnimatePresence mode="popLayout">
-            <div className="hidden md:grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
-              {locationsLocal.map((location, idx) => (
-                <motion.div
-                  key={location.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, y: -10 }}
-                  transition={{ duration: 0.4, delay: idx * 0.05, ease: [0.4, 0, 0.2, 1], layout: { duration: 0.3 } }}
-                >
-                  <LocationCard
-                    location={location}
-                    index={idx}
-                    storyId={storyId}
-                    onLockToggle={(id, locked) => {
-                      setLocationsLocal((prev) =>
-                        prev.map((l) => (l.id === id ? { ...l, locked } : l))
-                      );
-                    }}
-                  />
-                </motion.div>
-              ))}
-            </div>
-          </AnimatePresence>
-        )}
-
-        {/* DESKTOP: Empty state */}
-        {locationsLocal.length === 0 && (
-          <DesktopEmptyState storyId={storyId} />
-        )}
-
-        {/* DESKTOP: Bottom CTA */}
-        <AnimatePresence mode="wait">
-          {!storyConfirmed && locationsLocal.length > 0 && (
-            <motion.div key="cta-lock" className="hidden md:block mt-8 sm:mt-12"
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
-              transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}>
-              <div className={`rounded-3xl p-6 sm:p-8 text-center relative overflow-hidden ${
-                allLocked
-                  ? 'bg-gradient-to-br from-emerald-50 via-green-50 to-transparent border-2 border-emerald-200'
-                  : 'bg-stone-50 border border-stone-200'
-              }`}>
-                {allLocked && (
-                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-100/30 via-transparent to-transparent opacity-50" />
-                )}
-
-                <div className="relative">
-                  {allLocked ? (
-                    <>
-                      <motion.div
-                        initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }}
-                        transition={{ type: 'spring', stiffness: 200, delay: 0.1 }}
-                        className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-emerald-500/25">
-                        <CheckCircle className="w-8 h-8 text-white" />
-                      </motion.div>
-                      <h2 className="text-xl sm:text-2xl font-bold text-stone-900 mb-3">All Locations Locked</h2>
-                      <p className="text-sm sm:text-base text-stone-600 max-w-md mx-auto mb-8">
-                        Your locations are ready. Continue to preview your illustrated story.
-                      </p>
-                      <button disabled={lockingAll} onClick={lockConfirmAndContinue}
-                        className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-emerald-400 to-green-500 hover:from-emerald-500 hover:to-green-600 transition-all disabled:opacity-40 shadow-xl shadow-emerald-500/25 active:scale-[0.98]">
-                        {lockingAll
-                          ? <><Loader2 className="w-5 h-5 animate-spin" /> Confirming…</>
-                          : <>Continue to Preview <ChevronRight className="w-5 h-5" /></>}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-14 h-14 rounded-2xl bg-stone-100 border border-stone-200 flex items-center justify-center mx-auto mb-5">
-                        <Lock className="w-7 h-7 text-stone-400" />
-                      </div>
-                      <h2 className="text-lg sm:text-xl font-bold text-stone-900 mb-3">Lock Locations to Continue</h2>
-                      <p className="text-sm text-stone-600 max-w-md mx-auto mb-6">
-                        Review each location then lock them individually or all at once.
-                      </p>
-                      <button onClick={lockConfirmAndContinue} disabled={lockingAll}
-                        className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40"
-                        style={{ background: 'linear-gradient(135deg, #8B5CF6, #D946EF)', boxShadow: '0 4px 16px rgba(139,92,246,0.25)', border: 'none' }}>
-                        {lockingAll
-                          ? <><Loader2 className="w-4 h-4 animate-spin" /> Locking & Confirming…</>
-                          : <><Lock className="w-4 h-4" /> Lock All & Continue</>}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {storyConfirmed && (
-            <motion.div key="cta-confirmed" className="hidden md:block mt-8 sm:mt-12"
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}>
-              <div className="rounded-3xl p-6 sm:p-8 text-center relative overflow-hidden bg-gradient-to-br from-violet-50 via-fuchsia-50 to-transparent border-2 border-violet-200">
-                <div className="absolute inset-0 bg-gradient-to-br from-violet-100/30 via-transparent to-transparent opacity-50" />
-                <div className="relative">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-violet-500/25">
-                    <CheckCircle className="w-8 h-8 text-white" />
-                  </div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-stone-900 mb-3">Location Set Confirmed</h2>
-                  <p className="text-sm sm:text-base text-stone-600 max-w-md mx-auto mb-8">
-                    Your locations are locked in. All illustrations will maintain perfect visual consistency.
-                  </p>
-                  <button onClick={() => router.push(`/stories/${storyId}/preview`)}
-                    className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 transition-all shadow-xl shadow-violet-500/25 active:scale-[0.98]">
-                    Continue to Preview <ChevronRight className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* EMPTY STATES                                                        */
-/* ------------------------------------------------------------------ */
-
-function MobileEmptyState({ storyId }: { storyId: string }) {
-  return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-      className="flex flex-col items-center justify-center py-20">
-      <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-violet-100 to-fuchsia-100 border border-violet-200 flex items-center justify-center mb-6">
-        <MapPin className="w-10 h-10 text-violet-400" />
+        <Link href="/projects" className="shrink-0 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100">My library</Link>
       </div>
-      <h3 className="text-xl font-bold text-stone-900 mb-2">No Locations Yet</h3>
-      <p className="text-sm text-stone-500 text-center max-w-xs px-4">
-        Locations will appear here after extraction.
-      </p>
-    </motion.div>
-  );
-}
-
-function DesktopEmptyState({ storyId }: { storyId: string }) {
-  const router = useRouter();
-  return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-      className="hidden md:flex flex-col items-center justify-center py-20 sm:py-32">
-      <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-violet-100 to-fuchsia-100 border border-violet-200 flex items-center justify-center mb-6">
-        <MapPin className="w-10 h-10 text-violet-400" />
+    </header>
+    <main className="mx-auto max-w-6xl px-5 pb-32 pt-8 sm:px-8 sm:pt-10">
+      <nav aria-label="Book setup" className="mb-6 flex items-center gap-2 text-xs text-slate-500">
+        <Link href={`/stories/${storyId}/characters`} className="hover:underline">Characters</Link><span aria-hidden="true">/</span>
+        <span aria-current="step" className="font-semibold text-[#7655A3]">Locations</span><span aria-hidden="true">/</span><span>Preview</span>
+      </nav>
+      <div className="mb-7 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+        <div className="max-w-xl">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Set the scene for your story</h1>
+          <p className="mt-3 text-base leading-7 text-slate-600">Start with their descriptions, generate an image, then choose the scenes you love. No photos needed.</p>
+          {bookType === 'colouring_storybook' && <p className="mt-2 text-sm leading-6 text-[#7655A3]">These references establish each place’s look. Your book’s inside pages will use outlines for colouring.</p>}
+        </div>
+        <div className="flex shrink-0 flex-col gap-2">
+          <button onClick={() => void generateScenes()} disabled={busy || missing.length === 0} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-5 py-3 text-sm font-semibold text-white hover:bg-[#62438F] disabled:opacity-50">
+            {batch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {batch ? 'Generating scenes…' : `Generate missing scenes${missing.length ? ` (${missing.length})` : ''}`}
+          </button>
+        </div>
       </div>
-      <h3 className="text-xl font-bold text-stone-900 mb-2">No Locations Yet</h3>
-      <p className="text-sm text-stone-500 text-center max-w-xs mb-8 px-4">
-        Locations will appear here after extraction.
-      </p>
-      <button onClick={() => router.push(`/stories/${storyId}/extract`)}
-        className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 border border-stone-200 transition-all active:scale-95">
-        Back to Hub
-      </button>
-    </motion.div>
-  );
+      {styleChanged && <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm"><p>Your book style changed. Regenerate the scenes, then review them in the new style.</p><button disabled={busy} onClick={() => void generateScenes(true)} className="mt-2 min-h-11 font-semibold underline disabled:opacity-50">Regenerate for this style</button></div>}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 text-sm" role="status" aria-live="polite">
+        <p><span className="font-semibold">{approved} of {cast.length}</span> scenes approved</p>
+        {batch ? <p className="text-[#7655A3]">{batchDone} of {batchTotal} processed · Generating {cast.find(c => c.id === activeId)?.name}</p> : <p className="text-slate-500">{missing.length ? `${missing.length} still need a scene` : 'Review each image before continuing'}</p>}
+      </div>
+      <div className="grid items-start gap-6 md:grid-cols-2 xl:grid-cols-3">
+        {cast.map(location => <LocationsCard key={location.id} location={location} storyId={storyId}
+          disabled={batch || confirming} generating={activeId === location.id}
+          externalError={failures[location.id]} onBusyChange={onBusyChange}
+          onUpdate={() => { setFailures(prev => { const next = { ...prev }; delete next[location.id]; return next; }); router.refresh(); }} />)}
+      </div>
+      {!cast.length && <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center"><h2 className="text-lg font-semibold">Your locations aren’t ready yet</h2><p className="mt-2 text-sm text-slate-600">Return to your story to prepare its locations.</p><Link href={`/stories/${storyId}/extract`} className="mt-4 inline-block text-[#7655A3] underline">Back to your story</Link></div>}
+    </main>
+    <footer className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur sm:px-8" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
+        <div className="text-sm"><p className="flex items-center gap-2 font-semibold">{ready && <Check className="h-4 w-4 text-emerald-600" />}{ready ? 'Your locations are ready' : `${cast.length - approved} scenes left to approve`}</p><p className="mt-1 text-xs text-slate-500">{ready ? 'Next, preview your story.' : 'Generate an image, then select “Use this scene”.'}</p>{error && <p role="alert" className="mt-1 text-sm text-rose-700">{error}</p>}</div>
+        <button onClick={() => void continueToPreview()} disabled={!ready || busy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Continue to preview<ArrowRight className="h-4 w-4" /></button>
+      </div>
+    </footer>
+  </div>;
 }

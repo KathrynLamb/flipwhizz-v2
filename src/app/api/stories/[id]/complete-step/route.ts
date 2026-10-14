@@ -1,3 +1,4 @@
+import { confirmLocations } from '@/lib/locations/confirmLocations';
 import { confirmCast } from '@/lib/characters/confirmCast';
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
@@ -20,6 +21,13 @@ async function _POST(
     const result = await confirmCast(storyId);
     return NextResponse.json(result.ok ? result : {
       error: 'Generate and approve every character appearance before continuing.', missing: result.missing,
+    }, { status: result.ok ? 200 : 409 });
+  }
+
+  if (step === 'locations') {
+    const result = await confirmLocations(storyId);
+    return NextResponse.json(result.ok ? result : {
+      error: 'Generate and approve every location image before continuing.', missing: result.missing,
     }, { status: result.ok ? 200 : 409 });
   }
 
