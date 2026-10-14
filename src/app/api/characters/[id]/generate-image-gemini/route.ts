@@ -1,3 +1,5 @@
+import { getLinkedStory } from '@/lib/characters/generatePortrait';
+import { referencePromptForBook } from '@/lib/books/referenceStyle';
 import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { db } from "@/db";
@@ -115,6 +117,9 @@ Description: ${character.description ?? ""}
 `.trim(),
     });
 
+    const linkedStory = await getLinkedStory(id);
+    if (linkedStory?.bookType === 'colouring_storybook') parts.push({ text: referencePromptForBook(linkedStory.bookType, '') });
+
     /* ---------------- Generate ---------------- */
 
     const response = await client.models.generateContent({
@@ -139,7 +144,7 @@ Description: ${character.description ?? ""}
 
     await db
       .update(characters)
-      .set({ portraitImageUrl: imageUrl })
+      .set({ portraitImageUrl: imageUrl, locked: false, lockedAt: null, updatedAt: new Date() })
       .where(eq(characters.id, id));
 
     return NextResponse.json({ imageUrl });

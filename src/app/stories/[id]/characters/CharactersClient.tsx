@@ -114,7 +114,7 @@ export default function CharactersClient({ storyId, storyTitle = 'Your story', c
         <div className="max-w-xl">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Bring your characters to life</h1>
           <p className="mt-3 text-base leading-7 text-slate-600">Start with their descriptions, generate an appearance, then choose the looks you love. No photos needed.</p>
-          {bookType === 'colouring_storybook' && <p className="mt-2 text-sm leading-6 text-[#7655A3]">These references establish each character’s look. Your book’s inside pages will use outlines for colouring.</p>}
+          {bookType === 'colouring_storybook' && <p className="mt-2 text-sm leading-6 text-[#7655A3]">Your references will use black outlines on white, matching the colouring pages inside your book. Photos are used for identity and shape only.</p>}
         </div>
         <div className="flex shrink-0 flex-col gap-2">
           <button onClick={() => void generateAppearances()} disabled={busy || missing.length === 0} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-5 py-3 text-sm font-semibold text-white hover:bg-[#62438F] disabled:opacity-50">
@@ -124,13 +124,17 @@ export default function CharactersClient({ storyId, storyTitle = 'Your story', c
           <button onClick={() => setShowGroupPhoto(true)} disabled={busy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm text-slate-600 hover:bg-white disabled:opacity-50"><Users className="h-4 w-4" /> Use a group photo instead</button>
         </div>
       </div>
+      {bookType === 'colouring_storybook' && cast.some(hasPortrait) && <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 text-sm">
+        <p className="text-slate-600">Have coloured references from earlier? Regenerate them as outlines, then approve the new images.</p>
+        <button disabled={busy} onClick={() => void generateAppearances(true)} className="mt-2 min-h-11 font-semibold text-[#7655A3] underline disabled:opacity-50">Regenerate all as outlines</button>
+      </div>}
       {styleChanged && <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm"><p>Your book style changed. Regenerate the appearances, then review them in the new style.</p><button disabled={busy} onClick={() => void generateAppearances(true)} className="mt-2 min-h-11 font-semibold underline disabled:opacity-50">Regenerate for this style</button></div>}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 text-sm" role="status" aria-live="polite">
         <p><span className="font-semibold">{approved} of {cast.length}</span> appearances approved</p>
         {batch ? <p className="text-[#7655A3]">{batchDone} of {batchTotal} processed · Generating {cast.find(c => c.id === activeId)?.name}</p> : groupRemaining > 0 ? <p>Generating from your photo · {groupRemaining} remaining</p> : <p className="text-slate-500">{missing.length ? `${missing.length} still need an appearance` : 'Review each image before continuing'}</p>}
       </div>
       <div className="grid items-start gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {cast.map(character => <CharactersCard key={character.id} character={character} storyId={storyId}
+        {cast.map(character => <CharactersCard key={character.id} character={character} storyId={storyId} bookType={bookType}
           disabled={batch || confirming || groupRemaining > 0} generating={activeId === character.id}
           externalError={failures[character.id]} onBusyChange={onBusyChange}
           onUpdate={() => { setFailures(prev => { const next = { ...prev }; delete next[character.id]; return next; }); router.refresh(); }} />)}

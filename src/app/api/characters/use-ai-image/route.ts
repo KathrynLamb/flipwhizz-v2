@@ -1,3 +1,4 @@
+import { referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
 // src/app/api/characters/use-ai-image/route.ts
 import { NextResponse } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
@@ -67,6 +68,7 @@ type LinkedStory = {
   artStyle: string | null;
   colorPalette: unknown;
   sampleIllustrationUrl: string | null;
+  bookType: string | null;
 } | null;
 
 /* ------------------------------------------------------------------ */
@@ -207,6 +209,7 @@ async function getLinkedStory(characterId: string): Promise<LinkedStory> {
       artStyle: storyStyleGuide.artStyle,
       colorPalette: storyStyleGuide.colorPalette,
       sampleIllustrationUrl: storyStyleGuide.sampleIllustrationUrl,
+      bookType: stories.bookType,
     })
     .from(storyCharacters)
     .innerJoin(stories, eq(storyCharacters.storyId, stories.id))
@@ -774,7 +777,7 @@ async function _POST(req: Request) {
       ? await getDefaultOutfit(linkedStory.storyId, characterId)
       : null;
 
-    const { styleBlock, avoidBlock } = buildStyleBlock(linkedStory ?? {});
+    const { styleBlock, avoidBlock } = referenceStyleForBook(linkedStory?.bookType, buildStyleBlock(linkedStory ?? {}));
     const hasReference = !!character.referenceImageUrl;
     const useStoryOutfit = !hasReference || outfitMode === "story" || outfitMode === undefined;
 
@@ -902,7 +905,7 @@ async function _POST(req: Request) {
     const parts: any[] = [];
 
     if (
-      linkedStory?.sampleIllustrationUrl &&
+      linkedStory?.bookType !== "colouring_storybook" && linkedStory?.sampleIllustrationUrl &&
       !linkedStory.sampleIllustrationUrl.startsWith("data:image")
     ) {
       const stylePart = await getImagePart(linkedStory.sampleIllustrationUrl);
@@ -935,7 +938,7 @@ Do not drift into a generic face and do not make it photorealistic.`,
       console.log("🚫 Skipping direct reference image attachment due to public-figure / branded-character detection");
     }
 
-    parts.push({ text: prompt });
+    parts.push({ text: referencePromptForBook(linkedStory?.bookType, prompt) });
 
     console.log(
       "📦 Parts sent to Gemini:",
@@ -950,7 +953,7 @@ Do not drift into a generic face and do not make it photorealistic.`,
 
     const generation = await generatePortrait({
       parts,
-      fallbackTextPrompt: referenceImagePart ? textOnlyFallbackPrompt : undefined,
+      fallbackTextPrompt: referenceImagePart ? referencePromptForBook(linkedStory?.bookType, textOnlyFallbackPrompt) : undefined,
     });
 
     if (!generation.image) {

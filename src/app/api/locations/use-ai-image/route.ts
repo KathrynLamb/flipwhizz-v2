@@ -1,3 +1,4 @@
+import { referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
@@ -194,17 +195,18 @@ async function _POST(req: Request) {
         colorPalette:          storyStyleGuide.colorPalette,
         // visual anchor — the actual style reference image
         sampleIllustrationUrl: storyStyleGuide.sampleIllustrationUrl,
+        bookType: stories.bookType,
       })
       .from(storyLocations)
       .innerJoin(stories, eq(storyLocations.storyId, stories.id))
-      .innerJoin(storyStyleGuide, eq(stories.id, storyStyleGuide.storyId))
+      .leftJoin(storyStyleGuide, eq(stories.id, storyStyleGuide.storyId))
       .where(eq(storyLocations.locationId, locationId))
       .orderBy(desc(stories.updatedAt))
       .limit(1)
       .then((rows) => rows[0]);
 
     // ── 3. Resolve style ──────────────────────────────────────────────────
-    const { styleBlock, avoidBlock } = buildStyleBlock(linkedStory ?? {});
+    const { styleBlock, avoidBlock } = referenceStyleForBook(linkedStory?.bookType, buildStyleBlock(linkedStory ?? {}));
 
     // ── 4. Build visual description ───────────────────────────────────────
     const visualDesc = [
@@ -260,7 +262,7 @@ ${
 
     // 1️⃣ Style reference image
     if (
-      linkedStory?.sampleIllustrationUrl &&
+      linkedStory?.bookType !== "colouring_storybook" && linkedStory?.sampleIllustrationUrl &&
       !linkedStory.sampleIllustrationUrl.startsWith("data:image")
     ) {
       const stylePart = await getImagePart(linkedStory.sampleIllustrationUrl);
@@ -282,7 +284,7 @@ the same book as this image — drawn by the same artist.
     }
 
     // 2️⃣ Main prompt
-    parts.push({ text: textPrompt });
+    parts.push({ text: referencePromptForBook(linkedStory?.bookType, textPrompt) });
 
     // 3️⃣ Location reference image (spatial/architectural anchor)
     if (mode !== "description" && location.referenceImageUrl) {
@@ -313,6 +315,8 @@ not as a photographic reproduction.
           : `image/${p.inlineData?.mimeType}`,
       }))
     );
+
+    if (linkedStory?.bookType === 'colouring_storybook') parts.push({ text: referencePromptForBook(linkedStory.bookType, '') });
 
     // ── 7. Generate ───────────────────────────────────────────────────────
     const response = await gemini.models.generateContent({
