@@ -10,7 +10,8 @@ export type ProofQuote = {
 };
 export function requireProofConfiguration() {
   if (process.env.LULU_ENVIRONMENT !== 'production') throw new Error('Set LULU_ENVIRONMENT=production and use production Lulu credentials.');
-  if (!process.env.LULU_CLIENT_KEY || !process.env.LULU_CLIENT_SECRET || !process.env.LULU_CONTACT_EMAIL) throw new Error('Configure the production Lulu key, secret and LULU_CONTACT_EMAIL, then redeploy.');
+  const missing = ['LULU_CLIENT_KEY', 'LULU_CLIENT_SECRET', 'LULU_CONTACT_EMAIL'].filter(key => !process.env[key]?.trim());
+  if (missing.length) throw new Error(`Missing in this running deployment: ${missing.join(', ')}. Add these exact names to flipwhizz-v2 → Production in Vercel, then redeploy.`);
   colouringPodPackageId();
   if (!process.env.NEXTAUTH_SECRET) throw new Error('NEXTAUTH_SECRET is required to secure proof quotes.');
 }
