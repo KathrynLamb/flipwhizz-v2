@@ -44,7 +44,7 @@ export default function LuluTestClient({ environment, configured }: { environmen
     {error && <p role="alert" className="whitespace-pre-wrap text-rose-300">{error}</p>}
     {files && <Card title="Exported files"><p className="mb-3 break-all text-sm">{files.pageCount} interior pages · {files.podPackageId}</p><div className="flex gap-5"><a className="text-violet-300 underline" href={files.interiorUrl} target="_blank" rel="noreferrer">Open interior PDF</a><a className="text-violet-300 underline" href={files.coverUrl} target="_blank" rel="noreferrer">Open cover PDF</a></div></Card>}
     {validations.map(validation => <Card key={validation.kind} title={`${validation.kind === 'interior' ? 'Interior' : 'Cover'} validation`}>
-      <p className="mb-3 text-sm">Status: {validation.result?.status ?? 'Request failed'}</p>
+      <p className="mb-3 text-sm">Status: {validation.result?.status ?? (validation.error ? 'Request failed' : 'Submitted — awaiting status')}</p>
       {validation.error && <p role="alert" className="mb-3 text-rose-300">{validation.error}</p>}
       {validation.result?.errors != null && <pre className="mb-3 whitespace-pre-wrap break-words text-xs">{JSON.stringify(validation.result.errors, null, 2)}</pre>}
       {validation.result?.id && <button className={button} disabled={busy} onClick={() => void run('status', validation)}>Refresh {validation.kind} result</button>}
