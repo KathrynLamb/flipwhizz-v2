@@ -1,3 +1,4 @@
+import type { ColouringBinding } from "./client";
 import { PDFDocument } from "pdf-lib";
 import sharp from "sharp";
 
@@ -42,13 +43,16 @@ export async function buildColouringInterior(input: { title: string; cover: Buff
   for (const page of pdf.getPages()) page.setTrimBox(BLEED_PT, BLEED_PT, TRIM_PT, TRIM_PT);
   return { buffer: Buffer.from(await pdf.save()), pageCount: count };
 }
-export async function buildColouringCover(cover: Buffer, dimensions: { width: number; height: number }) {
+export async function buildColouringCover(cover: Buffer, dimensions: { width: number; height: number }, binding: ColouringBinding = "PB") {
   const { width, height } = dimensions;
-  const spine = width - 2 * TRIM_PT - 2 * BLEED_PT;
+  const measuredSpine = width - 2 * TRIM_PT - 2 * BLEED_PT;
+  if (binding === "CO" && Math.abs(measuredSpine) > 0.1) throw new Error("Unexpected Lulu coil cover dimensions: coil-bound covers must have no spine");
+  const spine = binding === "CO" ? 0 : measuredSpine;
   if (!Number.isFinite(width) || !Number.isFinite(height) || spine < 0 || spine > 144 || Math.abs(height - PAGE_PT) > 1) throw new Error("Unexpected Lulu cover dimensions");
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([width, height]);
-  // White spine; existing cover halves are inset so existing text is never cut at trim.
+  // Back on the left, front on the right. Coil covers have no spine.
+  // Half-inch insets inside trim also keep artwork clear of the coil punch area.
   await drawContained(pdf, await halfImage(cover, "left"), page, BLEED_PT + SAFE_PT, BLEED_PT + SAFE_PT, TRIM_PT - 2 * SAFE_PT, TRIM_PT - 2 * SAFE_PT);
   await drawContained(pdf, await halfImage(cover, "right"), page, BLEED_PT + TRIM_PT + spine + SAFE_PT, BLEED_PT + SAFE_PT, TRIM_PT - 2 * SAFE_PT, TRIM_PT - 2 * SAFE_PT);
   return Buffer.from(await pdf.save());

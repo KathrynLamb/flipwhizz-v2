@@ -48,14 +48,24 @@ export function colouringPurchaseError(bookType: string, productType: string): s
   if (productType === "gift") return "Colouring storybooks are available as a digital book or paperback. Choose one of those formats.";
   return luluPrintEnabled() ? null : "Printed colouring storybooks are not available yet. You can choose the digital edition to print at home.";
 }
-// The first supported print configuration is 8.5-inch square, B&W, uncoated white paperback.
-// Require an explicit SKU copied from Lulu's calculator, rather than inventing one.
+export type ColouringBinding = "PB" | "CO";
+
+// 8.5-inch square B&W, 60# uncoated white; retain the exact configured Lulu ID.
+export function colouringPackage(id: string) {
+  const match = /^0850X0850BW(?:STD|PRE)(PB|CO)060UW\d{3}[MG]XX$/.exec(id.replaceAll(".", ""));
+  if (!match) throw new Error("This exporter supports only 8.5-inch square B&W perfect-bound or coil-bound paperback on 60# uncoated white paper. Check the Lulu package ID.");
+  const binding = match[1] as ColouringBinding;
+  return { id, binding, maxPages: binding === "CO" ? 470 : 800 };
+}
 export function colouringPodPackageId() {
   const id = process.env.LULU_COLOURING_POD_PACKAGE_ID;
   if (!id) throw new Error("Select and configure a Lulu colouring paperback in LULU_COLOURING_POD_PACKAGE_ID");
-  const compact = id.replaceAll(".", "");
-  if (!/^0850X0850BW(?:STD|PRE)PB060UW\d{3}[MG]XX$/.test(compact)) {
-    throw new Error("This exporter supports only 8.5-inch square B&W paperback on 60# uncoated white paper. Check the Lulu package ID.");
+  return colouringPackage(id).id;
+}
+export function validateColouringPageCount(id: string, pageCount: number) {
+  const product = colouringPackage(id);
+  const minimum = product.binding === "CO" ? 2 : 32;
+  if (!Number.isInteger(pageCount) || pageCount < minimum || pageCount > product.maxPages || pageCount % 2 !== 0) {
+    throw new Error(`This Lulu ${product.binding === "CO" ? "coil-bound" : "perfect-bound"} product requires an even interior page count from ${minimum} to ${product.maxPages}.`);
   }
-  return id;
 }

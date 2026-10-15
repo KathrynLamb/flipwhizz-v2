@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { stories, storyPages } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { uploadPdfToR2 } from "@/lib/uploadPdfToR2";
-import { luluClient, colouringPodPackageId } from "./client";
+import { luluClient, colouringPodPackageId, colouringPackage, validateColouringPageCount } from "./client";
 import { buildColouringInterior, buildColouringCover } from "./pdf";
 import { randomUUID } from "node:crypto";
 
@@ -17,20 +17,22 @@ export async function buildColouringFiles(storyId: string, print: boolean, save 
   if (!story.coverSpreadUrl) throw new Error("Create your cover first");
   const pages = await db.query.storyPages.findMany({ where: eq(storyPages.storyId, storyId), orderBy: asc(storyPages.pageNumber) });
   if (!pages.length || pages.some(p => !p.imageUrl)) throw new Error("Finish all illustrations before exporting");
+  const configuredPackageId = print ? colouringPodPackageId() : null;
   const cover = await image(story.coverSpreadUrl);
   const spreads = [];
   // Bounded downloading avoids a burst of large images at export time.
   for (let i = 0; i < pages.length; i += 2) spreads.push({ image: await image(pages[i].imageUrl!), hasRightPage: Boolean(pages[i + 1]) });
   const interior = await buildColouringInterior({ title: story.title, cover, spreads, titleInColour: !print });
+  if (configuredPackageId) validateColouringPageCount(configuredPackageId, interior.pageCount);
   const version = randomUUID();
   const interiorUrl = await uploadPdfToR2(interior.buffer, `${storyId}-colouring-interior-${version}`);
   let coverUrl: string | null = null;
   let podPackageId: string | null = null;
   if (print) {
-    podPackageId = colouringPodPackageId();
+    podPackageId = configuredPackageId!;
     const dimensions = await luluClient().coverDimensions(podPackageId, interior.pageCount);
     if (dimensions.unit !== "pt") throw new Error("Lulu returned unexpected cover units");
-    const coverPdf = await buildColouringCover(cover, { width: Number(dimensions.width), height: Number(dimensions.height) });
+    const coverPdf = await buildColouringCover(cover, { width: Number(dimensions.width), height: Number(dimensions.height) }, colouringPackage(podPackageId).binding);
     coverUrl = await uploadPdfToR2(coverPdf, `${storyId}-colouring-cover-${version}`);
     if (save) await db.update(stories).set({ luluInteriorPdfUrl: interiorUrl, luluCoverPdfUrl: coverUrl, luluPodPackageId: podPackageId, luluPageCount: interior.pageCount }).where(eq(stories.id, storyId));
   } else if (save) {
