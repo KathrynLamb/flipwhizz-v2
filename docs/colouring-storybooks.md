@@ -8,7 +8,7 @@ The shared creation flow supports `storybook` and `colouring_storybook`. This is
 - Demo choices survive sign-in in session storage and are saved on the project and generated story. Project selector changes are saved immediately.
 - Claude can call the validated `set_book_type` tool on an explicit request. The prompt excludes negated, hypothetical, quoted and incidental mentions. This intent classification still needs real-model evaluation before release.
 - A colouring book has a full-colour cover and black-outline interiors. The story shell shows the selected format and asks for confirmation before generation. Format is fixed when the story is written; start another book to switch an already-created story.
-- Active spread generation, preview, QA repair, lettering, revisions and style samples use colouring requirements. Character and location references retain their source colours for identity; interior rendering is explicitly instructed to translate them into outlines.
+- Active spread generation, preview, QA repair, lettering, revisions and style samples use colouring requirements. Character and location references also use black outlines on white for colouring books.
 - Digital export works without Lulu credentials. Lulu print exports use two files, never the Gelato combined PDF. Existing storybooks keep their Gelato path.
 - Physical colouring checkout is unavailable until explicitly enabled. Hardcover colouring books are not supported in this first version.
 
@@ -32,9 +32,9 @@ LULU_SHIPPING_LEVEL=<shipping level verified for your destinations>
 LULU_PRINT_ENABLED=false
 ```
 
-The first exporter supports **8.5 × 8.5 inch, paperback, black-and-white, 60# white uncoated paper**. Select the available configuration in Lulu's calculator; the code deliberately does not invent a product ID. Standard or Premium B&W and matte/gloss cover finishing are accepted. An incompatible SKU fails explicitly. Size/binding changes require corresponding export changes, not just swapping the ID.
+The first exporter supports **8.5 × 8.5 inch, perfect-bound or coil-bound paperback, black-and-white, 60# white uncoated paper**. Select the available configuration in Lulu's calculator; the code deliberately does not invent a product ID. Standard or Premium B&W and matte/gloss cover finishing are accepted. The selected coil product is `0850X0850.BW.STD.CO.060UW444.MXX` (32-page calculator quote supplied by the owner). Coil interiors are limited to 470 pages. An incompatible SKU fails explicitly. Size/binding changes require corresponding export changes, not just swapping the ID.
 
-Interior: 0.125-inch bleed, 0.5-inch safe inset, artwork fitted without stretching, first story spread starts on the left-hand page. A title-image page precedes the story; padding provides at least 32 pages. For the usual 28-page story the resulting interior has 32 pages. Cover: a single-page wrap, dimensioned by Lulu for the actual page count, with a white spine and inset front/back artwork. This is intentionally conservative about preserving existing cover text. Inspect the proof before choosing whether to redesign full-bleed covers.
+Interior: 0.125-inch bleed, 0.5-inch safe inset, artwork fitted without stretching, first story spread starts on the left-hand page. A title-image page precedes the story; padding provides at least 32 pages. For the usual 28-page story the resulting interior has 32 pages. Cover: a single-page wrap, dimensioned by Lulu for the actual page count, with inset front/back artwork. Coil binding has no spine: the supplied square coil template is 17.25 × 8.75 inches including bleed; a nonzero spine is rejected. Perfect binding retains its calculated white spine. All artwork stays at least 0.5 inches inside trim, including the coil edge. This is intentionally conservative about preserving existing cover text. Inspect the proof before choosing whether to redesign full-bleed covers.
 
 The original illustration pipeline's generated resolution and lettering still determine print quality. These exports do not create additional image detail. Grayscale conversion in the PDF is not a replacement for generating proper line art.
 
@@ -58,3 +58,5 @@ Printing requires a confirmed paid paperback order. Both customer order endpoint
 The repository has existing TypeScript errors. Compare `npx tsc --noEmit` against the baseline before attributing failures to this change. Live chat/image quality, payment, storage and Lulu fulfilment need staging credentials; they cannot be verified by the isolated tests.
 
 Official API contract reviewed: https://api.lulu.com/api-docs/openapi-specs/openapi_public.yml
+
+Coil requirements: https://help.lulu.com/en/support/solutions/articles/64000306954-creating-your-coil-bound-cover . Product dimensions and 2–470 page limit checked against the owner’s Lulu calculator screenshots. Live API PDF validation and a physical proof remain outstanding.

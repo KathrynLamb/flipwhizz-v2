@@ -77,3 +77,26 @@ test("28 story pages become 32 interior pages with correct bleed and a separate 
   assert.equal(interiorPageCount(32), 34);
   assert.throws(() => interiorPageCount(0));
 });
+
+test("selected coil SKU and legacy perfect-bound SKU are supported without accepting other products", async () => {
+  const { colouringPackage, validateColouringPageCount } = await import('../src/lib/lulu/client');
+  const coil = '0850X0850.BW.STD.CO.060UW444.MXX';
+  assert.deepEqual(colouringPackage(coil), { id: coil, binding: 'CO', maxPages: 470 });
+  assert.equal(colouringPackage('0850X0850BWSTDPB060UW444MXX').binding, 'PB');
+  validateColouringPageCount(coil, 32);
+  validateColouringPageCount(coil, 470);
+  assert.throws(() => validateColouringPageCount(coil, 472), /470/);
+  assert.throws(() => validateColouringPageCount(coil, 33), /even/);
+  assert.throws(() => colouringPackage('0850X0850.BW.STD.CO.080CW444.MXX'), /uncoated/);
+});
+
+test("coil cover matches Lulu's 17.25 by 8.75 inch template and rejects a perfect-bound spine", async () => {
+  const image = await sharp({ create: { width: 800, height: 400, channels: 3, background: '#eac1ed' } }).png().toBuffer();
+  const cover = await buildColouringCover(image, { width: 1242, height: 630 }, 'CO');
+  const pdf = await PDFDocument.load(cover);
+  assert.equal(pdf.getPageCount(), 1);
+  assert.equal(pdf.getPage(0).getWidth(), 17.25 * 72);
+  assert.equal(pdf.getPage(0).getHeight(), 8.75 * 72);
+  await assert.rejects(buildColouringCover(image, { width: 1250, height: 630 }, 'CO'), /no spine/);
+  await assert.rejects(buildColouringCover(image, { width: 1242, height: 600 }, 'CO'), /dimensions/);
+});
