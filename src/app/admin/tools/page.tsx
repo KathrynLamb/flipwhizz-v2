@@ -10,6 +10,7 @@ import ToolsClient from "./ToolsClient";
 export const dynamic = "force-dynamic";
 
 const LINKS = [
+  { href: "/admin/lulu", label: "Lulu sandbox checks", detail: "Test credentials and validate colouring-book print files." },
   { href: "https://app.inngest.com/env/production/runs", label: "Inngest runs", detail: "Every background job, with logs. Cancel from a book's Activity tab." },
   { href: "https://vercel.com/dashboard", label: "Vercel", detail: "Deploys and function logs." },
   { href: "https://console.neon.tech", label: "Neon", detail: "The database (for anything admin can't do yet)." },
