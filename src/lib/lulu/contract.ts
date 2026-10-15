@@ -2,7 +2,7 @@ export type ShippingAddress = { firstName: string; lastName: string; addressLine
 export function luluShippingAddress(a: ShippingAddress) {
   if (!a || ![a.firstName, a.lastName, a.addressLine1, a.city, a.postCode, a.countryIsoCode, a.email, a.phone].every(v => typeof v === "string" && v.trim())) throw new Error("Complete the shipping address, email and contact phone number before ordering.");
   if (!/^[A-Z]{2}$/i.test(a.countryIsoCode)) throw new Error("Invalid shipping country");
-  return { name: `${a.firstName.trim()} ${a.lastName.trim()}`, street1: a.addressLine1, street2: a.addressLine2 ?? "", city: a.city, state_code: a.state ?? "", postcode: a.postCode, country_code: a.countryIsoCode.toUpperCase(), phone_number: a.phone! };
+  return { name: `${a.firstName.trim()} ${a.lastName.trim()}`, street1: a.addressLine1, street2: a.addressLine2 ?? "", city: a.city, state_code: a.state ?? "", postcode: a.postCode, country_code: a.countryIsoCode.toUpperCase(), email: a.email.trim(), phone_number: a.phone! };
 }
 export function luluJobPayload(input: { orderId: string; title: string; podPackageId: string; coverUrl: string; interiorUrl: string; shipping: ReturnType<typeof luluShippingAddress>; contactEmail: string; shippingLevel: string }) {
   for (const url of [input.coverUrl, input.interiorUrl]) if (new URL(url).protocol !== "https:") throw new Error("Print files must use HTTPS");

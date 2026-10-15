@@ -17,12 +17,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const VALID_PRODUCTS: ProductType[] = ["digital", "print", "gift"];
-const VALID_CURRENCIES: CurrencyCode[] = ["GBP", "USD", "EUR", "AUD"];
+const VALID_CURRENCIES: CurrencyCode[] = ["GBP", "USD", "EUR", "AUD", "CAD"];
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { code, productType, currency } = body ?? {};
+    const { code, productType, currency, bookType } = body ?? {};
 
     if (!code || typeof code !== "string") {
       return NextResponse.json({ error: "Code is required" }, { status: 400 });
@@ -83,9 +83,9 @@ export async function POST(req: Request) {
     }
 
     // Calculate discount for requested product
-    const discount = resolvePromoDiscount(promo, productType as ProductType, currency);
+    const discount = resolvePromoDiscount(promo, productType as ProductType, cur, bookType === "colouring_storybook" ? bookType : "storybook");
 
-    const originalCents = getPriceCents(productType as ProductType, cur);
+    const originalCents = getPriceCents(productType as ProductType, cur, bookType === "colouring_storybook" ? bookType : "storybook");
     const discountedCents = applyDiscount(
       originalCents,
       discount.discountPercent,

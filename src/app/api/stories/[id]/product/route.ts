@@ -14,7 +14,7 @@ import {
 import { getAuthUser, withAccess } from "@/lib/authz";
 
 const ALLOWED_PRODUCT_TYPES = ["digital", "print", "gift"] as const;
-const ALLOWED_CURRENCIES: CurrencyCode[] = ["GBP", "USD", "EUR", "AUD"];
+const ALLOWED_CURRENCIES: CurrencyCode[] = ["GBP", "USD", "EUR", "AUD", "CAD"];
 
 function isValidProductType(value: unknown): value is ProductType {
   return (
@@ -67,7 +67,7 @@ async function _GET(
 
   const productType = product.productType;
   const currency = (isValidCurrency(product.currency) ? product.currency : "GBP") as CurrencyCode;
-  const cents = getPriceCents(productType, currency);
+  const cents = getPriceCents(productType, currency, formatStory?.bookType);
 
   return NextResponse.json({
     productType,
@@ -103,7 +103,7 @@ async function _PUT(
     const formatError = colouringPurchaseError(formatStory?.bookType ?? "storybook", productType ?? "", (await getAuthUser())?.isAdmin === true);
     if (formatError) return NextResponse.json({ error: formatError }, { status: 409 });
   const currency: CurrencyCode = isValidCurrency(rawCurrency) ? rawCurrency : "GBP";
-  const cents = getPriceCents(productType, currency);
+  const cents = getPriceCents(productType, currency, formatStory?.bookType);
 
   const [existing] = await db
     .select()

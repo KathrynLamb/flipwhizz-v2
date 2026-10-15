@@ -1,5 +1,3 @@
-import Link from "next/link";
-import { luluPrintEnabled } from "@/lib/lulu/client";
 import { db } from "@/db";
 import { stories, orders, reviews, storyProducts, promoCodes, projects } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
@@ -28,9 +26,8 @@ export default async function OrderRoute({
   if (!story) return notFound();
   if (story.paymentStatus !== "paid") redirect(`/stories/${id}/studio`);
 
-  if (story.bookType === "colouring_storybook" && !luluPrintEnabled()) {
-    return <main className="mx-auto max-w-xl p-8"><h1 className="text-2xl font-bold">Your colouring storybook</h1><p className="my-4">Printed colouring storybooks are not available yet. You can download your book and print it at home.</p><Link href={`/stories/${id}/book`} className="text-purple-700 underline">Back to your book</Link></main>;
-  }
+  if (story.bookType === "colouring_storybook") redirect(`/stories/${id}/print`);
+
 
   const project = await db.query.projects.findFirst({
     where: eq(projects.id, story.projectId!),

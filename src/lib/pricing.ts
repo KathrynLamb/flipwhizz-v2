@@ -1,6 +1,6 @@
 // src/lib/pricing.ts
 
-export type CurrencyCode = "GBP" | "USD" | "EUR" | "AUD";
+export type CurrencyCode = "GBP" | "USD" | "EUR" | "AUD" | "CAD";
 export type ProductType = "digital" | "print" | "gift";
 
 export type CurrencyConfig = {
@@ -14,6 +14,7 @@ export const CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
   GBP: { code: "GBP", symbol: "£", label: "British Pound", flag: "🇬🇧" },
   USD: { code: "USD", symbol: "$", label: "US Dollar", flag: "🇺🇸" },
   EUR: { code: "EUR", symbol: "€", label: "Euro", flag: "🇪🇺" },
+  CAD: { code: "CAD", symbol: "C$", label: "Canadian Dollar", flag: "🇨🇦" },
   AUD: { code: "AUD", symbol: "A$", label: "Australian Dollar", flag: "🇦🇺" },
 };
 
@@ -22,7 +23,14 @@ export const PRICES: Record<CurrencyCode, Record<ProductType, number>> = {
   GBP: { digital: 1400, print: 2900, gift: 3900 },
   USD: { digital: 1700, print: 3500, gift: 4700 },
   EUR: { digital: 1600, print: 3300, gift: 4500 },
+  CAD: { digital: 2300, print: 4700, gift: 6300 },
   AUD: { digital: 2200, print: 4500, gift: 5900 },
+};
+
+// Fixed regional retail prices, using the existing regional pricing proportions.
+// These are not live exchange rates. Digital pricing stays unchanged.
+export const COLOURING_PRINT_PRICES: Record<CurrencyCode, number> = {
+  GBP: 2499, USD: 2999, EUR: 2899, AUD: 3899, CAD: 3999,
 };
 
 /** Map country ISO code → currency */
@@ -30,7 +38,7 @@ const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
   // GBP
   GB: "GBP",
   // USD
-  US: "USD", CA: "USD",
+  US: "USD", CA: "CAD",
   // EUR
   DE: "EUR", FR: "EUR", IT: "EUR", ES: "EUR", NL: "EUR", BE: "EUR",
   AT: "EUR", PT: "EUR", IE: "EUR", FI: "EUR", GR: "EUR", LU: "EUR",
@@ -56,17 +64,19 @@ export function formatPrice(cents: number, currency: CurrencyCode): string {
   return `${config.symbol}${clean}`;
 }
 
-export function getPriceCents(product: ProductType, currency: CurrencyCode): number {
+export function getPriceCents(product: ProductType, currency: CurrencyCode, bookType = "storybook"): number {
+  if (bookType === "colouring_storybook" && product === "print") return COLOURING_PRINT_PRICES[currency] ?? COLOURING_PRINT_PRICES.GBP;
   return PRICES[currency]?.[product] ?? PRICES.GBP[product];
 }
 
 export function getUpgradePriceCents(
   from: ProductType,
   to: ProductType,
-  currency: CurrencyCode
+  currency: CurrencyCode,
+  bookType = "storybook"
 ): number {
-  const fromCents = getPriceCents(from, currency);
-  const toCents = getPriceCents(to, currency);
+  const fromCents = getPriceCents(from, currency, bookType);
+  const toCents = getPriceCents(to, currency, bookType);
   return Math.max(0, toCents - fromCents);
 }
 
@@ -104,7 +114,8 @@ export function resolvePromoDiscount(
     label: string | null;
   },
   product: ProductType,
-  currency: CurrencyCode = "GBP"
+  currency: CurrencyCode = "GBP",
+  bookType = "storybook"
 ): { discountPercent: number; isFree: boolean; label: string } {
   const overrideMap: Record<ProductType, number | null> = {
     digital: promo.digitalOverride,
@@ -122,7 +133,7 @@ export function resolvePromoDiscount(
 
   if (override !== null && override !== undefined) {
     // Override is a fixed price in cents — convert to a discount percent
-    const originalCents = getPriceCents(product, currency);
+    const originalCents = getPriceCents(product, currency, bookType);
     const discountPercent = Math.round(((originalCents - override) / originalCents) * 100);
     const isFree = override === 0;
     return { discountPercent, isFree, label: promo.label ?? "Promo" };

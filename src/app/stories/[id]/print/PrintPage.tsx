@@ -20,6 +20,7 @@ import {
 /* -------------------------------------------------------------------------- */
 
 type Story = {
+  bookType: string;
   id: string; projectId: string; title: string;
   coverSpreadUrl: string | null; pdfUrl: string | null;
   status: string | null; paymentStatus: string | null; completedSteps: string[];
@@ -93,6 +94,7 @@ function currencyToDefaultCountry(currency: string): string {
   switch (currency) {
     case "GBP": return "GB";
     case "USD": return "US";
+    case "CAD": return "CA";
     case "AUD": return "AU";
     case "EUR": return "DE";
     default: return "GB";
@@ -241,8 +243,10 @@ export default function PrintPage({ story, order, productType: initialProductTyp
     setFlowStatus("processing");
     try {
       setProcessingStep("Preparing your book for print…");
+      if (story.bookType !== "colouring_storybook") {
       const exportRes = await fetch(`/api/stories/${story.id}/export-complete`, { method: "POST" });
       if (!exportRes.ok) { const data = await exportRes.json().catch(() => ({})); throw new Error(data.error || "Failed to prepare PDF"); }
+      }
       setProcessingStep("Placing your order…");
       const orderRes = await fetch(`/api/stories/${story.id}/order`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -282,7 +286,7 @@ export default function PrintPage({ story, order, productType: initialProductTyp
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-center mb-6">
           <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold mb-3" style={{ background: "rgba(199,125,255,0.1)", color: "#9B59D0" }}>
             <ProductIcon className="w-3.5 h-3.5" />
-            {getProductLabel(productType)}
+            {story.bookType === "colouring_storybook" && productType === "print" ? "Coil-bound colouring book" : getProductLabel(productType)}
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold mb-2" style={{ color: "#2D2235", letterSpacing: "-0.03em" }}>
             {hasOrder ? "Your order" : isDigitalOnly ? "Download your book" : "Order your book"}
@@ -329,7 +333,7 @@ export default function PrintPage({ story, order, productType: initialProductTyp
 
       <AnimatePresence>
         {flowStatus === "upgrade" && (
-          <UpgradeSheet storyId={story.id} selectedTier={selectedUpgradeTier} onSelectTier={setSelectedUpgradeTier} onClose={() => setFlowStatus("idle")} onSuccess={handleUpgradeSuccess} saveProductSelection={saveProductSelection} processing={upgradeProcessing} setProcessing={setUpgradeProcessing} savingProduct={upgradeSavingProduct} currency={currency} />
+          <UpgradeSheet bookType={story.bookType} storyId={story.id} selectedTier={selectedUpgradeTier} onSelectTier={setSelectedUpgradeTier} onClose={() => setFlowStatus("idle")} onSuccess={handleUpgradeSuccess} saveProductSelection={saveProductSelection} processing={upgradeProcessing} setProcessing={setUpgradeProcessing} savingProduct={upgradeSavingProduct} currency={currency} />
         )}
       </AnimatePresence>
       <AnimatePresence>
@@ -340,6 +344,7 @@ export default function PrintPage({ story, order, productType: initialProductTyp
             isSubmitting={false}
             initialAddress={initialShippingAddress}
             defaultCountry={defaultCountry}
+            colouring={story.bookType === "colouring_storybook"}
           />
         )}
       </AnimatePresence>
@@ -354,8 +359,8 @@ export default function PrintPage({ story, order, productType: initialProductTyp
 /*  UPGRADE SHEET                                                              */
 /* -------------------------------------------------------------------------- */
 
-function UpgradeSheet({ storyId, selectedTier, onSelectTier, onClose, onSuccess, saveProductSelection, processing, setProcessing, savingProduct, currency }: {
-  storyId: string; selectedTier: UpgradeTier; onSelectTier: (t: UpgradeTier) => void;
+function UpgradeSheet({ bookType, storyId, selectedTier, onSelectTier, onClose, onSuccess, saveProductSelection, processing, setProcessing, savingProduct, currency }: {
+  bookType: string; storyId: string; selectedTier: UpgradeTier; onSelectTier: (t: UpgradeTier) => void;
   onClose: () => void; onSuccess: () => void;
   saveProductSelection: (type: string) => Promise<void>;
   processing: boolean; setProcessing: (v: boolean) => void; savingProduct: boolean;
@@ -367,9 +372,9 @@ function UpgradeSheet({ storyId, selectedTier, onSelectTier, onClose, onSuccess,
   const [promoError, setPromoError] = useState("");
   const [promoOpen, setPromoOpen] = useState(false);
 
-  const upgradeCents = getUpgradePriceCents("digital", selectedTier, currency);
-  const fullCents = getPriceCents(selectedTier, currency);
-  const digitalCents = getPriceCents("digital", currency);
+  const upgradeCents = getUpgradePriceCents("digital", selectedTier, currency, bookType);
+  const fullCents = getPriceCents(selectedTier, currency, bookType);
+  const digitalCents = getPriceCents("digital", currency, bookType);
 
   const finalCents = promoState?.valid ? promoState.discountedCents : upgradeCents;
 
@@ -378,7 +383,7 @@ function UpgradeSheet({ storyId, selectedTier, onSelectTier, onClose, onSuccess,
     try {
       const res = await fetch("/api/promo/validate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, productType: selectedTier, currency }),
+        body: JSON.stringify({ code, productType: selectedTier, currency, bookType }),
       });
       const data = await res.json();
       if (data.valid) {
@@ -428,11 +433,11 @@ function UpgradeSheet({ storyId, selectedTier, onSelectTier, onClose, onSuccess,
 
         {/* Tier selection */}
         <div className="px-6 pt-5 pb-2 space-y-2.5">
-          {UPGRADE_TIER_DEFS.map((t) => {
+          {UPGRADE_TIER_DEFS.filter(t => bookType !== "colouring_storybook" || t.key === "print").map(t => bookType === "colouring_storybook" ? { ...t, label: "Coil-bound colouring book", description: "Opens flat for colouring; printed book and PDF included" } : t).map((t) => {
             const isSelected = t.key === selectedTier;
             const TierIcon = t.icon;
-            const tierUpgradeCents = getUpgradePriceCents("digital", t.key, currency);
-            const tierFullCents = getPriceCents(t.key, currency);
+            const tierUpgradeCents = getUpgradePriceCents("digital", t.key, currency, bookType);
+            const tierFullCents = getPriceCents(t.key, currency, bookType);
             return (
               <button key={t.key} onClick={() => !processing && onSelectTier(t.key)} disabled={processing} className="w-full flex items-center gap-3 rounded-2xl px-4 py-3.5 transition-all text-left" style={{ background: isSelected ? "rgba(176,92,230,0.04)" : "white", border: isSelected ? "2px solid #B05CE6" : "2px solid rgba(180,150,210,0.15)", cursor: processing ? "not-allowed" : "pointer", fontFamily: FONT }}>
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: isSelected ? "linear-gradient(135deg, #B05CE6, #D45DA0)" : "rgba(199,125,255,0.08)", color: isSelected ? "white" : "#9B59D0" }}>
@@ -707,7 +712,8 @@ function StatusDot({ active, done }: { active: boolean; done: boolean }) {
 /*  ADDRESS SHEET                                                              */
 /* -------------------------------------------------------------------------- */
 
-function AddressSheet({ onClose, onSubmit, isSubmitting, initialAddress, defaultCountry }: {
+function AddressSheet({ onClose, onSubmit, isSubmitting, initialAddress, defaultCountry, colouring = false }: {
+  colouring?: boolean;
   onClose: () => void;
   onSubmit: (address: ShippingAddress) => void;
   isSubmitting: boolean;
@@ -762,7 +768,8 @@ function AddressSheet({ onClose, onSubmit, isSubmitting, initialAddress, default
     if (!address.postCode.trim()) e.postCode = "Required";
     if (!address.email.trim()) e.email = "Required";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address.email)) e.email = "Invalid email";
-    if (address.countryIsoCode === "US" && !address.state?.trim()) e.state = "Required for US addresses"; // ← here
+    if (["US", "CA", "AU", "ES", "IT"].includes(address.countryIsoCode) && !address.state?.trim()) e.state = "State or province code required";
+    if (colouring && !address.phone.trim()) e.phone = "Required for delivery";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -858,8 +865,9 @@ function AddressSheet({ onClose, onSubmit, isSubmitting, initialAddress, default
                 {errors.state && <p className="text-[10px] mt-1 font-semibold" style={{ color: "#E91E63" }}>{errors.state}</p>}
               </div>
             )}
+          {address.countryIsoCode !== "US" && <InputField label="State / province code (where required)" value={address.state ?? ""} onChange={(v) => update("state", v.toUpperCase())} error={errors.state} disabled={isSubmitting} />}
           <InputField label="Email" value={address.email} onChange={(v) => update("email", v)} error={errors.email} disabled={isSubmitting} type="email" />
-          <InputField label="Phone (optional)" value={address.phone} onChange={(v) => update("phone", v)} disabled={isSubmitting} type="tel" />
+          <InputField label={colouring ? "Phone for delivery" : "Phone (optional)"} error={errors.phone} value={address.phone} onChange={(v) => update("phone", v)} disabled={isSubmitting} type="tel" />
         </div>
 
         <div className="px-6 pb-10 pt-2">

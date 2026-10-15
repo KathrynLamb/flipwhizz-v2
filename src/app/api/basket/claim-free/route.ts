@@ -85,8 +85,9 @@ async function _POST(req: NextRequest) {
           continue;
         }
 
+        const formatStory = await db.query.stories.findFirst({ where: eq(stories.id, storyId) });
         const currency = (storyProduct.currency ?? "GBP") as CurrencyCode;
-        const discount = resolvePromoDiscount(promo, productType as ProductType, currency);        const originalCents = getPriceCents(productType, currency);
+        const discount = resolvePromoDiscount(promo, productType as ProductType, currency, formatStory?.bookType);        const originalCents = getPriceCents(productType, currency, formatStory?.bookType);
         const finalCents = applyDiscount(originalCents, discount.discountPercent, discount.isFree);
 
         if (finalCents !== 0) {

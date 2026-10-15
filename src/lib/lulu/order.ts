@@ -1,3 +1,4 @@
+import { shippingOptionsPayload, selectShippingLevel } from "./shipping";
 import { getAuthUser } from "@/lib/authz";
 import { readProofQuote, requireProofConfiguration } from "./proof";
 import { randomUUID } from "node:crypto";
@@ -26,7 +27,7 @@ export async function submitColouringOrder(storyId: string, address: ShippingAdd
     if (!story || story.bookType !== "colouring_storybook") throw new Error("Colouring storybook not found");
     if (story.paymentStatus !== "paid" || !story.paymentId) throw new Error("Payment must be confirmed before printing");
     const product = await tx.query.storyProducts.findFirst({ where: eq(storyProducts.storyId, storyId) });
-    if (product?.productType !== "print") throw new Error("Choose the paperback product before ordering");
+    if (product?.productType !== "print") throw new Error("Choose the printed colouring book before ordering");
     const unavailable = colouringPurchaseError(story.bookType, product.productType);
     if (unavailable && !proof) throw new Error(unavailable);
     const existing = await tx.query.orders.findFirst({ where: and(eq(orders.storyId, storyId), eq(orders.printProvider, "lulu"), ne(orders.status, "failed"), eq(orders.paymentId, story.paymentId)) });
@@ -48,7 +49,12 @@ export async function submitColouringOrder(storyId: string, address: ShippingAdd
       });
       if (cost.currency !== proof.currency || !Number.isFinite(Number(cost.total_cost_incl_tax)) || Number(cost.total_cost_incl_tax) <= 0 || Number(cost.total_cost_incl_tax) > Number(proof.total)) throw new Error("Lulu's price changed. Get a fresh proof quote before ordering.");
     }
-    const payload = luluJobPayload({ orderId: reservation.order.id, title: reservation.story.title, podPackageId: files.podPackageId!, coverUrl: files.coverUrl!, interiorUrl: files.interiorUrl, shipping, contactEmail: process.env.LULU_CONTACT_EMAIL!, shippingLevel: proof?.shippingLevel ?? process.env.LULU_SHIPPING_LEVEL! });
+    let shippingLevel = proof?.shippingLevel;
+    if (!shippingLevel) {
+      const options = await luluClient().request<Parameters<typeof selectShippingLevel>[0]>("/shipping-options/", shippingOptionsPayload(address, files.podPackageId!, files.pageCount));
+      shippingLevel = selectShippingLevel(options, process.env.LULU_SHIPPING_LEVEL ?? "MAIL");
+    }
+    const payload = luluJobPayload({ orderId: reservation.order.id, title: reservation.story.title, podPackageId: files.podPackageId!, coverUrl: files.coverUrl!, interiorUrl: files.interiorUrl, shipping, contactEmail: process.env.LULU_CONTACT_EMAIL!, shippingLevel });
     submitting = true;
     const job = await luluClient().request<{ id: number; status: { name: string } }>("/print-jobs/", payload);
     if (!job.id) throw new Error("Lulu returned no job ID");

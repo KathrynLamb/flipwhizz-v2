@@ -69,9 +69,9 @@ async function _POST(
       return NextResponse.json({ error: "Invalid promo code" }, { status: 400 });
     }
 
-    const discount = resolvePromoDiscount(promo, productType as ProductType, currency);
+    const discount = resolvePromoDiscount(promo, productType as ProductType, currency, formatStory?.bookType);
 
-    const originalCents = getPriceCents(productType, currency);
+    const originalCents = getPriceCents(productType, currency, formatStory?.bookType);
     const finalCents = applyDiscount(originalCents, discount.discountPercent, discount.isFree);
 
     if (finalCents !== 0) {
