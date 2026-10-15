@@ -52,6 +52,7 @@ export default async function PrintRoute({
     <main className="min-h-screen" style={{ background: "#FDFBFF" }}>
       <PrintPage
         story={{
+          bookType: story.bookType,
           id: story.id,
           projectId: story.projectId,
           title: story.title,
@@ -76,6 +77,7 @@ export default async function PrintRoute({
               }
             : null
         }
+        initialCurrency={product?.currency ?? "GBP"}
         productType={product?.productType ?? "undecided"}
         initialShippingAddress={
           (product?.checkoutAddress as

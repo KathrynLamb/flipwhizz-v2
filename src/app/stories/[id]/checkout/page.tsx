@@ -145,18 +145,18 @@ export default function CheckoutPage() {
   const [promoOpen, setPromoOpen] = useState(false);
 
   const tierDef = getTierDef(selectedTier, isColouring);
-  const baseCents = getPriceCents(selectedTier, currency);
+  const baseCents = getPriceCents(selectedTier, currency, isColouring ? "colouring_storybook" : "storybook");
   const finalCents = promoState?.valid ? promoState.discountedCents : baseCents;
   const isFreeOrder = finalCents === 0;
 
   const saveProductSelection = useCallback(
-    async (productType: TierKey, cur?: CurrencyCode) => {
+    async (productType: TierKey, cur: CurrencyCode) => {
       setSavingProduct(true);
       try {
         const res = await fetch(`/api/stories/${storyId}/product`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ productType, currency: cur ?? currency }),
+          body: JSON.stringify({ productType, currency: cur }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || 'Failed to save product selection');
@@ -167,7 +167,7 @@ export default function CheckoutPage() {
         setSavingProduct(false);
       }
     },
-    [storyId, currency]
+    [storyId]
   );
 
 
@@ -250,7 +250,7 @@ export default function CheckoutPage() {
       await validatePromo(promoState.code, newTier);
     }
     try {
-      await saveProductSelection(newTier);
+      await saveProductSelection(newTier, currency);
     } catch (e: any) {
       alert(e?.message || 'Could not save your book format.');
     }
@@ -278,6 +278,7 @@ export default function CheckoutPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code,
+          bookType: isColouring ? "colouring_storybook" : "storybook",
           productType: product ?? selectedTier,
           currency: cur ?? currency,
         }),
@@ -315,7 +316,7 @@ export default function CheckoutPage() {
     if (!promoState?.valid || !promoState.isFree) return;
     setProcessing(true);
     try {
-      await saveProductSelection(selectedTier);
+      await saveProductSelection(selectedTier, currency);
       const res = await fetch(`/api/stories/${storyId}/claim-free`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -602,7 +603,7 @@ export default function CheckoutPage() {
                         key={`${selectedTier}-${currency}-${promoState?.code ?? 'none'}`}
                         style={{ layout: 'vertical', color: 'gold', shape: 'rect', label: 'pay', height: 48 }}
                         createOrder={async () => {
-                          await saveProductSelection(selectedTier);
+                          await saveProductSelection(selectedTier, currency);
                           const res = await fetch('/api/paypal/order', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -821,7 +822,7 @@ function TierDropdown({ colouring, availableTiers, selected, onChange, disabled 
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const tier = getTierDef(selected, colouring);
-  const priceCents = getPriceCents(selected, currency);
+  const priceCents = getPriceCents(selected, currency, colouring ? "colouring_storybook" : "storybook");
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -860,7 +861,7 @@ function TierDropdown({ colouring, availableTiers, selected, onChange, disabled 
           <motion.div initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.98 }} transition={{ duration: 0.15 }} className="absolute z-50 left-0 right-0 mt-2 rounded-2xl overflow-hidden" style={{ background: 'white', border: '1.5px solid rgba(180,150,210,0.15)', boxShadow: '0 8px 32px rgba(100,60,140,0.12), 0 2px 8px rgba(100,60,140,0.06)' }}>
             {TIER_DEFS.map(t => getTierDef(t.key, colouring)).filter(t => availableTiers.includes(t.key)).map((t, i) => {
               const isSelected = t.key === selected;
-              const cents = getPriceCents(t.key, currency);
+              const cents = getPriceCents(t.key, currency, colouring ? "colouring_storybook" : "storybook");
               return (
                 <button key={t.key} onClick={() => { onChange(t.key); setOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3.5 transition-colors text-left" style={{ background: isSelected ? 'rgba(176,92,230,0.04)' : 'transparent', borderTop: i > 0 ? '1px solid rgba(180,150,210,0.08)' : 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: isSelected ? 'linear-gradient(135deg, #B05CE6, #D45DA0)' : 'rgba(199,125,255,0.08)', color: isSelected ? 'white' : '#9B59D0' }}>{t.icon}</div>

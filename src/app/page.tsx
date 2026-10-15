@@ -1,3 +1,4 @@
+import { luluPrintEnabled } from "@/lib/lulu/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { headers } from "next/headers";
@@ -28,6 +29,7 @@ export default async function Home() {
 
   const priceDigital = formatPrice(getPriceCents("digital", currency), currency);
   const pricePrint = formatPrice(getPriceCents("print", currency), currency);
+  const priceColouring = formatPrice(getPriceCents("print", currency, "colouring_storybook"), currency);
   const priceGift = formatPrice(getPriceCents("gift", currency), currency);
 
   const publicStories = await db
@@ -172,6 +174,8 @@ export default async function Home() {
             <p className="mb-4 text-sm font-bold uppercase tracking-[0.18em] text-[#7960AF]">Their story. Their colours.</p>
             <h2 id="colouring-title" className="font-serif text-4xl font-bold leading-tight text-[#2D2235] lg:text-5xl">Read it. Colour it.<br />Make it yours.</h2>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-[#6B5D52]">An adventure starring your child, with pictures they can colour themselves. Bring their favourite things, family jokes and big ideas. We&apos;ll turn them into a story they can make their own.</p>
+            {luluPrintEnabled() && <p className="mt-5 text-lg font-bold text-[#7960AF]">Coil-bound book + printable PDF: {priceColouring}, including standard delivery.</p>}
+            <p className="mt-2 text-sm text-[#6B5D52]">Opens flat for colouring. Lulu routes your order to a nearby available print facility.</p>
             <Link href="/projects/create?bookType=colouring_storybook" className="mt-8 inline-flex rounded-full bg-[#7960AF] px-7 py-4 text-center font-bold text-white transition-colors hover:bg-[#654D96] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7960AF]">Create a colouring storybook <span aria-hidden="true" className="ml-3">→</span></Link>
             <p className="mt-3 text-sm text-[#6B5D52]">Start with a free story conversation. Colouring-book mode is already selected.</p>
           </div>

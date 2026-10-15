@@ -20,7 +20,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const VALID_PRODUCTS: ProductType[] = ["digital", "print", "gift"];
-const VALID_CURRENCIES: CurrencyCode[] = ["GBP", "USD", "EUR", "AUD"];
+const VALID_CURRENCIES: CurrencyCode[] = ["GBP", "USD", "EUR", "AUD", "CAD"];
 
 function centsToPriceString(cents: number): string {
   return (cents / 100).toFixed(2);
@@ -76,7 +76,7 @@ async function _POST(req: Request) {
     /* --------------------------------------------------
        CALCULATE BASE PRICE
     -------------------------------------------------- */
-    let expectedCents = getPriceCents(productType, currency);
+    let expectedCents = getPriceCents(productType, currency, formatStory?.bookType);
     let isUpgrade = false;
 
     if (
@@ -84,8 +84,8 @@ async function _POST(req: Request) {
       typeof upgradeFrom === "string" &&
       VALID_PRODUCTS.includes(upgradeFrom as ProductType)
     ) {
-      const fromCents = getPriceCents(upgradeFrom as ProductType, currency);
-      const toCents = getPriceCents(productType, currency);
+      const fromCents = getPriceCents(upgradeFrom as ProductType, currency, formatStory?.bookType);
+      const toCents = getPriceCents(productType, currency, formatStory?.bookType);
 
       if (toCents <= fromCents) {
         return NextResponse.json(
@@ -130,7 +130,7 @@ async function _POST(req: Request) {
         return NextResponse.json({ error: "Promo code fully redeemed." }, { status: 400 });
       }
 
-      const discount = resolvePromoDiscount(promo, productType, currency);
+      const discount = resolvePromoDiscount(promo, productType, currency, formatStory?.bookType);
       const discountedCents = applyDiscount(expectedCents, discount.discountPercent, discount.isFree);
 
       discountCents = expectedCents - discountedCents;
