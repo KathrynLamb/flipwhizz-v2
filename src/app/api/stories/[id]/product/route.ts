@@ -1,4 +1,4 @@
-import { colouringPurchaseError } from "@/lib/lulu/client";
+import { colouringPurchaseError, luluAdminSandboxEnabled } from "@/lib/lulu/client";
 // src/app/api/stories/[id]/product/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
@@ -11,7 +11,7 @@ import {
   type ProductType,
   type CurrencyCode,
 } from "@/lib/pricing";
-import { withAccess } from "@/lib/authz";
+import { getAuthUser, withAccess } from "@/lib/authz";
 
 const ALLOWED_PRODUCT_TYPES = ["digital", "print", "gift"] as const;
 const ALLOWED_CURRENCIES: CurrencyCode[] = ["GBP", "USD", "EUR", "AUD"];
@@ -41,7 +41,9 @@ async function _GET(
   const { id } = await params;
 
   const formatStory = await db.query.stories.findFirst({ where: eq(stories.id, id) });
-  const availableProductTypes = ALLOWED_PRODUCT_TYPES.filter(type => !colouringPurchaseError(formatStory?.bookType ?? "storybook", type));
+  const isAdmin = (await getAuthUser())?.isAdmin === true;
+  const adminSandboxCheckout = formatStory?.bookType === "colouring_storybook" && luluAdminSandboxEnabled(isAdmin);
+  const availableProductTypes = ALLOWED_PRODUCT_TYPES.filter(type => !colouringPurchaseError(formatStory?.bookType ?? "storybook", type, isAdmin));
 
   const [product] = await db
     .select()
@@ -59,6 +61,7 @@ async function _GET(
       productSelected: false,
       bookType: formatStory?.bookType ?? "storybook",
       availableProductTypes,
+      adminSandboxCheckout,
     });
   }
 
@@ -75,6 +78,7 @@ async function _GET(
     productSelected: true,
     bookType: formatStory?.bookType ?? "storybook",
     availableProductTypes,
+    adminSandboxCheckout,
   });
 }
 
@@ -96,7 +100,7 @@ async function _PUT(
 
   const productType = rawProductType;
     const formatStory = await db.query.stories.findFirst({ where: eq(stories.id, id) });
-    const formatError = colouringPurchaseError(formatStory?.bookType ?? "storybook", productType ?? "");
+    const formatError = colouringPurchaseError(formatStory?.bookType ?? "storybook", productType ?? "", (await getAuthUser())?.isAdmin === true);
     if (formatError) return NextResponse.json({ error: formatError }, { status: 409 });
   const currency: CurrencyCode = isValidCurrency(rawCurrency) ? rawCurrency : "GBP";
   const cents = getPriceCents(productType, currency);
