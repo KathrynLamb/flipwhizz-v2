@@ -86,7 +86,12 @@ const TIER_DEFS: TierDef[] = [
   },
 ];
 
-function getTierDef(key: string): TierDef {
+function getTierDef(key: string, colouring = false): TierDef {
+  if (colouring && key === 'print') return {
+    key: 'print', label: 'Lulu coil-bound colouring book', icon: <Printer className="w-4 h-4" />,
+    description: 'Lay-flat coil binding for easy colouring',
+    features: ['Personalised story and outline illustrations', '8.5-inch square pages', 'White uncoated paper', 'Coil-bound printed book and PDF'],
+  };
   return TIER_DEFS.find((t) => t.key === key) || TIER_DEFS[1];
 }
 
@@ -122,6 +127,8 @@ export default function CheckoutPage() {
   const [processing, setProcessing] = useState(false);
   const [generationStarted, setGenerationStarted] = useState(false);
   const [selectedTier, setSelectedTier] = useState<TierKey>('print');
+  const [isColouring, setIsColouring] = useState(false);
+  const [adminSandboxCheckout, setAdminSandboxCheckout] = useState(false);
   const [availableTiers, setAvailableTiers] = useState<TierKey[]>(['digital', 'print', 'gift']);
   const [savingProduct, setSavingProduct] = useState(false);
   const [productReady, setProductReady] = useState(false);
@@ -137,7 +144,7 @@ export default function CheckoutPage() {
   const [promoError, setPromoError] = useState('');
   const [promoOpen, setPromoOpen] = useState(false);
 
-  const tierDef = getTierDef(selectedTier);
+  const tierDef = getTierDef(selectedTier, isColouring);
   const baseCents = getPriceCents(selectedTier, currency);
   const finalCents = promoState?.valid ? promoState.discountedCents : baseCents;
   const isFreeOrder = finalCents === 0;
@@ -192,6 +199,8 @@ export default function CheckoutPage() {
         if (!storyRes.ok) throw new Error(storyData?.error || 'Failed to load story');
         if (cancelled) return;
     
+        setIsColouring(productData?.bookType === 'colouring_storybook');
+        setAdminSandboxCheckout(productData?.adminSandboxCheckout === true);
         const allowed: TierKey[] = Array.isArray(productData?.availableProductTypes) ? productData.availableProductTypes : ['digital', 'print', 'gift'];
         setAvailableTiers(allowed);
         const s = storyData.story;
@@ -479,7 +488,12 @@ export default function CheckoutPage() {
 
               {/* Tier dropdown */}
               <div className="px-6 py-4">
-                <TierDropdown availableTiers={availableTiers} selected={selectedTier} onChange={handleTierChange} disabled={savingProduct || processing} currency={currency} promoState={promoState} />
+                <TierDropdown colouring={isColouring} availableTiers={availableTiers} selected={selectedTier} onChange={handleTierChange} disabled={savingProduct || processing} currency={currency} promoState={promoState} />
+                {adminSandboxCheckout && selectedTier === 'print' && (
+                  <p role="status" className="mt-3 text-sm text-amber-900 bg-amber-50 rounded-lg p-3">
+                    Admin test: Lulu is in sandbox mode. Checkout starts artwork generation; no physical book will be dispatched from this test. PayPal payments are still real if PayPal is configured for live payments. Use your valid full-discount promo code for a free test.
+                  </p>
+                )}
                 {savingProduct && (
                   <div className="mt-2 flex items-center gap-2 text-xs" style={{ color: '#7B6E90' }}>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving book format…
@@ -801,12 +815,12 @@ function PromoCodeInput({ promoInput, setPromoInput, promoState, promoError, pro
 /*  TIER DROPDOWN                                                              */
 /* -------------------------------------------------------------------------- */
 
-function TierDropdown({ availableTiers, selected, onChange, disabled = false, currency, promoState }: {
-  availableTiers: TierKey[]; selected: TierKey; onChange: (t: TierKey) => void; disabled?: boolean; currency: CurrencyCode; promoState: PromoState;
+function TierDropdown({ colouring, availableTiers, selected, onChange, disabled = false, currency, promoState }: {
+  colouring: boolean; availableTiers: TierKey[]; selected: TierKey; onChange: (t: TierKey) => void; disabled?: boolean; currency: CurrencyCode; promoState: PromoState;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const tier = getTierDef(selected);
+  const tier = getTierDef(selected, colouring);
   const priceCents = getPriceCents(selected, currency);
 
   useEffect(() => {
@@ -844,7 +858,7 @@ function TierDropdown({ availableTiers, selected, onChange, disabled = false, cu
       <AnimatePresence>
         {open && !disabled && (
           <motion.div initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.98 }} transition={{ duration: 0.15 }} className="absolute z-50 left-0 right-0 mt-2 rounded-2xl overflow-hidden" style={{ background: 'white', border: '1.5px solid rgba(180,150,210,0.15)', boxShadow: '0 8px 32px rgba(100,60,140,0.12), 0 2px 8px rgba(100,60,140,0.06)' }}>
-            {TIER_DEFS.filter(t => availableTiers.includes(t.key)).map((t, i) => {
+            {TIER_DEFS.map(t => getTierDef(t.key, colouring)).filter(t => availableTiers.includes(t.key)).map((t, i) => {
               const isSelected = t.key === selected;
               const cents = getPriceCents(t.key, currency);
               return (

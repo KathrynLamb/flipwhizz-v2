@@ -43,10 +43,14 @@ export function luluPrintEnabled() {
   try { colouringPodPackageId(); } catch { return false; }
   return process.env.LULU_PRINT_ENABLED === "true" && process.env.LULU_ENVIRONMENT === "production" && Boolean(process.env.LULU_CLIENT_KEY && process.env.LULU_CLIENT_SECRET && process.env.LULU_COLOURING_POD_PACKAGE_ID && process.env.LULU_CONTACT_EMAIL && process.env.LULU_SHIPPING_LEVEL);
 }
-export function colouringPurchaseError(bookType: string, productType: string): string | null {
+export function luluAdminSandboxEnabled(isAdmin: boolean): boolean {
+  if (!isAdmin || process.env.LULU_ENVIRONMENT !== "sandbox" || !process.env.LULU_CLIENT_KEY || !process.env.LULU_CLIENT_SECRET) return false;
+  try { colouringPodPackageId(); return true; } catch { return false; }
+}
+export function colouringPurchaseError(bookType: string, productType: string, isAdmin = false): string | null {
   if (bookType !== "colouring_storybook" || productType === "digital") return null;
   if (productType === "gift") return "Colouring storybooks are available as a digital book or paperback. Choose one of those formats.";
-  return luluPrintEnabled() ? null : "Printed colouring storybooks are not available yet. You can choose the digital edition to print at home.";
+  return (luluPrintEnabled() || luluAdminSandboxEnabled(isAdmin)) ? null : "Printed colouring storybooks are not available yet. You can choose the digital edition to print at home.";
 }
 export type ColouringBinding = "PB" | "CO";
 
