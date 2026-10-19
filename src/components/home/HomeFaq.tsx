@@ -6,27 +6,27 @@ import type { Faq } from "@/content/homeFaqs";
 
 export default function HomeFaq({ faqs, location = "home" }: { faqs: Faq[]; location?: string }) {
   return (
-    <div className="divide-y divide-[#E8DDCF] rounded-[24px] border border-[#E8DDCF] bg-white">
+    <div className="border-t-[1.5px] border-[#EFE7F5]">
       {faqs.map((faq) => (
         <details
           key={faq.question}
-          className="group px-6 py-5 sm:px-8"
+          className="fw-faq group border-b-[1.5px] border-[#EFE7F5]"
           onToggle={(e) => {
             if ((e.currentTarget as HTMLDetailsElement).open) {
               posthog.capture("faq_opened", { question: faq.question, location });
             }
           }}
         >
-          <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-4 text-[18px] font-bold text-[#2D2235] [&::-webkit-details-marker]:hidden">
+          <summary className="flex min-h-[64px] cursor-pointer list-none items-center justify-between gap-6 py-5 text-[19px] font-bold text-[#24182F] transition-colors hover:text-[#6F4BB0] [&::-webkit-details-marker]:hidden">
             {faq.question}
             <span
               aria-hidden="true"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F7F3FB] text-xl text-[#7960AF] transition-transform group-open:rotate-45"
+              className="fw-plus flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F6F1FC] text-[22px] leading-none text-[#6F4BB0] transition-transform duration-300 group-open:rotate-45"
             >
               +
             </span>
           </summary>
-          <p className="mt-3 text-[17px] leading-relaxed text-[#5C5048]">{faq.answer}</p>
+          <p className="m-0 max-w-[62ch] pb-6 text-[17px] leading-[1.6] text-[#4E4259]">{faq.answer}</p>
         </details>
       ))}
     </div>

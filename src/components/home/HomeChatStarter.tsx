@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
+import "@/app/home.css";
 import { ABOUTS, OCCASIONS, RECIPIENTS, cleanName, starterHref } from "@/lib/chatStarter";
 
 type Mode = "who" | "about" | "occasion";
@@ -66,27 +67,18 @@ export default function HomeChatStarter({
   }
 
   return (
-    <div className={`w-full max-w-xl rounded-[28px] p-5 sm:p-6 ${tone === "tinted" ? "bg-white" : "bg-[#F7F3FB]"}`}>
-      <div className="flex items-end gap-3">
-        <span
-          aria-hidden="true"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white"
-          style={{ background: "linear-gradient(135deg, #F2546A, #F7A93E 35%, #8AC7E0 70%, #A270C9)" }}
-        >
-          F
-        </span>
-        <p className="rounded-[22px] rounded-bl-[6px] bg-[#9B88CF] px-5 py-3 text-[18px] leading-snug text-white shadow-sm">
-          {question}
-        </p>
-      </div>
+    <div className={`w-full max-w-xl ${tone === "tinted" ? "rounded-[28px] bg-white p-5 shadow-[0_24px_50px_-34px_rgba(36,24,47,0.45)] sm:p-6" : ""}`}>
+      <p className="m-0 inline-block rounded-[22px] rounded-bl-[6px] bg-[#6F4BB0] px-5 py-3 text-[18px] font-semibold leading-snug text-white sm:text-[19px]">
+        {question}
+      </p>
 
-      <ul className="mt-5 flex flex-wrap gap-2.5" aria-label="Choose an answer">
+      <ul className="mt-4 flex flex-wrap gap-2.5" aria-label="Choose an answer">
         {CHIPS[mode].map((chip) => (
           <li key={chip.key}>
             <button
               type="button"
               onClick={() => onChip(chip.key)}
-              className="min-h-[48px] rounded-full border-2 border-[#DB79AC] bg-white px-5 text-[17px] font-semibold text-[#A8336E] transition-colors hover:bg-[#DB79AC] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A8336E]"
+              className="fw-chip min-h-[50px] px-5 text-[17px] focus-visible:outline-[3px] focus-visible:outline-offset-[3px] focus-visible:outline-[#6F4BB0]"
             >
               {chip.label}
             </button>
@@ -95,7 +87,7 @@ export default function HomeChatStarter({
       </ul>
 
       {showNameInput && (
-        <form onSubmit={onSubmitName} className="mt-4 flex gap-2">
+        <form onSubmit={onSubmitName} className="mt-3 flex max-w-[460px] gap-2.5">
           <label htmlFor={`starter-name-${position}`} className="sr-only">
             Or type their name
           </label>
@@ -112,12 +104,9 @@ export default function HomeChatStarter({
             placeholder="or type their name"
             autoComplete="off"
             maxLength={40}
-            className="min-h-[52px] min-w-0 flex-1 rounded-full border border-[#E3D6ED] bg-white px-5 text-[17px] text-[#2D2235] outline-none placeholder:text-[#8A7E73] focus:border-[#A270C9] focus:ring-2 focus:ring-[#A270C9]/25"
+            className="min-h-[52px] min-w-0 flex-1 rounded-full border-[1.5px] border-[#E4DCF0] bg-white px-5 text-[17px] text-[#24182F] outline-none placeholder:text-[#8B7F95] focus:border-[#A270C9] focus:ring-2 focus:ring-[#A270C9]/25"
           />
-          <button
-            type="submit"
-            className="min-h-[52px] shrink-0 rounded-full bg-[#D94590] px-6 text-[17px] font-bold text-white shadow-[0_6px_20px_rgba(217,69,144,0.3)] transition-transform active:scale-[0.98]"
-          >
+          <button type="submit" className="fw-cta min-h-[52px] shrink-0 px-6 text-[17px]">
             Start
           </button>
         </form>
