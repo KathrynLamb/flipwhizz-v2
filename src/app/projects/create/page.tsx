@@ -3,9 +3,8 @@ import { Suspense } from "react";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Header from "@/components/Header";
-import Footer from "@/components/Footer";
 import CreateDemoClient from "./CreateDemoClient";
-import ChatFooter from "@/components/ChatFooter";
+import { brandFontClass, brandFontStyle } from "@/app/fonts";
 
 export const metadata: Metadata = {
   title: { absolute: "Start Your Personalised Children's Book, Free | FlipWhizz" },
@@ -82,7 +81,7 @@ export default async function CreatePage() {
   const session = await getServerSession(authOptions);
 
   return (
-    <main className="relative flex min-h-screen flex-col overflow-hidden bg-white text-slate-900">
+    <main className={`relative flex min-h-screen flex-col bg-white text-[#24182F] ${brandFontClass}`} style={brandFontStyle}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -92,40 +91,21 @@ export default async function CreatePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
 
-      {/* Real shared header, stripped for the conversion flow, title in-bar */}
-      <Header
-        session={session}
-        minimal
-        title="Make a story only your family could tell"
-        subtitle="Personalised, illustrated, and entirely yours."
-      />
+      {/* Shared header, stripped for the conversion flow: every extra link
+          is an exit from the chat. */}
+      <Header session={session} minimal />
 
-      {/* Content. White-dominant surface; the logo's true spectrum appears
-          once, as a soft painterly glow behind the chat, the way colour
-          blooms behind the logo's brushwork, not a flat banner. */}
-      <div className="relative flex-1">
-        {/* The single colour moment for this page: a diffuse, multi-stop
-            bloom sourced from the actual logo palette (sampled, not
-            guessed), kept soft and high-value so it glows rather than
-            shouts, sitting behind the chat card like a light source. */}
-        {/* <div
-          aria-hidden
-          className="pointer-events-none absolute left-1/2 top-20 h-[560px] w-[920px] -translate-x-1/2 rounded-full opacity-[0.16] blur-[110px]"
-          style={{
-            background:
-              "conic-gradient(from 200deg, #FA626F, #FAB043, #F7CD55, #71CBE5, #9D6CC7, #DB6AAC, #FA626F)",
-          }}
-        /> */}
-        {/* <div> */}
-
-        <div className="relative mx-auto max-w-2xl px-4 pb-16 pt-10 sm:px-6 sm:pt-14">
-          <Suspense fallback={null}>
-            <CreateDemoClient />
-          </Suspense>
-        </div>
+      <div className="relative mx-auto w-full max-w-2xl flex-1 px-4 pt-8 sm:px-6 sm:pt-12">
+        <h1 className="m-0 text-[clamp(32px,5vw,46px)] font-bold leading-[1.02] tracking-[-0.03em]">
+          Let&apos;s make their book.
+        </h1>
+        <p className="mb-8 mt-3 max-w-[40ch] text-[18px] leading-[1.5] text-[#4E4259]">
+          Answer a few questions in your own words. We&apos;ll shape the story and illustrate it with you.
+        </p>
+        <Suspense fallback={null}>
+          <CreateDemoClient />
+        </Suspense>
       </div>
-
-      {/* <ChatFooter /> */}
     </main>
   );
 }

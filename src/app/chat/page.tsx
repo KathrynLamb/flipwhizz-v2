@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Header from "@/components/Header";
 import ChatClient from "@/app/chat/ChatClient";
+import { brandFontClass, brandFontStyle } from "@/app/fonts";
 
 // This route serves two things: the public demo at /chat, and the real
 // project workspace at /chat?project=<uuid>. The project variant is a
@@ -43,7 +44,7 @@ export default async function ChatPage({
   const isProjectMode = Boolean(project);
 
   return (
-    <main className="relative flex h-dvh flex-col overflow-hidden bg-[#FAF9F7] text-slate-900">
+    <main className={`relative flex h-dvh flex-col overflow-hidden bg-white text-[#24182F] ${brandFontClass}`} style={brandFontStyle}>
       {/* Real shared header, stripped for the conversion flow, title in-bar.
           In project mode the demo pitch is wrong: the visitor has already
           signed in and created the book, so the subtitle would be selling

@@ -10,8 +10,8 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { motion } from "framer-motion";
-import { Loader2, Send, Zap, BookOpen, Sparkles, User } from "lucide-react";
+import { Loader2, BookOpen } from "lucide-react";
+import { ChatBubble, TypingBubble, StatusBubble, RepliesLeft, ChatComposer, ContinueCard } from "@/components/chat/ChatBits";
 import posthog from "posthog-js";
 import { reportClientError } from "@/lib/reportClientError";
 import { getDemoSessionId, clearDemoSessionId } from "@/lib/demo-session-utils";
@@ -553,193 +553,98 @@ export default function ChatClient() {
     finally { setSavingBookType(false); }
   }
 
+  const showWelcome = messagesLoaded && userMessageCount === 0 && !loading && !storyCreating && !reachedLimit;
+
+  function applySuggestion(text: string) {
+    posthog.capture("studio_suggestion_clicked", { suggestion: text, project_mode: isProjectMode });
+    setInput(text);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(text.length, text.length);
+    });
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 justify-center px-4 py-3 sm:py-4">
-      <BookTypeSelector compact value={bookType} onChange={changeBookType} disabled={savingBookType || loading || creatingProject || storyCreating || !messagesLoaded} />
+      <div className="flex shrink-0 justify-center px-4 pb-1 pt-4">
+        <BookTypeSelector compact value={bookType} onChange={changeBookType} disabled={savingBookType || loading || creatingProject || storyCreating || !messagesLoaded} />
       </div>
-      {/* Messages, full width, no card, no border, sits directly on the page */}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 pt-4 sm:px-8 sm:pt-6">
-        <div className="mx-auto w-full max-w-3xl space-y-6">
-          {/* Loading state while project history comes back from the database.
-              Without this the page flashes empty and looks like the chat was
-              lost, which is the bug this replaces. */}
+
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 pt-6 sm:px-8">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">
+          {/* While project history loads, show a spinner rather than an
+              empty page that looks like the chat was lost. */}
           {isProjectMode && !messagesLoaded && (
             <div className="flex justify-center py-10">
-              <Loader2 className="h-5 w-5 animate-spin text-[#9B88CF]" />
+              <Loader2 className="h-5 w-5 animate-spin text-[#6F4BB0]" aria-label="Loading your chat" />
             </div>
           )}
 
-          {messages.map((msg, i) => (
-            <motion.div
-              key={`${msg.role}-${i}-${msg.content.slice(0, 24)}`}
-              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className={`flex ${
-                msg.role === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
-              {msg.role === "user" ? (
-                <div className="flex max-w-[90%] items-start gap-3">
-                  <div className="rounded-2xl rounded-tr-md bg-[#EEE8F6] px-5 py-3.5 text-slate-800">
-                    <p className="whitespace-pre-wrap break-words text-[15px] font-normal leading-7 sm:text-base">
-                      {msg.content}
-                    </p>
-                  </div>
-                  <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#DB79AC]/15">
-                    <User className="h-3.5 w-3.5 text-[#DB79AC]" />
-                  </div>
-                </div>
-              ) : (
-                <div className="flex max-w-[90%] items-start gap-3">
-                  <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
-                    <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
-                  </div>
-                  <div className="rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200/60">
-                    <p className="whitespace-pre-wrap break-words text-[15px] font-normal leading-7 sm:text-base text-slate-700">
-                      {msg.content}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          ))}
-
-          {loading && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="flex items-end gap-2"
-            >
-              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
-                <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
-              </div>
-              <div className="flex gap-1.5 rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200/60">
-                <BouncingDot delay={0} />
-                <BouncingDot delay={0.1} />
-                <BouncingDot delay={0.2} />
-              </div>
-            </motion.div>
-          )}
-
-          {creatingProject && hasAttemptedResume && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-end gap-2"
-            >
-              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
-                <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
-              </div>
-              <div className="rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200/60">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-[#7655A3]" />
-                  <p className="text-sm font-medium leading-6 text-slate-700">
-                    Welcome back, creating your book…
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {reachedLimit && !(creatingProject && hasAttemptedResume) && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#9B88CF] text-white shadow-sm">
-                  <BookOpen className="h-5 w-5" />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-lg font-black tracking-tight text-slate-900">
-                    Your story is taking shape
-                  </h4>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">
-                    Sign in to continue, with illustrated pages, a custom
-                    cover, and print options.
-                  </p>
-
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={continueToFullProject}
-                      disabled={creatingProject}
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-[#DB79AC] px-5 py-3 text-sm font-bold text-white shadow-[0_8px_28px_rgba(219,121,172,0.3)] transition-transform active:scale-[0.98] disabled:opacity-60"
-                    >
-                      {creatingProject ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Creating your book…
-                        </>
-                      ) : (
-                        <>
-                          <BookOpen className="h-4 w-4" />
-                          Continue and create my book
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={resetDemo}
-                      disabled={creatingProject}
-                      className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-                    >
-                      Start again
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
+          {showWelcome && (
+            <div className="mb-4 pt-2 sm:pt-6">
+              <h1 className="m-0 text-[clamp(30px,4.5vw,44px)] font-bold leading-[1.02] tracking-[-0.03em] text-[#24182F]">
+                {isProjectMode ? "Let's shape the story." : "Let's make their book."}
+              </h1>
+              <p className="mb-0 mt-3 max-w-[44ch] text-[17px] leading-[1.5] text-[#4E4259]">
+                Tell me about them in your own words. A name, an age, something they love or something that really happened is plenty to start.
+              </p>
+            </div>
           )}
 
           {isProjectMode && messagesLoaded && messages.length === 0 && !storyCreating && (
-            <div className="flex items-end gap-2">
-              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
-                <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
-              </div>
-              <div className="max-w-[85%] rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200/60">
-                <p className="text-base leading-7 text-slate-700">
-                  Hi! I&apos;m your co-author. Tell me who this story is for
-                  and what they love, and we&apos;ll shape it together.
-                </p>
-              </div>
+            <ChatBubble from="fw">Hi! I&apos;m your co-author. Who is this story for, and what do they love?</ChatBubble>
+          )}
+
+          {messages.map((msg, i) => (
+            <ChatBubble key={`${msg.role}-${i}-${msg.content.slice(0, 24)}`} from={msg.role === "user" ? "you" : "fw"}>
+              {msg.content}
+            </ChatBubble>
+          ))}
+
+          {showWelcome && (
+            <div className="mt-3 flex flex-wrap justify-end gap-2" aria-label="Ideas to get started">
+              {STUDIO_SUGGESTIONS.map(({ label, text }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => applySuggestion(text)}
+                  className="min-h-[44px] rounded-full border-[1.5px] border-[#E4DCF0] bg-white px-4 text-[15px] font-semibold text-[#24182F] transition-all hover:-translate-y-0.5 hover:border-[#A270C9] hover:bg-[#F3ECFC] active:scale-95"
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           )}
 
-          {isProjectMode && storyCreating && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-end gap-2"
-            >
-              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#9B88CF]/15">
-                <Sparkles className="h-3.5 w-3.5 text-[#9B88CF]" />
-              </div>
-              <div className="rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200/60">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-[#7655A3]" />
-                  <p className="text-sm font-medium leading-6 text-slate-700">
-                    Writing your story… this takes about a minute.
-                  </p>
-                </div>
-              </div>
-            </motion.div>
+          {loading && <TypingBubble />}
+
+          {creatingProject && hasAttemptedResume && <StatusBubble>Welcome back, creating your book…</StatusBubble>}
+
+          {reachedLimit && !(creatingProject && hasAttemptedResume) && (
+            <div className="mt-4">
+              <ContinueCard
+                title="Your story is taking shape"
+                body="Sign in to keep going, with illustrated pages, a custom cover and print options."
+                onContinue={continueToFullProject}
+                onReset={resetDemo}
+                busy={creatingProject}
+              />
+            </div>
           )}
 
+          {isProjectMode && storyCreating && <StatusBubble>Writing your story… this takes about a minute.</StatusBubble>}
+
           {isProjectMode && storyError && !storyCreating && (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-              <p className="text-sm font-medium text-rose-700">{storyError}</p>
+            <div className="rounded-[22px] bg-[#FDECEF] p-5">
+              <p className="m-0 text-[15px] font-medium text-[#A11D33]">{storyError}</p>
               <button
                 type="button"
                 onClick={() => void createStoryFromChat()}
-                className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#DB79AC] px-5 py-2.5 text-sm font-bold text-white"
+                className="mt-3 inline-flex min-h-[46px] items-center gap-2 rounded-full bg-[#E8455C] px-5 text-[15px] font-bold text-white"
               >
-                <BookOpen className="h-4 w-4" />
+                <BookOpen className="h-4 w-4" aria-hidden="true" />
                 Try writing my story again
               </button>
             </div>
@@ -750,95 +655,22 @@ export default function ChatClient() {
       </div>
 
       {/* Composer stays in the flex layout, so messages never sit behind it. */}
-      <div className="shrink-0 px-4 pb-3 pt-2 sm:px-8 sm:pb-5">
-        <div className="mx-auto w-full max-w-3xl">
-          {!isProjectMode && userMessageCount > 0 && !reachedLimit && (
-            <div className="mb-2 px-1">
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#DB79AC]">
-                <Zap className="h-3.5 w-3.5" />
-                <span>
-                  {remaining} more message{remaining !== 1 ? "s" : ""} to
-                  shape your story
-                </span>
-              </div>
-            </div>
-          )}
+      <div className="shrink-0 px-4 pb-3 pt-2 sm:px-8 sm:pb-6">
+        <div className="mx-auto w-full max-w-2xl">
+          {!isProjectMode && userMessageCount > 0 && !reachedLimit && <RepliesLeft remaining={remaining} total={MAX_USER_MESSAGES} />}
 
-          {!isProjectMode && userMessageCount === 0 && !reachedLimit && (
-            <div className="mb-2 px-1 text-center">
-              <p className="text-xs text-slate-500">
-                Chat to shape the story, then make it a real illustrated
-                book. No sign-up to start.
-              </p>
-            </div>
-          )}
+          <ChatComposer
+            textareaRef={textareaRef}
+            value={input}
+            onChange={setInput}
+            onSend={() => void sendMessage()}
+            loading={loading}
+            disabled={loading || reachedLimit || creatingProject || storyCreating}
+            maxHeight={160}
+            placeholder={reachedLimit ? "Demo complete. Continue to create your book" : "Tell me about them…"}
+          />
 
-          <div className="flex items-end gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_24px_rgba(30,20,50,0.06)] focus-within:border-[#9B88CF] focus-within:ring-2 focus-within:ring-[#9B88CF]/10">
-            <div className="flex min-h-[44px] min-w-0 flex-1 items-center px-2 py-2">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === "Enter" &&
-                    !e.shiftKey &&
-                    !loading &&
-                    !reachedLimit
-                  ) {
-                    e.preventDefault();
-                    void sendMessage();
-                  }
-                }}
-                placeholder={
-                  reachedLimit
-                    ? "Demo complete. Continue to create your book"
-                    : "Tell me more about your story…"
-                }
-                disabled={loading || reachedLimit || creatingProject || storyCreating}
-                rows={1}
-                className="max-h-[160px] w-full resize-none border-0 bg-transparent text-[16px] font-normal text-gray-900 outline-none placeholder:text-gray-500 focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60"
-                style={{ lineHeight: "1.4" }}
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={() => void sendMessage()}
-              disabled={
-                !input.trim() || loading || reachedLimit || creatingProject || storyCreating
-              }
-              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full transition-all duration-200 active:scale-90 disabled:cursor-not-allowed"
-              style={{
-                background:
-                  input.trim() && !reachedLimit && !creatingProject
-                    ? "#7655A3"
-                    : "#E5E7EB",
-                color:
-                  input.trim() && !reachedLimit && !creatingProject
-                    ? "white"
-                    : "#9CA3AF",
-                boxShadow:
-                  input.trim() && !reachedLimit && !creatingProject
-                    ? "0 3px 12px rgba(219,121,172,0.35)"
-                    : "none",
-              }}
-              aria-label="Send message"
-            >
-              {loading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <Send
-                  className="h-5 w-5"
-                  style={{ transform: "translateX(1px)" }}
-                />
-              )}
-            </button>
-          </div>
-
-          {error && (
-            <p className="mt-3 text-sm font-medium text-rose-600">{error}</p>
-          )}
+          {error && <p className="mb-0 mt-3 text-center text-sm font-medium text-[#C8243D]">{error}</p>}
         </div>
         <div className="h-[env(safe-area-inset-bottom)]" />
       </div>
@@ -846,12 +678,11 @@ export default function ChatClient() {
   );
 }
 
-function BouncingDot({ delay }: { delay: number }) {
-  return (
-    <motion.div
-      animate={{ y: [0, -4, 0] }}
-      transition={{ repeat: Infinity, duration: 0.6, delay }}
-      className="h-2 w-2 rounded-full bg-[#9B88CF]"
-    />
-  );
-}
+// Label on the chip, and the start of a sentence it puts in the box.
+const STUDIO_SUGGESTIONS = [
+  { label: "It's for my son", text: "It's for my son, " },
+  { label: "It's for my daughter", text: "It's for my daughter, " },
+  { label: "It's for my grandchild", text: "It's for my grandchild, " },
+  { label: "Something that really happened", text: "Something that really happened: " },
+  { label: "A bedtime adventure", text: "A bedtime adventure about " },
+];

@@ -8,7 +8,6 @@
 // pricing, about Katy, FAQ, final starter. Copy avoids em dashes by choice.
 
 import type { Metadata } from "next";
-import { Bricolage_Grotesque, Fraunces } from "next/font/google";
 import { getServerSession } from "next-auth";
 import { headers } from "next/headers";
 import Link from "next/link";
@@ -27,8 +26,7 @@ import { starterHref } from "@/lib/chatStarter";
 import { getPriceCents, formatPrice, countryToCurrency } from "@/lib/pricing";
 import "./home.css";
 
-const brico = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-brico", display: "swap" });
-const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-book", weight: ["400", "600"], display: "swap" });
+import { brico, fraunces } from "./fonts";
 
 const TITLE = "Personalised Children's Books Written by You | FlipWhizz";
 const DESCRIPTION =
