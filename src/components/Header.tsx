@@ -6,7 +6,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 
-const PINK = "#D94590";
 
 
 // `minimal` strips the nav links and keeps only the logo + a quiet auth
@@ -37,18 +36,18 @@ export default function Header({
   };
 
   if (workspace) return (
-    <header className="z-20 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-slate-200/70 bg-white px-4 sm:px-8">
+    <header className="z-20 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-[#EFE7F5] bg-white px-4 sm:px-8">
       <div className="flex min-w-0 items-center gap-4">
         <Link href="/" aria-label="FlipWhizz home" className="shrink-0">
-          <Image src="/Flipwhizz_logo_NEW.png" alt="FlipWhizz" width={92} height={56} className="h-12 w-24 object-contain" />
+          <Image src="/Flipwhizz_logo_NEW.png" alt="FlipWhizz" width={180} height={180} className="h-auto w-[104px]" />
         </Link>
-        <div className="hidden h-6 w-px bg-slate-200 sm:block" />
-        <p className="truncate text-sm font-semibold tracking-tight text-slate-700">Story studio</p>
+        <div className="hidden h-6 w-px bg-[#E4DCF0] sm:block" />
+        <p className="hidden truncate text-[15px] font-bold text-[#24182F] sm:block">Story studio</p>
       </div>
       <nav aria-label="Account" className="flex shrink-0 items-center gap-3 sm:gap-5">
         {session ? <>
-          <Link href="/projects" className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">My library</Link>
-          <button onClick={handleSignOut} className="hidden rounded-lg px-2 py-2 text-xs text-slate-500 hover:bg-slate-100 sm:block">Sign out</button>
+          <Link href="/projects" className="rounded-full border-[1.5px] border-[#E4DCF0] px-4 py-2 text-[14px] font-semibold text-[#24182F] transition-colors hover:border-[#A270C9]">My library</Link>
+          <button onClick={handleSignOut} className="hidden rounded-full px-2 py-2 text-[14px] font-medium text-[#6A5E73] transition-colors hover:text-[#24182F] sm:block">Sign out</button>
         </> : <SignInButton />}
       </nav>
     </header>
@@ -71,13 +70,7 @@ export default function Header({
           <div className="pointer-events-none absolute left-1/2 top-1/2 max-w-[50vw] -translate-x-1/2 -translate-y-1/2 text-center">
             <p
               className="truncate text-[32px] font-black tracking-tighter"
-              style={{
-                backgroundImage:
-                  "linear-gradient(90deg, #F2546A, #F7A93E, #8AC7E0, #A270C9)",
-                WebkitBackgroundClip: "text",
-                backgroundClip: "text",
-                color: "transparent",
-              }}
+              style={{ color: "#24182F" }}
             >
               {title}
             </p>
@@ -114,16 +107,15 @@ export default function Header({
             <>
               <Link
                 href="/projects"
-                className="px-6 py-2.5 rounded-full text-sm font-bold text-white tracking-wide transition-all duration-300 hover:scale-105 hover:shadow-lg"
-                style={{ background: PINK, boxShadow: `0 3px 14px ${PINK}40` }}
+                className="rounded-full border-[1.5px] border-[#E4DCF0] px-5 py-2.5 text-[15px] font-semibold text-[#24182F] transition-colors hover:border-[#A270C9]"
               >
-                ✦ My Library
+                My library
               </Link>
               <button
                 onClick={handleSignOut}
-                className="px-5 py-2.5 rounded-full text-sm font-medium text-gray-400 hover:text-gray-600 transition-all duration-300"
+                className="rounded-full px-3 py-2.5 text-[15px] font-medium text-[#6A5E73] transition-colors hover:text-[#24182F]"
               >
-                Sign Out
+                Sign out
               </button>
             </>
           )}
@@ -143,10 +135,9 @@ export default function Header({
             ) : (
               <Link
                 href="/projects"
-                className="px-5 py-2 rounded-full text-sm font-bold text-white tracking-wide"
-                style={{ background: PINK, boxShadow: `0 3px 14px ${PINK}40` }}
+                className="rounded-full border-[1.5px] border-[#E4DCF0] px-4 py-2 text-[14px] font-semibold text-[#24182F]"
               >
-                ✦ My Library
+                My library
               </Link>
             )
           ) : (
@@ -166,13 +157,7 @@ export default function Header({
           <div className="px-5 pb-3 -mt-1 text-center">
             <p
               className="text-[19px] font-black leading-tight tracking-tighter"
-              style={{
-                backgroundImage:
-                  "linear-gradient(90deg, #F2546A, #F7A93E, #8AC7E0, #A270C9)",
-                WebkitBackgroundClip: "text",
-                backgroundClip: "text",
-                color: "transparent",
-              }}
+              style={{ color: "#24182F" }}
             >
               {title}
             </p>
@@ -225,8 +210,8 @@ export default function Header({
                   </>
                 ) : (
                   <>
-                    <Link href="/projects" onClick={() => setIsOpen(false)} className="w-full py-4 rounded-2xl text-center text-base font-bold text-white tracking-wide transition-all hover:scale-[1.02] active:scale-[0.98] bg-[#DB79AC]" style={{  boxShadow: `0 4px 20px ` }}>✦ My Library</Link>
-                    <button onClick={handleSignOut} className="w-full py-4 rounded-2xl text-center text-base font-medium text-[#DB79AC] hover:text-[#DB79AC] transition-all">Sign Out</button>
+                    <Link href="/projects" onClick={() => setIsOpen(false)} className="w-full rounded-full bg-[#24182F] py-4 text-center text-base font-bold text-white">My library</Link>
+                    <button onClick={handleSignOut} className="w-full rounded-full py-4 text-center text-base font-medium text-[#6A5E73]">Sign out</button>
                   </>
                 )}
               </motion.div>

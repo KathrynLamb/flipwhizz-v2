@@ -10,8 +10,7 @@ import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { getDemoSessionId, migrateDemoToUserAccount, clearDemoSessionId } from "@/lib/demo-session-utils";
 import { useSession } from "next-auth/react";
-import { motion } from "framer-motion";
-import { Loader2, Send, Zap, BookOpen } from "lucide-react";
+import { ChatBubble, TypingBubble, StatusBubble, RepliesLeft, ChatComposer, ContinueCard } from "@/components/chat/ChatBits";
 import posthog from "posthog-js";
 import { STARTER_OPENER, buildStarterConversation } from "@/lib/chatStarter";
 
@@ -398,244 +397,72 @@ export default function CreateDemoClient() {
   return (
     <div className="flex h-full flex-col">
       <BookTypeSelector value={bookType} onChange={selectBookType} disabled={loading || creatingProject || !messagesLoaded} />
-      {/* Messages, full width, no card, no border, sits directly on the page */}
-      <div className="flex-1 overflow-y-auto px-6 pb-32 pt-6">
-        <div className="mx-auto w-full max-w-xl space-y-3">
+
+      <div className="flex-1 pb-44 pt-8">
+        <div className="flex flex-col gap-3">
           {messages.map((msg, i) => (
-            <motion.div
-              key={`${msg.role}-${i}-${msg.content.slice(0, 24)}`}
-              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className={`flex ${
-                msg.role === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
-              {msg.role === "user" ? (
-                <div className="max-w-[85%]">
-                  <div className="rounded-[20px] rounded-tr-[4px] bg-[#DB79AC] px-5 py-3 text-white shadow-sm">
-                    <p className="whitespace-pre-wrap break-words text-[16px] font-normal leading-[1.4]">
-                      {msg.content}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="max-w-[85%]">
-                  <div className="rounded-[20px] rounded-bl-[4px] bg-[#9B88CF] px-5 py-3 shadow-sm">
-                    <p className="whitespace-pre-wrap break-words text-[16px] font-normal leading-[1.4] text-white">
-                      {msg.content}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </motion.div>
+            <ChatBubble key={`${msg.role}-${i}-${msg.content.slice(0, 24)}`} from={msg.role === "user" ? "you" : "fw"}>
+              {msg.content}
+            </ChatBubble>
           ))}
 
-          {loading && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="flex justify-start"
-            >
-              <div className="flex gap-1.5 rounded-[20px] rounded-bl-[4px] bg-[#5B6BD6] px-5 py-3 shadow-sm">
-                <BouncingDot delay={0} />
-                <BouncingDot delay={0.1} />
-                <BouncingDot delay={0.2} />
-              </div>
-            </motion.div>
-          )}
+          {loading && <TypingBubble />}
 
-          {creatingProject && hasAttemptedResume && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex justify-start"
-            >
-              <div className="rounded-[20px] rounded-bl-[4px] bg-[#5B6BD6] px-5 py-3 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-white" />
-                  <p className="text-[16px] font-semibold leading-[1.4] text-white">
-                    Welcome back, creating your book…
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          )}
+          {creatingProject && hasAttemptedResume && <StatusBubble>Welcome back, creating your book…</StatusBubble>}
 
           {reachedLimit && !(creatingProject && hasAttemptedResume) && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#5B6BD6] text-white shadow-sm">
-                  <BookOpen className="h-5 w-5" />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-lg font-black tracking-tight text-slate-900">
-                    {serverLimitReached ? "Continue your story" : "Your story is taking shape"}
-                  </h4>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">
-                    {authStatus === "authenticated"
-                      ? "Continue shaping your story and create its illustrated pages and custom cover."
-                      : "Sign in to continue shaping your story and create its illustrated pages and custom cover."}
-                  </p>
-
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={continueToFullProject}
-                      disabled={creatingProject || userMessageCount === 0}
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-[#DE2E4A] px-5 py-3 text-sm font-bold text-white shadow-[0_8px_28px_rgba(222,46,74,0.25)] transition-transform active:scale-[0.98] disabled:opacity-60"
-                    >
-                      {creatingProject ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Creating your book…
-                        </>
-                      ) : (
-                        <>
-                          <BookOpen className="h-4 w-4" />
-                          Continue and create my book
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={resetDemo}
-                      disabled={creatingProject}
-                      className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-                    >
-                      Start again
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
+            <div className="mt-4">
+              <ContinueCard
+                title={serverLimitReached ? "Continue your story" : "Your story is taking shape"}
+                body={
+                  authStatus === "authenticated"
+                    ? "Carry on shaping it, then we'll illustrate every page and make its cover."
+                    : "Sign in to keep going. Your chat comes with you, then we'll illustrate every page and make its cover."
+                }
+                onContinue={continueToFullProject}
+                onReset={resetDemo}
+                busy={creatingProject}
+                continueDisabled={userMessageCount === 0}
+              />
+            </div>
           )}
 
           <div ref={bottomRef} />
         </div>
       </div>
 
-      {/* Input, fixed to the bottom of the screen now that there's no card
-          or footer below it to collide with. A thin gradient edge ties it
-          back to the header title; the bar itself stays white so the
-          textarea and send button stay legible. */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 px-6 py-3 backdrop-blur-xl">
-        <div
-          className="absolute left-0 right-0 top-0 h-[3px]"
-          style={{
-            background:
-              "linear-gradient(90deg, #F2546A, #F7A93E, #8AC7E0, #A270C9)",
-          }}
-        />
-        <div className="mx-auto w-full max-w-xl">
-          {userMessageCount > 0 && !reachedLimit && (
-            <div className="mb-2 px-1">
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#DE2E4A]">
-                <Zap className="h-3.5 w-3.5" />
-                <span>
-                  {remaining} more message{remaining !== 1 ? "s" : ""} to
-                  shape your story
-                </span>
-              </div>
-            </div>
-          )}
+      {/* Composer, fixed to the bottom of the screen. */}
+      <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-white via-white to-white/0 px-4 pb-3 pt-8 sm:px-6 sm:pb-5">
+        <div className="mx-auto w-full max-w-2xl">
+          {userMessageCount > 0 && !reachedLimit && <RepliesLeft remaining={remaining} total={MAX_USER_MESSAGES} />}
 
           {userMessageCount === 0 && !reachedLimit && (
-            <div className="mb-2 px-1 text-center">
-              <p className="text-xs text-slate-500">
-                Chat to shape the story, then make it a real illustrated
-                book. No sign-up to start.
-              </p>
-            </div>
+            <p className="mb-2.5 mt-0 text-center text-[14px] text-[#6A5E73]">
+              Your first illustrated page is free. No sign-up to start.
+            </p>
           )}
 
-          <div className="flex items-end gap-2">
-            <div className="flex min-h-[44px] flex-1 items-center rounded-[20px] border border-slate-200 bg-white px-4 py-2 shadow-sm transition focus-within:border-[#A270C9]/50 focus-within:ring-2 focus-within:ring-[#A270C9]/20">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === "Enter" &&
-                    !e.shiftKey &&
-                    !loading &&
-                    !reachedLimit
-                  ) {
-                    e.preventDefault();
-                    void sendMessage();
-                  }
-                }}
-                placeholder={
-                  reachedLimit
-                    ? "Demo complete. Continue to create your book"
-                    : bookType === "colouring_storybook"
-                      ? "Who’s our colouring-book hero? Their name, age, favourite things…"
-                      : "Type your reply… a name, an age, what they love, anything"
-                }
-                disabled={loading || reachedLimit || creatingProject}
-                rows={1}
-                className="max-h-[100px] w-full resize-none border-0 bg-transparent text-[16px] font-normal text-gray-900 outline-none placeholder:text-gray-500 focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60"
-                style={{ lineHeight: "1.4" }}
-              />
-            </div>
+          <ChatComposer
+            textareaRef={textareaRef}
+            value={input}
+            onChange={setInput}
+            onSend={() => void sendMessage()}
+            loading={loading}
+            disabled={loading || reachedLimit || creatingProject}
+            maxHeight={100}
+            placeholder={
+              reachedLimit
+                ? "Demo complete. Continue to create your book"
+                : bookType === "colouring_storybook"
+                  ? "Their name, age, favourite things…"
+                  : "A name, an age, what they love…"
+            }
+          />
 
-            <button
-              type="button"
-              onClick={() => void sendMessage()}
-              disabled={
-                !input.trim() || loading || reachedLimit || creatingProject
-              }
-              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full transition-all duration-200 active:scale-90 disabled:cursor-not-allowed"
-              style={{
-                background:
-                  input.trim() && !reachedLimit && !creatingProject
-                    ? "#DE2E4A"
-                    : "#E5E7EB",
-                color:
-                  input.trim() && !reachedLimit && !creatingProject
-                    ? "white"
-                    : "#9CA3AF",
-                boxShadow:
-                  input.trim() && !reachedLimit && !creatingProject
-                    ? "0 3px 12px rgba(222,46,74,0.3)"
-                    : "none",
-              }}
-              aria-label="Send message"
-            >
-              {loading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <Send
-                  className="h-5 w-5"
-                  style={{ transform: "translateX(1px)" }}
-                />
-              )}
-            </button>
-          </div>
-
-          {error && (
-            <p className="mt-3 text-sm font-medium text-rose-600">{error}</p>
-          )}
+          {error && <p className="mb-0 mt-3 text-center text-sm font-medium text-[#C8243D]">{error}</p>}
         </div>
         <div className="h-[env(safe-area-inset-bottom)]" />
       </div>
     </div>
-  );
-}
-
-function BouncingDot({ delay }: { delay: number }) {
-  return (
-    <motion.div
-      animate={{ y: [0, -4, 0] }}
-      transition={{ repeat: Infinity, duration: 0.6, delay }}
-      className="h-2 w-2 rounded-full bg-white/80"
-    />
   );
 }
