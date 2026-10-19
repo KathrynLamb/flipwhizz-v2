@@ -1,3 +1,13 @@
+// src/app/page.tsx
+//
+// Homepage. The page is the first message of the story chat: the hero asks
+// "Who's this story for?" and answering drops the visitor into /projects/create
+// with that answer already sent. Sections, in order, each with one job:
+// hero chat starter, trust strip, real books, how it works (+ second starter),
+// every grown-up who loves them, occasions, pricing, about Katy, FAQ (+ final
+// starter). Copy avoids em dashes by choice.
+
+import type { Metadata } from "next";
 import { luluPrintEnabled } from "@/lib/lulu/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
@@ -5,7 +15,6 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import Image from "next/image";
 import { Playfair_Display, Lato } from "next/font/google";
-import HeroButton from "@/components/HeroButton";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { db } from "@/db";
@@ -13,24 +22,64 @@ import { projects } from "@/db/schema";
 import { stories, bookCovers } from "@/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import GallerySection from "@/components/GallerySection";
+import HomeChatStarter from "@/components/home/HomeChatStarter";
+import HomeFaq from "@/components/home/HomeFaq";
+import { HOME_FAQS } from "@/content/homeFaqs";
+import { GIFT_PAGES } from "@/content/giftPages";
+import { starterHref } from "@/lib/chatStarter";
 import { getPriceCents, formatPrice, countryToCurrency } from "@/lib/pricing";
 
 const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-serif", weight: ["400", "700", "900"] });
 const lato = Lato({ subsets: ["latin"], variable: "--font-sans", weight: ["400", "700"] });
 
+const TITLE = "Personalised Children's Books Written by You | FlipWhizz";
+const DESCRIPTION =
+  "Turn a family memory or your child's imagination into a personalised illustrated book. Free first page, no sign-up. Printed and delivered in the UK.";
+
+export const metadata: Metadata = {
+  // absolute: skip the layout's "%s | FlipWhizz" template, the brand is already in the title.
+  title: { absolute: TITLE },
+  description: DESCRIPTION,
+  alternates: { canonical: "https://flipwhizz.com" },
+  openGraph: {
+    type: "website",
+    url: "https://flipwhizz.com",
+    siteName: "FlipWhizz",
+    title: TITLE,
+    description: DESCRIPTION,
+    locale: "en_GB",
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "A personalised FlipWhizz storybook made from family photos" }],
+  },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, images: ["/og-image.png"] },
+};
+
+const INK = "#2D2235";
+const BODY = "#5C5048";
+const PINK = "#D94590";
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-3 text-sm font-bold uppercase tracking-[0.18em]" style={{ color: PINK }}>
+      {children}
+    </p>
+  );
+}
+
 export default async function Home() {
   const session = await getServerSession(authOptions);
 
-  // Resolve display currency from geo. This page is already dynamic (it reads
-  // the session cookie via getServerSession), so reading a header here adds no
-  // extra caching/SEO cost.
+  // Display currency from geo. The page is already dynamic (it reads the
+  // session cookie), so reading a header adds no extra caching cost.
   const country = (await headers()).get("x-vercel-ip-country");
   const currency = countryToCurrency(country);
 
-  const priceDigital = formatPrice(getPriceCents("digital", currency), currency);
-  const pricePrint = formatPrice(getPriceCents("print", currency), currency);
-  const priceColouring = formatPrice(getPriceCents("print", currency, "colouring_storybook"), currency);
+  const digitalCents = getPriceCents("digital", currency);
+  const printCents = getPriceCents("print", currency);
+  const priceDigital = formatPrice(digitalCents, currency);
+  const pricePrint = formatPrice(printCents, currency);
   const priceGift = formatPrice(getPriceCents("gift", currency), currency);
+  const priceColouring = formatPrice(getPriceCents("print", currency, "colouring_storybook"), currency);
+  const colouringAvailable = luluPrintEnabled();
 
   const publicStories = await db
     .select({ id: stories.id, title: stories.title, description: stories.description, coverSpreadUrl: stories.coverSpreadUrl, updatedAt: stories.updatedAt })
@@ -48,23 +97,19 @@ export default async function Home() {
     hasProjects = userProjects[0].count > 0;
   }
 
-  // Honest, current dateModified: the homepage genuinely changes when new
-  // public stories are added to the gallery. publicStories is ordered by
-  // updatedAt desc, so [0] is the most recent. Falls back to now if empty.
   const lastModified = new Date(publicStories[0]?.updatedAt ?? Date.now()).toISOString();
 
-  // ── Structured data for the brand SERP ──
+  // ── Structured data ──
   const organizationJsonLd = {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: "FlipWhizz",
     url: "https://flipwhizz.com",
-    // Swap for a square logo asset if you have one; og-image works as a fallback.
     logo: "https://flipwhizz.com/og-image.png",
+    email: "hello@flipwhizz.com",
     description:
-      "Personalised children's book platform where parents author original, co-created stories for their child. Built by an educator with 30 years working with children.",
-    founder: { "@type": "Person", name: "Katy" },
-    // Add your TikTok / Facebook URLs here as you confirm the handles.
+      "Personalised children's book platform where the adult who loves a child authors an original, illustrated story for them. Built by an educator with 20 years working with children.",
+    founder: { "@type": "Person", name: "Katy", jobTitle: "Founder", url: "https://flipwhizz.com/about" },
     sameAs: ["https://www.instagram.com/flipwhizz_kate"],
   };
 
@@ -80,285 +125,264 @@ export default async function Home() {
     "@context": "https://schema.org",
     "@type": "WebPage",
     url: "https://flipwhizz.com",
-    name: "FlipWhizz | Personalised Storybooks for Kids",
-    description:
-      "Create personalised storybooks for kids with FlipWhizz. Turn your child's interests, imagination, and real-life moments into magical bedtime stories, adventures, and keepsake books.",
+    name: TITLE,
+    description: DESCRIPTION,
     isPartOf: { "@type": "WebSite", url: "https://flipwhizz.com" },
     dateModified: lastModified,
   };
 
+  const productJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: "Personalised children's storybook",
+    description:
+      "An original, illustrated children's book written by you about a child you love, from a short chat. Available as a digital book or a printed storybook.",
+    brand: { "@type": "Brand", name: "FlipWhizz" },
+    image: "https://flipwhizz.com/LandingPage/photo_to_book.jpeg",
+    offers: [
+      { "@type": "Offer", name: "Digital book (PDF)", price: (digitalCents / 100).toFixed(2), priceCurrency: currency, availability: "https://schema.org/InStock", url: "https://flipwhizz.com/#pricing" },
+      { "@type": "Offer", name: "Printed storybook", price: (printCents / 100).toFixed(2), priceCurrency: currency, availability: "https://schema.org/InStock", url: "https://flipwhizz.com/#pricing" },
+    ],
+  };
+
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: HOME_FAQS.map((faq) => ({
+      "@type": "Question",
+      name: faq.question,
+      acceptedAnswer: { "@type": "Answer", text: faq.answer },
+    })),
+  };
+
+  const occasionLinks = GIFT_PAGES.filter((g) => g.showInOccasions);
+
   return (
-    <main className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans text-slate-900 overflow-x-hidden`} style={{ background: "#FEFCFA" }}>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageJsonLd) }}
-      />
+    <main className={`min-h-screen ${playfair.variable} ${lato.variable} font-sans text-[18px] text-slate-900 overflow-x-hidden`} style={{ background: "#FEFCFA" }}>
+      {[organizationJsonLd, websiteJsonLd, webPageJsonLd, productJsonLd, faqJsonLd].map((json, i) => (
+        <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(json) }} />
+      ))}
 
-      {/* CSS-only hover effects for pricing cards */}
-      <style>{`
-        .pricing-card {
-          border: 1px solid #E8DDCF;
-          box-shadow: 0 4px 24px rgba(45,34,53,0.06);
-          transition: box-shadow 0.3s, transform 0.3s;
-        }
-        .pricing-card:hover {
-          box-shadow: 0 16px 48px rgba(217,69,144,0.1), 0 0 0 1px rgba(217,69,144,0.12);
-          transform: translateY(-4px);
-        }
-        .pricing-card-featured {
-          border: 2px solid #D94590;
-          box-shadow: 0 12px 40px rgba(217,69,144,0.15), 0 0 0 1px rgba(217,69,144,0.1);
-          transition: box-shadow 0.3s, transform 0.3s;
-        }
-        .pricing-card-featured:hover {
-          box-shadow: 0 24px 60px rgba(217,69,144,0.22), 0 0 0 1px rgba(217,69,144,0.2);
-          transform: translateY(-4px);
-        }
-      `}</style>
+      <div className="relative z-30">
+        <Header session={session} />
+      </div>
 
-      {/* ── HERO ── */}
-      <section className="relative w-full flex flex-col bg-white">
-        <div className="relative z-30">
-          <Header session={session} />
-        </div>
-        <div className="relative w-full">
-          <div className="hidden lg:block relative w-full" style={{ height: "min(75vh, 700px)" }}>
-            <Image src="/LandingPage/white_hero.jpg" alt="Big Imaginations Deserve Beautiful Books" fill priority className="object-cover object-top" />
+      {/* ── 1. HERO: the chat starter ── */}
+      <section className="bg-white px-4 pb-12 pt-8 sm:px-6 lg:px-12 lg:pb-20 lg:pt-14">
+        <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14">
+          <div className="min-w-0">
+            <h1 className="font-serif text-[34px] font-bold leading-[1.12] sm:text-5xl lg:text-[54px]" style={{ color: INK }}>
+              A personalised children&apos;s book, written by you, about the child you love.
+            </h1>
+            <p className="mt-5 max-w-xl text-[19px] leading-relaxed sm:text-xl" style={{ color: BODY }}>
+              Tell us about them in a short chat. We&apos;ll help you shape the story and illustrate every page.
+            </p>
+            <div className="mt-7">
+              <HomeChatStarter position="hero" />
+              <p className="mt-3 pl-2 text-base font-semibold" style={{ color: "#7960AF" }}>
+                Free first illustrated page. No sign-up to start. No card.
+              </p>
+            </div>
           </div>
-          <div className="lg:hidden relative w-full">
-            <Image src="/LandingPage/white_hero_mob.jpg" alt="Big Imaginations Deserve Beautiful Books" width={1536} height={2752} priority className="w-full h-auto" />
+
+          <figure className="min-w-0">
+            <div className="relative aspect-[1504/704] w-full overflow-hidden rounded-[22px] shadow-[0_25px_60px_rgba(45,34,53,0.16)]">
+              <Image
+                src="/LandingPage/photo_to_book.jpeg"
+                alt="Family photos of a little girl, a park bandstand, a cat and a dog, next to the illustrated storybook page they became"
+                fill
+                priority
+                sizes="(min-width: 1024px) 560px, 100vw"
+                className="object-cover"
+              />
+            </div>
+            <figcaption className="mt-3 text-center text-base" style={{ color: BODY }}>
+              Your photos and memories in, their own illustrated book out.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      {/* ── 2. TRUST STRIP ── */}
+      <section aria-label="Why families trust FlipWhizz" className="border-y border-[#EFE6DA] bg-[#FBF7F2] px-4 py-6 sm:px-6">
+        <ul className="mx-auto flex max-w-5xl flex-col items-center justify-center gap-3 text-center text-[17px] font-semibold sm:flex-row sm:gap-10" style={{ color: INK }}>
+          <li>Created by an educator with 20 years working with children</li>
+          <li aria-hidden="true" className="hidden sm:block text-[#D9C9B6]">✦</li>
+          <li>Printed and delivered to your door</li>
+          <li aria-hidden="true" className="hidden sm:block text-[#D9C9B6]">✦</li>
+          <li>Your photos stay private</li>
+        </ul>
+      </section>
+
+      {/* ── 3. SEE INSIDE REAL BOOKS ── */}
+      <GallerySection stories={publicStories} coverByStoryId={coverByStoryId} session={session} hasProjects={hasProjects} />
+
+      {/* ── 4. HOW IT WORKS ── */}
+      <section id="how-it-works" aria-labelledby="how-title" className="px-4 py-20 sm:px-6 lg:px-12 lg:py-24" style={{ background: "#F7F3FB" }}>
+        <div className="mx-auto max-w-5xl">
+          <div className="text-center">
+            <Eyebrow>How it works</Eyebrow>
+            <h2 id="how-title" className="font-serif text-4xl font-bold lg:text-5xl" style={{ color: INK }}>
+              How to make a personalised children&apos;s book
+            </h2>
+          </div>
+          <ol className="mt-12 grid gap-6 md:grid-cols-3">
+            {[
+              ["Chat", "Tell us about them: a memory, a joke, a dream, the dog. No writing skills needed."],
+              ["Shape", "See the first illustrated page free, then change anything until it feels like them."],
+              ["Keep", "Download it tonight, or get a printed storybook posted to your door."],
+            ].map(([title, text], i) => (
+              <li key={title} className="rounded-[22px] bg-white p-7 shadow-[0_4px_24px_rgba(45,34,53,0.06)]">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#D94590] text-lg font-bold text-white">{i + 1}</span>
+                <h3 className="mt-4 font-serif text-2xl font-bold" style={{ color: INK }}>{title}</h3>
+                <p className="mt-2 text-[17px] leading-relaxed" style={{ color: BODY }}>{text}</p>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-12 flex justify-center">
+            <HomeChatStarter position="mid" mode="about" question="What should the story be about?" tone="tinted" />
           </div>
         </div>
       </section>
 
-      {/* ── CTA STRIP ── */}
-      <section className="relative pt-4 pb-14 lg:pt-6 lg:pb-20 bg-white overflow-hidden">
-        <div
-          className="absolute bottom-0 left-0 right-0 h-24 pointer-events-none"
-          style={{ background: "linear-gradient(to bottom, white, #FEFCFA)" }}
-        />
-        <div className="relative flex flex-col items-center gap-5 px-6">
-          <Link
-            href={hasProjects ? "/projects" : "/projects/create"}
-            className="group px-10 py-4 lg:px-14 lg:py-5 rounded-full text-base lg:text-lg font-bold text-white tracking-wide transition-all duration-300 hover:scale-105 active:scale-[0.98]"
-            style={{
-              background: "#D94590",
-              boxShadow: "0 6px 28px rgba(217,69,144,0.35)",
-            }}
-          >
-            {hasProjects ? "Create Another Story" : "Create Your First Story"}
-          </Link>
-          <div className="text-center space-y-1.5">
-            <p className="text-sm lg:text-base font-medium" style={{ color: "#6B5D52" }}>
-              See your first illustrated spread for free — no card, no commitment.
-            </p>
-            <p className="text-xs lg:text-sm" style={{ color: "#A89B8E" }}>
-              The whole thing takes about 15 minutes.
-            </p>
+      {/* ── 5. EVERY GROWN-UP WHO LOVES THEM ── */}
+      <section aria-labelledby="who-title" className="px-4 py-20 sm:px-6 lg:px-12 lg:py-24">
+        <div className="mx-auto max-w-6xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <Eyebrow>For every grown-up who loves them</Eyebrow>
+            <h2 id="who-title" className="font-serif text-4xl font-bold lg:text-5xl" style={{ color: INK }}>
+              Personalised book gifts for grandchildren, nieces, nephews and your own little ones
+            </h2>
+          </div>
+          <div className="mt-12 grid gap-6 md:grid-cols-3">
+            {[
+              { who: "Grandparents", line: "Put your stories in their hands. Just chat, we'll do the rest.", href: "/gifts/grandchildren", cta: "Gifts for grandchildren" },
+              { who: "Aunts, uncles and godparents", line: "The gift no one else could give. Download it the same day or have it posted.", href: "/gifts/from-aunt-and-uncle", cta: "Gifts from an aunt or uncle" },
+              { who: "Parents", line: "Their bedtime, their world, their name on every page.", href: starterHref({ entry: "home_parents_card" }), cta: "Start their story" },
+            ].map((card) => (
+              <div key={card.who} className="flex flex-col rounded-[22px] border border-[#E8DDCF] bg-white p-7">
+                <h3 className="font-serif text-2xl font-bold" style={{ color: INK }}>{card.who}</h3>
+                <p className="mt-3 flex-1 text-[18px] leading-relaxed" style={{ color: BODY }}>{card.line}</p>
+                <Link href={card.href} className="mt-6 inline-flex min-h-[48px] items-center font-bold underline decoration-2 underline-offset-4" style={{ color: PINK }}>
+                  {card.cta} <span aria-hidden="true" className="ml-2">→</span>
+                </Link>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* ── COLOURING STORYBOOKS ── */}
-      <section id="colouring-books" aria-labelledby="colouring-title" className="px-6 py-16 lg:px-12 lg:py-24" style={{ background: "#F3EDF8" }}>
-        <div className="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[1.3fr_1fr] lg:items-center">
-          <div>
-            <p className="mb-4 text-sm font-bold uppercase tracking-[0.18em] text-[#7960AF]">Their story. Their colours.</p>
-            <h2 id="colouring-title" className="font-serif text-4xl font-bold leading-tight text-[#2D2235] lg:text-5xl">Read it. Colour it.<br />Make it yours.</h2>
-            <p className="mt-6 max-w-xl text-lg leading-relaxed text-[#6B5D52]">An adventure starring your child, with pictures they can colour themselves. Bring their favourite things, family jokes and big ideas. We&apos;ll turn them into a story they can make their own.</p>
-            {luluPrintEnabled() && <p className="mt-5 text-lg font-bold text-[#7960AF]">Coil-bound book + printable PDF: {priceColouring}, including standard delivery.</p>}
-            <p className="mt-2 text-sm text-[#6B5D52]">Opens flat for colouring. Lulu routes your order to a nearby available print facility.</p>
-            <Link href="/projects/create?bookType=colouring_storybook" className="mt-8 inline-flex rounded-full bg-[#7960AF] px-7 py-4 text-center font-bold text-white transition-colors hover:bg-[#654D96] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7960AF]">Create a colouring storybook <span aria-hidden="true" className="ml-3">→</span></Link>
-            <p className="mt-3 text-sm text-[#6B5D52]">Start with a free story conversation. Colouring-book mode is already selected.</p>
+      {/* ── 6. OCCASIONS ── */}
+      <section id="gifts" aria-labelledby="occasions-title" className="px-4 pb-20 sm:px-6 lg:px-12">
+        <div className="mx-auto max-w-5xl rounded-[28px] bg-[#FBF7F2] px-6 py-12 text-center sm:px-10">
+          <h2 id="occasions-title" className="font-serif text-3xl font-bold lg:text-4xl" style={{ color: INK }}>
+            A book for the moments that matter
+          </h2>
+          <ul className="mt-8 flex flex-wrap justify-center gap-3">
+            {occasionLinks.map((g) => (
+              <li key={g.slug}>
+                <Link
+                  href={`/gifts/${g.slug}`}
+                  className="inline-flex min-h-[48px] items-center rounded-full border border-[#E3D6ED] bg-white px-6 text-[17px] font-semibold transition-colors hover:border-[#A270C9]"
+                  style={{ color: INK }}
+                >
+                  {g.occasionLabel}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* ── 7. PRICING ── */}
+      <section id="pricing" aria-labelledby="pricing-title" className="px-4 py-20 sm:px-6 lg:px-12 lg:py-24" style={{ background: "#F7F3FB" }}>
+        <div className="mx-auto max-w-4xl">
+          <div className="text-center">
+            <Eyebrow>Pricing</Eyebrow>
+            <h2 id="pricing-title" className="font-serif text-4xl font-bold lg:text-5xl" style={{ color: INK }}>
+              Simple, honest pricing
+            </h2>
+            <p className="mx-auto mt-5 max-w-xl text-[19px] leading-relaxed" style={{ color: BODY }}>
+              Your first illustrated page is free. Only pay if you love it. One-off price, no subscription.
+            </p>
           </div>
-          <div className="rounded-[24px] border border-[#E3D6ED] bg-white p-7 shadow-sm sm:p-9">
-            <p className="font-serif text-2xl font-bold text-[#2D2235]">A story to read.<br />A world to colour.</p>
-            <ul className="mt-7 space-y-6">
-              {[
-                ["01", "They’re the hero", "An original story built around your child and their imagination."],
-                ["02", "They bring the colours", "A full-colour cover, with black-outline pictures and story text inside."],
-                ["03", "Print. Pick up pencils. Play.", "Choose the downloadable edition to print and colour at home."],
-              ].map(([number, title, description]) => (
-                <li key={number} className="flex gap-4">
-                  <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F3EDF8] text-sm font-bold text-[#7960AF]">{number}</span>
-                  <div><h3 className="font-bold text-[#2D2235]">{title}</h3><p className="mt-1 text-sm leading-relaxed text-[#6B5D52]">{description}</p></div>
+
+          <div className="mt-12 grid gap-6 md:grid-cols-2">
+            <div className="flex flex-col rounded-[22px] border border-[#E8DDCF] bg-white p-8">
+              <h3 className="font-serif text-2xl font-bold" style={{ color: INK }}>Digital book</h3>
+              <p className="mt-1 text-[17px]" style={{ color: BODY }}>A fully illustrated PDF to read on screen or print at home. Ready as soon as it&apos;s finished.</p>
+              <p className="mt-6 font-serif text-5xl font-bold" style={{ color: INK }}>{priceDigital}</p>
+              <Link href={starterHref({ entry: "pricing_digital" })} className="mt-8 inline-flex min-h-[54px] items-center justify-center rounded-full border-2 border-[#D94590] px-6 text-[17px] font-bold" style={{ color: PINK }}>
+                Start free
+              </Link>
+            </div>
+
+            <div className="relative flex flex-col rounded-[22px] border-2 border-[#D94590] bg-white p-8 shadow-[0_12px_40px_rgba(217,69,144,0.14)]">
+              <span className="absolute -top-4 left-8 rounded-full bg-[#D94590] px-4 py-1 text-sm font-bold text-white">Most loved</span>
+              <h3 className="font-serif text-2xl font-bold" style={{ color: INK }}>Printed storybook</h3>
+              <p className="mt-1 text-[17px]" style={{ color: BODY }}>A full-colour printed book posted to your door, plus the digital copy.</p>
+              <p className="mt-6 font-serif text-5xl font-bold" style={{ color: INK }}>{pricePrint}</p>
+              <Link href={starterHref({ entry: "pricing_print" })} className="mt-8 inline-flex min-h-[54px] items-center justify-center rounded-full bg-[#D94590] px-6 text-[17px] font-bold text-white shadow-[0_6px_20px_rgba(217,69,144,0.3)]">
+                Start free
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-8 rounded-[22px] bg-white p-6 text-[17px] leading-relaxed sm:p-8" style={{ color: BODY }}>
+            <p className="font-bold" style={{ color: INK }}>Choose at the end of your story:</p>
+            <ul className="mt-3 space-y-2">
+              <li><strong style={{ color: INK }}>Gift edition, {priceGift}:</strong> a hardcover printed book with a personal dedication page.</li>
+              {colouringAvailable && (
+                <li>
+                  <strong style={{ color: INK }}>Colouring edition, {priceColouring}:</strong> a coil-bound book with outline pictures to colour in, plus a printable PDF, delivery included.{" "}
+                  <Link href="/projects/create?bookType=colouring_storybook&entry=pricing_colouring" className="font-bold underline underline-offset-4" style={{ color: "#7960AF" }}>
+                    Make a colouring book
+                  </Link>
                 </li>
-              ))}
+              )}
             </ul>
           </div>
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── */}
-
-      
-      <section id="how-it-works" style={{ background: "#FEFCFA" }}>
-        <div className="relative w-full">
-          <div className="hidden lg:block relative w-full" style={{ aspectRatio: "16 / 9" }}>
-            <Image src="/LandingPage/how-it-works.jpg" alt="How FlipWhizz works: 1. Share your idea, 2. We craft their story, 3. Hold it in your hands" fill className="object-contain" />
+      {/* ── 8. ABOUT KATY ── */}
+      <section aria-labelledby="katy-title" className="px-4 py-20 sm:px-6 lg:px-12 lg:py-24">
+        <div className="mx-auto grid max-w-5xl items-center gap-10 md:grid-cols-[280px_1fr]">
+          <div className="relative mx-auto aspect-[3/4] w-56 overflow-hidden rounded-[22px] md:w-full">
+            <Image src="/About/katy-portrait.png" alt="Katy, founder of FlipWhizz" fill sizes="280px" className="object-cover" />
           </div>
-          <div className="lg:hidden relative w-full" style={{ aspectRatio: "9 / 16" }}>
-            <Image src="/LandingPage/how-it-works-mobile.jpg" alt="How FlipWhizz works: 1. Share your idea, 2. We craft their story, 3. Hold it in your hands" fill className="object-contain" />
+          <div>
+            <Eyebrow>Who&apos;s behind it</Eyebrow>
+            <h2 id="katy-title" className="font-serif text-4xl font-bold" style={{ color: INK }}>Hi, I&apos;m Katy</h2>
+            <p className="mt-4 text-[19px] leading-relaxed" style={{ color: BODY }}>
+              I&apos;ve spent 20 years working with children, in schools, early years settings, language classrooms and outdoors. I built FlipWhizz because the stories children love most are the ones about their own lives, told by the people who love them.
+            </p>
+            <p className="mt-5 font-serif text-2xl font-bold italic leading-snug" style={{ color: "#7960AF" }}>
+              &ldquo;AI never touches the child. It supports the adult who loves them.&rdquo;
+            </p>
+            <Link href="/about" className="mt-6 inline-flex min-h-[48px] items-center font-bold underline decoration-2 underline-offset-4" style={{ color: PINK }}>
+              Read my story <span aria-hidden="true" className="ml-2">→</span>
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* ── THIS IS OLIVIA'S BOOK ── */}
-      <section className="relative py-20 lg:py-28 px-6 lg:px-12 overflow-hidden" style={{ background: "#FEFCFA" }}>
-        <div
-          className="absolute -top-32 -left-32 w-[400px] h-[400px] rounded-full opacity-[0.06] pointer-events-none blur-3xl"
-          style={{ background: "radial-gradient(circle, #D94590, #7C3AED)" }}
-        />
-        <div className="relative mx-auto max-w-5xl">
-          <div className="text-center mb-12">
-            <p
-              className="text-sm font-semibold tracking-[0.2em] uppercase mb-4"
-              style={{ color: "#D94590" }}
-            >
-              ✦ Personalisation ✦
-            </p>
-            <h2 className="font-serif text-4xl lg:text-5xl font-bold" style={{ color: "#2D2235" }}>
-              This Is Olivia&apos;s Book. No One Else&apos;s.
-            </h2>
-            <p className="mt-4 text-lg" style={{ color: "#6B5D52" }}>
-              Your photos. Your words. Their one-of-a-kind book.
-            </p>
+      {/* ── 9. FAQ + FINAL STARTER ── */}
+      <section id="faq" aria-labelledby="faq-title" className="px-4 pb-24 pt-4 sm:px-6 lg:px-12">
+        <div className="mx-auto max-w-3xl">
+          <h2 id="faq-title" className="text-center font-serif text-4xl font-bold" style={{ color: INK }}>
+            Personalised children&apos;s book FAQ
+          </h2>
+          <div className="mt-10">
+            <HomeFaq faqs={HOME_FAQS} />
           </div>
-          <div
-            className="relative w-full aspect-[21/10] rounded-[22px] overflow-hidden"
-            style={{
-              boxShadow: "0 25px 60px rgba(45,34,53,0.18), 0 0 0 1px rgba(45,34,53,0.04)",
-            }}
-          >
-            <Image src="/LandingPage/photo_to_book.jpeg" alt="Real family photos transformed into a personalised illustrated storybook" fill className="object-cover" />
-          </div>
-        </div>
-      </section>
-
-      {/* ── GALLERY ── */}
-      <GallerySection stories={publicStories} coverByStoryId={coverByStoryId} session={session} hasProjects={hasProjects} />
-
-      {/* ── PRICING ── */}
-      <section id="pricing" className="relative py-28 px-6 lg:px-12 overflow-hidden" style={{ background: "#FEFCFA" }}>
-        {/* Background texture */}
-        <div
-          className="absolute inset-0 opacity-[0.02] pointer-events-none"
-          style={{
-            backgroundImage: `repeating-linear-gradient(
-              45deg,
-              transparent,
-              transparent 10px,
-              #2D2235 10px,
-              #2D2235 11px
-            )`,
-          }}
-        />
-        <div
-          className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full opacity-[0.05] pointer-events-none blur-3xl"
-          style={{ background: "radial-gradient(circle, #D94590, #7C3AED)" }}
-        />
-        <div
-          className="absolute -bottom-40 -left-40 w-[400px] h-[400px] rounded-full opacity-[0.04] pointer-events-none blur-3xl"
-          style={{ background: "radial-gradient(circle, #5EEAD4, #7C3AED)" }}
-        />
-
-        <div className="relative mx-auto max-w-6xl">
-          <div className="text-center max-w-3xl mx-auto mb-20">
-            <p
-              className="text-sm font-semibold tracking-[0.2em] uppercase mb-4"
-              style={{ color: "#D94590" }}
-            >
-              ✦ Pricing ✦
-            </p>
-            <h2 className="font-serif text-4xl lg:text-5xl font-bold" style={{ color: "#2D2235" }}>
-              Simple, Honest Pricing
-            </h2>
-            <p className="mt-6 text-lg leading-relaxed" style={{ color: "#6B5D52" }}>
-              Each story is crafted once, then yours forever.<br />
-              No subscriptions. No upsells. Just a beautiful book.
-            </p>
-          </div>
-
-          <div className="grid lg:grid-cols-3 gap-8 items-stretch">
-            {/* DIGITAL */}
-            <div className="pricing-card rounded-[22px] bg-white p-8 flex flex-col">
-              <h3 className="font-serif text-2xl font-bold mb-2" style={{ color: "#D94590" }}>Print at home PDF</h3>
-              <p className="text-sm mb-6" style={{ color: "#6B5D52" }}>A beautifully illustrated story, ready to read or print.</p>
-              <div className="mb-6">
-                <span className="text-4xl font-serif font-bold" style={{ color: "#2D2235" }}>{priceDigital}</span>
-                <span style={{ color: "#6B5D52" }}> one-off</span>
-              </div>
-              <ul className="space-y-3 text-sm mb-8" style={{ color: "#4A4038" }}>
-                {["Fully personalised story", "Custom illustrations", "Unlimited re-reads", "High-quality PDF download"].map(f => (
-                  <li key={f} className="flex items-start gap-2">
-                    <span style={{ color: "#D94590" }} className="mt-0.5">✦</span>{f}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-auto">
-                <HeroButton session={session} hasProjects={hasProjects} intent="digital" className="w-full" variant="primary" />
-              </div>
-            </div>
-
-            {/* PRINTED — featured */}
-            <div className="pricing-card-featured rounded-[22px] bg-white p-10 relative flex flex-col lg:-mt-4 lg:mb-[-16px]">
-              <div
-                className="absolute -top-4 left-1/2 -translate-x-1/2 text-white text-xs font-semibold px-5 py-1.5 rounded-full tracking-wide"
-                style={{ background: "#D94590", boxShadow: "0 4px 12px rgba(217,69,144,0.3)" }}
-              >
-                Most Loved
-              </div>
-              <div
-                className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 rounded-tr-lg opacity-15 pointer-events-none"
-                style={{ borderColor: "#D94590" }}
-              />
-              <h3 className="font-serif text-2xl font-bold mb-2" style={{ color: "#D94590" }}>Printed Storybook</h3>
-              <p className="text-sm mb-6" style={{ color: "#6B5D52" }}>A keepsake to hold, gift, and treasure for years.</p>
-              <div className="mb-6">
-                <span className="text-4xl font-serif font-bold" style={{ color: "#2D2235" }}>{pricePrint}</span>
-                <span style={{ color: "#6B5D52" }}> one-off</span>
-              </div>
-              <ul className="space-y-3 text-sm mb-8" style={{ color: "#4A4038" }}>
-                {["Everything in Digital", "Premium soft-touch cover", "Beautiful full-colour pages", "Perfect for bedtime reading"].map(f => (
-                  <li key={f} className="flex items-start gap-2">
-                    <span style={{ color: "#D94590" }} className="mt-0.5">✦</span>{f}
-                  </li>
-                ))}
-              </ul>
-              <HeroButton session={session} hasProjects={hasProjects} intent="print" variant="primary" className="w-full" />
-            </div>
-
-            {/* GIFT */}
-            <div className="pricing-card rounded-[22px] bg-white p-8 flex flex-col">
-              <h3 className="font-serif text-2xl font-bold mb-2" style={{ color: "#D94590" }}>Gift Edition</h3>
-              <p className="text-sm mb-6" style={{ color: "#6B5D52" }}>Made for birthdays, Christmas, and once-in-a-lifetime moments.</p>
-              <div className="mb-6">
-                <span className="text-4xl font-serif font-bold" style={{ color: "#2D2235" }}>{priceGift}</span>
-                <span style={{ color: "#6B5D52" }}> one-off</span>
-              </div>
-              <ul className="space-y-3 text-sm mb-8" style={{ color: "#4A4038" }}>
-                {["Deluxe printed book", "Personal dedication page", "Gift-ready presentation", "Designed to be kept forever"].map(f => (
-                  <li key={f} className="flex items-start gap-2">
-                    <span style={{ color: "#D94590" }} className="mt-0.5">✦</span>{f}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-auto">
-                <HeroButton session={session} hasProjects={hasProjects} intent="gift" className="w-full" variant="primary" />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-20 text-center text-sm" style={{ color: "#6B5D52" }}>
-            <p>No subscriptions. No hidden fees.<br />If your child doesn&apos;t love it, we&apos;ll make it right.</p>
+          <p className="mt-6 text-center text-[17px]" style={{ color: BODY }}>
+            More questions? <Link href="/faq" className="font-bold underline underline-offset-4" style={{ color: PINK }}>See the full FAQ</Link> or email{" "}
+            <a href="mailto:hello@flipwhizz.com" className="font-bold underline underline-offset-4" style={{ color: PINK }}>hello@flipwhizz.com</a>.
+          </p>
+          <div className="mt-14 flex flex-col items-center">
+            <h2 className="mb-6 text-center font-serif text-3xl font-bold" style={{ color: INK }}>Ready to start?</h2>
+            <HomeChatStarter position="footer" question="Ready? Who's this story for?" />
           </div>
         </div>
       </section>

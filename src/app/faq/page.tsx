@@ -2,14 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "FAQ — Personalised Children's Books | FlipWhizz",
+  title: { absolute: "Personalised Children's Book FAQ | FlipWhizz" },
   description:
     "Answers to common questions about FlipWhizz: how it works, what ages it's for, how it's different from other personalised children's books, printing options, pricing, and more.",
   alternates: {
     canonical: "https://flipwhizz.com/faq",
   },
   openGraph: {
-    title: "FAQ — Personalised Children's Books | FlipWhizz",
+    title: { absolute: "Personalised Children's Book FAQ | FlipWhizz" },
     description:
       "Everything parents want to know about creating a personalised storybook with FlipWhizz.",
     url: "https://flipwhizz.com/faq",
@@ -23,12 +23,12 @@ const faqs = [
   {
     question: "What is FlipWhizz?",
     answer:
-      "FlipWhizz is an AI-powered tool that helps families create personalised children's storybooks. You tell FlipWhizz about your child — their name, age, interests, and personality — and it builds a unique story from scratch, complete with custom illustrations. You can then order a professionally printed hardcover book or download a print-at-home PDF.",
+      "FlipWhizz helps parents, grandparents and anyone who loves a child write a personalised, illustrated storybook about them. You chat about the child (their name, age, what they love, a memory or an idea) and FlipWhizz helps you shape it into an original story and illustrates every page. You're the author. You can then order a printed book or download a print-at-home PDF.",
   },
   {
     question: "How does FlipWhizz work?",
     answer:
-      "You start by describing your child and the kind of story you'd like — a bedtime tale, an adventure, a confidence-building story, or something completely different. FlipWhizz uses AI to create a story shaped around those details. You then review and refine the characters, settings, and scenes before building the full illustrated book.",
+      "You start by describing your child and the kind of story you'd like — a bedtime tale, an adventure, a confidence-building story, or something completely different. FlipWhizz helps you turn those details into a story, using AI to help with the writing and illustrations. You then review and refine the characters, settings, and scenes before building the full illustrated book.",
   },
   {
     question: "Can I try FlipWhizz before signing up?",
@@ -68,7 +68,7 @@ const faqs = [
   {
     question: "Can I order a printed copy of the book?",
     answer:
-      "Yes. Once your storybook is complete, you can order a professionally printed hardcover delivered to your door. Books are produced by a professional print-on-demand partner and ship worldwide. You can also download a print-at-home PDF if you'd prefer to print it yourself.",
+      "Yes. Once your storybook is complete, you can order a professionally printed copy delivered to your door. Books are produced by a professional print-on-demand partner and ship worldwide. You can also download a print-at-home PDF if you'd prefer to print it yourself.",
   },
   {
     question: "How long does it take to create a book?",
@@ -88,7 +88,7 @@ const faqs = [
   {
     question: "How much does FlipWhizz cost?",
     answer:
-      "The story demo is completely free with no sign-up required. Creating a full illustrated book requires an account. Pricing for the book creation and printing options is shown during the creation flow.",
+      "Starting is free with no sign-up, and your first illustrated page is free too. You only pay if you want the finished book: a one-off price for the digital book or the printed storybook, shown in your currency on the homepage pricing section. No subscription.",
   },
   {
     question: "Is my child's data safe?",
@@ -103,7 +103,7 @@ const faqs = [
   {
     question: "Who created FlipWhizz?",
     answer:
-      "FlipWhizz was created by Katy, a self-taught developer with over 30 years of experience working with children across schools, early years settings, ESL classrooms, and outdoor education. The platform is built on the belief that the best children's stories are the ones shaped around who a child actually is.",
+      "FlipWhizz was created by Katy, a self-taught developer with 20 years of experience working with children across schools, early years settings, ESL classrooms, and outdoor education. The platform is built on the belief that the best children's stories are the ones shaped around who a child actually is.",
   },
 ];
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { getAllPosts } from "@/lib/blog";
+import { GIFT_PAGES } from "@/content/giftPages";
 
 // Same rainbow colours as the Header
 const RAINBOW = ["#E8457A", "#F5A623", "#7BC67E", "#5EAED4"];
@@ -10,9 +11,11 @@ export default function Footer() {
 
   const navItems = [
     { href: "/", label: "Home", colorVar: "--nav-hover-0" },
-    { href: "#how-it-works", label: "How It Works", colorVar: "--nav-hover-0" },
-    { href: "#gallery", label: "Gallery", colorVar: "--nav-hover-1" },
-    { href: "#pricing", label: "Pricing", colorVar: "--nav-hover-3" },
+    { href: "/#how-it-works", label: "How It Works", colorVar: "--nav-hover-0" },
+    { href: "/#gallery", label: "Examples", colorVar: "--nav-hover-1" },
+    { href: "/#pricing", label: "Pricing", colorVar: "--nav-hover-3" },
+    { href: "/faq", label: "FAQ", colorVar: "--nav-hover-1" },
+    { href: "/about", label: "About Katy", colorVar: "--nav-hover-2" },
     { href: "/blog", label: "Blog", colorVar: "--nav-hover-2" },
     { href: "/contact", label: "Contact", colorVar: "--nav-hover-3" },
   ];
@@ -97,7 +100,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 pb-16" style={{ borderBottom: "1px solid rgba(254,252,250,0.08)" }}>
 
           {/* Brand column */}
-          <div className="lg:col-span-4 flex flex-col gap-5">
+          <div className="lg:col-span-3 flex flex-col gap-5">
             <Link href="/" className="w-fit">
               <Image
                 src="/Flipwhizz_logo_NEW.png"
@@ -123,7 +126,7 @@ export default function Footer() {
           </div>
 
           {/* Nav column */}
-          <div className="lg:col-span-3 flex flex-col gap-2">
+          <div className="lg:col-span-2 flex flex-col gap-2">
             <p
               className="text-xs font-semibold uppercase tracking-[0.2em] mb-3"
               style={{ color: RAINBOW[0] }}
@@ -132,9 +135,7 @@ export default function Footer() {
             </p>
             {navItems.map(({ href, label }, i) => {
               // Map to colour index
-              const colorIdx = href === "/" || href === "#how-it-works" ? 0
-                : href === "#gallery" ? 1
-                : href === "/blog" ? 2 : 3;
+              const colorIdx = i % RAINBOW.length;
               return (
                 <Link
                   key={href}
@@ -148,8 +149,28 @@ export default function Footer() {
             })}
           </div>
 
+          {/* Gifts column */}
+          <div className="lg:col-span-3 flex flex-col gap-2">
+            <p
+              className="text-xs font-semibold uppercase tracking-[0.2em] mb-3"
+              style={{ color: RAINBOW[1] }}
+            >
+              Gift ideas
+            </p>
+            {GIFT_PAGES.map((g, i) => (
+              <Link
+                key={g.slug}
+                href={`/gifts/${g.slug}`}
+                className="footer-nav-link text-sm w-fit"
+                data-color={i % RAINBOW.length}
+              >
+                {g.footerLabel}
+              </Link>
+            ))}
+          </div>
+
           {/* Blog column */}
-          <div className="lg:col-span-5 flex flex-col gap-2">
+          <div className="lg:col-span-4 flex flex-col gap-2">
             <p
               className="text-xs font-semibold uppercase tracking-[0.2em] mb-3"
               style={{ color: RAINBOW[2] }}

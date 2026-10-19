@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     "bedtime story generator",
     "personalised children's books",
     "custom storybook creator",
-    "AI story generator for kids",
+    "personalised book gifts for grandchildren",
     "children's adventure stories",
   ],
   authors: [{ name: "FlipWhizz" }],

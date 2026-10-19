@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 export const metadata: Metadata = {
-  title: "Personalised Colouring Storybooks | FlipWhizz",
+  title: { absolute: "Personalised Colouring Storybooks | FlipWhizz" },
   description: "Make your child the hero of a story they can read and colour. Create a personal adventure with outline illustrations to make their own.",
 };
 export default function ColouringBooksPage() {

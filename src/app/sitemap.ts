@@ -1,5 +1,6 @@
 import { MetadataRoute } from "next";
 import { getAllPosts } from "@/lib/blog";
+import { GIFT_PAGES } from "@/content/giftPages";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl = "https://flipwhizz.com"; // removed www
@@ -30,6 +31,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.7,
     },
     {
+      url: `${baseUrl}/colouring-books`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    {
       url: `${baseUrl}/blog`,
       lastModified: new Date(),
       changeFrequency: "weekly",
@@ -46,5 +53,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.6,
   }));
 
-  return [...staticPages, ...blogPosts];
+  const giftPages: MetadataRoute.Sitemap = GIFT_PAGES.map((g) => ({
+    url: `${baseUrl}/gifts/${g.slug}`,
+    lastModified: new Date(),
+    changeFrequency: "monthly" as const,
+    priority: 0.8,
+  }));
+
+  return [...staticPages, ...giftPages, ...blogPosts];
 }

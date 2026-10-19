@@ -57,10 +57,10 @@ export default function Header({
   );
 
   const navLinks = [
-    { href: "#how-it-works", label: "How It Works" },
-    { href: "#gallery", label: "Gallery" },
-    { href: "/blog", label: "Blog" },
-    { href: "#pricing", label: "Pricing" },
+    { href: "/#how-it-works", label: "How it works" },
+    { href: "/#gallery", label: "Examples" },
+    { href: "/#gifts", label: "Gifts" },
+    { href: "/#pricing", label: "Pricing" },
   ];
 
   return (
@@ -114,7 +114,10 @@ export default function Header({
 
         <div className="flex items-center gap-3">
           {!session ? (
-            <SignInButton />
+            <>
+              <SignInButton />
+              {!minimal && <StartStoryButton />}
+            </>
           ) : (
             <>
               <Link
@@ -227,7 +230,10 @@ export default function Header({
               </nav>
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42, duration: 0.4, ease: [0.16, 1, 0.3, 1] }} className="relative z-10 px-8 pb-16 flex flex-col gap-3">
                 {!session ? (
+                  <>
+                  <Link href="/projects/create?entry=header_mobile" onClick={() => setIsOpen(false)} className="w-full py-4 rounded-2xl text-center text-base font-bold text-white bg-[#D94590]">Start a story</Link>
                   <Link href="/auth/signin" onClick={() => setIsOpen(false)} className="w-full py-4 rounded-2xl text-center text-base font-semibold text-[#DB79AC] border-2 border-[#DB79AC] transition-all">Sign In</Link>
+                  </>
                 ) : (
                   <>
                     <Link href="/projects" onClick={() => setIsOpen(false)} className="w-full py-4 rounded-2xl text-center text-base font-bold text-white tracking-wide transition-all hover:scale-[1.02] active:scale-[0.98] bg-[#DB79AC]" style={{  boxShadow: `0 4px 20px ` }}>✦ My Library</Link>
@@ -253,6 +259,17 @@ function SignInButton() {
       className="rounded-full border-2 border-[#D94590]/30 px-6 py-2.5 text-sm font-semibold text-[#D94590] transition-all duration-300 hover:bg-[#DB79AC] hover:border-[#D94590] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D94590]/50 focus-visible:ring-offset-2"
     >
       Sign in
+    </Link>
+  );
+}
+
+function StartStoryButton() {
+  return (
+    <Link
+      href="/projects/create?entry=header"
+      className="rounded-full bg-[#D94590] px-6 py-2.5 text-sm font-bold text-white shadow-[0_3px_14px_rgba(217,69,144,0.25)] transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D94590]/50 focus-visible:ring-offset-2"
+    >
+      Start a story
     </Link>
   );
 }
