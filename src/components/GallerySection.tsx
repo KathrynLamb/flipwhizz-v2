@@ -2,6 +2,7 @@
 "use client";
 
 import { useState } from "react";
+import posthog from "posthog-js";
 import Image from "next/image";
 import HeroButton from "@/components/HeroButton";
 import StoryPeekModal from "@/components/StoryPeekModal";
@@ -45,6 +46,10 @@ export default function GallerySection({
   const openPeek = (story: GalleryStory) => {
     const img = coverByStoryId.get(story.id) || story.coverSpreadUrl;
     if (!img) return;
+    posthog.capture("example_spread_viewed", {
+      story_id: story.id,
+      spread_index: stories.findIndex((s) => s.id === story.id),
+    });
     setPeekStory({ id: story.id, title: story.title, coverImage: img });
   };
 
@@ -86,21 +91,21 @@ export default function GallerySection({
               className="text-sm font-semibold tracking-[0.2em] uppercase mb-4"
               style={{ color: "#D94590" }}
             >
-              ✦ Made by real parents ✦
+              ✦ See inside real books ✦
             </p>
             <h2
               className="font-serif text-4xl lg:text-5xl font-bold leading-tight"
               style={{ color: "#2D2235" }}
             >
-              Every Book, One of a Kind
+              Every book is one of a kind
             </h2>
             <p
               className="mt-5 text-lg leading-relaxed max-w-2xl mx-auto"
               style={{ color: "#6B5D52" }}
             >
-              No templates. No clip-art. Each story is written and illustrated
-              from scratch — because your child isn&apos;t generic, and their
-              book shouldn&apos;t be either.
+              No templates and no name-swaps. Each story starts with something
+              real about one child and is illustrated from scratch. Tap a book
+              to look inside.
             </p>
           </div>
 
@@ -355,7 +360,7 @@ export default function GallerySection({
                     style={{ color: "#6B5D52" }}
                   >
                     Every child deserves a book that&apos;s truly theirs. Start
-                    with a free illustrated spread — it takes about 5 minutes.
+                    with a short chat and see the first illustrated page free.
                   </p>
                   <div className="mt-2">
                     <CreateStoryButton />

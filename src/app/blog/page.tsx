@@ -7,7 +7,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
-  title: "Blog | FlipWhizz",
+  title: { absolute: "Blog | FlipWhizz" },
   description:
     "Insights on children, reading, and why the stories we tell our kids matter more than you think.",
   alternates: {

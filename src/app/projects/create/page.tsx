@@ -8,14 +8,13 @@ import CreateDemoClient from "./CreateDemoClient";
 import ChatFooter from "@/components/ChatFooter";
 
 export const metadata: Metadata = {
-  title: "Create a Personalised Children's Book | AI Storybook Maker | FlipWhizz",
+  title: { absolute: "Start Your Personalised Children's Book, Free | FlipWhizz" },
   description:
-    "Create a personalised children's book built around your child's name, interests, and personality. Try the free story demo, no sign-up needed. Adventure stories, bedtime stories, confidence-building books, and more.",
+    "Write a personalised children's book about a child you love, from a short chat. You tell the story, we help you shape it and illustrate every page. Free to start, no sign-up needed.",
   keywords: [
     "personalised children's book",
     "personalised storybook",
     "custom children's book",
-    "AI storybook maker",
     "personalised book for kids",
     "children's book with child's name",
     "bedtime story creator",
@@ -51,7 +50,7 @@ const jsonLd = {
   operatingSystem: "Web",
   url: "https://flipwhizz.com",
   description:
-    "AI-powered personalised children's book creator. Build custom storybooks shaped around a child's name, interests, and personality.",
+    "Personalised children's book creator where the adult is the author: chat about a child you love and FlipWhizz helps shape the story and illustrate every page.",
   offers: {
     "@type": "Offer",
     price: "0",

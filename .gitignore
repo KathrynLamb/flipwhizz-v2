@@ -43,3 +43,6 @@ src/lib/privateKey
 src/lib/privateKey
 src/lib/privateKey
 .env.local
+
+# local exports for picking homepage examples (contain customer artwork)
+/showcase/

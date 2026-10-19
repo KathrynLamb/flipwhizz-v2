@@ -13,11 +13,31 @@ import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Loader2, Send, Zap, BookOpen } from "lucide-react";
 import posthog from "posthog-js";
+import { STARTER_OPENER, buildStarterConversation } from "@/lib/chatStarter";
 
 type ChatMsg = {
   role: "user" | "assistant";
   content: string;
+  // Set on the answer a visitor gave on the homepage or a gift page. It is
+  // shown as their first message but does not use one of the free messages.
+  prefilled?: boolean;
 };
+
+const FIRST_MESSAGE_TRACKED_KEY = "flipwhizz_story_chat_first_message_tracked";
+
+function trackFirstMessage(entry: string, utmSource: string | null, prefilled: boolean) {
+  try {
+    if (sessionStorage.getItem(FIRST_MESSAGE_TRACKED_KEY)) return;
+    sessionStorage.setItem(FIRST_MESSAGE_TRACKED_KEY, "1");
+  } catch {
+    /* storage unavailable: still capture once per mount */
+  }
+  posthog.capture("story_chat_first_message", {
+    entry,
+    utm_source: utmSource,
+    prefilled,
+  });
+}
 
 const MAX_USER_MESSAGES = 3;
 
@@ -70,8 +90,9 @@ export default function CreateDemoClient() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // Only messages the visitor typed here count toward the free demo messages.
   const userMessageCount = useMemo(
-    () => messages.filter((m) => m.role === "user").length,
+    () => messages.filter((m) => m.role === "user" && !m.prefilled).length,
     [messages],
   );
 
@@ -84,6 +105,18 @@ export default function CreateDemoClient() {
 
   const searchParams = useSearchParams();
   const seed = searchParams.get("seed");
+  const starter = useMemo(
+    () =>
+      buildStarterConversation({
+        for: searchParams.get("for"),
+        name: searchParams.get("name"),
+        occasion: searchParams.get("occasion"),
+        about: searchParams.get("about"),
+      }),
+    [searchParams],
+  );
+  const entry = searchParams.get("entry") ?? (starter ? "starter_link" : "direct");
+  const utmSource = searchParams.get("utm_source");
   const { bookType, selectBookType } = useBookTypeDraft(searchParams.get("bookType"));
 
   // Initialize the demo session ID on mount
@@ -101,12 +134,17 @@ export default function CreateDemoClient() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as ChatMsg[];
-        if (Array.isArray(parsed) && parsed.length > 0) setMessages(parsed);
+        const hasTypedMessages = Array.isArray(parsed) && parsed.some((m) => m.role === "user" && !m.prefilled);
+        // A fresh answer from the homepage replaces a chat that never got past
+        // the opener. A chat the visitor has actually typed into always resumes.
+        if (Array.isArray(parsed) && parsed.length > 0 && (hasTypedMessages || !starter)) setMessages(parsed);
       } catch {
         /* ignore */
       }
     }
     setMessagesLoaded(true);
+    // Only on mount: the starter params are read once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Inject the fake AI opener, only on a genuinely fresh, empty start.
@@ -118,6 +156,20 @@ export default function CreateDemoClient() {
     if (openerInjectedRef.current) return;
     if (messages.length > 0) return; // resumed conversation, no opener
     openerInjectedRef.current = true;
+
+    // Arrived from a chat starter: show the conversation already under way,
+    // with their answer sent and our next question waiting.
+    if (starter) {
+      setMessages([
+        { role: "assistant", content: STARTER_OPENER },
+        { role: "user", content: starter.answer, prefilled: true },
+        { role: "assistant", content: starter.followUp },
+      ]);
+      posthog.capture("demo_opener_shown", { seeded: false, seed: null, starter: true, entry });
+      trackFirstMessage(entry, utmSource, true);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+      return;
+    }
 
     const seedOpener = seed ? SEED_OPENERS[seed] : undefined;
     const opener = bookType === "colouring_storybook"
@@ -134,6 +186,7 @@ export default function CreateDemoClient() {
     // Focus the box so the cursor is already there. The proven failure mode
     // was visitors never moving to the input at all.
     requestAnimationFrame(() => textareaRef.current?.focus());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesLoaded, seed, messages.length, bookType]);
 
   // Resume effect, gate on messagesLoaded
@@ -188,12 +241,14 @@ export default function CreateDemoClient() {
     const userMessage: ChatMsg = { role: "user", content: text };
     const nextHistory = [...messages, userMessage];
 
-    // Track first message as demo_started
-    if (messages.filter((m) => m.role === "user").length === 0) {
+    // Track first typed message as demo_started
+    if (userMessageCount === 0) {
       posthog.capture("demo_started", {
         is_authenticated: authStatus === "authenticated",
         message_preview: text.slice(0, 80),
+        entry,
       });
+      trackFirstMessage(entry, utmSource, false);
     }
 
     setMessages(nextHistory);
@@ -209,7 +264,7 @@ export default function CreateDemoClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text,
-          history: nextHistory,
+          history: nextHistory.map(({ role, content }) => ({ role, content })),
           bookType,
           sessionId, // Pass the sessionId
         }),
@@ -284,7 +339,7 @@ export default function CreateDemoClient() {
       const res = await fetch("/api/projects/create-from-demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages, bookType }),
+        body: JSON.stringify({ messages: messages.map(({ role, content }) => ({ role, content })), bookType }),
       });
 
       const data = await res.json().catch(() => null);

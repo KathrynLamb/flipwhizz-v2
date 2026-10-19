@@ -1,208 +1,94 @@
+// src/components/Footer.tsx
 import Link from "next/link";
 import Image from "next/image";
 import { getAllPosts } from "@/lib/blog";
+import { GIFT_PAGES } from "@/content/giftPages";
 
-// Same rainbow colours as the Header
-const RAINBOW = ["#E8457A", "#F5A623", "#7BC67E", "#5EAED4"];
+// Site footer. Dark ink, quiet type, four short columns and a closing line.
+// Shared by every page that renders <Footer />.
+
+const MAKE = [
+  { href: "/projects/create?entry=footer", label: "Start a story" },
+  { href: "/colouring-books", label: "Colouring books" },
+  { href: "/#gallery", label: "Example books" },
+  { href: "/#how-it-works", label: "How it works" },
+  { href: "/#pricing", label: "Pricing" },
+];
+
+const COMPANY = [
+  { href: "/about", label: "About Katy" },
+  { href: "/faq", label: "FAQ" },
+  { href: "/blog", label: "Blog" },
+  { href: "/contact", label: "Contact" },
+];
 
 export default function Footer() {
-  const recentPosts = getAllPosts().slice(0, 3);
-
-  const navItems = [
-    { href: "/", label: "Home", colorVar: "--nav-hover-0" },
-    { href: "#how-it-works", label: "How It Works", colorVar: "--nav-hover-0" },
-    { href: "#gallery", label: "Gallery", colorVar: "--nav-hover-1" },
-    { href: "#pricing", label: "Pricing", colorVar: "--nav-hover-3" },
-    { href: "/blog", label: "Blog", colorVar: "--nav-hover-2" },
-    { href: "/contact", label: "Contact", colorVar: "--nav-hover-3" },
-  ];
+  const latestPost = getAllPosts()[0];
 
   return (
-    <footer
-      className="relative overflow-hidden"
-      style={{
-        background: "#2D2235",
-        ["--nav-hover-0" as any]: RAINBOW[0],
-        ["--nav-hover-1" as any]: RAINBOW[1],
-        ["--nav-hover-2" as any]: RAINBOW[2],
-        ["--nav-hover-3" as any]: RAINBOW[3],
-      }}
-    >
-      {/* Hover styles */}
-      <style>{`
-        .footer-nav-link { color: rgba(254,252,250,0.45); transition: color 0.2s, transform 0.2s; }
-        .footer-nav-link:hover { transform: translateX(4px); }
-        .footer-nav-link[data-color="0"]:hover { color: ${RAINBOW[0]}; }
-        .footer-nav-link[data-color="1"]:hover { color: ${RAINBOW[1]}; }
-        .footer-nav-link[data-color="2"]:hover { color: ${RAINBOW[2]}; }
-        .footer-nav-link[data-color="3"]:hover { color: ${RAINBOW[3]}; }
-        .footer-blog-link span.blog-title { color: rgba(254,252,250,0.6); transition: color 0.2s; }
-        .footer-blog-link:hover span.blog-title-0 { color: ${RAINBOW[0]}; }
-        .footer-blog-link:hover span.blog-title-1 { color: ${RAINBOW[1]}; }
-        .footer-blog-link:hover span.blog-title-2 { color: ${RAINBOW[2]}; }
-        .footer-blog-link:hover span.blog-title-3 { color: ${RAINBOW[3]}; }
-        .footer-allposts { color: ${RAINBOW[2]}; transition: color 0.2s; }
-        .footer-allposts:hover { color: ${RAINBOW[1]}; }
-      `}</style>
-
-      {/* ── Soft curved transition from page background ── */}
-      <div className="absolute top-0 left-0 w-full overflow-hidden leading-none">
-        <svg
-          className="relative block w-full h-[60px] lg:h-[80px]"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 1200 120"
-          preserveAspectRatio="none"
-        >
-          <path
-            d="M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z"
-            fill="#FEFCFA"
-          />
-        </svg>
-      </div>
-
-      {/* ── Rainbow line accent ── */}
-      <div
-        className="absolute top-[59px] lg:top-[79px] left-0 right-0 h-[3px]"
-        style={{
-          background: `linear-gradient(90deg, ${RAINBOW[0]}, ${RAINBOW[1]}, ${RAINBOW[2]}, ${RAINBOW[3]})`,
-        }}
-      />
-
-      {/* ── Decorative blobs ── */}
-      <div
-        className="absolute top-20 -right-32 w-[400px] h-[400px] rounded-full opacity-[0.06] pointer-events-none blur-3xl"
-        style={{ background: `radial-gradient(circle, ${RAINBOW[0]}, ${RAINBOW[3]})` }}
-      />
-      <div
-        className="absolute bottom-0 -left-32 w-[300px] h-[300px] rounded-full opacity-[0.04] pointer-events-none blur-3xl"
-        style={{ background: `radial-gradient(circle, ${RAINBOW[2]}, ${RAINBOW[1]})` }}
-      />
-
-      {/* ── Subtle cross-hatch texture ── */}
-      <div
-        className="absolute inset-0 opacity-[0.03] pointer-events-none"
-        style={{
-          backgroundImage: `repeating-linear-gradient(
-            45deg,
-            transparent,
-            transparent 10px,
-            #FEFCFA 10px,
-            #FEFCFA 11px
-          )`,
-        }}
-      />
-
-      <div className="relative z-10 mx-auto max-w-6xl px-6 lg:px-12 pt-28 lg:pt-32 pb-12">
-        {/* ── Main grid ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 pb-16" style={{ borderBottom: "1px solid rgba(254,252,250,0.08)" }}>
-
-          {/* Brand column */}
-          <div className="lg:col-span-4 flex flex-col gap-5">
-            <Link href="/" className="w-fit">
-              <Image
-                src="/Flipwhizz_logo_NEW.png"
-                alt="FlipWhizz"
-                width={160}
-                height={160}
-                className="brightness-0 invert opacity-90"
-              />
+    <footer className="bg-[#24182F] text-white">
+      <div className="mx-auto max-w-[1240px] px-6 pb-10 pt-20 lg:px-8">
+        <div className="grid gap-12 lg:grid-cols-12 lg:gap-8">
+          {/* Brand */}
+          <div className="lg:col-span-4">
+            <Link href="/" aria-label="FlipWhizz home" className="inline-block">
+              <Image src="/Flipwhizz_logo_NEW.png" alt="FlipWhizz" width={180} height={180} className="h-auto w-[132px] brightness-0 invert" />
             </Link>
-            <p className="text-sm leading-relaxed max-w-xs" style={{ color: "rgba(254,252,250,0.45)" }}>
-              Every child deserves to be the hero of their own story. Personalised, illustrated, and made to last.
+            <p className="mt-5 max-w-[30ch] text-[17px] leading-[1.5] text-[#D9CFE6]">
+              Personalised picture books, written by the grown-ups who love them.
             </p>
-            {/* Rainbow dot accent */}
-            <div className="flex items-center gap-2 mt-1">
-              {RAINBOW.map((color) => (
-                <div
-                  key={color}
-                  className="w-2 h-2 rounded-full"
-                  style={{ background: color, opacity: 0.7 }}
-                />
-              ))}
+            <div className="mt-6 flex flex-wrap gap-3">
+              <a href="mailto:hello@flipwhizz.com" className="rounded-full border border-white/20 px-4 py-2 text-[15px] font-semibold transition-colors hover:border-white/60">
+                hello@flipwhizz.com
+              </a>
+              <a href="https://www.instagram.com/flipwhizz_kate" target="_blank" rel="noopener noreferrer" className="rounded-full border border-white/20 px-4 py-2 text-[15px] font-semibold transition-colors hover:border-white/60">
+                Instagram
+              </a>
             </div>
           </div>
 
-          {/* Nav column */}
-          <div className="lg:col-span-3 flex flex-col gap-2">
-            <p
-              className="text-xs font-semibold uppercase tracking-[0.2em] mb-3"
-              style={{ color: RAINBOW[0] }}
-            >
-              Navigate
-            </p>
-            {navItems.map(({ href, label }, i) => {
-              // Map to colour index
-              const colorIdx = href === "/" || href === "#how-it-works" ? 0
-                : href === "#gallery" ? 1
-                : href === "/blog" ? 2 : 3;
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className="footer-nav-link text-sm w-fit"
-                  data-color={colorIdx}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </div>
-
-          {/* Blog column */}
-          <div className="lg:col-span-5 flex flex-col gap-2">
-            <p
-              className="text-xs font-semibold uppercase tracking-[0.2em] mb-3"
-              style={{ color: RAINBOW[2] }}
-            >
-              From the Blog
-            </p>
-            {recentPosts.length === 0 ? (
-              <p className="text-sm italic" style={{ color: "rgba(254,252,250,0.25)" }}>
-                Posts coming soon.
-              </p>
-            ) : (
-              recentPosts.map((post, i) => (
-                <Link
-                  key={post.slug}
-                  href={`/blog/${post.slug}`}
-                  className="footer-blog-link flex flex-col gap-1 py-2.5"
-                  style={{ borderBottom: "1px solid rgba(254,252,250,0.05)" }}
-                >
-                  <span className={`blog-title blog-title-${i % RAINBOW.length} text-sm leading-snug`}>
-                    {post.title}
-                  </span>
-                  <span className="text-xs" style={{ color: "rgba(254,252,250,0.2)" }}>
-                    {new Date(post.date).toLocaleDateString("en-GB", {
-                      day: "numeric",
-                      month: "long",
-                      year: "numeric",
-                    })}
-                  </span>
-                </Link>
-              ))
+          <FooterColumn title="Make a book" links={MAKE} className="lg:col-span-2" />
+          <FooterColumn
+            title="Gift ideas"
+            links={GIFT_PAGES.map((g) => ({ href: `/gifts/${g.slug}`, label: g.footerLabel }))}
+            className="lg:col-span-3"
+          />
+          <div className="lg:col-span-3">
+            <FooterColumn title="FlipWhizz" links={COMPANY} />
+            {latestPost && (
+              <Link href={`/blog/${latestPost.slug}`} className="group mt-8 block rounded-[18px] bg-white/[0.06] p-4 transition-colors hover:bg-white/[0.1]">
+                <span className="block text-[13px] font-bold uppercase tracking-[0.08em] text-[#F7A93E]">From the blog</span>
+                <span className="mt-1.5 block text-[15px] font-semibold leading-snug text-white">{latestPost.title}</span>
+              </Link>
             )}
-            <Link
-              href="/blog"
-              className="footer-allposts mt-2 text-xs font-semibold w-fit"
-            >
-              All posts →
-            </Link>
           </div>
         </div>
 
-        {/* ── Bottom bar ── */}
-        <div className="pt-8 flex flex-col lg:flex-row items-center justify-between gap-4 text-xs" style={{ color: "rgba(254,252,250,0.18)" }}>
-          <p>© {new Date().getFullYear()} FlipWhizz Ltd. All rights reserved.</p>
-          <div className="flex items-center gap-6">
-            <Link href="/privacy" className="transition-colors duration-200 hover:text-white/40">
-              Privacy Policy
-            </Link>
-            <Link href="/terms" className="transition-colors duration-200 hover:text-white/40">
-              Terms of Use
-            </Link>
+        <div className="mt-16 flex flex-col gap-4 border-t border-white/10 pt-8 text-[14px] text-[#B5A9C2] sm:flex-row sm:items-center sm:justify-between">
+          <p className="m-0">© {new Date().getFullYear()} FlipWhizz Ltd.</p>
+          <div className="flex gap-6">
+            <Link href="/privacy" className="transition-colors hover:text-white">Privacy</Link>
+            <Link href="/terms" className="transition-colors hover:text-white">Terms</Link>
           </div>
         </div>
       </div>
     </footer>
+  );
+}
+
+function FooterColumn({ title, links, className = "" }: { title: string; links: { href: string; label: string }[]; className?: string }) {
+  return (
+    <nav aria-label={title} className={className}>
+      <p className="m-0 text-[13px] font-bold uppercase tracking-[0.1em] text-[#B5A9C2]">{title}</p>
+      <ul className="m-0 mt-4 list-none space-y-2.5 p-0">
+        {links.map((l) => (
+          <li key={l.href}>
+            <Link href={l.href} className="text-[16px] text-white/85 transition-colors hover:text-white hover:underline hover:decoration-[#E8455C] hover:decoration-2 hover:underline-offset-4">
+              {l.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }

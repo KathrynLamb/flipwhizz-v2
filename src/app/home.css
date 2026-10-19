@@ -1,0 +1,105 @@
+/* src/app/home.css */
+/* Homepage-only styles: micro animations, scroll moments and the few shapes
+   Tailwind can't express cleanly. Everything is prefixed fw- and every
+   animation is switched off under prefers-reduced-motion. */
+
+.fw-home {
+  --ink: #24182f;
+  --body: #4e4259;
+  --muted: #6a5e73;
+  --coral: #e8455c;
+  --purple: #6f4bb0;
+  --lilac: #f6f1fc;
+  --peach: #ffe7c2;
+  --pink: #fbd3e0;
+  --line: #e4dcf0;
+}
+
+/* Buttons */
+.fw-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e8455c;
+  color: #fff;
+  border-radius: 999px;
+  font-weight: 700;
+  box-shadow: 0 10px 24px -8px rgba(232, 69, 92, 0.55);
+  transition: transform 0.2s cubic-bezier(0.3, 1.5, 0.5, 1), box-shadow 0.2s;
+}
+.fw-cta:hover { transform: translateY(-2px); box-shadow: 0 14px 28px -8px rgba(232, 69, 92, 0.6); }
+.fw-cta:active { transform: scale(0.96); }
+
+.fw-chip {
+  background: #fff;
+  color: #24182f;
+  border: 1.5px solid #e4dcf0;
+  border-radius: 999px;
+  font-weight: 600;
+  transition: background 0.2s, border-color 0.2s, transform 0.2s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.fw-chip:hover, .fw-chip:focus-visible { background: #f3ecfc; border-color: #a270c9; transform: translateY(-2px); }
+.fw-chip:active { transform: scale(0.95); }
+
+/* Hand-drawn feeling shapes */
+.fw-blob { border-radius: 46% 54% 50% 50% / 54% 46% 54% 46%; }
+.fw-sticker { border-radius: 14px 18px 12px 20px; }
+
+/* Hero book page turn */
+.fw-leaf { transform-origin: left center; transform-style: preserve-3d; animation: fw-turn 0.95s cubic-bezier(0.55, 0.05, 0.25, 1) forwards; }
+.fw-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; overflow: hidden; }
+.fw-face-back { transform: rotateY(180deg); }
+.fw-shade { animation: fw-shade 0.95s ease-in-out forwards; }
+@keyframes fw-turn { from { transform: perspective(1800px) rotateY(0); } to { transform: perspective(1800px) rotateY(-180deg); } }
+@keyframes fw-shade { 0% { opacity: 0; } 50% { opacity: 0.35; } 100% { opacity: 0; } }
+.fw-peek .fw-page-r { transform: perspective(1600px) rotateY(-8deg); }
+.fw-page-r { transform-origin: left center; transition: transform 0.5s cubic-bezier(0.3, 1.4, 0.5, 1); }
+
+/* Book shelf cards */
+.fw-shelf { transition: transform 0.4s cubic-bezier(0.3, 1.5, 0.5, 1); }
+.fw-shelf:hover { transform: translateY(-6px) rotate(-0.6deg); }
+
+/* How it works: a word being changed */
+.fw-w-old, .fw-w-new { display: inline-block; white-space: nowrap; overflow: hidden; vertical-align: bottom; }
+.fw-w-old { max-width: 4em; text-decoration: line-through; text-decoration-color: transparent; text-decoration-thickness: 2px; animation: fw-wold 7s ease-in-out infinite; }
+.fw-w-new { max-width: 0; border-radius: 4px; background: #ffe3a1; animation: fw-wnew 7s ease-in-out infinite; }
+@keyframes fw-wold { 0%, 28% { max-width: 4em; opacity: 1; text-decoration-color: transparent; } 38% { text-decoration-color: #e8455c; opacity: 0.55; max-width: 4em; } 50%, 94% { max-width: 0; opacity: 0; } 100% { max-width: 4em; opacity: 1; } }
+@keyframes fw-wnew { 0%, 48% { max-width: 0; } 66%, 84% { max-width: 14em; background: #ffe3a1; } 94% { max-width: 14em; background: rgba(255, 227, 161, 0); } 100% { max-width: 0; } }
+
+/* How it works: dashed thread joining the steps */
+.fw-thread { background: repeating-linear-gradient(to bottom, #cdbfe0 0 8px, transparent 8px 16px); }
+
+/* Finished book with a page block */
+.fw-book { transform: rotate(-4deg); transition: transform 0.45s cubic-bezier(0.3, 1.5, 0.5, 1); box-shadow: 5px 5px 0 #fff, 6px 6px 0 #e6ddf0, 10px 10px 0 #fff, 11px 11px 0 #ded3ea, 0 36px 50px -22px rgba(36, 24, 47, 0.55); }
+.fw-book:hover { transform: rotate(-1deg) translateY(-6px); }
+.fw-book::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(90deg, rgba(36, 24, 47, 0.28) 0, rgba(255, 255, 255, 0.22) 3.5%, rgba(36, 24, 47, 0) 8%); pointer-events: none; }
+
+/* FAQ plus sign */
+.fw-faq[open] .fw-plus { transform: rotate(45deg); }
+
+/* Scroll moments, only where the browser supports scroll timelines */
+@supports (animation-timeline: view()) {
+  .fw-wash {
+    -webkit-mask-image: linear-gradient(100deg, #000 42%, transparent 58%);
+    mask-image: linear-gradient(100deg, #000 42%, transparent 58%);
+    -webkit-mask-size: 320% 100%;
+    mask-size: 320% 100%;
+    animation: fw-wash linear both;
+    animation-timeline: view();
+    animation-range: entry 40% cover 55%;
+  }
+  .fw-rise { animation: fw-rise linear both; animation-timeline: view(); animation-range: entry 30% cover 30%; }
+  .fw-rise-2 { animation-range: entry 45% cover 34%; }
+  .fw-rise-3 { animation-range: entry 60% cover 38%; }
+  .fw-rise-4 { animation-range: entry 75% cover 42%; }
+}
+@keyframes fw-wash { from { -webkit-mask-position: 100% 0; mask-position: 100% 0; } to { -webkit-mask-position: 0% 0; mask-position: 0% 0; } }
+@keyframes fw-rise { from { opacity: 0; transform: translateY(14px) scale(0.94); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .fw-leaf, .fw-shade, .fw-wash, .fw-rise { animation: none !important; }
+  .fw-leaf { display: none; }
+  .fw-w-old { display: none; }
+  .fw-w-new { animation: none; max-width: none; }
+  .fw-cta, .fw-chip, .fw-shelf, .fw-book, .fw-page-r { transition: none; }
+}
