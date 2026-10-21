@@ -13,6 +13,16 @@ export const metadata: Metadata = {
   description:
     "Create personalised storybooks for kids with FlipWhizz. Turn your child's interests, imagination, and real-life moments into magical bedtime stories, adventures, and keepsake books.",
   applicationName: "FlipWhizz",
+  icons: {
+    icon: [
+      { url: "/favicon.ico?v=fw-monogram-1", sizes: "16x16 32x32 48x48", type: "image/x-icon" },
+      { url: "/icons/flipwhizz-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/flipwhizz-mark.svg", sizes: "any", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/icons/flipwhizz-180.png", sizes: "180x180", type: "image/png" }],
+    shortcut: "/favicon.ico?v=fw-monogram-1",
+  },
+  manifest: "/site.webmanifest",
   keywords: [
     "personalised storybooks for kids",
     "personalised bedtime stories",
