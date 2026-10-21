@@ -45,11 +45,9 @@ const MAX_USER_MESSAGES = 3;
 // inviting rather than full-energy; the AI brings the fireworks once the
 // parent has actually said something.
 const GENERIC_OPENERS: string[] = [
-  "Hi! I'm your co-author. Tell me who we're making a story for and what they're into, and we'll turn it into a real illustrated book that's all theirs.",
-  "Hello! Let's make something your child will ask for again and again. Tell me a little about them to get us started.",
-  "Hi there! Every story here is built around one special child. Tell me about yours and we'll begin shaping it together.",
-  "Hey! No need to have anything planned. Just tell me what you're thinking about for your little one, and we'll build it from there.",
-  "Hi! Picture the story you'd love to read your child at bedtime. Tell me a bit about them and we'll start bringing it to life.",
+  "Hi! What would you like to make a story about? A family memory, something you noticed today, or a completely imaginary world are all good places to start.",
+  "Hello! Tell me the idea you have in mind. It doesn't need to be planned out: a character, a memory or a what-if is plenty.",
+  "Hi! Let's turn an idea into an illustrated book. What story would you love to tell?",
 ];
 
 // Seed-specific openers, one per seed for now. A visitor arriving from a

@@ -19,9 +19,9 @@ export type OccasionKey =
   | "christmas"
   | "christening"
   | "missing-someone";
-export type AboutKey = "memory" | "change" | "imagination" | "bedtime";
+export type AboutKey = "memory" | "change" | "imagination" | "bedtime" | "everyday";
 
-export const STARTER_OPENER = "Hi! Who's this story for?";
+export const STARTER_OPENER = "Hi! What would you like to make a story about?";
 
 export const RECIPIENTS: { key: RecipientKey; label: string; answer: string; followUp: string }[] = [
   {
@@ -68,6 +68,7 @@ export const OCCASIONS: { key: OccasionKey; label: string; answer: string; follo
 ];
 
 export const ABOUTS: { key: AboutKey; label: string; answer: string; followUp: string }[] = [
+  { key: "everyday", label: "A small discovery", answer: "I'd like to make a story from something I noticed in everyday life.", followUp: "What caught your attention? Tell me what you saw and we can imagine a story around it." },
   {
     key: "memory",
     label: "A family memory",
@@ -82,9 +83,9 @@ export const ABOUTS: { key: AboutKey; label: string; answer: string; followUp: s
   },
   {
     key: "imagination",
-    label: "Their imagination",
-    answer: "I'd like it to come from their imagination.",
-    followUp: "My favourite kind. Who is it for, and what's the wildest thing they've dreamt up lately?",
+    label: "Something imagined",
+    answer: "I'd like to make up an imaginary story.",
+    followUp: "Tell me about the world or characters you have in mind. A tiny idea is enough to start.",
   },
   {
     key: "bedtime",

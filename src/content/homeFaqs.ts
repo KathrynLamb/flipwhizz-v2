@@ -5,6 +5,7 @@
 export type Faq = { question: string; answer: string };
 
 export const HOME_FAQS: Faq[] = [
+  { question: "Does the story have to be about my child?", answer: "No. Your story can be about your grandparents, two snails in the garden, an imaginary world, or anything else you want to explore. You choose the subject, characters and who you are writing for." },
   {
     question: "What ages is it for?",
     answer:
