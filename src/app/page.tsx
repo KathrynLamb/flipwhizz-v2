@@ -8,7 +8,7 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import Image from "next/image";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { luluPrintEnabled } from "@/lib/lulu/client";
+import { luluPrintEnabled, colouringPackage, colouringPodPackageId } from "@/lib/lulu/client";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import HeroBook from "@/components/home/HeroBook";
@@ -58,6 +58,7 @@ export default async function Home() {
   const priceGift = formatPrice(getPriceCents("gift", currency), currency);
   const priceColouring = formatPrice(getPriceCents("print", currency, "colouring_storybook"), currency);
   const colouringAvailable = luluPrintEnabled();
+  const ringBound = colouringAvailable && colouringPackage(colouringPodPackageId()).binding === "CO";
 
   // ── Structured data ──
   const organizationJsonLd = {
@@ -142,6 +143,26 @@ export default async function Home() {
           </Link>)}
         </div>
       </section>
+      <section className="fw-control fw-wrap" aria-labelledby="control-title">
+        <p className="fw-kicker">Your imagination. Your decisions.</p>
+        <h2 id="control-title">Make it yours.<br /><em>Down to the wellies.</em></h2>
+        <p className="fw-section-intro">You’re the author and the art director. Shape the words, choose the look, and build a world you can come back to.</p>
+        <div className="fw-control-grid">
+          <article><span className="fw-feature-number">01</span><h3>A cast you recognise.</h3><p>Start from descriptions or upload photos of people and pets. Edit appearances, review character portraits and choose the looks you want in your book.</p></article>
+          <article><span className="fw-feature-number">02</span><h3>Yes, even the outfits.</h3><p>The favourite jumper. The muddy wellies. The costume they won’t take off. Edit your characters’ outfits as well as their looks, and shape the places where the story happens.</p></article>
+          <article><span className="fw-feature-number">03</span><h3>Your kind of illustration.</h3><p>Describe the visual style you love or upload an image as a reference. Review a sample and refine the direction before illustrating the book.</p></article>
+          <article><span className="fw-feature-number">04</span><h3>A draft you can change.</h3><p>Ask for a small adjustment or a whole-story rewrite. Make it funnier, change the ending, reshape the plot or adjust the language. Discuss the changes, then apply them across the story.</p></article>
+        </div>
+        <Link className="fw-text-link" href="#start-story">Tell us what you have in mind ↗</Link>
+      </section>
+      <section className="fw-series" aria-labelledby="series-title"><div className="fw-wrap fw-feature-split">
+        <div><p className="fw-kicker">One world. More adventures.</p><h2 id="series-title">The end?<br /><em>Or just book one?</em></h2></div>
+        <div><p>Bring familiar characters and favourite places into the next book. Your saved story world carries the cast, locations and earlier adventures forward, so you can build a connected series.</p><p>Take the same snails somewhere new. Return to a family’s story. Let a favourite character have another adventure.</p><Link className="fw-text-link" href="#start-story">Start your first adventure ↗</Link><p className="fw-small">Create the next book from your saved world in your library. Each book is a separate project.</p></div>
+      </div></section>
+      <section className="fw-colouring-feature fw-wrap" aria-labelledby="colouring-title">
+        <div><p className="fw-kicker">A story to read. A world to colour.</p><h2 id="colouring-title">You make the story.<br /><em>They add the colour.</em></h2><p>Your original story with outline illustrations to colour in, and a full-colour cover. The characters, places and adventure are still yours to shape.</p><p>{ringBound ? "The ring-bound printed edition opens flat, leaving hands free for pencils and a table full of imagination." : colouringAvailable ? "Choose a printed colouring storybook to keep, colour and read together." : "Choose a digital colouring storybook to print and colour at home."}</p><Link className="fw-ink-button" href="/projects/create?bookType=colouring_storybook&entry=home_colouring">Make a colouring storybook ↗</Link><p className="fw-small">{colouringAvailable ? `${ringBound ? "Ring-bound" : "Printed"} edition ${priceColouring}.` : `Digital edition ${priceDigital}.`} First illustrated page free.</p></div>
+        <figure><Image src={BOOKS.colouring.src} alt={BOOKS.colouring.alt} width={1600} height={893} sizes="(min-width: 900px) 600px, 92vw" /><figcaption>A real FlipWhizz colouring story: {BOOKS.colouring.title}</figcaption></figure>
+      </section>
       <section id="gallery" className="fw-gallery" aria-labelledby="gallery-title">
         <div className="fw-wrap">
           <div className="fw-section-label"><span>02 / On the bookshelf</span><span>Made with FlipWhizz</span></div>
@@ -159,7 +180,7 @@ export default async function Home() {
         <div className="fw-process-grid"><h2 id="process-title">You don’t have<br />to call yourself<br /><em>a writer.</em></h2>
           <ol>
             <li><span>01</span><div><h3>Tell us what you’re thinking.</h3><p>A few sentences is enough. A memory, a character, a half-formed idea. We’ll ask questions and help you find the story.</p></div></li>
-            <li><span>02</span><div><h3>Make it sound like you.</h3><p>Read the draft, change the words, choose the look. Add photos for familiar faces, or invent an entirely new cast.</p></div></li>
+            <li><span>02</span><div><h3>Make it sound like you.</h3><p>Rewrite the draft, refine the illustration style and review your cast, outfits and locations. Add photos for familiar faces, or invent an entirely new world.</p></div></li>
             <li><span>03</span><div><h3>Give it a life off-screen.</h3><p>Start with a free illustrated page. Choose your edition when you’re ready, then finish your book to read, keep or give.</p></div></li>
           </ol>
         </div>
@@ -174,10 +195,11 @@ export default async function Home() {
           {[
             { name: "The digital edition", price: priceDigital, text: "Your illustrated book as a PDF. Read it on a screen or print it at home.", entry: "pricing_digital" },
             { name: "The printed storybook", price: pricePrint, text: "A full-colour book posted to your door. Digital copy included.", entry: "pricing_print" },
+            ...(colouringAvailable ? [{ name: ringBound ? "The ring-bound colouring book" : "The colouring storybook", price: priceColouring, text: "Your story with a full-colour cover and outline illustrations to colour in.", entry: "pricing_colouring" }] : []),
             { name: "The hardback gift", price: priceGift, text: "A hardcover edition with your personal dedication. For a place on their bookshelf.", entry: "pricing_gift" },
-          ].map((edition) => <div className="fw-edition" key={edition.entry}><h3>{edition.name}</h3><p className="fw-price">{edition.price}</p><p>{edition.text}</p><Link className="fw-text-link" href={starterHref({ entry: edition.entry })}>Start free ↗</Link></div>)}
+          ].map((edition) => <div className="fw-edition" key={edition.entry}><h3>{edition.name}</h3><p className="fw-price">{edition.price}</p><p>{edition.text}</p><Link className="fw-text-link" href={edition.entry === "pricing_colouring" ? "/projects/create?bookType=colouring_storybook&entry=pricing_colouring" : starterHref({ entry: edition.entry })}>Start free ↗</Link></div>)}
         </div>
-        {colouringAvailable && <p className="fw-colouring">Prefer to add your own colour? <Link href="/projects/create?bookType=colouring_storybook&entry=pricing_colouring">Make a colouring storybook, {priceColouring} ↗</Link></p>}
+
       </section>
       <section className="fw-founder fw-wrap" aria-labelledby="founder-title">
         <Image src="/About/katy-portrait.png" alt="Katy, founder of FlipWhizz" width={300} height={400} sizes="(min-width: 700px) 240px, 140px" />

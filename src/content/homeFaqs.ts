@@ -5,6 +5,10 @@
 export type Faq = { question: string; answer: string };
 
 export const HOME_FAQS: Faq[] = [
+  { question: "How much can I rewrite?", answer: "You can ask for small changes or a rewrite across the whole story: change the tone, language, ending, characters or plot. Discuss what you want in the editing chat, then apply the changes. Review your text before final illustrations and printing; changing the words later can mean updating the pictures too." },
+  { question: "Can I make a series with the same characters?", answer: "Yes. Start another book from a saved world in your library. FlipWhizz brings recurring characters, locations and previous story context into the next adventure. Each book is a separate project with its own edition purchase." },
+  { question: "What can I personalise beyond the story?", answer: "Character appearances and outfits, locations and the illustration style. Start from descriptions or upload reference photos, then review the looks. You can also upload a style reference and refine the visual direction before the book is illustrated." },
+  { question: "Can I make a colouring storybook?", answer: "Yes. Choose the colouring format for an original story with outline illustrations to colour in and a full-colour cover. A digital edition can be printed at home; available printed formats and prices are shown on this page." },
   { question: "Does the story have to be about my child?", answer: "No. Your story can be about your grandparents, two snails in the garden, an imaginary world, or anything else you want to explore. You choose the subject, characters and who you are writing for." },
   {
     question: "What ages is it for?",
