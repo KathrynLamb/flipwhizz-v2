@@ -512,6 +512,13 @@
       "when": 1791737823777,
       "tag": "0072_colouring_storybooks",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1792000000000,
+      "tag": "0073_spread_render_mode",
+      "breakpoints": true
     }
   ]
 }

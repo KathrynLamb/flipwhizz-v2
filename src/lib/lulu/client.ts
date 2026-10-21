@@ -1,3 +1,4 @@
+// src/lib/lulu/client.ts
 // Contract: https://api.lulu.com/api-docs/openapi-specs/openapi_public.yml
 // Lulu requires separate interior and cover PDFs. Never submit a Gelato PDF here.
 export type LuluEnvironment = "sandbox" | "production";
@@ -54,12 +55,19 @@ export function colouringPurchaseError(bookType: string, productType: string, is
 }
 export type ColouringBinding = "PB" | "CO";
 
-// 8.5-inch square B&W, 60# uncoated white; retain the exact configured Lulu ID.
+
+// 8.5-inch square, B&W (BW) or full colour (FC) interior, 60# uncoated white;
+// retain the exact configured Lulu ID. Confirm any FC package ID in Lulu's calculator.
+const COLOURING_PACKAGE_PATTERN = /^0850X0850(BW|FC)(?:STD|PRE)(PB|CO)060UW\d{3}[MG]XX$/;
 export function colouringPackage(id: string) {
-  const match = /^0850X0850BW(?:STD|PRE)(PB|CO)060UW\d{3}[MG]XX$/.exec(id.replaceAll(".", ""));
-  if (!match) throw new Error("This exporter supports only 8.5-inch square B&W perfect-bound or coil-bound paperback on 60# uncoated white paper. Check the Lulu package ID.");
-  const binding = match[1] as ColouringBinding;
+  const match = COLOURING_PACKAGE_PATTERN.exec(id.replaceAll(".", ""));
+  if (!match) throw new Error("This exporter supports only 8.5-inch square B&W or full-colour perfect-bound or coil-bound paperback on 60# uncoated white paper. Check the Lulu package ID.");
+  const binding = match[2] as ColouringBinding;
   return { id, binding, maxPages: binding === "CO" ? 470 : 800 };
+}
+/** True when the configured Lulu interior prints in full colour, so colour pages must be kept. */
+export function colouringPackageIsColour(id: string): boolean {
+  return COLOURING_PACKAGE_PATTERN.exec(id.replaceAll(".", ""))?.[1] === "FC";
 }
 export function colouringPodPackageId() {
   const id = process.env.LULU_COLOURING_POD_PACKAGE_ID;
