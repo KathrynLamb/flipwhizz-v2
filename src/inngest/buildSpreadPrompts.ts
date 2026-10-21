@@ -1,5 +1,6 @@
-import { getStoryFormat } from "@/lib/books/storyFormat";
 // src/inngest/buildSpreadPrompts.ts
+import { getStoryFormat } from "@/lib/books/storyFormat";
+import { HYBRID_RENDER_MODE_GUIDANCE, SPREAD_RENDER_MODES, isSpreadRenderMode } from "@/lib/books/bookType";
 //
 // Phase between decideSpreadScenes and generateBookSpreads.
 // Claude acts as art director: reads assigned characters + locations + page text,
@@ -111,6 +112,14 @@ const buildSpreadPromptsTool: Anthropic.Tool = {
                 "'avoid dark shadows — this is a bright cheerful morning'. " +
                 "Short, 1-2 sentences max.",
             },
+            renderMode: {
+              type: "string",
+              enum: [...SPREAD_RENDER_MODES],
+              description:
+                "Colouring storybooks only. 'outline' (default) is black outlines on white for the child to colour. " +
+                "'colour' is a finished full-colour spread, used only when the story's opening or ordinary world is coloured " +
+                "and it then passes into an outline-only world. Ignored for ordinary storybooks.",
+            },
           },
         },
       },
@@ -130,6 +139,7 @@ type SpreadBrief = {
   mood: string;
   doNotInclude: string[];
   negativePrompt: string;
+  renderMode?: string;
 };
 
 type ToolInput = { spreads: SpreadBrief[] };
@@ -440,6 +450,7 @@ ${allCharacterDescriptions || "No character details available."}
 ALL LOCATIONS IN THIS STORY:
 ${allLocationDescriptions || "No location details available."}
 
+${format.bookType === "colouring_storybook" ? HYBRID_RENDER_MODE_GUIDANCE + "\n" : ""}
 IMPORTANT RULES:
 - In illustrationPrompt, refer to characters by role/description only (e.g. "the boy", "the tuxedo cat", "the twin girl with pigtails"). Do NOT use their names — the image generator receives their portrait photos as visual reference and names add noise.
 - In doNotInclude, USE their actual names — this list is used to explicitly exclude characters from the Gemini prompt.
@@ -615,6 +626,16 @@ ${spreadContexts.join("\n\n---\n\n")}
               updatedAt: new Date(),
             },
           });
+
+        // Colouring books: record which spreads are full colour. Everything else
+        // (including every storybook spread) is left to follow the book type.
+        const renderMode =
+          format.bookType === "colouring_storybook"
+            ? isSpreadRenderMode(brief.renderMode)
+              ? brief.renderMode
+              : "outline"
+            : null;
+        await db.update(storySpreads).set({ renderMode }).where(eq(storySpreads.id, spread.id));
 
         console.log(
           `  ✅ Spread ${brief.spreadIndex}: "${brief.mood}" — ${brief.illustrationPrompt.slice(0, 80)}...`

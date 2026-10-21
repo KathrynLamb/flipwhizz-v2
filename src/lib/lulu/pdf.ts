@@ -1,3 +1,4 @@
+// src/lib/lulu/pdf.ts
 import type { ColouringBinding } from "./client";
 import { PDFDocument } from "pdf-lib";
 import sharp from "sharp";
@@ -24,7 +25,14 @@ async function drawContained(pdf: PDFDocument, buffer: Buffer, page: ReturnType<
   const w = image.width * scale, h = image.height * scale;
   page.drawImage(image, { x: x + (width - w) / 2, y: y + (height - h) / 2, width: w, height: h });
 }
-export async function buildColouringInterior(input: { title: string; cover: Buffer; titleInColour?: boolean; spreads: { image: Buffer; hasRightPage: boolean }[] }) {
+export async function buildColouringInterior(input: {
+  title: string;
+  cover: Buffer;
+  titleInColour?: boolean;
+  /** Full-colour Lulu interior: colour spreads keep their colour instead of being greyed. */
+  colourInterior?: boolean;
+  spreads: { image: Buffer; hasRightPage: boolean; renderMode?: "colour" | "outline" | null }[];
+}) {
   const pdf = await PDFDocument.create();
   pdf.setTitle(input.title); pdf.setAuthor("FlipWhizz");
   const first = pdf.addPage([PAGE_PT, PAGE_PT]);
@@ -34,7 +42,10 @@ export async function buildColouringInterior(input: { title: string; cover: Buff
     for (const side of (spread.hasRightPage ? ["left", "right"] : ["left"]) as ("left" | "right")[]) {
       const page = pdf.addPage([PAGE_PT, PAGE_PT]);
       // Preserve the whole composition and lettering. Never stretch or crop to square.
-      const art = await sharp(await halfImage(spread.image, side)).greyscale().png().toBuffer();
+      // Outline spreads are always greyed (clean black on white). Colour spreads are only kept in colour on a colour interior.
+      const keepColour = Boolean(input.colourInterior) && spread.renderMode === "colour";
+      const half = sharp(await halfImage(spread.image, side));
+      const art = await (keepColour ? half : half.greyscale()).png().toBuffer();
       await drawContained(pdf, art, page, BLEED_PT + SAFE_PT, BLEED_PT + SAFE_PT, TRIM_PT - SAFE_PT * 2, TRIM_PT - SAFE_PT * 2);
     }
   }

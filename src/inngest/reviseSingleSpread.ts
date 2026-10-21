@@ -1,4 +1,6 @@
+// src/inngest/reviseSingleSpread.ts
 import { requireConfirmedBookType } from "@/lib/books/storyFormat";
+import { COLOUR_SPREAD_NOTE } from "@/lib/books/bookType";
 import { inngest } from "./client";
 import { eq, inArray, sql } from "drizzle-orm";
 import {
@@ -67,7 +69,8 @@ export const reviseSingleSpread = inngest.createFunction(
     }
 
     const imageUrl = await step.run("revise-image", async () => {
-      const format = await requireConfirmedBookType(storyId);
+      const format = await requireConfirmedBookType(storyId, { leftPageId });
+      const colourSpreadInColouringBook = format.bookType === "colouring_storybook" && format.renderMode === "colour";
       /* 1️⃣ Existing image */
       const page = await db.query.storyPages.findFirst({
         where: eq(storyPages.id, leftPageId),
@@ -113,7 +116,8 @@ export const reviseSingleSpread = inngest.createFunction(
       /* 4️⃣ Build parts (ORDER MATTERS) */
       const parts: any[] = [];
 
-      if (style?.sampleIllustrationUrl) {
+      // The style sample of a colouring book is outline art, so a colour spread must not copy it.
+      if (style?.sampleIllustrationUrl && !colourSpreadInColouringBook) {
         parts.push({ text: "PRIMARY ART STYLE REFERENCE:" });
         parts.push(await getImagePart(style.sampleIllustrationUrl));
       }
@@ -143,7 +147,7 @@ ABSOLUTE RULES:
 - If a requested change conflicts with these rules, make the MINIMAL possible adjustment
 
 This is a controlled revision, not a new illustration.
-${format.interiorStyle}
+${colourSpreadInColouringBook ? COLOUR_SPREAD_NOTE : format.interiorStyle}
         `.trim(),
       });
 

@@ -911,6 +911,11 @@ export const storySpreads = pgTable("story_spreads", {
   // finalUrl, remaining problems, text check, model, at }. See spreadWorker.
   qa: jsonb("qa"),
 
+  // 'colour' | 'outline'. NULL follows the book type (outline for colouring
+  // books, colour for storybooks). Lets one colouring book open in full colour
+  // and switch to outline pages.
+  renderMode: varchar("render_mode", { length: 10 }).$type<"colour" | "outline">(),
+
   createdAt: timestamp("created_at").defaultNow(),
 });
 

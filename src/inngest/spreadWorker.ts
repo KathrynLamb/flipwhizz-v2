@@ -1,5 +1,6 @@
-import { requireConfirmedBookType } from "@/lib/books/storyFormat";
 // src/inngest/spreadWorker.ts
+import { requireConfirmedBookType } from "@/lib/books/storyFormat";
+import { COLOUR_SPREAD_NOTE } from "@/lib/books/bookType";
 //
 // Draws ONE double-page spread. Every spread in the product goes through
 // here: full-book generation, the free preview, and the studio's Redraw.
@@ -20,6 +21,7 @@ import { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  stories,
   storyPages,
   storyStyleGuide,
   characters,
@@ -103,6 +105,7 @@ type Prepared = {
   previousArtUrl: string | null; // un-lettered art from the last run (for revisions)
   previousFinalUrl: string | null; // the lettered page that art belongs to
   outfits: Record<string, string>; // what each character wears on THIS page
+  colourRefUrl: string | null; // full-colour cover, only on colour spreads of a colouring book
 };
 
 /**
@@ -175,10 +178,21 @@ export const generateSingleSpread = inngest.createFunction(
           : Promise.resolve(null),
       ]);
 
-      const format = await requireConfirmedBookType(storyId);
+      const format = await requireConfirmedBookType(storyId, { leftPageId });
       const style = await db.query.storyStyleGuide.findFirst({ where: eq(storyStyleGuide.storyId, storyId) });
       const { geminiStyleBlock, geminiAvoidBlock, typographyBlock } = resolveStyleGuide(style);
-      const plate = format.interiorStyle ? { url: null, clean: true } : await ensureStylePlate(storyId, model.key);
+      // Colouring books never use the style plate: it is made from the (outline)
+      // style sample, which would drag a colour spread back to line art.
+      const isColouringBook = format.bookType === "colouring_storybook";
+      const isColourSpreadInColouringBook = isColouringBook && format.renderMode === "colour";
+      const plate = isColouringBook ? { url: null, clean: true } : await ensureStylePlate(storyId, model.key);
+      // The full-colour cover carries each character's real colours; use it as the
+      // colour reference on colour spreads, since the portraits there are outline.
+      let colourRefUrl: string | null = null;
+      if (isColourSpreadInColouringBook) {
+        const storyRow = await db.query.stories.findFirst({ where: eq(stories.id, storyId), columns: { coverSpreadUrl: true } });
+        if (usable(storyRow?.coverSpreadUrl)) colourRefUrl = storyRow!.coverSpreadUrl;
+      }
 
       const spread = await loadSpreadRecord(leftPageId, rightPageId);
       if (!spread) throw new Error(`No spread record found for pages ${pageLabel}`);
@@ -333,7 +347,8 @@ export const generateSingleSpread = inngest.createFunction(
         forbiddenIds,
         doNotIncludeNames,
         location,
-        direction: `${direction}\n${format.interiorStyle}`,
+        direction: `${direction}\n${isColourSpreadInColouringBook ? COLOUR_SPREAD_NOTE : format.interiorStyle}`,
+        colourRefUrl,
         compositionNotes: ((scene?.compositionNotes as string[]) ?? []).filter(Boolean),
         mood: scene?.mood ?? null,
         negativePrompt: scene?.negativePrompt ?? null,
@@ -417,6 +432,14 @@ export const generateSingleSpread = inngest.createFunction(
         try {
           parts.push(await urlToPart(url, 1536), {
             text: `↑ ${c.name.toUpperCase()}${c.species && c.species !== "human" ? ` (${c.breed || c.species})` : ""}: reference sheet. Draw ${c.name} exactly like this: same face, hair colour, length and texture, skin tone, clothes and colours, build. ↑`,
+          });
+        } catch {}
+      }
+
+      if (prep.colourRefUrl) {
+        try {
+          parts.push(await urlToPart(prep.colourRefUrl, 1536), {
+            text: "↑ COLOUR REFERENCE: the finished full-colour cover. Use it ONLY for each character's real colours (hair, skin, clothes) and the overall palette. Do not copy its composition or lettering. ↑",
           });
         } catch {}
       }
