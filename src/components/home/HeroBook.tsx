@@ -58,7 +58,22 @@ export default function HeroBook() {
       onFocus={() => { paused.current = true; }}
       onBlur={() => { paused.current = false; }}
     >
-      <div aria-hidden="true" className="fw-blob absolute -right-[6%] -top-[12%] aspect-square w-[78%] bg-[#FFE7C2]" />
+      {/* Ribbon colours sampled directly from Flipwhizz_logo_NEW.png. */}
+      <svg
+        aria-hidden="true"
+        focusable="false"
+        viewBox="0 0 600 600"
+        className="pointer-events-none absolute -right-[6%] -top-[12%] aspect-square w-[78%] opacity-60"
+      >
+        <path d="M 300 300 C 225.44 406.49 63.35 236.59 151.00 41.92 A 298 298 0 0 1 377.13 12.15 C 177.50 87.82 171.97 322.57 300 300 Z" fill="#F3807B" />
+        <path d="M 300 300 C 171.97 322.57 177.50 87.82 377.13 12.15 A 298 298 0 0 1 558.08 151.00 C 363.41 63.35 193.51 225.44 300 300 Z" fill="#F18B5A" />
+        <path d="M 300 300 C 193.51 225.44 363.41 63.35 558.08 151.00 A 298 298 0 0 1 587.85 377.13 C 512.18 177.50 277.43 171.97 300 300 Z" fill="#FAD15D" />
+        <path d="M 300 300 C 277.43 171.97 512.18 177.50 587.85 377.13 A 298 298 0 0 1 449.00 558.08 C 536.65 363.41 374.56 193.51 300 300 Z" fill="#BCD570" />
+        <path d="M 300 300 C 374.56 193.51 536.65 363.41 449.00 558.08 A 298 298 0 0 1 222.87 587.85 C 422.50 512.18 428.03 277.43 300 300 Z" fill="#7AD3C1" />
+        <path d="M 300 300 C 428.03 277.43 422.50 512.18 222.87 587.85 A 298 298 0 0 1 41.92 449.00 C 236.59 536.65 406.49 374.56 300 300 Z" fill="#83AAD3" />
+        <path d="M 300 300 C 406.49 374.56 236.59 536.65 41.92 449.00 A 298 298 0 0 1 12.15 222.87 C 87.82 422.50 322.57 428.03 300 300 Z" fill="#9693CC" />
+        <path d="M 300 300 C 322.57 428.03 87.82 422.50 12.15 222.87 A 298 298 0 0 1 151.00 41.92 C 63.35 236.59 225.44 406.49 300 300 Z" fill="#C878BF" />
+      </svg>
 
       <div className={`relative z-[2] ml-auto max-w-[640px] rotate-[-1.5deg] ${peek ? "fw-peek" : ""}`}>
         <div aria-hidden="true" className="absolute inset-x-[1%] -bottom-[10px] top-[10px] rounded-[14px] bg-[#EFE7F5]" />
