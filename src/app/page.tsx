@@ -1,5 +1,7 @@
 // Editorial homepage: broad story ideas, real books and a mobile-first path into chat.
 
+import { Suspense } from "react";
+import CreateDemoClient from "./projects/create/CreateDemoClient";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { headers } from "next/headers";
@@ -119,8 +121,7 @@ export default async function Home() {
           <p className="fw-kicker">Your ideas. An illustrated book.</p>
           <h1 id="opening-title">There’s a<br />book in <em>that.</em></h1>
           <p className="fw-intro">A family story. A small discovery. Something completely made up. Tell us your idea; we’ll help you turn it into a book.</p>
-          <Link className="fw-ink-button" href={starterHref({ entry: "home_hero" })}>Start your book <span aria-hidden="true">↗</span></Link>
-          <p className="fw-small">First illustrated page free. No sign-up or card.</p>
+          <div id="start-story"><Suspense fallback={<p>Loading your story chat…</p>}><CreateDemoClient embedded /></Suspense></div>
         </div>
         <div className="fw-opening-art">
           <p className="fw-margin-note">From a conversation<br />to a proper page-turner.</p>
@@ -185,7 +186,7 @@ export default async function Home() {
       <section id="faq" className="fw-faq-section fw-wrap"><h2>A few things<br /><em>you might be wondering.</em></h2><HomeFaq faqs={HOME_FAQS} /></section>
       <section className="fw-last-page fw-wrap"><p className="fw-kicker">Every book starts somewhere.</p><h2>What’s <em>your</em> story?</h2><Link className="fw-ink-button" href={starterHref({ entry: "home_footer" })}>Start your book ↗</Link><p className="fw-small">First illustrated page free. No sign-up or card.</p></section>
       <Footer />
-      <aside className="fw-mobile-action" aria-label="Start a book"><span>Your first page<br /><strong>is on us.</strong></span><Link href={starterHref({ entry: "home_mobile_sticky" })}>Start your book <span aria-hidden="true">↗</span></Link></aside>
+
     </main>
   );
 }

@@ -68,7 +68,7 @@ function pickGenericOpener(): string {
   return GENERIC_OPENERS[Math.floor(Math.random() * GENERIC_OPENERS.length)];
 }
 
-export default function CreateDemoClient() {
+export default function CreateDemoClient({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const { data: session, status: authStatus } = useSession();
 
@@ -112,7 +112,7 @@ export default function CreateDemoClient() {
       }),
     [searchParams],
   );
-  const entry = searchParams.get("entry") ?? (starter ? "starter_link" : "direct");
+  const entry = searchParams.get("entry") ?? (embedded ? "home_chat" : starter ? "starter_link" : "direct");
   const utmSource = searchParams.get("utm_source");
   const { bookType, selectBookType } = useBookTypeDraft(searchParams.get("bookType"));
 
@@ -164,12 +164,12 @@ export default function CreateDemoClient() {
       ]);
       posthog.capture("demo_opener_shown", { seeded: false, seed: null, starter: true, entry });
       trackFirstMessage(entry, utmSource, true);
-      requestAnimationFrame(() => textareaRef.current?.focus());
+      if (!embedded) requestAnimationFrame(() => textareaRef.current?.focus());
       return;
     }
 
     const seedOpener = seed ? SEED_OPENERS[seed] : undefined;
-    const opener = bookType === "colouring_storybook"
+    const opener = embedded ? "What would you like to make a story about?" : bookType === "colouring_storybook"
       ? "Hi! Let’s make a colouring storybook starring your child, with a full-colour cover and outline pictures inside for them to colour. What’s their name, how old are they, and what do they love?"
       : seedOpener ?? pickGenericOpener();
 
@@ -182,7 +182,7 @@ export default function CreateDemoClient() {
 
     // Focus the box so the cursor is already there. The proven failure mode
     // was visitors never moving to the input at all.
-    requestAnimationFrame(() => textareaRef.current?.focus());
+    if (!embedded) requestAnimationFrame(() => textareaRef.current?.focus());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesLoaded, seed, messages.length, bookType]);
 
@@ -209,10 +209,14 @@ export default function CreateDemoClient() {
       JSON.stringify(messages),
     );
     const id = window.setTimeout(() => {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      if (!embedded) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      else if (userMessageCount > 0 && bottomRef.current?.parentElement?.parentElement) {
+        const transcript = bottomRef.current.parentElement.parentElement;
+        transcript.scrollTop = transcript.scrollHeight;
+      }
     }, 80);
     return () => window.clearTimeout(id);
-  }, [messages, messagesLoaded]);
+  }, [messages, messagesLoaded, embedded, userMessageCount]);
 
   useEffect(() => {
     if (!textareaRef.current) return;
@@ -389,14 +393,14 @@ export default function CreateDemoClient() {
     sessionStorage.removeItem("flipwhizz_create_demo_messages");
     sessionStorage.removeItem("flipwhizz_demo_pending_resume");
     selectBookType("storybook");
-    requestAnimationFrame(() => textareaRef.current?.focus());
+    if (!embedded) requestAnimationFrame(() => textareaRef.current?.focus());
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <BookTypeSelector value={bookType} onChange={selectBookType} disabled={loading || creatingProject || !messagesLoaded} />
+    <div className={embedded ? "fw-home-chat" : "flex h-full flex-col"}>
+      {!embedded && <BookTypeSelector value={bookType} onChange={selectBookType} disabled={loading || creatingProject || !messagesLoaded} />}
 
-      <div className="flex-1 pb-44 pt-8">
+      <div className={embedded ? "fw-home-transcript" : "flex-1 pb-44 pt-8"} role="log" aria-label="Your story conversation" aria-live="polite">
         <div className="flex flex-col gap-3">
           {messages.map((msg, i) => (
             <ChatBubble key={`${msg.role}-${i}-${msg.content.slice(0, 24)}`} from={msg.role === "user" ? "you" : "fw"}>
@@ -430,7 +434,7 @@ export default function CreateDemoClient() {
       </div>
 
       {/* Composer, fixed to the bottom of the screen. */}
-      <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-white via-white to-white/0 px-4 pb-3 pt-8 sm:px-6 sm:pb-5">
+      <div className={embedded ? "fw-home-composer" : "fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-white via-white to-white/0 px-4 pb-3 pt-8 sm:px-6 sm:pb-5"}>
         <div className="mx-auto w-full max-w-2xl">
           {userMessageCount > 0 && !reachedLimit && <RepliesLeft remaining={remaining} total={MAX_USER_MESSAGES} />}
 
@@ -453,7 +457,7 @@ export default function CreateDemoClient() {
                 ? "Demo complete. Continue to create your book"
                 : bookType === "colouring_storybook"
                   ? "Their name, age, favourite things…"
-                  : "A name, an age, what they love…"
+                  : "A memory, two snails, a wild idea…"
             }
           />
 
