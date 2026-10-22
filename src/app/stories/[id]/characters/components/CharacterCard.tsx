@@ -1,4 +1,5 @@
 'use client';
+import { prepareReferencePhoto, REFERENCE_PHOTO_ACCEPT } from '@/lib/heicPreview';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebaseClient';
 import { useState, useRef, useEffect } from 'react';
@@ -67,12 +68,7 @@ export default function CharacterCard({ character, storyId, onUpdate, disabled =
   }
   async function upload(file: File) {
     if (file.size > 15 * 1024 * 1024) throw new Error('Choose a photo smaller than 15 MB.');
-    let uploadFile = file;
-    if (/\.(heic|heif)$/i.test(file.name) || /image\/hei[cf]/.test(file.type)) {
-      const heic2any = (await import('heic2any')).default;
-      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-      uploadFile = new File([Array.isArray(blob) ? blob[0] : blob], 'reference.jpg', { type: 'image/jpeg' });
-    }
+    const uploadFile = await prepareReferencePhoto(file);
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(uploadFile.type)) throw new Error('Choose a JPG, PNG, WebP or HEIC photo.');
     const path = `story-references/${storyId}/${crypto.randomUUID()}`;
     const object = ref(storage, path);
@@ -134,7 +130,7 @@ export default function CharacterCard({ character, storyId, onUpdate, disabled =
         </div> : null}
       </>}
       {shownError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm leading-6 text-rose-700">{shownError}</p>}
-      <input ref={uploadRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" className="hidden" aria-label={`Choose a photo of ${character.name}`} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void run('Uploading photo…', () => upload(file)); }} />
+      <input ref={uploadRef} type="file" accept={REFERENCE_PHOTO_ACCEPT} className="hidden" aria-label={`Choose a photo of ${character.name}`} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void run('Uploading photo…', () => upload(file)); }} />
     </div>
   </article>;
 }

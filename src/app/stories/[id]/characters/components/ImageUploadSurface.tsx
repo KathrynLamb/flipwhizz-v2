@@ -1,5 +1,6 @@
 "use client";
 
+import { createImagePreview, REFERENCE_PHOTO_ACCEPT } from "@/lib/heicPreview";
 import { useRef, useState } from "react";
 import { Upload, Sparkles, Loader2, Lock } from "lucide-react";
 
@@ -32,11 +33,14 @@ export function ImageUploadSurface({
 
   async function handleFile(file: File) {
     if (locked) return;
-    setLocalPreview(URL.createObjectURL(file));
+    let preview: string | undefined;
     try {
+      preview = await createImagePreview(file);
+      setLocalPreview(preview);
       await onUpload(file);
     } finally {
       setLocalPreview(null);
+      if (preview) URL.revokeObjectURL(preview);
     }
   }
 
@@ -73,7 +77,7 @@ export function ImageUploadSurface({
       <input
         ref={fileRef}
         type="file"
-        accept="image/*"
+        accept={REFERENCE_PHOTO_ACCEPT}
         className="hidden"
         onChange={(e) => e.target.files && handleFile(e.target.files[0])}
       />

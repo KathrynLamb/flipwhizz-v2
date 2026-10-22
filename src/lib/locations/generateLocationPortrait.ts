@@ -1,4 +1,4 @@
-import { referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
+import { outlineReferenceText, referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
 // src/lib/locations/generateLocationPortrait.ts
 //
 // Generates and saves an AI portrait for a location from its text description.
@@ -151,6 +151,13 @@ export async function generateLocationPortraitFromDescription(
   });
 
   parts.push({ text: referencePromptForBook(linkedStory?.bookType, prompt) });
+
+    // Colouring references must not inherit conflicting photo/outfit colour directions.
+    if (linkedStory?.bookType === 'colouring_storybook') {
+      for (const part of parts) {
+        if (typeof part.text === 'string') part.text = outlineReferenceText(part.text);
+      }
+    }
 
   console.log(
     `🏞️ Generating location portrait for "${location.name}" (description-only)`

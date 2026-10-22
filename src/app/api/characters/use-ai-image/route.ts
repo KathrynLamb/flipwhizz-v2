@@ -1,4 +1,4 @@
-import { referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
+import { outlineReferenceText, referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
 // src/app/api/characters/use-ai-image/route.ts
 import { NextResponse } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
@@ -939,6 +939,13 @@ Do not drift into a generic face and do not make it photorealistic.`,
     }
 
     parts.push({ text: referencePromptForBook(linkedStory?.bookType, prompt) });
+
+    // Colouring references must not inherit conflicting photo/outfit colour directions.
+    if (linkedStory?.bookType === 'colouring_storybook') {
+      for (const part of parts) {
+        if (typeof part.text === 'string') part.text = outlineReferenceText(part.text);
+      }
+    }
 
     console.log(
       "📦 Parts sent to Gemini:",

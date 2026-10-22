@@ -1,4 +1,5 @@
 "use client";
+import { prepareReferencePhoto, REFERENCE_PHOTO_ACCEPT } from '@/lib/heicPreview';
 
 // MobileLocationCard.tsx — v2
 // Clear two-path UX: upload photo (AI illustrates it) vs generate from description
@@ -151,12 +152,7 @@ export function MobileLocationCard({
           if (isMounted.current) setLocked(false);
         }
   
-        let uploadFile = file;
-        if (/\.heic$/i.test(file.name) || file.type === "image/heic") {
-          const heic2any = (await import("heic2any")).default;
-          const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
-          uploadFile = new File([blob as Blob], file.name.replace(/\.heic$/i, ".jpg"), { type: "image/jpeg" });
-        }
+        const uploadFile = await prepareReferencePhoto(file);
   
         const path = `story-references/${storyId}/locations/${crypto.randomUUID()}-${uploadFile.name}`;
         const sRef = storageRef(storage, path);

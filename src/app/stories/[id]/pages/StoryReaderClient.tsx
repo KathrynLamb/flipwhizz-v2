@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import MobileStoryLayout from '@/app/stories/components/MobileStoryLayout';
 import StoryFooter from '@/app/stories/[id]/pages/components/StoryFooter';
 import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
-import { getNextStepHref, type StepKey } from "@/lib/storySteps";
+import { type StepKey } from "@/lib/storySteps";
 
 /* ======================================================
    TYPES
@@ -71,6 +71,7 @@ export default function StoryReaderClient({
     useState<AuthorLetterApiResponse | null>(null);
 
   // Sidebar mode
+  const [isConfirming, setIsConfirming] = useState(false);
   const [sidebarMode, setSidebarMode] = useState<'note' | 'chat'>('note');
   const [showTweaks, setShowTweaks] = useState(false);
 
@@ -229,34 +230,25 @@ export default function StoryReaderClient({
   };
 
   const handleConfirmStory = async () => {
+    if (isConfirming || isLoading) return;
+    setIsConfirming(true);
     try {
-      const res = await fetch(`/api/stories/${id}/lock`, { method: "POST" });
-      const data = await res.json();
-
-      await fetch(`/api/stories/${id}/confirm`, { method: "POST" }).catch(() => {});
-
-      await fetch(`/api/stories/${id}/complete-step`, {
+      // /lock is a legacy step endpoint, not story approval. Confirm through the
+      // authorised endpoint and never navigate on a failed save.
+      const confirmed = await fetch(`/api/stories/${id}/confirm`, { method: "POST" });
+      if (!confirmed.ok) throw new Error("Could not confirm story");
+      const completed = await fetch(`/api/stories/${id}/complete-step`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ step: "write" }),
-      }).catch(() => {});
-
-      if (data.alreadyConfirmed) {
-        const storyRes = await fetch(`/api/stories/${id}`, { cache: "no-store" });
-        if (storyRes.ok) {
-          const storyData = await storyRes.json();
-          const story = storyData.story ?? storyData;
-          router.push(getNextStepHref(id, story));
-        } else {
-          router.push(`/stories/${id}/illustration-style`);
-        }
-        return;
-      }
+      });
+      if (!completed.ok) throw new Error("Could not complete writing step");
 
       fetch(`/api/stories/${id}/ensure-world`, { method: "POST" }).catch(() => {});
       router.push(`/stories/${id}/extract`);
     } catch {
-      alert("Failed to lock story. Please try again.");
+      alert("Failed to accept story. Please try again.");
+      setIsConfirming(false);
     }
   };
 
@@ -465,6 +457,10 @@ export default function StoryReaderClient({
 
             {/* SIDEBAR */}
             <div className="sticky top-24">
+              <nav aria-label="Story editing tools" className="mb-3 flex rounded-xl border border-purple-100 bg-white p-1">
+                <button onClick={() => setSidebarMode('note')} aria-pressed={sidebarMode === 'note'} className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold ${sidebarMode === 'note' ? 'bg-[#F1EAF7] text-[#54326F]' : 'text-slate-600 hover:bg-slate-50'}`}>Story notes</button>
+                <button onClick={startEditing} aria-pressed={sidebarMode === 'chat'} className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold ${sidebarMode === 'chat' ? 'bg-[#F1EAF7] text-[#54326F]' : 'text-slate-600 hover:bg-slate-50'}`}>Refine story</button>
+              </nav>
               <AnimatePresence mode="wait">
                 {sidebarMode === 'note' ? (
                   <motion.div
@@ -508,7 +504,7 @@ export default function StoryReaderClient({
           </div>
         </div>
 
-        {/* ── Footer — removed duplicate confirm, replaced with progress indicator only ── */}
+        {/* Keep approval visible in BOTH notes and chat: never hide navigation in a panel. */}
         <div
           className="fixed bottom-0 left-0 right-0 z-50 border-t"
           style={{
@@ -524,7 +520,7 @@ export default function StoryReaderClient({
                 Step 1 of 3
               </span>
               <div
-                className="w-44 h-1 rounded-full overflow-hidden"
+                className="hidden lg:block w-32 h-1 rounded-full overflow-hidden"
                 style={{ background: 'rgba(180,150,210,0.15)' }}
               >
                 <div
@@ -535,15 +531,16 @@ export default function StoryReaderClient({
                   }}
                 />
               </div>
-              <span className="text-xs font-medium" style={{ color: '#A897BD' }}>
-                Review your story
+              <span className="text-xs font-medium" style={{ color: '#71617F' }}>
+                Accept the story shown on the left
               </span>
             </div>
 
-            {/* Subtle nudge — not a duplicate CTA */}
-            <p className="text-xs" style={{ color: '#C7B8DA' }}>
-              Happy with it? Use the <span className="font-semibold" style={{ color: '#B05CE6' }}>Continue</span> button in the panel →
-            </p>
+            <button onClick={handleConfirmStory} disabled={isLoading || isConfirming}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#6B438C] px-5 py-3 text-sm font-semibold text-white hover:bg-[#54326F] disabled:opacity-50">
+              {isConfirming ? 'Opening design…' : 'Accept story & continue'}
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </div>
@@ -634,7 +631,7 @@ function AuthorNoteCard({
         boxShadow:
           '0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)',
         // Constrain total height so actions are always visible without scrolling
-        maxHeight: 'calc(100vh - 220px)',
+        maxHeight: 'calc(100vh - 280px)',
       }}
     >
       {/* ── Header — fixed ── */}
@@ -831,8 +828,8 @@ function ChatPanel({
   onSend: () => void;
   onApply: () => void;
   onBackToNote: () => void;
-  messagesEndRef: React.RefObject<HTMLDivElement>;
-  inputRef: React.RefObject<HTMLInputElement>;
+  messagesEndRef: React.RefObject<HTMLDivElement | null>;
+  inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
   return (
     <div
@@ -842,7 +839,7 @@ function ChatPanel({
         borderColor: 'rgba(180,150,210,0.12)',
         boxShadow:
           '0 2px 8px rgba(100,60,140,0.05), 0 12px 40px rgba(100,60,140,0.07)',
-        maxHeight: 'calc(100vh - 220px)',
+        maxHeight: 'calc(100vh - 280px)',
       }}
     >
       {/* Header */}
@@ -876,7 +873,7 @@ function ChatPanel({
             fontFamily: 'inherit',
           }}
         >
-          ← Note
+          ← Story notes
         </button>
       </div>
 
