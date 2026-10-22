@@ -984,7 +984,7 @@ export default function UnifiedStoryHeader({
       />
 
       <header
-        className="sticky top-0 z-50"
+        className="sticky top-[var(--book-navigation-height,0px)] z-50"
         style={{
           fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
           background: "rgba(253,251,255,0.88)",

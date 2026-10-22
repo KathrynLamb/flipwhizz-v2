@@ -152,7 +152,7 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
   return (
     <>
       {/* ============ DESKTOP NAV ============ */}
-      <nav className="hidden md:flex flex-col bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
+      <nav className="hidden md:flex flex-col bg-white border-b border-gray-200 shadow-sm sticky top-[var(--book-navigation-height,0px)] z-50">
         {/* Top row: back + title + progress */}
         <div className="px-6 py-3 flex items-center justify-between border-b border-gray-100">
           <button
@@ -229,7 +229,7 @@ export default function StoryHubClient({ story, hub }: StoryHubClientProps) {
       </nav>
 
       {/* ============ MOBILE NAV ============ */}
-      <nav className="md:hidden sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
+      <nav className="md:hidden sticky top-[var(--book-navigation-height,0px)] z-50 bg-white border-b border-gray-200 shadow-sm">
         {/* Top bar */}
         <div className="px-4 py-3 flex items-center justify-between">
           <button

@@ -258,7 +258,7 @@ async function applyEdits() {
 
   if (viewportWidth == null) {
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 flex items-center justify-center">
+      <div className="fixed inset-x-0 bottom-0 top-[var(--book-navigation-height,0px)] bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 flex items-center justify-center">
         <div className="animate-pulse text-purple-600">Loading...</div>
       </div>
     );
@@ -267,7 +267,7 @@ async function applyEdits() {
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 overflow-hidden"
+      className="fixed inset-x-0 bottom-0 top-[var(--book-navigation-height,0px)] bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 overflow-hidden"
       style={{
         paddingTop: "env(safe-area-inset-top)",
         paddingBottom: "env(safe-area-inset-bottom)",

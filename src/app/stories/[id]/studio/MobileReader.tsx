@@ -518,7 +518,7 @@ useEffect(() => {
         }}
       >
         <div
-          className="sticky top-0 z-50 px-4 py-3 flex items-center gap-3"
+          className="sticky top-[var(--book-navigation-height,0px)] z-50 px-4 py-3 flex items-center gap-3"
           style={{
             background: "rgba(253,251,255,0.85)",
             backdropFilter: "blur(12px)",

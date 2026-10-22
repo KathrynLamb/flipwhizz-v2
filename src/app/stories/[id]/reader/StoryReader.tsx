@@ -346,7 +346,7 @@ export default function StoryReader({ story, pages }: Props) {
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 bg-[#1a1520] select-none overflow-hidden"
+      className="fixed inset-x-0 bottom-0 top-[var(--book-navigation-height,0px)] bg-[#1a1520] select-none overflow-hidden"
       onClick={showControlsBriefly}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}

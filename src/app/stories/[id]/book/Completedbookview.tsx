@@ -267,7 +267,7 @@ export default function CompletedBookView({ story, order, userEmail }: Props) {
   return (
     <div className="min-h-screen font-sans">
       {/* Nav */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+      <div className="sticky top-[var(--book-navigation-height,0px)] z-10 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
             href="/projects"

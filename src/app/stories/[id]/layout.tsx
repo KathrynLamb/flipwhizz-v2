@@ -2,7 +2,8 @@ import BookFormatNotice from "@/components/books/BookFormatNotice";
 // src/app/stories/[id]/layout.tsx
 // ❌ DO NOT add "use client"
 
-import { ReactNode } from "react";
+import BookSiteNavigation from "@/app/stories/components/BookSiteNavigation";
+import { ReactNode, type CSSProperties } from "react";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 
@@ -99,10 +100,11 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
 
   try {
     return (
-      <>
+      <div className="pt-12 print:pt-0" style={{ '--book-navigation-height': '3rem' } as CSSProperties}>
+      <BookSiteNavigation />
       {viewingAsCustomer && (
         <div
-          style={{ position: "sticky", top: 0, zIndex: 9999, background: story.paymentStatus === "paid" ? "#9F1239" : "#B45309", color: "white",
+          style={{ position: "sticky", top: "var(--book-navigation-height)", zIndex: 9999, background: story.paymentStatus === "paid" ? "#9F1239" : "#B45309", color: "white",
                    fontSize: 13, fontWeight: 600, padding: "8px 16px", textAlign: "center" }}
         >
           👀 Admin: viewing {viewingAsCustomer}&apos;s {story.paymentStatus === "paid" ? "PAID" : "unpaid"} book. Anything you click here changes THEIR book.{" "}
@@ -111,7 +113,7 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
       )}
       {isAdmin && !viewingAsCustomer && (
         <div
-          style={{ position: "sticky", top: 0, zIndex: 9999, background: "#065F46", color: "white",
+          style={{ position: "sticky", top: "var(--book-navigation-height)", zIndex: 9999, background: "#065F46", color: "white",
                    fontSize: 12, fontWeight: 600, padding: "6px 16px", textAlign: "center" }}
         >
           Test copy (your account).{" "}
@@ -132,7 +134,7 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
       >
         {children}
       </StoryJourneyShell>
-      </>
+      </div>
     );
   } catch (error) {
     if (error instanceof Error && error.message === "NEXT_REDIRECT") throw error;
