@@ -273,7 +273,7 @@ export default function DesignClient({ data }: { data: StudioData }) {
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
       
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-purple-100">
+      <header className="sticky top-[var(--book-navigation-height,0px)] z-50 bg-white/80 backdrop-blur-xl border-b border-purple-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             

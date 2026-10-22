@@ -301,7 +301,7 @@ export default function ChatPage() {
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Top Bar */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200/50">
+      <div className="fixed top-[var(--book-navigation-height,0px)] left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-200/50">
         <div className="px-4 py-3 flex items-center justify-between min-h-[64px]">
           {/* Left */}
           <button
@@ -384,7 +384,7 @@ export default function ChatPage() {
       </div>
 
       {/* Messages */}
-      <div className="h-[calc(100vh-64px-140px)] mt-[64px] pt-4 overflow-y-auto px-4">
+      <div className="h-[calc(100dvh-var(--book-navigation-height,0px)-64px-140px)] mt-[64px] pt-4 overflow-y-auto px-4">
         <div className="max-w-2xl mx-auto pt-4 pb-4">
           <AnimatePresence>
             {messages.length === 0 && !isSyncing && (

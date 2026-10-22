@@ -27,7 +27,7 @@ export default function CharactersHeader({
 
   return (
     <header 
-      className="sticky top-0 z-50 backdrop-blur-xl border-b border-white/[0.06]" 
+      className="sticky top-[var(--book-navigation-height,0px)] z-50 backdrop-blur-xl border-b border-white/[0.06]"
       style={{ background: 'rgba(10,10,15,0.85)' }}
     >
       <div className="max-w-5xl mx-auto px-4 sm:px-6">
