@@ -1,3 +1,4 @@
+// src/app/stories/[id]/characters/CharactersClient.tsx
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -38,13 +39,15 @@ export default function CharactersClient({ storyId, storyTitle = 'Your story', c
   const [showGroupPhoto, setShowGroupPhoto] = useState(false);
   const [groupRemaining, setGroupRemaining] = useState(0);
   const [styleReviewed, setStyleReviewed] = useState(false);
+  const [approvingAll, setApprovingAll] = useState(false);
   useEffect(() => { setCast(characters); }, [characters]);
   const onBusyChange = useCallback((id: string, busy: boolean) => {
     setBusyIds(prev => busy ? [...new Set([...prev, id])] : prev.filter(v => v !== id));
   }, []);
   const approved = cast.filter(isAppearanceApproved).length;
   const missing = cast.filter(c => !hasPortrait(c));
-  const busy = batch || busyIds.length > 0 || groupRemaining > 0 || confirming;
+  const toApprove = cast.filter(c => hasPortrait(c) && !c.locked);
+  const busy = batch || busyIds.length > 0 || groupRemaining > 0 || confirming || approvingAll;
   const styleChanged = searchParams.get('styleChanged') === 'true' && !styleReviewed;
   const ready = isCastReady(cast) && !styleChanged;
 
@@ -79,6 +82,29 @@ export default function CharactersClient({ storyId, storyTitle = 'Your story', c
       setActiveId(null); setBatch(false); batchRunning.current = false;
       router.refresh();
     }
+  }
+
+  async function approveAll() {
+    if (busy || !toApprove.length) return;
+    setApprovingAll(true); setError(null);
+    const results = await Promise.allSettled(toApprove.map(async character => {
+      const res = await fetch('/api/characters/lock', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId: character.id, portraitImageUrl: character.portraitImageUrl }),
+      });
+      if (!res.ok) throw new Error(character.name);
+      return character.id;
+    }));
+    const okIds = new Set<string>();
+    const failedNames: string[] = [];
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') okIds.add(r.value);
+      else failedNames.push(toApprove[i].name);
+    });
+    setCast(prev => prev.map(c => okIds.has(c.id) ? { ...c, locked: true } : c));
+    if (failedNames.length) setError(`Couldn't approve ${failedNames.join(', ')}. Check ${failedNames.length === 1 ? 'that picture' : 'those pictures'} and try again.`);
+    setApprovingAll(false);
+    router.refresh();
   }
 
   async function continueToLocations() {
@@ -129,13 +155,30 @@ export default function CharactersClient({ storyId, storyTitle = 'Your story', c
         <button disabled={busy} onClick={() => void generateAppearances(true)} className="mt-2 min-h-11 font-semibold text-[#7655A3] underline disabled:opacity-50">Regenerate all as outlines</button>
       </div>}
       {styleChanged && <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm"><p>Your book style changed. Regenerate the appearances, then review them in the new style.</p><button disabled={busy} onClick={() => void generateAppearances(true)} className="mt-2 min-h-11 font-semibold underline disabled:opacity-50">Regenerate for this style</button></div>}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 text-sm" role="status" aria-live="polite">
-        <p><span className="font-semibold">{approved} of {cast.length}</span> appearances approved</p>
-        {batch ? <p className="text-[#7655A3]">{batchDone} of {batchTotal} processed · Generating {cast.find(c => c.id === activeId)?.name}</p> : groupRemaining > 0 ? <p>Generating from your photo · {groupRemaining} remaining</p> : <p className="text-slate-500">{missing.length ? `${missing.length} still need an appearance` : 'Review each image before continuing'}</p>}
+      <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5" role="status" aria-live="polite">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{approved} of {cast.length} characters approved</p>
+            <div className="mt-2 h-2 w-48 max-w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${cast.length ? (approved / cast.length) * 100 : 0}%` }} /></div>
+            <p className="mt-2 text-sm text-slate-600">
+              {batch ? `Creating pictures: ${batchDone} of ${batchTotal} done${cast.find(c => c.id === activeId) ? `, now ${cast.find(c => c.id === activeId)?.name}` : ''}`
+                : groupRemaining > 0 ? `Creating pictures from your photo, ${groupRemaining} to go`
+                : approvingAll ? 'Approving…'
+                : ready ? 'All approved. You can move on to the places in your story.'
+                : missing.length ? `Step 1: ${missing.length} ${missing.length === 1 ? 'character needs' : 'characters need'} a picture.`
+                : `Step 2: look through the pictures. Happy with them all? Approve them in one go.`}
+            </p>
+          </div>
+          {!ready && !missing.length && toApprove.length > 0 && !batch && groupRemaining === 0 && (
+            <button onClick={() => void approveAll()} disabled={busy} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-5 py-3 text-sm font-semibold text-white hover:bg-[#62438F] disabled:opacity-50">
+              {approvingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}Approve all{toApprove.length > 1 ? ` (${toApprove.length})` : ''}
+            </button>
+          )}
+        </div>
       </div>
       <div className="grid items-start gap-6 md:grid-cols-2 xl:grid-cols-3">
         {cast.map(character => <CharactersCard key={character.id} character={character} storyId={storyId} bookType={bookType}
-          disabled={batch || confirming || groupRemaining > 0} generating={activeId === character.id}
+          disabled={batch || confirming || approvingAll || groupRemaining > 0} generating={activeId === character.id}
           externalError={failures[character.id]} onBusyChange={onBusyChange}
           onUpdate={() => { setFailures(prev => { const next = { ...prev }; delete next[character.id]; return next; }); router.refresh(); }} />)}
       </div>
@@ -143,7 +186,7 @@ export default function CharactersClient({ storyId, storyTitle = 'Your story', c
     </main>
     <footer className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur sm:px-8" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
-        <div className="text-sm"><p className="flex items-center gap-2 font-semibold">{ready && <Check className="h-4 w-4 text-emerald-600" />}{ready ? 'Your cast is ready' : `${cast.length - approved} appearances left to approve`}</p><p className="mt-1 text-xs text-slate-500">{ready ? 'Next, choose the places in your story.' : 'Generate an image, then select “Use this appearance”.'}</p>{error && <p role="alert" className="mt-1 text-sm text-rose-700">{error}</p>}</div>
+        <div className="text-sm"><p className="flex items-center gap-2 font-semibold">{ready && <Check className="h-4 w-4 text-emerald-600" />}{ready ? 'Your cast is ready' : `${cast.length - approved} ${cast.length - approved === 1 ? 'character' : 'characters'} left to approve`}</p><p className="mt-1 text-xs text-slate-500">{ready ? 'Next, choose the places in your story.' : missing.length ? 'Create a picture for each character first.' : 'Approve each picture, or use “Approve all” at the top.'}</p>{error && <p role="alert" className="mt-1 text-sm text-rose-700">{error}</p>}</div>
         <button onClick={() => void continueToLocations()} disabled={!ready || busy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Continue to locations<ArrowRight className="h-4 w-4" /></button>
       </div>
     </footer>

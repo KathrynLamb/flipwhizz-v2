@@ -1,4 +1,6 @@
+// src/app/stories/[id]/characters/components/CharacterCard.tsx
 'use client';
+import { prepareReferencePhoto, REFERENCE_PHOTO_ACCEPT } from '@/lib/heicPreview';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebaseClient';
 import { useState, useRef, useEffect } from 'react';
@@ -67,12 +69,7 @@ export default function CharacterCard({ character, storyId, onUpdate, disabled =
   }
   async function upload(file: File) {
     if (file.size > 15 * 1024 * 1024) throw new Error('Choose a photo smaller than 15 MB.');
-    let uploadFile = file;
-    if (/\.(heic|heif)$/i.test(file.name) || /image\/hei[cf]/.test(file.type)) {
-      const heic2any = (await import('heic2any')).default;
-      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-      uploadFile = new File([Array.isArray(blob) ? blob[0] : blob], 'reference.jpg', { type: 'image/jpeg' });
-    }
+    const uploadFile = await prepareReferencePhoto(file);
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(uploadFile.type)) throw new Error('Choose a JPG, PNG, WebP or HEIC photo.');
     const path = `story-references/${storyId}/${crypto.randomUUID()}`;
     const object = ref(storage, path);
@@ -92,9 +89,14 @@ export default function CharacterCard({ character, storyId, onUpdate, disabled =
   return <article aria-label={character.name} aria-busy={Boolean(action) || generating} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
     <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
       <div><h2 className="text-xl font-semibold tracking-tight">{character.name}</h2>{character.role && <p className="mt-1 text-xs text-slate-500">{character.role}</p>}</div>
-      <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${approved ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-        {generating || action ? 'In progress' : approved ? 'Approved' : portrait ? 'Review appearance' : 'Needs an appearance'}
-      </span>
+      {(() => {
+        const working = generating || Boolean(action);
+        const tone = working ? 'bg-violet-50 text-violet-700' : approved ? 'bg-emerald-50 text-emerald-700' : portrait ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600';
+        const label = working ? 'Working on it…' : approved ? 'Approved' : portrait ? 'Needs your OK' : 'No picture yet';
+        return <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${tone}`}>
+          {working ? <Loader2 className="h-3 w-3 animate-spin" /> : approved ? <Check className="h-3 w-3" /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}{label}
+        </span>;
+      })()}
     </div>
     <div className="px-5">
       {portrait ? <div className="relative aspect-square overflow-hidden rounded-xl bg-[#F5F3F7]">
@@ -118,15 +120,18 @@ export default function CharacterCard({ character, storyId, onUpdate, disabled =
         {portrait && <p className="text-xs leading-5 text-slate-500">Changing the appearance, description or outfits means generating a new image to review.</p>}
         <div className="flex gap-2"><button disabled={busy} onClick={() => void run('Saving details…', saveDetails)} className="min-h-11 flex-1 rounded-xl bg-[#7655A3] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Save details</button><button disabled={busy} onClick={() => setEditing(false)} className="min-h-11 rounded-xl px-3 text-sm text-slate-600">Cancel</button></div>
       </div> : <>
-        <p className="text-sm leading-6 text-slate-600">{character.appearance || character.description || 'Add a description to help us imagine this character.'}</p>
+        <p className="line-clamp-3 text-sm leading-6 text-slate-600">{character.appearance || character.description || 'Add a description to help us imagine this character.'}</p>
         {portrait ? <button disabled={busy || approved} onClick={() => void run('Approving appearance…', async () => {
           await request('/api/characters/lock', { characterId: character.id, portraitImageUrl: portrait }); setApproved(true);
-        })} className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold disabled:cursor-default ${approved ? 'bg-emerald-50 text-emerald-700' : 'bg-[#7655A3] text-white hover:bg-[#62438F] disabled:opacity-50'}`}><Check className="h-4 w-4" />{approved ? 'Appearance approved' : 'Use this appearance'}</button>
-          : <button disabled={busy} onClick={() => void run('Creating appearance…', generate)} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-4 py-3 text-sm font-semibold text-white hover:bg-[#62438F] disabled:opacity-50"><Sparkles className="h-4 w-4" />Generate appearance</button>}
-        <div className="flex flex-wrap gap-1">
-          <button disabled={busy} onClick={startEdit} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Change details</button>
-          {portrait && <button disabled={busy} onClick={() => void run('Creating another appearance…', generate)} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" />{bookType === 'colouring_storybook' ? 'Regenerate as outlines' : 'Try another'}</button>}
-          <button disabled={busy} onClick={() => uploadRef.current?.click()} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Camera className="h-3.5 w-3.5" />Use a photo</button>
+        })} className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-base font-semibold disabled:cursor-default ${approved ? 'bg-emerald-50 text-emerald-700' : 'bg-[#7655A3] text-white hover:bg-[#62438F] disabled:opacity-50'}`}><Check className="h-4 w-4" />{approved ? 'Approved' : 'Looks good, approve'}</button>
+          : <button disabled={busy} onClick={() => void run('Creating appearance…', generate)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#7655A3] px-4 py-3 text-base font-semibold text-white hover:bg-[#62438F] disabled:opacity-50"><Sparkles className="h-4 w-4" />Create their picture</button>}
+        <div className="border-t border-slate-100 pt-3">
+          <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">{portrait ? 'Not quite right?' : 'Or start another way'}</p>
+          <div className={`grid gap-1 ${portrait ? 'grid-cols-3' : 'grid-cols-2'}`}>
+            {portrait && <button disabled={busy} onClick={() => void run('Creating another appearance…', generate)} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className="h-4 w-4" />{bookType === 'colouring_storybook' ? 'Redraw as outline' : 'Try another'}</button>}
+            <button disabled={busy} onClick={startEdit} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Pencil className="h-4 w-4" />Edit description</button>
+            <button disabled={busy} onClick={() => uploadRef.current?.click()} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Camera className="h-4 w-4" />Use a photo</button>
+          </div>
         </div>
         {(character.outfits?.length || character.personalityTraits || character.description !== character.appearance) ? <div className="border-t border-slate-100 pt-2">
           <button aria-expanded={details} onClick={() => setDetails(!details)} className="flex min-h-11 w-full items-center justify-between text-xs text-slate-500">Story details{character.outfits?.length ? ` · ${character.outfits.length} outfits` : ''}<ChevronDown className={`h-4 w-4 ${details ? 'rotate-180' : ''}`} /></button>
@@ -134,7 +139,7 @@ export default function CharacterCard({ character, storyId, onUpdate, disabled =
         </div> : null}
       </>}
       {shownError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm leading-6 text-rose-700">{shownError}</p>}
-      <input ref={uploadRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" className="hidden" aria-label={`Choose a photo of ${character.name}`} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void run('Uploading photo…', () => upload(file)); }} />
+      <input ref={uploadRef} type="file" accept={REFERENCE_PHOTO_ACCEPT} className="hidden" aria-label={`Choose a photo of ${character.name}`} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void run('Uploading photo…', () => upload(file)); }} />
     </div>
   </article>;
 }
