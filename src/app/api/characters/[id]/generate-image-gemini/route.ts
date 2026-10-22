@@ -1,5 +1,5 @@
 import { getLinkedStory } from '@/lib/characters/generatePortrait';
-import { referencePromptForBook } from '@/lib/books/referenceStyle';
+import { outlineReferenceText, referencePromptForBook } from '@/lib/books/referenceStyle';
 import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { db } from "@/db";
@@ -119,6 +119,13 @@ Description: ${character.description ?? ""}
 
     const linkedStory = await getLinkedStory(id);
     if (linkedStory?.bookType === 'colouring_storybook') parts.push({ text: referencePromptForBook(linkedStory.bookType, '') });
+
+    // Colouring references must not inherit conflicting photo/outfit colour directions.
+    if (linkedStory?.bookType === 'colouring_storybook') {
+      for (const part of parts) {
+        if (typeof part.text === 'string') part.text = outlineReferenceText(part.text);
+      }
+    }
 
     /* ---------------- Generate ---------------- */
 

@@ -349,13 +349,13 @@ async function applyEdits() {
             </button>
           )}
 
-          {showConfirmBar && (
+          {!showNote && (
             <button
               onClick={onConfirm}
               className="w-full rounded-2xl py-4 font-bold bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg hover:shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2"
             >
               <Check className="w-5 h-5" />
-              Confirm Story & Continue
+              Accept story & continue
             </button>
           )}
         </div>
@@ -477,7 +477,7 @@ async function applyEdits() {
                       onClick={handleViewedNote}
                       className="flex-1 rounded-2xl py-4 font-bold bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg active:scale-[0.98] transition-all text-sm"
                     >
-                      Confirm ✓
+                      Back to story
                     </button>
                   </div>
             </motion.div>
@@ -499,6 +499,7 @@ async function applyEdits() {
             <div className="flex-none px-4 py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 flex items-center gap-3">
               <button
                 onClick={() => setShowChat(false)}
+                aria-label="Back to story"
                 className="p-2 -ml-2 hover:bg-white/10 rounded-full transition-colors"
               >
                 <ChevronLeft className="w-5 h-5 text-white" />

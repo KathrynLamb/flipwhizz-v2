@@ -1,4 +1,5 @@
 'use client';
+import { prepareReferencePhoto, REFERENCE_PHOTO_ACCEPT } from '@/lib/heicPreview';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -174,14 +175,14 @@ export default function GroupPhotoModal({
 
   /* ── photo select ── */
   async function handlePhotoSelected(file: File) {
-    let useFile = file;
-    if (/\.(heic|heif)$/i.test(file.name) || file.type === 'image/heic') {
-      const heic2any = (await import('heic2any')).default;
-      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-      useFile = new File([blob as Blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+    try {
+      setDetectError(null);
+      const useFile = await prepareReferencePhoto(file);
+      setPhotoSrc(URL.createObjectURL(useFile));
+      setPhase('detect');
+    } catch (error) {
+      setDetectError(error instanceof Error ? error.message : 'Could not read this photo.');
     }
-    setPhotoSrc(URL.createObjectURL(useFile));
-    setPhase('detect');
   }
 
   /* ── detection ── */
@@ -331,7 +332,7 @@ export default function GroupPhotoModal({
                   </div>
                 )}
 
-                <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic" className="hidden"
+                <input ref={fileRef} type="file" accept={REFERENCE_PHOTO_ACCEPT} className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoSelected(f); }} />
 
                 <button onClick={() => fileRef.current?.click()}

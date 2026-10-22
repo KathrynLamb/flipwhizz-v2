@@ -1,4 +1,4 @@
-import { referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
+import { outlineReferenceText, referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
@@ -317,6 +317,13 @@ not as a photographic reproduction.
     );
 
     if (linkedStory?.bookType === 'colouring_storybook') parts.push({ text: referencePromptForBook(linkedStory.bookType, '') });
+
+    // Colouring references must not inherit conflicting photo/outfit colour directions.
+    if (linkedStory?.bookType === 'colouring_storybook') {
+      for (const part of parts) {
+        if (typeof part.text === 'string') part.text = outlineReferenceText(part.text);
+      }
+    }
 
     // ── 7. Generate ───────────────────────────────────────────────────────
     const response = await gemini.models.generateContent({

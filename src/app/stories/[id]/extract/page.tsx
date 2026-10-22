@@ -3,9 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, XCircle, ArrowLeft, User } from "lucide-react";
-import type { StepKey } from "@/lib/storySteps";
+import { Loader2, XCircle, ArrowLeft } from "lucide-react";
 
 /* ─────────────── TYPES ─────────────── */
 
@@ -28,7 +26,6 @@ type ProgressData = {
 };
 
 type ExtractedCharacter = { id: string; name: string; portraitImageUrl: string | null; species: string | null };
-type ExtractedLocation = { id: string; name: string; portraitImageUrl: string | null };
 
 /* ─────────────── FLAVOUR MESSAGES ─────────────── */
 
@@ -58,10 +55,6 @@ function getCurrentPhase(p: ProgressData): Phase {
   if (!p.outfitsExtracted) return "extracting_outfits";
   if (!p.outfitsAssigned) return "assigning_outfits";
   return "ready";
-}
-
-function needsWork(p: ProgressData) {
-  return !p.worldComplete && !(p.charactersExtracted && p.locationsExtracted && p.styleExtracted && p.spreadsBuilt && p.charactersAssigned && p.locationsAssigned && p.outfitsExtracted && p.outfitsAssigned);
 }
 
 function parseProgress(incoming: any): ProgressData {
@@ -138,7 +131,7 @@ export default function ExtractWorldPage() {
   }, [phase, flavourIndex]);
 
   /* ── Apply progress ── */
-  const applyProgressRef = useRef<(p: ProgressData) => void>();
+  const applyProgressRef = useRef<((p: ProgressData) => void) | undefined>(undefined);
   applyProgressRef.current = (newProgress: ProgressData) => {
     const currentPhase = getCurrentPhase(newProgress);
     if (currentPhase !== lastPhaseRef.current) {
@@ -156,7 +149,7 @@ export default function ExtractWorldPage() {
   };
 
   /* ── Poll ── */
-  const checkProgressRef = useRef<() => Promise<void>>();
+  const checkProgressRef = useRef<(() => Promise<void>) | undefined>(undefined);
   checkProgressRef.current = async () => {
     const id = storyIdRef.current;
     if (!id) return;
@@ -297,7 +290,6 @@ export default function ExtractWorldPage() {
   }, [progress.charactersExtracted, storyId]);
 
   /* ── Overall progress (only up to characters for this page) ── */
-  const showProgress = phase !== "checking" && !progress.charactersExtracted;
 
   /* ─────────────── ERROR ─────────────── */
 
@@ -347,14 +339,10 @@ export default function ExtractWorldPage() {
     <>
       <FontLoader />
       <div className="min-h-screen relative flex flex-col" style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}>
-        {/* Background */}
-        <div className="fixed inset-0 -z-10" style={{ background: `radial-gradient(ellipse 80% 60% at 20% 10%, rgba(232,190,255,0.3) 0%, transparent 60%), radial-gradient(ellipse 70% 50% at 85% 80%, rgba(255,182,210,0.25) 0%, transparent 55%), radial-gradient(ellipse 50% 40% at 50% 50%, rgba(200,210,255,0.15) 0%, transparent 50%), #F9F5FF` }}>
-          <div className="absolute inset-0 opacity-50" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c4b5d4' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }} />
-        </div>
-
+        <div className="fixed inset-0 -z-10 bg-[#F6F2E9]" />
         {/* Header */}
         <header className="relative z-10 px-4 py-4">
-          <div className="max-w-lg mx-auto flex items-center justify-between">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
             <button onClick={() => router.back()} className="flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition-all active:scale-[0.97]" style={{ background: "white", color: "#6B5C80", border: "1px solid rgba(180,150,210,0.15)", boxShadow: "0 1px 4px rgba(100,60,140,0.06)" }}>
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
@@ -363,113 +351,37 @@ export default function ExtractWorldPage() {
 
         {/* Main — centered */}
         <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 pb-20">
-          <div className="w-full max-w-lg">
-
-            {/* Title */}
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
-              <h1 className="text-2xl sm:text-3xl font-extrabold" style={{ color: "#2D2235", letterSpacing: "-0.03em" }}>
-                Building your story world
+          <div className="w-full max-w-4xl">
+            <div className="mb-10 border-b border-[#CEC6B7] pb-8">
+              <p className="mb-4 text-xs font-bold uppercase tracking-[0.22em] text-[#716653]">The story workshop / 02</p>
+              <h1 className="max-w-2xl text-4xl sm:text-6xl leading-[1.06] tracking-tight text-[#293C35]" style={{ fontFamily: 'Georgia, serif' }}>
+                Words become<br /><em>a world.</em>
               </h1>
-              <div className="mt-2 h-6">
-                <AnimatePresence mode="wait">
-                  <motion.p key={flavourText} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="text-sm" style={{ color: "#7B6E90" }}>
-                    {flavourText}
-                  </motion.p>
-                </AnimatePresence>
-              </div>
-            </motion.div>
-
-            {/* Progress bar */}
-            {showProgress && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-8">
-                <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(180,150,210,0.12)" }}>
-                  <motion.div
-                    className="h-full rounded-full"
-                    style={{ background: "linear-gradient(90deg, #B05CE6, #D45DA0)" }}
-                    initial={{ width: "5%" }}
-                    animate={{ width: charactersReady ? "100%" : "60%" }}
-                    transition={{ duration: 0.6, ease: "easeOut" }}
-                  />
+              <p className="mt-5 max-w-lg text-base leading-7 text-[#605D53]">We’re gathering the people, places and little details that make this story yours. Next, you get to decide how it all looks.</p>
+            </div>
+            <div className="grid gap-5 sm:grid-cols-3">
+              {[
+                { title: 'Meet the cast', label: '01 / Characters', detail: 'Every hero, sidekick and scene-stealer.', done: progress.charactersExtracted, active: phase === 'extracting_characters', icon: 'cast' },
+                { title: 'Set the scene', label: '02 / Places', detail: 'From familiar homes to faraway worlds.', done: progress.locationsExtracted, active: phase === 'extracting_locations', icon: 'place' },
+                { title: 'The little details', label: '03 / Wardrobe', detail: 'The outfits that help tell their story.', done: progress.outfitsExtracted, active: phase === 'extracting_outfits', icon: 'outfit' },
+              ].map((item, index) => (
+                <div key={item.icon} className="relative border border-[#D4CCBC] p-6" style={{ background: index === 1 ? '#E5EBDF' : '#FFFCF5', borderRadius: index === 1 ? '48px 48px 4px 4px' : '4px', boxShadow: '3px 4px 0 #E4DDCF' }}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#716653]">{item.label}</p>
+                  <svg viewBox="0 0 120 90" className="my-5 h-24 w-full text-[#40594B]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    {item.icon === 'cast' ? <><circle cx="44" cy="30" r="14"/><path d="M20 78V66c0-24 48-24 48 0v12M35 28h1m15 0h1M39 36q5 5 10 0"/><circle cx="85" cy="42" r="10"/><path d="M72 78V68q13-22 26 0v10"/></> : item.icon === 'place' ? <><path d="M22 74V40L49 17l27 23v34H22zm19 0V52h17v22M14 40l35-30 35 30M91 74V40m-12 9 12-25 13 25H79"/><path d="M12 80h96"/></> : <><path d="m40 16-24 18 13 18 12-8v34h39V44l12 8 13-18-25-18q-20 18-40 0Z"/><path d="M50 21q10 13 21 0M47 65h27"/></>}
+                  </svg>
+                  <h2 className="text-xl text-[#293C35]" style={{ fontFamily: 'Georgia, serif' }}>{item.title}</h2>
+                  <p className="mt-2 min-h-12 text-sm leading-6 text-[#605D53]">{item.detail}</p>
+                  <p className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#40594B]">{item.active && <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />}{item.done ? 'Ready ✓' : item.active ? 'Finding in your story…' : 'Still to come'}</p>
                 </div>
-              </motion.div>
-            )}
-
-            {/* Characters step card */}
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-[18px] overflow-hidden transition-all"
-              style={{
-                background: "white",
-                border: charactersReady ? "1px solid rgba(67,184,156,0.2)" : "1px solid rgba(176,92,230,0.2)",
-                boxShadow: charactersReady ? "0 2px 12px rgba(67,184,156,0.08)" : "0 2px 12px rgba(176,92,230,0.08)",
-              }}
-            >
-              <div className="flex items-center gap-3 px-4 py-3.5">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{
-                  background: charactersReady ? "rgba(67,184,156,0.1)" : "linear-gradient(135deg, #B05CE6, #D45DA0)",
-                }}>
-                  {charactersReady ? (
-                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300 }}>
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="#2FA482" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    </motion.div>
-                  ) : (
-                    <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  )}
-                </div>
-
-                <span className="text-sm font-bold flex-1" style={{ color: "#2D2235" }}>
-                  Characters
-                </span>
-
-                {charactersReady && (
-                  <motion.span initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(67,184,156,0.1)", color: "#2FA482" }}>
-                    Done
-                  </motion.span>
-                )}
-              </div>
-
-              {/* Show extracted characters */}
-              {charactersReady && characters.length > 0 && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} transition={{ duration: 0.3 }} className="overflow-hidden">
-                  <div className="px-4 pb-3 flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
-                    {characters.map((c, ci) => (
-                      <motion.div key={c.id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: ci * 0.1 }} className="flex flex-col items-center gap-1 flex-shrink-0">
-                        {c.portraitImageUrl ? (
-                          <img src={c.portraitImageUrl} alt={c.name} className="w-12 h-12 rounded-xl object-cover" style={{ border: "2px solid rgba(180,150,210,0.15)" }} />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "rgba(199,125,255,0.1)" }}>
-                            <User className="w-5 h-5" style={{ color: "#C4A8E0" }} />
-                          </div>
-                        )}
-                        <span className="text-[10px] font-semibold text-center max-w-[60px] truncate" style={{ color: "#5A4D6B" }}>{c.name}</span>
-                      </motion.div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </motion.div>
-
-            {/* "Rest continues in background" note after characters done */}
-            {charactersReady && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="mt-6 text-center">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold" style={{ background: "rgba(67,184,156,0.1)", color: "#2FA482" }}>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Taking you to set up your characters…
-                </div>
-                <p className="mt-2 text-[11px]" style={{ color: "#A897BD" }}>
-                  Locations, style, and page layout are being prepared in the background.
-                </p>
-              </motion.div>
-            )}
-
-            {/* Checking state */}
-            {phase === "checking" && (
-              <div className="mt-8 flex items-center justify-center gap-2 text-sm" style={{ color: "#A897BD" }}>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Checking your story…</span>
-              </div>
-            )}
+              ))}
+            </div>
+            <div role="status" aria-live="polite" className="mt-8 flex items-center gap-3 border-t border-[#CEC6B7] pt-6 text-sm text-[#40594B]">
+              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+              <span>{charactersReady ? 'Your cast is ready. Opening illustration styles…' : flavourText}</span>
+            </div>
+            {charactersReady && characters.length > 0 && <p className="mt-3 text-sm text-[#40594B]">Meet {characters.map(character => character.name).join(', ')}.</p>}
+            <p className="mt-3 text-xs leading-5 text-[#716653]">You’ll move on as soon as your characters are ready. The remaining details can finish in the background.</p>
           </div>
         </main>
       </div>

@@ -24,8 +24,7 @@ async function getHeicTo() {
 function isHeicFile(file: File): boolean {
   const name = file.name.toLowerCase();
   return (
-    file.type === 'image/heic' ||
-    file.type === 'image/heif' ||
+    /^image\/hei[cf](?:-sequence)?$/i.test(file.type) ||
     name.endsWith('.heic') ||
     name.endsWith('.heif')
   );
@@ -91,3 +90,28 @@ export async function createImagePreview(file: File): Promise<string> {
  * Uses filename extension check (instant) — no async needed.
  */
 export { isHeicFile };
+
+/** PRODUCT REQUIREMENT: iPhone HEIC/HEIF photos must work for BOTH characters
+ * and locations, on desktop and mobile. Do not replace this with heic2any-only
+ * conversion: that older decoder fails on newer iPhone encodings. Keep explicit
+ * extensions in file pickers too, because browsers may supply an empty MIME type.
+ * Convert BEFORE Firebase upload so previews and image models receive real JPEG.
+ */
+export const REFERENCE_PHOTO_ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif";
+export async function prepareReferencePhoto(file: File): Promise<File> {
+  if (!isHeicFile(file)) return file;
+  let converted: Blob;
+  try {
+    const { heicTo } = await getHeicTo();
+    converted = await heicTo({ blob: file, type: 'image/jpeg', quality: 0.9 });
+  } catch {
+    try {
+      const heic2any = (await import('heic2any')).default;
+      const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+      converted = Array.isArray(result) ? result[0] : result;
+    } catch {
+      throw new Error('We could not read this HEIC photo. Please try another photo or export it as a JPEG.');
+    }
+  }
+  return new File([converted], file.name.replace(/\.(heic|heif)$/i, '') + '.jpg', { type: 'image/jpeg' });
+}

@@ -1,4 +1,5 @@
 "use client";
+import { prepareReferencePhoto, REFERENCE_PHOTO_ACCEPT } from '@/lib/heicPreview';
 
 // MobileCharacterCard.tsx — Full rebuild v2
 //
@@ -233,12 +234,7 @@ const isLocking = lockPhase === "locking";
         //   if (isMounted.current) setLocked(false);
         // }
   
-        let uploadFile = file;
-        if (/\.heic$/i.test(file.name) || /\.heif$/i.test(file.name) || file.type === "image/heic") {
-          const heic2any = (await import("heic2any")).default;
-          const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
-          uploadFile = new File([blob as Blob], file.name.replace(/\.heic$/i, ".jpg"), { type: "image/jpeg" });
-        }
+        const uploadFile = await prepareReferencePhoto(file);
   
         const path = `story-references/${storyId}/${crypto.randomUUID()}-${uploadFile.name}`;
         const sRef = storageRef(storage, path);

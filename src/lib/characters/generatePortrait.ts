@@ -1,4 +1,4 @@
-import { referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
+import { outlineReferenceText, referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
 // src/lib/characters/generatePortrait.ts
 import { v2 as cloudinary } from "cloudinary";
 import { db } from "@/db";
@@ -320,6 +320,13 @@ export async function generatePortraitFromDescription(
   });
 
   parts.push({ text: referencePromptForBook(linkedStory?.bookType, prompt) });
+
+    // Colouring references must not inherit conflicting photo/outfit colour directions.
+    if (linkedStory?.bookType === 'colouring_storybook') {
+      for (const part of parts) {
+        if (typeof part.text === 'string') part.text = outlineReferenceText(part.text);
+      }
+    }
 
   console.log(`🎨 Generating portrait for "${character.name}" (description-only)`);
 
