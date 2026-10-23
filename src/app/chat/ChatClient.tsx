@@ -315,6 +315,28 @@ export default function ChatClient() {
     window.location.href = `/stories/${nextStoryId}/pages`;
   }
 
+  // Story creation takes 1-2 minutes and the server keeps going even if this
+  // device drops the connection (iOS Safari reports that as "Load failed", with
+  // no HTTP status). So when the request dies without a response, wait for the
+  // story to appear instead of treating it as a failure.
+  async function waitForStoryToAppear(id: string): Promise<string | null> {
+    const deadline = Date.now() + 4 * 60 * 1000;
+    do {
+      try {
+        const res = await fetch(
+          `/api/stories/by-project?projectId=${encodeURIComponent(id)}`,
+          { cache: "no-store" },
+        );
+        const data = await res.json().catch(() => null);
+        if (data?.storyId) return data.storyId as string;
+      } catch {
+        /* still offline or backgrounded, keep trying */
+      }
+      await new Promise((r) => setTimeout(r, 4000));
+    } while (Date.now() < deadline);
+    return null;
+  }
+
   async function createStoryFromChat(selectedBookType: BookType = bookType) {
     if (!projectId) return;
     if (creationTriggeredRef.current) return;
@@ -325,11 +347,35 @@ export default function ChatClient() {
     posthog.capture("story_creation_started", { project_id: projectId });
 
     try {
-      const res = await fetch("/api/stories/create-from-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, bookType: selectedBookType }),
-      });
+      let res: Response;
+      try {
+        res = await fetch("/api/stories/create-from-chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, bookType: selectedBookType }),
+        });
+      } catch (networkErr) {
+        // No response at all: the connection dropped, but the server may still
+        // be writing the story. Wait for it before giving up.
+        console.warn("[chat] connection dropped during story creation, waiting:", networkErr);
+        posthog.capture("story_creation_connection_dropped", { project_id: projectId });
+        const recoveredId = await waitForStoryToAppear(projectId);
+        if (recoveredId) {
+          posthog.capture("story_creation_recovered", {
+            project_id: projectId,
+            story_id: recoveredId,
+          });
+          await waitForPagesAndNavigate(recoveredId);
+          return;
+        }
+        reportClientError("story_creation_failed", {
+          projectId,
+          message: `${networkErr instanceof Error ? networkErr.message : "Network error"} (no story appeared within 4 minutes)`,
+        });
+        throw new Error(
+          "We lost the connection while writing your story. We've been alerted, so please try again in a moment.",
+        );
+      }
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.storyId) {

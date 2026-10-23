@@ -1,5 +1,5 @@
+// /src/app/api/stories/create-from-chat/route.ts
 import { isBookType, normalizeBookType, bookTypeChatContext, COLOURING_STYLE, type BookType } from "@/lib/books/bookType";
-// src/app/api/stories/create-from-chat/route.ts
 export const maxDuration = 300; // two sequential Claude calls; long chats exceed 60s
 
 import { NextResponse } from "next/server";
@@ -604,6 +604,38 @@ async function _POST(req: Request) {
   }
 
   const { purchaseIntent: intent, userId } = project;
+
+  // ── Idempotency guard ────────────────────────────────────────────────────
+  // This route takes 1-2 minutes. A phone can drop the connection mid-request
+  // (Safari reports "Load failed") while the server carries on and finishes
+  // the story anyway. A retry must hand back that story, not write a second
+  // one. Skipped when a worldId is passed, because that flow deliberately adds
+  // another book to an existing world.
+  if (!explicitWorldId) {
+    try {
+      const existingStory = await db
+        .select({ id: stories.id, title: stories.title, length: stories.length })
+        .from(stories)
+        .where(eq(stories.projectId, projectId))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (existingStory) {
+        console.log(
+          `🔵 [create-from-chat] Story already exists for project ${projectId} (${existingStory.id}), returning it`
+        );
+        return NextResponse.json({
+          storyId: existingStory.id,
+          title: existingStory.title,
+          pagesCreated: existingStory.length,
+          alreadyExisted: true,
+        });
+      }
+    } catch (err) {
+      // Non-fatal: if the check itself fails, carry on and create as before
+      console.warn("🟠 [create-from-chat] Existing story check failed (non-fatal):", err);
+    }
+  }
 
   // ── Load chat history ────────────────────────────────────────────────────
   let claudeHistory: Array<{ role: "user" | "assistant"; content: string }>;
