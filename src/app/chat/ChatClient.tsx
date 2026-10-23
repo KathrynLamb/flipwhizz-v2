@@ -378,6 +378,16 @@ export default function ChatClient() {
       }
       const data = await res.json().catch(() => null);
 
+      // Another request for this project is already writing the story (for
+      // example a retry after a dropped connection). Wait for that one.
+      if (res.status === 409 && data?.inProgress) {
+        const inFlightId = await waitForStoryToAppear(projectId);
+        if (inFlightId) {
+          await waitForPagesAndNavigate(inFlightId);
+          return;
+        }
+      }
+
       if (!res.ok || !data?.storyId) {
         reportClientError("story_creation_failed", {
           projectId,

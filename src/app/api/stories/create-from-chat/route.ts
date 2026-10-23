@@ -16,7 +16,7 @@ import {
   readers,
   readerInsights,
 } from "@/db/schema";
-import { eq, asc, and } from "drizzle-orm";
+import { eq, asc, and, or, isNull, ne, lt } from "drizzle-orm";
 import { sql as rawSql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { worlds, worldReaders } from "@/db/schema-worlds";
@@ -561,7 +561,7 @@ function computeAge(dob: string | null, fallbackAge: number | null): number | nu
 // MAIN ROUTE
 // ============================================================================
 
-async function _POST(req: Request) {
+async function _createStory(req: Request) {
   console.log("🟢 [create-from-chat] Story creation request received");
 
   let requestedBookType: BookType | undefined;
@@ -963,6 +963,85 @@ JSON OUTPUT — no markdown, no preamble, ONLY this structure:
     readerName: extraction.reader.childName,
     insightsExtracted: extraction.insights.length,
   });
+}
+
+// ============================================================================
+// IN-FLIGHT LOCK
+// ============================================================================
+// Creation takes 1-2 minutes. If a phone drops the connection and the user
+// retries (or reloads) while the first run is still going, the "story already
+// exists" check cannot help yet, so a second story would be written. This claims
+// the project's chat session atomically; a concurrent call gets a 409 and the
+// client simply waits for the first run's story. chat_sessions.status is not
+// read anywhere else, so "creating" is safe to use as the marker.
+
+const LOCK_STALE_MS = 6 * 60 * 1000; // longer than maxDuration (300s), so a crashed run cannot block forever
+
+async function _POST(req: Request) {
+  const projectId: string | null = await req
+    .clone()
+    .json()
+    .then((b) => (typeof b?.projectId === "string" ? b.projectId : null))
+    .catch(() => null);
+
+  // Bad body: let the real handler return its usual 400
+  if (!projectId) return _createStory(req);
+
+  let claimed = false;
+  try {
+    const rows = await db
+      .update(chatSessions)
+      .set({ status: "creating", lastMessageAt: new Date() })
+      .where(
+        and(
+          eq(chatSessions.projectId, projectId),
+          or(
+            isNull(chatSessions.status),
+            ne(chatSessions.status, "creating"),
+            lt(chatSessions.lastMessageAt, new Date(Date.now() - LOCK_STALE_MS))
+          )
+        )
+      )
+      .returning({ id: chatSessions.id });
+
+    if (rows.length > 0) {
+      claimed = true;
+    } else {
+      // Nothing claimed: either another creation holds the lock, or there is
+      // no session at all (the real handler will return its own 400).
+      const session = await db
+        .select({ id: chatSessions.id })
+        .from(chatSessions)
+        .where(eq(chatSessions.projectId, projectId))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (session) {
+        console.log(`🟡 [create-from-chat] Creation already in progress for project ${projectId}`);
+        return NextResponse.json(
+          { error: "Story is already being written", inProgress: true },
+          { status: 409 }
+        );
+      }
+    }
+  } catch (err) {
+    // Non-fatal: if the lock itself fails, carry on unlocked rather than block creation
+    console.warn("🟠 [create-from-chat] Lock step failed (non-fatal):", err);
+  }
+
+  try {
+    return await _createStory(req);
+  } finally {
+    if (claimed) {
+      await db
+        .update(chatSessions)
+        .set({ status: "open" })
+        .where(eq(chatSessions.projectId, projectId))
+        .catch((err) =>
+          console.warn("🟠 [create-from-chat] Failed to release lock (non-fatal):", err)
+        );
+    }
+  }
 }
 
 export const POST = withAlerts("api/stories/create-from-chat", withAccess({ project: { body: "projectId" } }, _POST), { severity: "critical" });
