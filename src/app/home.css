@@ -330,6 +330,8 @@
 .fw-control-grid article:nth-child(2) { border-color:#7AD3C1; }
 .fw-control-grid article:nth-child(3) { border-color:#83AAD3; }
 .fw-control-grid article:nth-child(4) { border-color:#C878BF; }
+/* Decorative SVGs stay crisp at every size; intrinsic dimensions reserve space. */
+.fw-control-illustration { display:block; width:280px; max-width:100%; height:auto; margin:0 0 16px; }
 .fw-feature-number { color:#7040a5; font-size:12px; font-weight:600; }
 .fw-control h3 { font-size:28px; margin:10px 0; }
 .fw-control p,.fw-feature-split p,.fw-colouring-feature p { color:#5c476b; }
@@ -345,6 +347,7 @@
 @media(max-width:639px) {
  .fw-control { padding-block:10px 40px; }
  .fw-control-grid,.fw-feature-split,.fw-colouring-feature { grid-template-columns:1fr; gap:22px; }
+ .fw-control-illustration { width:220px; margin-bottom:12px; }
  .fw-control h3 { font-size:25px; }
  .fw-control-grid p,.fw-feature-split p,.fw-colouring-feature p { font-size:15px; }
  .fw-series { padding-block:38px; }
