@@ -5,6 +5,7 @@ import Script from "next/script";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect } from "react";
+import { OPEN_SUPPORT_CHAT_EVENT, type SupportChatRequest } from "@/lib/supportChat";
 
 /**
  * tawk.to live chat widget.
@@ -12,6 +13,10 @@ import { useEffect } from "react";
  * The script loads once for the whole app. On client-side navigation we
  * show or hide the bubble rather than reloading the script, so a visitor's
  * open conversation survives moving between pages.
+ *
+ * When something breaks, openSupportChat() (src/lib/supportChat.ts) asks
+ * this component to open the chat with the problem details attached. That
+ * works on every page, including ones where the bubble is normally hidden.
  *
  * Optional overrides (Vercel or .env.local):
  *   NEXT_PUBLIC_TAWK_PROPERTY_ID  e.g. 6720abc123def4567890abcd
@@ -48,10 +53,18 @@ function shouldHide(pathname: string | null): boolean {
 
 type TawkApi = {
   onLoad?: () => void;
+  onChatMinimized?: () => void;
+  onChatEnded?: () => void;
   visitor?: { name?: string; email?: string };
   hideWidget?: () => void;
   showWidget?: () => void;
+  maximize?: () => void;
   setAttributes?: (attrs: Record<string, string>, cb?: (err?: unknown) => void) => void;
+  addEvent?: (
+    name: string,
+    metadata?: Record<string, string>,
+    cb?: (err?: unknown) => void,
+  ) => void;
 };
 
 declare global {
@@ -68,11 +81,49 @@ if (typeof window !== "undefined" && !window.Tawk_API) {
   window.Tawk_LoadStart = new Date();
 }
 
+// Module state shared by the handlers below (one widget per page).
+let tawkLoaded = false;
+// While a problem chat is open, keep the widget visible even on routes
+// where it would normally be hidden.
+let forcedOpen = false;
+// A problem reported before the script finished loading.
+let pendingProblem: SupportChatRequest | null = null;
+
 function applyVisibility(hidden: boolean) {
   const api = window.Tawk_API;
-  if (!api) return;
-  if (hidden) api.hideWidget?.();
+  if (!api || !tawkLoaded) return;
+  if (hidden && !forcedOpen) api.hideWidget?.();
   else api.showWidget?.();
+}
+
+// tawk.to only accepts short values (255 chars) on attributes and events.
+const clip = (v: string | null | undefined, max = 250) => (v ? v.slice(0, max) : "");
+
+function openWithProblem(problem: SupportChatRequest) {
+  const api = window.Tawk_API;
+  if (!api || !tawkLoaded) {
+    pendingProblem = problem;
+    return;
+  }
+
+  forcedOpen = true;
+  api.showWidget?.();
+  api.maximize?.();
+
+  // Attributes show in the visitor details panel next to the chat.
+  // Keys must be letters, numbers and dashes only.
+  const attrs: Record<string, string> = {
+    "last-problem": clip(problem.kind, 60),
+    "problem-page": clip(problem.page),
+  };
+  if (problem.message) attrs["problem-detail"] = clip(problem.message);
+  if (problem.storyId) attrs["problem-story"] = clip(problem.storyId, 64);
+  if (problem.projectId) attrs["problem-project"] = clip(problem.projectId, 64);
+  api.setAttributes?.(attrs, () => {});
+
+  // Events appear in the chat timeline, so each problem is kept even if
+  // the same parent hits several in one visit.
+  api.addEvent?.("problem-reported", attrs, () => {});
 }
 
 export default function TawkChat() {
@@ -80,13 +131,39 @@ export default function TawkChat() {
   const { data: session } = useSession();
   const hidden = shouldHide(pathname);
 
-  // Keep visibility in sync with the current route.
+  // Wire up tawk.to callbacks and the "open with a problem" listener once.
   useEffect(() => {
     const api = window.Tawk_API;
     if (!api) return;
+
     api.onLoad = () => {
+      tawkLoaded = true;
+      applyVisibility(shouldHide(window.location.pathname));
+      if (pendingProblem) {
+        const problem = pendingProblem;
+        pendingProblem = null;
+        openWithProblem(problem);
+      }
+    };
+
+    // Once the parent closes the chat, go back to the page's normal rule.
+    const release = () => {
+      forcedOpen = false;
       applyVisibility(shouldHide(window.location.pathname));
     };
+    api.onChatMinimized = release;
+    api.onChatEnded = release;
+
+    const onOpenRequest = (e: Event) => {
+      const detail = (e as CustomEvent<SupportChatRequest>).detail;
+      if (detail) openWithProblem(detail);
+    };
+    window.addEventListener(OPEN_SUPPORT_CHAT_EVENT, onOpenRequest);
+    return () => window.removeEventListener(OPEN_SUPPORT_CHAT_EVENT, onOpenRequest);
+  }, []);
+
+  // Keep visibility in sync with the current route.
+  useEffect(() => {
     applyVisibility(hidden);
   }, [hidden]);
 
