@@ -119,13 +119,12 @@ export default async function Home() {
       <div className="fw-masthead"><Header session={session} /></div>
       <section className="fw-opening fw-wrap" aria-labelledby="opening-title">
         <div className="fw-opening-copy">
-          <p className="fw-kicker">Your ideas. An illustrated book.</p>
-          <h1 id="opening-title">There’s a<br />book in <em>that.</em></h1>
+          <p className="fw-kicker fw-kicker-dots"><span aria-hidden="true"><i /><i /><i /><i /></span>Your ideas. An illustrated book.</p>
+          <h1 id="opening-title">There’s a<br />book in <em className="fw-rainbow-word"><span>t</span><span>h</span><span>a</span><span>t</span><span>.</span></em></h1>
           <p className="fw-intro">A family story. A small discovery. Something completely made up. Tell us your idea; we’ll help you turn it into a book.</p>
           <div id="start-story"><Suspense fallback={<p>Loading your story chat…</p>}><CreateDemoClient embedded /></Suspense></div>
         </div>
         <div className="fw-opening-art">
-          <p className="fw-margin-note">From a conversation<br />to a proper page-turner.</p>
           <HeroBook />
         </div>
       </section>
