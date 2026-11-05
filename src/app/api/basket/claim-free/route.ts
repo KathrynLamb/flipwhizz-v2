@@ -5,20 +5,20 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { stories, storyProducts, promoCodes } from "@/db/schema";
-import { eq, sql, inArray } from "drizzle-orm";
+import { stories, storyProducts, promoCodes, projects } from "@/db/schema";
+import { and, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 import {
   resolvePromoDiscount,
   getPriceCents,
   applyDiscount,
+  getPromoUnusableReason,
   type ProductType,
   type CurrencyCode,
 } from "@/lib/pricing";
 import { captureServerEvent } from "@/lib/posthog-server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { withAlerts } from "@/lib/alerts";
+import { getAuthUser, withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,10 +27,9 @@ const VALID_PRODUCTS: ProductType[] = ["digital", "print", "gift"];
 
 async function _POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    // withAccess has already required a signed-in user.
+    const user = await getAuthUser();
+    if (!user) return NextResponse.json({ error: "Please sign in to continue." }, { status: 401 });
 
     const body = await req.json();
     const { storyIds, promoCode } = body ?? {};
@@ -50,13 +49,13 @@ async function _POST(req: NextRequest) {
       .where(sql`LOWER(${promoCodes.code}) = LOWER(${promoCode.trim()})`)
       .limit(1);
 
-    if (!promo || !promo.active) {
+    if (!promo) {
       return NextResponse.json({ error: "Invalid or inactive promo code" }, { status: 400 });
     }
 
-    // Check max uses
-    if (promo.maxUses !== null && promo.currentUses >= promo.maxUses) {
-      return NextResponse.json({ error: "Promo code has reached its usage limit" }, { status: 400 });
+    const unusable = getPromoUnusableReason(promo);
+    if (unusable) {
+      return NextResponse.json({ error: unusable }, { status: 400 });
     }
 
     /* ---------- PROCESS EACH STORY ---------- */
@@ -64,9 +63,16 @@ async function _POST(req: NextRequest) {
 
     for (const storyId of storyIds) {
       try {
-        // Check max uses per iteration (in case limit is hit mid-loop)
-        if (promo.maxUses !== null && (promo.currentUses + results.filter(r => r.success).length) >= promo.maxUses) {
-          results.push({ storyId, success: false, error: "Promo code usage limit reached" });
+        // Only the signed-in user's own stories can be unlocked
+        const [owned] = await db
+          .select({ userId: projects.userId })
+          .from(stories)
+          .innerJoin(projects, eq(stories.projectId, projects.id))
+          .where(eq(stories.id, storyId))
+          .limit(1);
+
+        if (!owned || (owned.userId !== user.id && !user.isAdmin)) {
+          results.push({ storyId, success: false, error: "Story not found" });
           continue;
         }
 
@@ -87,7 +93,8 @@ async function _POST(req: NextRequest) {
 
         const formatStory = await db.query.stories.findFirst({ where: eq(stories.id, storyId) });
         const currency = (storyProduct.currency ?? "GBP") as CurrencyCode;
-        const discount = resolvePromoDiscount(promo, productType as ProductType, currency, formatStory?.bookType);        const originalCents = getPriceCents(productType, currency, formatStory?.bookType);
+        const discount = resolvePromoDiscount(promo, productType as ProductType, currency, formatStory?.bookType);
+        const originalCents = getPriceCents(productType, currency, formatStory?.bookType);
         const finalCents = applyDiscount(originalCents, discount.discountPercent, discount.isFree);
 
         if (finalCents !== 0) {
@@ -107,8 +114,29 @@ async function _POST(req: NextRequest) {
           continue;
         }
 
-        // Mark paid
-        await db
+        // Reserve a promo use atomically (fails once the limit is reached,
+        // even with concurrent requests)
+        const reserved = await db
+          .update(promoCodes)
+          .set({
+            currentUses: sql`${promoCodes.currentUses} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(promoCodes.id, promo.id),
+              or(isNull(promoCodes.maxUses), lt(promoCodes.currentUses, promoCodes.maxUses))
+            )
+          )
+          .returning({ id: promoCodes.id });
+
+        if (reserved.length === 0) {
+          results.push({ storyId, success: false, error: "Promo code usage limit reached" });
+          continue;
+        }
+
+        // Mark paid (only if not already paid)
+        const marked = await db
           .update(stories)
           .set({
             paymentStatus: "paid",
@@ -116,7 +144,22 @@ async function _POST(req: NextRequest) {
             status: "generating",
             updatedAt: new Date(),
           })
-          .where(eq(stories.id, storyId));
+          .where(
+            and(
+              eq(stories.id, storyId),
+              or(isNull(stories.paymentStatus), ne(stories.paymentStatus, "paid"))
+            )
+          )
+          .returning({ id: stories.id });
+
+        if (marked.length === 0) {
+          await db
+            .update(promoCodes)
+            .set({ currentUses: sql`${promoCodes.currentUses} - 1`, updatedAt: new Date() })
+            .where(eq(promoCodes.id, promo.id));
+          results.push({ storyId, success: false, error: "Already paid" });
+          continue;
+        }
 
         // Fire generation
         await inngest.send({
@@ -139,17 +182,8 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    // Increment promo usage by the number of successful claims
+    // Promo uses were reserved per story above
     const successCount = results.filter(r => r.success).length;
-    if (successCount > 0) {
-      await db
-        .update(promoCodes)
-        .set({
-          currentUses: sql`${promoCodes.currentUses} + ${successCount}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(promoCodes.id, promo.id));
-    }
 
     return NextResponse.json({
       success: true,
@@ -167,4 +201,4 @@ async function _POST(req: NextRequest) {
   }
 }
 
-export const POST = withAlerts("api/basket/claim-free", _POST, { severity: "critical" });
+export const POST = withAlerts("api/basket/claim-free", withAccess({ login: true }, _POST), { severity: "critical" });

@@ -1,14 +1,29 @@
 // src/app/api/paypal/capture/route.ts
 
 import { NextResponse } from "next/server";
-import { paypalCaptureOrder } from "@/lib/paypal";
+import { paypalCaptureOrder, paypalGetOrder } from "@/lib/paypal";
 import { db } from "@/db";
 import { stories, storyProducts, promoCodes } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { withAlerts } from "@/lib/alerts";
-import { withAccess } from "@/lib/authz";
+import { getAuthUser, owns, withAccess } from "@/lib/authz";
+import {
+  CURRENCIES,
+  computeCheckoutCents,
+  getPromoUnusableReason,
+  type CurrencyCode,
+  type ProductType,
+} from "@/lib/pricing";
+
+const VALID_CURRENCIES = Object.keys(CURRENCIES) as CurrencyCode[];
+
+function moneyToCents(value: unknown): number | null {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.round(num * 100);
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,29 +76,36 @@ function extractPaypalShippingAddress(receipt: any): ShippingAddress | null {
 
 async function _POST(req: Request) {
   try {
+    // withAccess has already required a signed-in user.
+    const user = await getAuthUser();
+    if (!user) return NextResponse.json({ error: "Please sign in to continue." }, { status: 401 });
+
     const { orderID, promoCode } = await req.json();
 
-    if (!orderID) {
+    if (!orderID || typeof orderID !== "string") {
       return NextResponse.json({ error: "orderID required" }, { status: 400 });
     }
 
-    const receipt = await paypalCaptureOrder(orderID);
+    /* --------------------------------------------------
+       VERIFY THE ORDER BEFORE TAKING PAYMENT
+       The order could have been created outside /api/paypal/order
+       (the PayPal client ID is public), so re-check who it's for and
+       that the amount matches our server-side price.
+    -------------------------------------------------- */
+    const pending = await paypalGetOrder(orderID);
+    const pendingUnit = pending?.purchase_units?.[0];
+    const storyId: string | undefined = pendingUnit?.custom_id || pendingUnit?.reference_id;
 
-    if (receipt?.status !== "COMPLETED") {
+    if (!storyId) {
       return NextResponse.json(
-        { error: `Order not completed (status=${receipt?.status})`, receipt },
+        { error: "Missing storyId on PayPal purchase unit" },
         { status: 400 }
       );
     }
 
-    const pu = receipt?.purchase_units?.[0];
-    const storyId: string | undefined = pu?.custom_id || pu?.reference_id;
-
-    if (!storyId) {
-      return NextResponse.json(
-        { error: "Missing storyId on PayPal purchase unit", receipt },
-        { status: 400 }
-      );
+    // The story named on the PayPal order must belong to the caller.
+    if (!user.isAdmin && !(await owns("story", storyId, user.id))) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     const storyProduct = await db.query.storyProducts.findFirst({
@@ -97,11 +119,76 @@ async function _POST(req: Request) {
       );
     }
 
-    const productType = storyProduct.productType;
+    const productType = storyProduct.productType as ProductType;
 
     if (!productType || !["digital", "print", "gift"].includes(productType)) {
       return NextResponse.json(
         { error: `Invalid productType "${productType}"`, storyId, orderID },
+        { status: 400 }
+      );
+    }
+
+    const orderCurrency = pendingUnit?.amount?.currency_code as CurrencyCode;
+    const orderCents = moneyToCents(pendingUnit?.amount?.value);
+
+    if (!VALID_CURRENCIES.includes(orderCurrency) || orderCents === null) {
+      return NextResponse.json({ error: "Invalid order amount" }, { status: 400 });
+    }
+
+    let promo: typeof promoCodes.$inferSelect | undefined;
+    if (promoCode && typeof promoCode === "string") {
+      [promo] = await db
+        .select()
+        .from(promoCodes)
+        .where(sql`LOWER(${promoCodes.code}) = LOWER(${promoCode.trim()})`)
+        .limit(1);
+
+      const unusable = promo ? getPromoUnusableReason(promo) : "Invalid promo code.";
+      if (unusable) {
+        return NextResponse.json({ error: unusable }, { status: 400 });
+      }
+    }
+
+    const [paidRow] = await db
+      .select({ paymentStatus: stories.paymentStatus, bookType: stories.bookType })
+      .from(stories)
+      .where(eq(stories.id, storyId))
+      .limit(1);
+
+    // Mirror /api/paypal/order exactly: full price for the book type, or,
+    // for a book that's already been paid for, the upgrade difference.
+    // Any valid promo is applied after that.
+    const bookType = paidRow?.bookType ?? "storybook";
+    const upgradeSources: ProductType[] = paidRow?.paymentStatus === "paid" ? ["digital", "print"] : [];
+    const acceptableCents = [
+      computeCheckoutCents(productType, orderCurrency, { promo, bookType }),
+      ...upgradeSources.map((from) =>
+        computeCheckoutCents(productType, orderCurrency, { upgradeFrom: from, promo, bookType })
+      ),
+    ].filter((c): c is number => c !== null && c > 0);
+
+    if (!acceptableCents.includes(orderCents)) {
+      console.error("[PayPal capture] amount mismatch", {
+        storyId,
+        orderID,
+        orderCents,
+        orderCurrency,
+        acceptableCents,
+      });
+      return NextResponse.json(
+        { error: "Order amount doesn't match the price for this book." },
+        { status: 400 }
+      );
+    }
+
+    /* --------------------------------------------------
+       CAPTURE
+    -------------------------------------------------- */
+    const receipt = await paypalCaptureOrder(orderID);
+
+    if (receipt?.status !== "COMPLETED") {
+      return NextResponse.json(
+        { error: `Order not completed (status=${receipt?.status})` },
         { status: 400 }
       );
     }
@@ -157,14 +244,14 @@ async function _POST(req: Request) {
     }
 
     // Persist promo usage now that payment is confirmed
-    if (promoCode && typeof promoCode === "string") {
+    if (promo) {
       await db
         .update(promoCodes)
         .set({
           currentUses: sql`${promoCodes.currentUses} + 1`,
           updatedAt: new Date(),
         })
-        .where(sql`LOWER(${promoCodes.code}) = LOWER(${promoCode.trim()})`);
+        .where(eq(promoCodes.id, promo.id));
     }
 
     const payerEmail = receipt?.payer?.email_address;

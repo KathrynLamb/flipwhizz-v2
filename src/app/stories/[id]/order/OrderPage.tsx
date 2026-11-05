@@ -240,7 +240,8 @@ export default function OrderPage({
     const res = await fetch("/api/paypal/capture", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderID }),
+      // Capture re-checks the amount, so it needs the same promo as the order.
+      body: JSON.stringify({ orderID, promoCode: appliedPromo?.code }),
     });
 
     const data = await res.json();

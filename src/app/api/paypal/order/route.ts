@@ -10,6 +10,7 @@ import {
   getPriceCents,
   applyDiscount,
   resolvePromoDiscount,
+  getPromoUnusableReason,
   type ProductType,
   type CurrencyCode,
 } from "@/lib/pricing";
@@ -40,6 +41,7 @@ async function _POST(req: Request) {
     if (!storyId) {
       return NextResponse.json({ error: "storyId required" }, { status: 400 });
     }
+
 
     /* --------------------------------------------------
        LOAD STORY PRODUCT
@@ -84,6 +86,21 @@ async function _POST(req: Request) {
       typeof upgradeFrom === "string" &&
       VALID_PRODUCTS.includes(upgradeFrom as ProductType)
     ) {
+      // Upgrade pricing (pay only the difference) is only for books
+      // that have already been paid for.
+      const [storyRow] = await db
+        .select({ paymentStatus: stories.paymentStatus })
+        .from(stories)
+        .where(eq(stories.id, storyId))
+        .limit(1);
+
+      if (storyRow?.paymentStatus !== "paid") {
+        return NextResponse.json(
+          { error: "Only a book that's already been purchased can be upgraded." },
+          { status: 400 }
+        );
+      }
+
       const fromCents = getPriceCents(upgradeFrom as ProductType, currency, formatStory?.bookType);
       const toCents = getPriceCents(productType, currency, formatStory?.bookType);
 
@@ -112,22 +129,16 @@ async function _POST(req: Request) {
         .where(sql`LOWER(${promoCodes.code}) = LOWER(${promoCode.trim()})`)
         .limit(1);
 
-      if (!promo || !promo.active) {
+      if (!promo) {
         return NextResponse.json(
           { error: "Invalid or inactive promo code." },
           { status: 400 }
         );
       }
 
-      const now = new Date();
-      if (promo.startsAt && now < promo.startsAt) {
-        return NextResponse.json({ error: "Promo code not yet active." }, { status: 400 });
-      }
-      if (promo.expiresAt && now > promo.expiresAt) {
-        return NextResponse.json({ error: "Promo code has expired." }, { status: 400 });
-      }
-      if (promo.maxUses !== null && promo.currentUses >= promo.maxUses) {
-        return NextResponse.json({ error: "Promo code fully redeemed." }, { status: 400 });
+      const unusable = getPromoUnusableReason(promo);
+      if (unusable) {
+        return NextResponse.json({ error: unusable }, { status: 400 });
       }
 
       const discount = resolvePromoDiscount(promo, productType, currency, formatStory?.bookType);
