@@ -7,8 +7,7 @@ import { eq } from "drizzle-orm";
 import { Resend } from "resend";
 import crypto from "crypto";
 import { db } from "@/db";
-import { passwordResetTokens } from "@/db/schema";
-import { users } from "drizzle/schema";
+import { passwordResetTokens, users } from "@/db/schema";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
