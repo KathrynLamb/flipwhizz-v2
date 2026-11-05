@@ -5,14 +5,15 @@ import BookTypeSelector from "@/components/books/BookTypeSelector";
 import { useBookTypeDraft } from "@/lib/books/useBookTypeDraft";
 import { isBookType } from "@/lib/books/bookType";
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { getDemoSessionId, migrateDemoToUserAccount, clearDemoSessionId } from "@/lib/demo-session-utils";
 import { useSession } from "next-auth/react";
 import { ChatBubble, TypingBubble, StatusBubble, RepliesLeft, ChatComposer, ContinueCard } from "@/components/chat/ChatBits";
 import posthog from "posthog-js";
-import { STARTER_OPENER, buildStarterConversation } from "@/lib/chatStarter";
+import { Sparkles, Gift, X, ArrowUp } from "lucide-react";
+import { STARTER_OPENER, ABOUTS, buildStarterConversation } from "@/lib/chatStarter";
 
 type ChatMsg = {
   role: "user" | "assistant";
@@ -64,6 +65,15 @@ const SEED_OPENERS: Record<string, string> = {
     "Hi! A dinosaur-mad little one, my favourite kind of brief. Let's roar into a story built all around them. Tell me their name and a bit about them and we'll begin.",
 };
 
+// Quick starts on the homepage launcher. Each one opens the chat with the
+// visitor's answer already sent (free, not one of the demo messages) and our
+// follow-up question waiting, the same way the starter links work.
+const HOME_CHIPS: { key: "memory" | "everyday" | "imagination"; dot: string; tint: string }[] = [
+  { key: "memory", dot: "#F3807B", tint: "#FDEEEC" },
+  { key: "everyday", dot: "#7AD3C1", tint: "#E9F7F5" },
+  { key: "imagination", dot: "#9693CC", tint: "#F0EEFB" },
+];
+
 function pickGenericOpener(): string {
   return GENERIC_OPENERS[Math.floor(Math.random() * GENERIC_OPENERS.length)];
 }
@@ -86,6 +96,12 @@ export default function CreateDemoClient({ embedded = false }: { embedded?: bool
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Homepage only: a launcher card that opens the conversation in a popup.
+  const [chatOpen, setChatOpen] = useState(false);
+  const [launchText, setLaunchText] = useState("");
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const launcherRef = useRef<HTMLDivElement | null>(null);
 
   // Only messages the visitor typed here count toward the free demo messages.
   const userMessageCount = useMemo(
@@ -210,13 +226,30 @@ export default function CreateDemoClient({ embedded = false }: { embedded?: bool
     );
     const id = window.setTimeout(() => {
       if (!embedded) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-      else if (userMessageCount > 0 && bottomRef.current?.parentElement?.parentElement) {
-        const transcript = bottomRef.current.parentElement.parentElement;
-        transcript.scrollTop = transcript.scrollHeight;
-      }
+      else if (transcriptRef.current) transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
     }, 80);
     return () => window.clearTimeout(id);
-  }, [messages, messagesLoaded, embedded, userMessageCount]);
+  }, [messages, messagesLoaded, embedded, chatOpen, loading]);
+
+  // Popup housekeeping: lock page scroll, close on Escape, focus the reply box,
+  // and hand focus back to the launcher when it closes.
+  useEffect(() => {
+    if (!embedded || !chatOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setChatOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const focusId = requestAnimationFrame(() => textareaRef.current?.focus());
+    const launcher = launcherRef.current;
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+      cancelAnimationFrame(focusId);
+      launcher?.querySelector<HTMLElement>("input, button")?.focus();
+    };
+  }, [embedded, chatOpen]);
 
   useEffect(() => {
     if (!textareaRef.current) return;
@@ -235,10 +268,10 @@ export default function CreateDemoClient({ embedded = false }: { embedded?: bool
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reachedLimit]);
 
-  async function sendMessage() {
-    if (!input.trim() || loading || reachedLimit || !sessionId) return;
+  async function sendMessage(textOverride?: string) {
+    const text = (textOverride ?? input).trim();
+    if (!text || loading || reachedLimit || !sessionId) return;
 
-    const text = input.trim();
     const userMessage: ChatMsg = { role: "user", content: text };
     const nextHistory = [...messages, userMessage];
 
@@ -386,7 +419,7 @@ export default function CreateDemoClient({ embedded = false }: { embedded?: bool
     posthog.capture("demo_reset", { message_count: userMessageCount });
     // Re-inject a fresh opener on reset rather than leaving the box truly empty.
     openerInjectedRef.current = true;
-    const opener = seed ? SEED_OPENERS[seed] ?? pickGenericOpener() : pickGenericOpener();
+    const opener = embedded ? STARTER_OPENER : seed ? SEED_OPENERS[seed] ?? pickGenericOpener() : pickGenericOpener();
     setMessages([{ role: "assistant", content: opener }]);
     setInput("");
     setError(null);
@@ -396,11 +429,159 @@ export default function CreateDemoClient({ embedded = false }: { embedded?: bool
     if (!embedded) requestAnimationFrame(() => textareaRef.current?.focus());
   }
 
-  return (
-    <div className={embedded ? "fw-home-chat" : "flex h-full flex-col"}>
-      {!embedded && <BookTypeSelector value={bookType} onChange={selectBookType} disabled={loading || creatingProject || !messagesLoaded} />}
+  // Has the visitor already said something, typed or via a quick start?
+  const hasStarted = messages.some((m) => m.role === "user");
 
-      <div className={embedded ? "fw-home-transcript" : "flex-1 pb-44 pt-8"} role="log" aria-label="Your story conversation" aria-live="polite">
+  function openChat() {
+    setChatOpen(true);
+    posthog.capture("home_chat_opened", { has_started: hasStarted });
+  }
+
+  function startFromLauncher(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const text = launchText.trim();
+    openChat();
+    if (!text || reachedLimit) return;
+    setLaunchText("");
+    void sendMessage(text);
+  }
+
+  function startFromChip(key: (typeof HOME_CHIPS)[number]["key"]) {
+    const about = ABOUTS.find((a) => a.key === key);
+    if (!about) return;
+    if (!hasStarted) {
+      openerInjectedRef.current = true;
+      setMessages([
+        { role: "assistant", content: STARTER_OPENER },
+        { role: "user", content: about.answer, prefilled: true },
+        { role: "assistant", content: about.followUp },
+      ]);
+      trackFirstMessage("home_chip", utmSource, true);
+      posthog.capture("home_chat_chip", { about: key });
+    }
+    openChat();
+  }
+
+  if (embedded) {
+    return (
+      <div ref={launcherRef}>
+        <div className="fw-launch">
+          <div className="fw-rainbow-strip" aria-hidden="true" />
+          <form className="fw-launch-body" onSubmit={startFromLauncher}>
+            <div className="fw-launch-head">
+              <span className="fw-spark" aria-hidden="true"><Sparkles className="h-[18px] w-[18px]" strokeWidth={2.2} /></span>
+              {hasStarted
+                ? <p className="fw-launch-label">Your story is taking shape</p>
+                : <label className="fw-launch-label" htmlFor="fw-idea">What would you like to make a story about?</label>}
+            </div>
+
+            {hasStarted ? (
+              <div className="fw-launch-resume">
+                <button type="button" className="fw-launch-resume-btn" onClick={openChat}>Pick up your story</button>
+                <button type="button" className="fw-launch-reset" onClick={resetDemo} disabled={loading || creatingProject}>Start again</button>
+              </div>
+            ) : (
+              <>
+                <div className="fw-launch-field">
+                  <input
+                    id="fw-idea"
+                    type="text"
+                    value={launchText}
+                    onChange={(e) => setLaunchText(e.target.value)}
+                    placeholder="A memory, two snails, a wild idea…"
+                    autoComplete="off"
+                  />
+                  <button type="submit" aria-label="Start my story" className="fw-launch-send">
+                    <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
+                  </button>
+                </div>
+                <div className="fw-launch-chips">
+                  {HOME_CHIPS.map((chip) => {
+                    const about = ABOUTS.find((a) => a.key === chip.key);
+                    if (!about) return null;
+                    return (
+                      <button key={chip.key} type="button" className="fw-launch-chip" style={{ background: chip.tint }} onClick={() => startFromChip(chip.key)}>
+                        <span aria-hidden="true" style={{ background: chip.dot }} />
+                        {about.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </form>
+          <p className="fw-launch-free"><Gift className="h-[18px] w-[18px]" aria-hidden="true" /> Your first illustrated page is free. No sign-up to start.</p>
+        </div>
+
+        {chatOpen && (
+          <div className="fw-chat-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setChatOpen(false); }}>
+            <div className="fw-chat-modal" role="dialog" aria-modal="true" aria-labelledby="fw-chat-title">
+              <div className="fw-rainbow-strip" aria-hidden="true" />
+              <div className="fw-chat-header">
+                <div>
+                  <h2 id="fw-chat-title">Your story</h2>
+                  <p>Shape your idea together, then we’ll illustrate it.</p>
+                </div>
+                <button type="button" className="fw-chat-close" onClick={() => setChatOpen(false)} aria-label="Close story chat">
+                  <X className="h-5 w-5" strokeWidth={2.4} />
+                </button>
+              </div>
+
+              <div ref={transcriptRef} className="fw-chat-transcript" role="log" aria-label="Your story conversation" aria-live="polite">
+                <div className="flex flex-col gap-3">
+                  {messages.map((msg, i) => (
+                    <ChatBubble key={`${msg.role}-${i}-${msg.content.slice(0, 24)}`} from={msg.role === "user" ? "you" : "fw"}>
+                      {msg.content}
+                    </ChatBubble>
+                  ))}
+                  {loading && <TypingBubble />}
+                  {reachedLimit && (
+                    <div className="mt-4">
+                      <ContinueCard
+                        title={serverLimitReached ? "Continue your story" : "Your story is taking shape"}
+                        body={
+                          authStatus === "authenticated"
+                            ? "Carry on shaping it, then we'll illustrate every page and make its cover."
+                            : "Sign in to keep going. Your chat comes with you, then we'll illustrate every page and make its cover."
+                        }
+                        onContinue={continueToFullProject}
+                        onReset={resetDemo}
+                        busy={creatingProject}
+                        continueDisabled={userMessageCount === 0}
+                      />
+                    </div>
+                  )}
+                  <div ref={bottomRef} />
+                </div>
+              </div>
+
+              <div className="fw-chat-footer fw-home-composer">
+                {userMessageCount > 0 && !reachedLimit && <RepliesLeft remaining={remaining} total={MAX_USER_MESSAGES} />}
+                <ChatComposer
+                  textareaRef={textareaRef}
+                  value={input}
+                  onChange={setInput}
+                  onSend={() => void sendMessage()}
+                  loading={loading}
+                  disabled={loading || reachedLimit || creatingProject}
+                  maxHeight={120}
+                  placeholder={reachedLimit ? "Demo complete. Continue to create your book" : hasStarted ? "Type your answer…" : "A memory, two snails, a wild idea…"}
+                />
+                {error && <p className="mb-0 mt-3 text-center text-sm font-medium text-[#C8243D]">{error}</p>}
+                {userMessageCount === 0 && !reachedLimit && <p className="fw-chat-note">Your first illustrated page is free. No sign-up needed.</p>}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <BookTypeSelector value={bookType} onChange={selectBookType} disabled={loading || creatingProject || !messagesLoaded} />
+
+      <div className="flex-1 pb-44 pt-8" role="log" aria-label="Your story conversation" aria-live="polite">
         <div className="flex flex-col gap-3">
           {messages.map((msg, i) => (
             <ChatBubble key={`${msg.role}-${i}-${msg.content.slice(0, 24)}`} from={msg.role === "user" ? "you" : "fw"}>
@@ -434,7 +615,7 @@ export default function CreateDemoClient({ embedded = false }: { embedded?: bool
       </div>
 
       {/* Composer, fixed to the bottom of the screen. */}
-      <div className={embedded ? "fw-home-composer" : "fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-white via-white to-white/0 px-4 pb-3 pt-8 sm:px-6 sm:pb-5"}>
+      <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-white via-white to-white/0 px-4 pb-3 pt-8 sm:px-6 sm:pb-5">
         <div className="mx-auto w-full max-w-2xl">
           {userMessageCount > 0 && !reachedLimit && <RepliesLeft remaining={remaining} total={MAX_USER_MESSAGES} />}
 
