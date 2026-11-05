@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { Resend } from "resend";
-import { getPostHogClient } from "@/lib/posthog-server";
+import { captureServerEvent } from "@/lib/posthog-server";
 import { withAlerts } from "@/lib/alerts";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -80,10 +80,7 @@ async function _POST(req: Request) {
     });
 
     // ── Track registration ──
-    const posthog = getPostHogClient();
-    posthog.identify({ distinctId: userId, properties: { email: trimmedEmail, name: trimmedName } });
-    posthog.capture({ distinctId: userId, event: "user_registered", properties: { email: trimmedEmail, name: trimmedName, method: "email" } });
-    await posthog.shutdown();
+    await captureServerEvent(userId, "user_registered", { method: "email" });
 
     // ── Send welcome email (non-blocking) ──
     resend

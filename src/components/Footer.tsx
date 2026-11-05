@@ -1,3 +1,4 @@
+import { CookieSettingsButton } from "./CookiePreferences";
 // src/components/Footer.tsx
 import Link from "next/link";
 import Image from "next/image";
@@ -69,6 +70,7 @@ export default function Footer() {
           <div className="flex gap-6">
             <Link href="/privacy" className="transition-colors hover:text-white">Privacy</Link>
             <Link href="/terms" className="transition-colors hover:text-white">Terms</Link>
+            <CookieSettingsButton />
           </div>
         </div>
       </div>

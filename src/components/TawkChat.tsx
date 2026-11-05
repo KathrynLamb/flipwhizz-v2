@@ -1,6 +1,7 @@
 // src/components/TawkChat.tsx
 "use client";
 
+import { useCookieConsent } from "./CookiePreferences";
 import Script from "next/script";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -76,6 +77,7 @@ function applyVisibility(hidden: boolean) {
 }
 
 export default function TawkChat() {
+  const { consent } = useCookieConsent();
   const pathname = usePathname();
   const { data: session } = useSession();
   const hidden = shouldHide(pathname);
@@ -96,15 +98,15 @@ export default function TawkChat() {
   const email = session?.user?.email ?? undefined;
   useEffect(() => {
     const api = window.Tawk_API;
-    if (!api || (!name && !email)) return;
+    if (!consent?.chat || !api || (!name && !email)) return;
     api.visitor = { name, email };
     const attrs: Record<string, string> = {};
     if (name) attrs.name = name;
     if (email) attrs.email = email;
     api.setAttributes?.(attrs, () => {});
-  }, [name, email]);
+  }, [name, email, consent?.chat]);
 
-  if (!PROPERTY_ID) return null;
+  if (!PROPERTY_ID || !consent?.chat) return null;
 
   return (
     <Script

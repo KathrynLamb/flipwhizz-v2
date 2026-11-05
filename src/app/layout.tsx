@@ -2,6 +2,7 @@
 
 import type { Metadata } from "next";
 import { NextAuthProvider } from "@/components/next-auth-provider";
+import CookiePreferences from "@/components/CookiePreferences";
 import TawkChat from "@/components/TawkChat";
 import "./globals.css";
 
@@ -91,8 +92,10 @@ export default function RootLayout({
     <html lang="en-GB">
       <body>
         <NextAuthProvider>
-          {children}
-          <TawkChat />
+          <CookiePreferences>
+            {children}
+            <TawkChat />
+          </CookiePreferences>
         </NextAuthProvider>
       </body>
     </html>
