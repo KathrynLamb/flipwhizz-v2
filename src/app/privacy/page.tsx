@@ -211,6 +211,7 @@ export default function PrivacyPage() {
                 "Vercel — website hosting",
                 "Neon — database hosting",
                 "Resend — transactional emails (order confirmations)",
+                "tawk.to — live chat support (your name and email if you're signed in, plus anything you type in the chat)",
               ]}
             />
             <p className="mt-3">
@@ -273,6 +274,10 @@ export default function PrivacyPage() {
             <p>
               We use essential cookies to keep you signed in and to remember your
               session. We do not use advertising cookies or tracking pixels.
+            </p>
+            <p>
+              Our live chat widget, provided by tawk.to, sets its own cookies so
+              your conversation carries on as you move between pages.
             </p>
             <p>
               If we add analytics in the future, we will update this policy and

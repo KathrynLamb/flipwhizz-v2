@@ -2,6 +2,7 @@
 
 import type { Metadata } from "next";
 import { NextAuthProvider } from "@/components/next-auth-provider";
+import TawkChat from "@/components/TawkChat";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -89,7 +90,10 @@ export default function RootLayout({
   return (
     <html lang="en-GB">
       <body>
-        <NextAuthProvider>{children}</NextAuthProvider>
+        <NextAuthProvider>
+          {children}
+          <TawkChat />
+        </NextAuthProvider>
       </body>
     </html>
   );
