@@ -117,7 +117,7 @@ export default function SignInForm() {
         }
 
         if (data.userId) {
-          posthog.identify(data.userId, { email, name: name.trim() });
+          posthog.identify(data.userId);
         }
         posthog.capture("user_registered", { method: "email" });
         window.location.href = callbackUrl;

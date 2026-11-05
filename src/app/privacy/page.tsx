@@ -75,7 +75,7 @@ export default function PrivacyPage() {
             Privacy Policy
           </h1>
           <p className="text-sm" style={{ color: "#A897BD" }}>
-            Last updated: 16 March 2026
+            Last updated: 5 November 2026
           </p>
         </div>
 
@@ -147,10 +147,12 @@ export default function PrivacyPage() {
 
             <Subsection title="Usage data">
               <p>
-                We collect standard web analytics (pages visited, time on site,
-                device type) to understand how people use FlipWhizz and to
-                improve the experience. We do not track you across other
-                websites.
+                With your consent, we use PostHog to measure page visits and product
+                events such as starting a story or completing a purchase. We exclude
+                story text, names, photos, URL query strings and private resource IDs
+                from event properties. We do not enable session recording or automatic
+                capture of form contents. Analytics may use pseudonymous identifiers
+                to connect visits and events. We do not track you across other websites.
               </p>
             </Subsection>
           </Section>
@@ -209,6 +211,7 @@ export default function PrivacyPage() {
                 "PayPal — payment processing",
                 "Gelato — book printing and delivery",
                 "Vercel — website hosting",
+                "PostHog — optional product analytics, hosted in the EU",
                 "Neon — database hosting",
                 "Resend — transactional emails (order confirmations)",
                 "tawk.to — live chat support (your name and email if you're signed in, plus anything you type in the chat)",
@@ -271,18 +274,11 @@ export default function PrivacyPage() {
           </Section>
 
           <Section title="9. Cookies">
-            <p>
-              We use essential cookies to keep you signed in and to remember your
-              session. We do not use advertising cookies or tracking pixels.
-            </p>
-            <p>
-              Our live chat widget, provided by tawk.to, sets its own cookies so
-              your conversation carries on as you move between pages.
-            </p>
-            <p>
-              If we add analytics in the future, we will update this policy and
-              give you the option to opt out.
-            </p>
+            <p>Essential cookies keep you signed in, support checkout and remember your cookie preferences. These do not require optional consent. We store your choice in the fw_consent cookie for six months.</p>
+            <p>PostHog analytics starts only after you accept analytics cookies. It uses cookies or local storage (typically named ph_…_posthog) to measure page visits and product events. Analytics cookies are configured to expire after six months and may be renewed while you use the site.</p>
+            <p>Our optional live chat provider, tawk.to, loads only after you accept live chat cookies. It uses its own cookies and storage to maintain your conversation and receives technical visit information, chat messages and your name and email if signed in. You can email hello@flipwhizz.com without enabling chat.</p>
+            <p>Choose Accept all, Reject optional or Settings in the banner. Reopen Cookie settings at any time using the footer or the button at the bottom of the screen. Withdrawing analytics consent stops future collection; withdrawing live chat consent reloads the page to stop the loaded widget. Third-party cookies may remain until they expire or you clear them in your browser. Withdrawing consent does not automatically erase data already collected.</p>
+            <p>We do not use advertising cookies or marketing pixels.</p>
           </Section>
 
           <Section title="10. Your rights">
