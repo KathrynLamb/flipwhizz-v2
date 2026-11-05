@@ -24,6 +24,7 @@ import UnifiedStoryHeader from "@/app/stories/components/StoryHeader";
 import RedrawModal from "@/app/stories/[id]/studio/components/redrawModal";
 import MobilePreview from "./MobilePreview";
 import { reportClientError } from "@/lib/reportClientError";
+import { openSupportChat } from "@/lib/supportChat";
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                              */
@@ -332,7 +333,13 @@ function GenerationPanel({
         if (data.imageUrl) setResultImageUrl(data.imageUrl);
         if (data.status === "done" || data.status === "error") {
           if (pollRef.current) clearInterval(pollRef.current);
-          if (data.status === "error") setError("Generation failed — try again.");
+          if (data.status === "error") {
+            setError("Generation failed — try again.");
+            openSupportChat(
+              { kind: "generation_failed", storyId, message: `Preview job ${jobId} returned status "error"` },
+              { auto: true },
+            );
+          }
         }
       } catch { /* swallow */ }
     }, 2500);

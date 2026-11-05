@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import RedrawModal from "@/app/stories/[id]/studio/components/redrawModal";
 import { reportClientError } from "@/lib/reportClientError";
+import { openSupportChat } from "@/lib/supportChat";
 
 /* ------------------------------------------------------------------ */
 /* TYPES                                                              */
@@ -202,7 +203,13 @@ export default function MobilePreview({
         if (data.imageUrl) setResultImageUrl(data.imageUrl);
         if (data.status === "done" || data.status === "error") {
           if (pollRef.current) clearInterval(pollRef.current);
-          if (data.status === "error") setError("Generation failed — try again.");
+          if (data.status === "error") {
+            setError("Generation failed — try again.");
+            openSupportChat(
+              { kind: "generation_failed", storyId, message: `Preview job ${jobId} returned status "error"` },
+              { auto: true },
+            );
+          }
         }
       } catch { /* swallow */ }
     }, 2500);
