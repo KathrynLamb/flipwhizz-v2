@@ -147,10 +147,18 @@ export default async function Home() {
         <h2 id="control-title">Make it yours.<br /><em>Down to the wellies.</em></h2>
         <p className="fw-section-intro">You’re the author and the art director. Shape the words, choose the look, and build a world you can come back to.</p>
         <div className="fw-control-grid">
-          <article><span className="fw-feature-number">01</span><h3>A cast you recognise.</h3><p>Start from descriptions or upload photos of people and pets. Edit appearances, review character portraits and choose the looks you want in your book.</p></article>
-          <article><span className="fw-feature-number">02</span><h3>Yes, even the outfits.</h3><p>The favourite jumper. The muddy wellies. The costume they won’t take off. Edit your characters’ outfits as well as their looks, and shape the places where the story happens.</p></article>
-          <article><span className="fw-feature-number">03</span><h3>Your kind of illustration.</h3><p>Describe the visual style you love or upload an image as a reference. Review a sample and refine the direction before illustrating the book.</p></article>
-          <article><span className="fw-feature-number">04</span><h3>A draft you can change.</h3><p>Ask for a small adjustment or a whole-story rewrite. Make it funnier, change the ending, reshape the plot or adjust the language. Discuss the changes, then apply them across the story.</p></article>
+          <article>
+            <Image className="fw-control-illustration" src="/illustrations/home/01-familiar-characters.svg" alt="" aria-hidden="true" width={480} height={320} unoptimized />
+            <span className="fw-feature-number">01</span><h3>A cast you recognise.</h3><p>Start from descriptions or upload photos of people and pets. Edit appearances, review character portraits and choose the looks you want in your book.</p></article>
+          <article>
+            <Image className="fw-control-illustration" src="/illustrations/home/02-outfits-and-wellies.svg" alt="" aria-hidden="true" width={480} height={320} unoptimized />
+            <span className="fw-feature-number">02</span><h3>Yes, even the outfits.</h3><p>The favourite jumper. The muddy wellies. The costume they won’t take off. Edit your characters’ outfits as well as their looks, and shape the places where the story happens.</p></article>
+          <article>
+            <Image className="fw-control-illustration" src="/illustrations/home/03-illustration-style.svg" alt="" aria-hidden="true" width={480} height={320} unoptimized />
+            <span className="fw-feature-number">03</span><h3>Your kind of illustration.</h3><p>Describe the visual style you love or upload an image as a reference. Review a sample and refine the direction before illustrating the book.</p></article>
+          <article>
+            <Image className="fw-control-illustration" src="/illustrations/home/04-editable-story.svg" alt="" aria-hidden="true" width={480} height={320} unoptimized />
+            <span className="fw-feature-number">04</span><h3>A draft you can change.</h3><p>Ask for a small adjustment or a whole-story rewrite. Make it funnier, change the ending, reshape the plot or adjust the language. Discuss the changes, then apply them across the story.</p></article>
         </div>
         <Link className="fw-text-link" href="#start-story">Tell us what you have in mind ↗</Link>
       </section>
