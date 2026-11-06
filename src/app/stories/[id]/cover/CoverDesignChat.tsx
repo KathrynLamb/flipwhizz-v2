@@ -477,7 +477,7 @@ function DesktopCoverChat({
               )}
 
               {/* What Gemini Receives */}
-              <CoverReferencesPanel storyId={storyId} />
+              {/* <CoverReferencesPanel storyId={storyId} /> */}
 
             </div>
           </div>
