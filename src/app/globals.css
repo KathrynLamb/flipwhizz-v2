@@ -1,3 +1,4 @@
+/* src/app/globals.css */
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
@@ -65,4 +66,17 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Fixed story navigation follows the reserved Christmas banner height. */
+html:has([data-christmas-banner]) { --christmas-banner-offset: 99px; }
+@media (min-width: 640px) {
+  html:has([data-christmas-banner]) { --christmas-banner-offset: 63px; }
+}
+@media (min-width: 1024px) {
+  html:has([data-christmas-banner]) { --christmas-banner-offset: 47px; }
+}
+html[data-christmas-banner-hidden="true"] { --christmas-banner-offset: 0px; }
+@media print {
+  html:has([data-christmas-banner]) { --christmas-banner-offset: 0px; }
 }
