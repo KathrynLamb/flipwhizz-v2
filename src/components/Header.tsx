@@ -180,6 +180,7 @@ export default function Header({
             <motion.div key="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.35 }} className="fixed inset-0 z-40 bg-black/15 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
             <motion.div
               key="panel"
+              style={{ top: "var(--christmas-banner-offset, 0px)" }}
               initial={{ opacity: 0, clipPath: "circle(0% at calc(100% - 48px) 48px)" }}
               animate={{ opacity: 1, clipPath: "circle(160% at calc(100% - 48px) 48px)" }}
               exit={{ opacity: 0, clipPath: "circle(0% at calc(100% - 48px) 48px)" }}
@@ -188,12 +189,12 @@ export default function Header({
             >
               <div className="relative z-10 flex items-center justify-between px-6 py-2">
                 <Logo />
-                <button onClick={() => setIsOpen(false)} className="w-10 h-10 flex items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:text-gray-800 transition-all">
+                <button aria-label="Close menu" onClick={() => setIsOpen(false)} className="w-10 h-10 flex items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:text-gray-800 transition-all">
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1L13 13M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                 </button>
               </div>
               <div className="mx-6 h-px bg-gray-100" />
-              <nav className="flex-1 flex flex-col justify-center px-8">
+              <nav className="min-h-0 flex-1 flex flex-col overflow-y-auto px-8">
                 {navLinks.map(({ href, label }, i) => (
                   <motion.div key={href} initial={{ opacity: 0, x: -28 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.18 + i * 0.08, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
                     <Link href={href} onClick={() => setIsOpen(false)} className="group flex items-center justify-between border-b border-[#EFE7F5] py-5">
