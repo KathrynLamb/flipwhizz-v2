@@ -1,3 +1,4 @@
+// src/app/stories/components/BookSiteNavigation.tsx
 'use client';
 
 import Link from 'next/link';
@@ -21,7 +22,7 @@ export default function BookSiteNavigation() {
 
   const linkClass = 'inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700 sm:px-3 sm:text-sm';
   return (
-    <nav aria-label="FlipWhizz site navigation" className="fixed inset-x-0 top-0 z-[60] h-12 border-b border-slate-200 bg-white print:hidden">
+    <nav aria-label="FlipWhizz site navigation" style={{ top: "var(--christmas-banner-offset, 0px)" }} className="fixed inset-x-0 z-[60] h-12 border-b border-slate-200 bg-white print:hidden">
       <div className="mx-auto flex h-full max-w-[1440px] items-center justify-between gap-2 px-3 sm:px-6">
         <Link href="/" aria-label="FlipWhizz home" className="rounded text-base font-bold tracking-tight text-[#54326F] focus-visible:outline-2 focus-visible:outline-purple-700">FlipWhizz</Link>
         <div className="flex items-center gap-1">
