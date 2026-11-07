@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { NextAuthProvider } from "@/components/next-auth-provider";
 import CookiePreferences from "@/components/CookiePreferences";
 import TawkChat from "@/components/TawkChat";
+import ChristmasBanner from "@/components/ChristmasBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -89,10 +90,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en-GB">
+    <html lang="en-GB" suppressHydrationWarning>
       <body>
         <NextAuthProvider>
           <CookiePreferences>
+            <ChristmasBanner />
             {children}
             <TawkChat />
           </CookiePreferences>
