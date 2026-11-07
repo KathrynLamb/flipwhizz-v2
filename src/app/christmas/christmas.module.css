@@ -109,6 +109,8 @@
   .giftCard { flex-direction: column; align-items: flex-start; gap: 4px; padding: 20px; }
   .giftCard a { flex-shrink: 1; }
   .tableWrap th, .tableWrap td { padding: 12px 6px; font-size: 12px; }
+  .tableWrap th:first-child { width: 28%; }
+  .tableWrap th:nth-child(2) { width: 32%; }
   .finalCta { padding-bottom: 64px; }
 }
 @media (prefers-reduced-motion: reduce) {
