@@ -1,5 +1,5 @@
-import BookFormatNotice from "@/components/books/BookFormatNotice";
 // src/app/stories/[id]/layout.tsx
+import BookFormatNotice from "@/components/books/BookFormatNotice";
 // ❌ DO NOT add "use client"
 
 import BookSiteNavigation from "@/app/stories/components/BookSiteNavigation";
@@ -100,7 +100,7 @@ export default async function StoryLayout({ children, params }: LayoutProps) {
 
   try {
     return (
-      <div className="pt-12 print:pt-0" style={{ '--book-navigation-height': '3rem' } as CSSProperties}>
+      <div className="pt-12 print:pt-0" style={{ '--book-navigation-height': 'calc(3rem + var(--christmas-banner-offset, 0px))' } as CSSProperties}>
       <BookSiteNavigation />
       {viewingAsCustomer && (
         <div

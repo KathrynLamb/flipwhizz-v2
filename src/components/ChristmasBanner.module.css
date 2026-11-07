@@ -1,0 +1,63 @@
+/* src/components/ChristmasBanner.module.css */
+.banner {
+  --christmas-banner-height: 99px;
+  position: sticky;
+  top: 0;
+  z-index: 70;
+  min-height: var(--christmas-banner-height);
+  background: #fff;
+  color: #392743;
+}
+.banner::before {
+  content: "";
+  display: block;
+  height: 3px;
+  background: linear-gradient(90deg, #F2546A, #F7A93E, #8AC7E0, #A270C9);
+}
+.inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 1200px;
+  min-height: calc(var(--christmas-banner-height) - 3px);
+  margin: 0 auto;
+  padding: 8px 12px;
+  box-sizing: border-box;
+}
+.link {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.link:hover { text-decoration: underline; text-decoration-color: #DB79AC; }
+.close {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 26px;
+}
+.close:hover { background: #f6effa; }
+.link:focus-visible, .close:focus-visible {
+  outline: 2px solid #9B88CF;
+  outline-offset: 2px;
+}
+:global(html[data-christmas-banner-hidden="true"]) .banner { display: none; }
+@media (min-width: 640px) {
+  .banner { --christmas-banner-height: 63px; }
+}
+@media (min-width: 1024px) {
+  .banner { --christmas-banner-height: 47px; }
+  .inner { padding-block: 0; }
+}
+@media print {
+  .banner { display: none; }
+}

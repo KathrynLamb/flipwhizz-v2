@@ -1,6 +1,8 @@
+// src/app/sitemap.ts
 import { MetadataRoute } from "next";
 import { getAllPosts } from "@/lib/blog";
 import { GIFT_PAGES } from "@/content/giftPages";
+import { CHRISTMAS } from "@/lib/christmas";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl = "https://flipwhizz.com"; // removed www
@@ -60,5 +62,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.8,
   }));
 
-  return [...staticPages, ...giftPages, ...blogPosts];
+  const christmasPages: MetadataRoute.Sitemap = CHRISTMAS.enabled
+    ? [{ url: `${baseUrl}/christmas`, changeFrequency: "daily", priority: 0.9 }]
+    : [];
+  return [...staticPages, ...christmasPages, ...giftPages, ...blogPosts];
 }
