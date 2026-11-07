@@ -1,6 +1,8 @@
+// src/components/Header.tsx
 "use client";
 
 import { useState } from "react";
+import { CHRISTMAS } from "@/lib/christmas";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import Image from "next/image";
@@ -58,6 +60,7 @@ export default function Header({
     { href: "/#gallery", label: "Examples" },
     { href: "/#gifts", label: "Gifts" },
     { href: "/#pricing", label: "Pricing" },
+    ...(CHRISTMAS.enabled ? [{ href: "/christmas", label: "Christmas" }] : []),
   ];
 
   return (
@@ -83,7 +86,7 @@ export default function Header({
         )}
 
         {!minimal && (
-          <nav className="flex items-center gap-9">
+          <nav className="flex items-center gap-5 xl:gap-9">
             {navLinks.map(({ href, label }) => (
               <Link
                 key={href}
