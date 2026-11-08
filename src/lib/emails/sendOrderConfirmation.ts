@@ -1,5 +1,6 @@
 // src/lib/emails/sendOrderConfirmation.ts
 
+import { christmasDelivery } from "@/lib/christmas-delivery";
 import { resend } from "@/lib/resend";
 
 interface OrderConfirmationParams {
@@ -8,6 +9,8 @@ interface OrderConfirmationParams {
   storyTitle: string;
   productType: "print" | "gift";
   gelatoOrderId: string;
+  bookType?: string;
+  orderedAt?: Date;
   shippingAddress: {
     firstName: string;
     lastName: string;
@@ -34,7 +37,8 @@ export async function sendOrderConfirmation(params: OrderConfirmationParams) {
     shippingAddress,
   } = params;
 
-  const productLabel = PRODUCT_LABELS[productType] ?? "Book";
+  const productLabel = params.bookType === "colouring_storybook" ? "Colouring Storybook" : PRODUCT_LABELS[productType] ?? "Book";
+  const christmasNotice = christmasDelivery(productType, params.bookType, params.orderedAt ?? new Date());
   const addressLines = [
     `${shippingAddress.firstName} ${shippingAddress.lastName}`,
     shippingAddress.addressLine1,
@@ -78,7 +82,7 @@ export async function sendOrderConfirmation(params: OrderConfirmationParams) {
                 Your book is on its way! ✨
               </h2>
               <p style="margin:0 0 24px; font-size:15px; color:#555; line-height:1.6;">
-                Great news — <strong>${childName}</strong>'s personalised story is now being printed and will be with you soon.
+                Great news, <strong>${childName}</strong>'s personalised story is now being printed and will be with you soon.
               </p>
 
               <!-- Order details card -->
@@ -121,9 +125,11 @@ export async function sendOrderConfirmation(params: OrderConfirmationParams) {
                 </tr>
               </table>
 
+              ${christmasNotice ? `<p style="margin:0 0 16px;padding:16px;background:#fff1f7;color:#30213c;font-family:Arial,sans-serif;font-size:14px;line-height:1.6;"><strong>${christmasNotice.message}</strong><br/>${christmasNotice.estimate}</p>` : ""}
+
               <!-- Timeline note -->
               <p style="margin:0 0 8px; font-size:14px; color:#555; line-height:1.6;">
-                Most orders arrive within <strong>4–7 business days</strong>. We'll let you know if there are any updates.
+                ${params.bookType === "colouring_storybook" ? "Your colouring book is made to order. We will share delivery updates when they are available." : "Estimated delivery is 5 to 7 business days after submission to print. We will let you know if there are any updates."}
               </p>
             </td>
           </tr>
