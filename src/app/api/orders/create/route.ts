@@ -1,4 +1,6 @@
+// src/app/api/orders/create/route.ts
 export const maxDuration = 300;
+import { sendOrderConfirmation } from "@/lib/emails/sendOrderConfirmation";
 import { submitColouringOrder } from "@/lib/lulu/order";
 // api/orders/create/route.ts
 import { NextResponse } from "next/server";
@@ -142,6 +144,18 @@ async function _POST(req: Request) {
           updatedAt: new Date(),
         })
         .where(eq(stories.id, storyId));
+
+      if (shippingAddress.email && !gelatoResponse.draft) {
+        await sendOrderConfirmation({
+          to: shippingAddress.email,
+          childName: story.title ?? "your child",
+          storyTitle: story.title ?? "Your FlipWhizz Story",
+          productType: productType === "gift" ? "gift" : "print",
+          bookType: story.bookType,
+          gelatoOrderId: gelatoResponse.id,
+          shippingAddress,
+        }).catch(error => console.error("Order confirmation email failed:", error));
+      }
 
       await captureServerEvent(userId, "print_order_submitted", {
         order_id: orderId,
