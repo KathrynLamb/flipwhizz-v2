@@ -1,3 +1,4 @@
+// src/app/api/stories/[id]/order/route.ts
 export const maxDuration = 300;
 import { submitColouringOrder } from "@/lib/lulu/order";
 // src/app/api/stories/[id]/order/route.ts
@@ -220,11 +221,12 @@ async function _POST(
        6. Send confirmation email (non-blocking)
     -------------------------------------------------- */
     if (shippingAddress.email) {
-      sendOrderConfirmation({
+      await sendOrderConfirmation({
         to: shippingAddress.email,
         childName: story.title ?? "your child",
         storyTitle: story.title ?? "Your FlipWhizz Story",
         productType: printSpec.productType,
+        bookType: story.bookType,
         gelatoOrderId: result.id,
         shippingAddress: {
           firstName: shippingAddress.firstName,
