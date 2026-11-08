@@ -1,4 +1,5 @@
 // src/lib/lulu/order.ts
+import { promoFromPaymentId } from "@/lib/checkout/store";
 import { sendOrderConfirmation } from "@/lib/emails/sendOrderConfirmation";
 import { shippingOptionsPayload, selectShippingLevel } from "./shipping";
 import { getAuthUser } from "@/lib/authz";
@@ -36,7 +37,7 @@ export async function submitColouringOrder(storyId: string, address: ShippingAdd
     if (existing) return { reused: true as const, order: existing, story };
     const project = await tx.query.projects.findFirst({ where: eq(projects.id, story.projectId) });
     if (!project?.userId) throw new Error("Book owner not found");
-    const [order] = await tx.insert(orders).values({ id: randomUUID(), storyId, userId: project.userId, paymentId: story.paymentId, paymentStatus: "paid", amount: String((product.estimatedPrice ?? 0) / 100), currency: product.currency ?? "GBP", shippingAddress: address, storyProductId: product.id, printProvider: "lulu", status: "preparing" }).returning();
+    const [order] = await tx.insert(orders).values({ id: randomUUID(), storyId, userId: project.userId, paymentId: story.paymentId, promoCode: promoFromPaymentId(story.paymentId), paymentStatus: "paid", amount: String((product.estimatedPrice ?? 0) / 100), currency: product.currency ?? "GBP", shippingAddress: address, storyProductId: product.id, printProvider: "lulu", status: "preparing" }).returning();
     return { reused: false as const, order, story };
   });
   if (reservation.reused) return { success: true, orderId: reservation.order.id, status: reservation.order.status, provider: "lulu", reused: true };
