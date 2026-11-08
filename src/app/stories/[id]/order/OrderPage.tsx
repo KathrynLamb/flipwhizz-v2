@@ -1,5 +1,7 @@
+// src/app/stories/[id]/order/OrderPage.tsx
 "use client";
 
+import ChristmasDeliveryNotice, { confirmChristmasDelivery } from "@/components/ChristmasDeliveryNotice";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -213,6 +215,7 @@ export default function OrderPage({
 
   // ─── PayPal: create order ───
   async function createPayPalOrder() {
+    if (!confirmChristmasDelivery(productType)) throw new Error("Print order cancelled. You can choose a digital edition instead.");
     const res = await fetch("/api/paypal/order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -831,6 +834,8 @@ export default function OrderPage({
             </p>
           </div>
         )}
+
+        <ChristmasDeliveryNotice productType={productType} bookType="storybook" digitalHref={`/stories/${story.id}/print`} />
 
         {/* ─── Payment ─── */}
         <div className="space-y-3">
