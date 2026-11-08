@@ -1,32 +1,18 @@
 // src/app/api/paypal/capture/route.ts
-
 import { NextResponse } from "next/server";
 import { paypalCaptureOrder, paypalGetOrder } from "@/lib/paypal";
 import { db } from "@/db";
-import { stories, storyProducts, promoCodes } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { checkoutPayments } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { withAlerts } from "@/lib/alerts";
 import { getAuthUser, owns, withAccess } from "@/lib/authz";
-import {
-  CURRENCIES,
-  computeCheckoutCents,
-  getPromoUnusableReason,
-  type CurrencyCode,
-  type ProductType,
-} from "@/lib/pricing";
-
-const VALID_CURRENCIES = Object.keys(CURRENCIES) as CurrencyCode[];
-
-function moneyToCents(value: unknown): number | null {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return null;
-  return Math.round(num * 100);
-}
+import { CheckoutError, createCheckoutStore } from "@/lib/checkout/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const checkout = createCheckoutStore(db);
 
 type ShippingAddress = {
   firstName: string;
@@ -74,216 +60,66 @@ function extractPaypalShippingAddress(receipt: any): ShippingAddress | null {
   };
 }
 
+
 async function _POST(req: Request) {
   try {
-    // withAccess has already required a signed-in user.
     const user = await getAuthUser();
     if (!user) return NextResponse.json({ error: "Please sign in to continue." }, { status: 401 });
+    const { orderID } = await req.json();
+    if (typeof orderID !== "string" || !orderID) throw new CheckoutError("Payment reference required.");
+    const [quote] = await db.select().from(checkoutPayments).where(eq(checkoutPayments.id, orderID));
+    if (!quote || quote.userId !== user.id) throw new CheckoutError("Please refresh checkout and try your payment again.");
+    if (!user.isAdmin && !(await owns("story", quote.storyId, user.id))) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const { orderID, promoCode } = await req.json();
-
-    if (!orderID || typeof orderID !== "string") {
-      return NextResponse.json({ error: "orderID required" }, { status: 400 });
-    }
-
-    /* --------------------------------------------------
-       VERIFY THE ORDER BEFORE TAKING PAYMENT
-       The order could have been created outside /api/paypal/order
-       (the PayPal client ID is public), so re-check who it's for and
-       that the amount matches our server-side price.
-    -------------------------------------------------- */
-    const pending = await paypalGetOrder(orderID);
-    const pendingUnit = pending?.purchase_units?.[0];
-    const storyId: string | undefined = pendingUnit?.custom_id || pendingUnit?.reference_id;
-
-    if (!storyId) {
-      return NextResponse.json(
-        { error: "Missing storyId on PayPal purchase unit" },
-        { status: 400 }
-      );
-    }
-
-    // The story named on the PayPal order must belong to the caller.
-    if (!user.isAdmin && !(await owns("story", storyId, user.id))) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
-    const storyProduct = await db.query.storyProducts.findFirst({
-      where: eq(storyProducts.storyId, storyId),
-    });
-
-    if (!storyProduct) {
-      return NextResponse.json(
-        { error: "Missing story_products row.", storyId, orderID },
-        { status: 400 }
-      );
-    }
-
-    const productType = storyProduct.productType as ProductType;
-
-    if (!productType || !["digital", "print", "gift"].includes(productType)) {
-      return NextResponse.json(
-        { error: `Invalid productType "${productType}"`, storyId, orderID },
-        { status: 400 }
-      );
-    }
-
-    const orderCurrency = pendingUnit?.amount?.currency_code as CurrencyCode;
-    const orderCents = moneyToCents(pendingUnit?.amount?.value);
-
-    if (!VALID_CURRENCIES.includes(orderCurrency) || orderCents === null) {
-      return NextResponse.json({ error: "Invalid order amount" }, { status: 400 });
-    }
-
-    let promo: typeof promoCodes.$inferSelect | undefined;
-    if (promoCode && typeof promoCode === "string") {
-      [promo] = await db
-        .select()
-        .from(promoCodes)
-        .where(sql`LOWER(${promoCodes.code}) = LOWER(${promoCode.trim()})`)
-        .limit(1);
-
-      const unusable = promo ? getPromoUnusableReason(promo) : "Invalid promo code.";
-      if (unusable) {
-        return NextResponse.json({ error: unusable }, { status: 400 });
+    let payment = quote;
+    if (quote.status !== "paid") {
+      // Trust the saved server quote, never a client-supplied promo or amount.
+      const pending = await paypalGetOrder(orderID);
+      const unit = pending?.purchase_units?.[0];
+      const cents = Math.round(Number(unit?.amount?.value) * 100);
+      if (pending?.purchase_units?.length !== 1 ||
+          (unit?.custom_id || unit?.reference_id) !== quote.storyId ||
+          !Number.isFinite(cents) || cents !== quote.amountCents ||
+          unit?.amount?.currency_code !== quote.currency) {
+        throw new CheckoutError("Payment details do not match this checkout. Please start again.");
       }
-    }
-
-    const [paidRow] = await db
-      .select({ paymentStatus: stories.paymentStatus, bookType: stories.bookType })
-      .from(stories)
-      .where(eq(stories.id, storyId))
-      .limit(1);
-
-    // Mirror /api/paypal/order exactly: full price for the book type, or,
-    // for a book that's already been paid for, the upgrade difference.
-    // Any valid promo is applied after that.
-    const bookType = paidRow?.bookType ?? "storybook";
-    const upgradeSources: ProductType[] = paidRow?.paymentStatus === "paid" ? ["digital", "print"] : [];
-    const acceptableCents = [
-      computeCheckoutCents(productType, orderCurrency, { promo, bookType }),
-      ...upgradeSources.map((from) =>
-        computeCheckoutCents(productType, orderCurrency, { upgradeFrom: from, promo, bookType })
-      ),
-    ].filter((c): c is number => c !== null && c > 0);
-
-    if (!acceptableCents.includes(orderCents)) {
-      console.error("[PayPal capture] amount mismatch", {
-        storyId,
-        orderID,
-        orderCents,
-        orderCurrency,
-        acceptableCents,
-      });
-      return NextResponse.json(
-        { error: "Order amount doesn't match the price for this book." },
-        { status: 400 }
-      );
-    }
-
-    /* --------------------------------------------------
-       CAPTURE
-    -------------------------------------------------- */
-    const receipt = await paypalCaptureOrder(orderID);
-
-    if (receipt?.status !== "COMPLETED") {
-      return NextResponse.json(
-        { error: `Order not completed (status=${receipt?.status})` },
-        { status: 400 }
-      );
-    }
-
-    const isPhysical = productType === "print" || productType === "gift";
-
-    if (isPhysical) {
-      const checkoutAddress = extractPaypalShippingAddress(receipt);
-
-      if (!checkoutAddress) {
-        return NextResponse.json(
-          { error: "Missing shipping address for physical product.", storyId, orderID, productType },
-          { status: 400 }
-        );
+      if (pending.status === "VOIDED") {
+        await checkout.cancelVoided(orderID, user.id);
+        throw new CheckoutError("This payment was cancelled. Please start checkout again.");
       }
+      if (pending.status !== "APPROVED" && pending.status !== "COMPLETED") throw new CheckoutError("Please approve the payment in PayPal first.");
+      const address = extractPaypalShippingAddress(pending);
+      if (quote.productType !== "digital" && !address) throw new CheckoutError("Please add a delivery address in PayPal.");
 
-      await db
-        .update(storyProducts)
-        .set({ checkoutAddress, updatedAt: new Date() })
-        .where(eq(storyProducts.storyId, storyId));
+      // Reservation commits before the external capture. An ambiguous timeout
+      // keeps the use reserved; retrying this order resumes the same payment.
+      await checkout.reserve(orderID, user.id);
+      const receipt = pending.status === "COMPLETED" ? pending : await paypalCaptureOrder(orderID);
+      const capture = receipt?.purchase_units?.[0]?.payments?.captures?.[0];
+      if (receipt?.status !== "COMPLETED" || capture?.status !== "COMPLETED" ||
+          Math.round(Number(capture?.amount?.value) * 100) !== quote.amountCents ||
+          capture?.amount?.currency_code !== quote.currency) {
+        throw new CheckoutError("PayPal has not confirmed this payment yet. Please retry this checkout.");
+      }
+      payment = await checkout.complete(orderID, user.id, extractPaypalShippingAddress(receipt) ?? address);
     }
 
-    const [storyRow] = await db
-      .select({ paymentStatus: stories.paymentStatus })
-      .from(stories)
-      .where(eq(stories.id, storyId))
-      .limit(1);
-
-    const alreadyPaid = storyRow?.paymentStatus === "paid";
-
-    if (alreadyPaid) {
-      await db
-        .update(stories)
-        .set({ paymentId: orderID, updatedAt: new Date() })
-        .where(eq(stories.id, storyId));
-    } else {
-      await db
-        .update(stories)
-        .set({
-          paymentStatus: "paid",
-          paymentId: promoCode
-            ? `promo:${promoCode.trim().toUpperCase()}:${orderID}`
-            : orderID,
-          status: "generating",
-          updatedAt: new Date(),
-        })
-        .where(eq(stories.id, storyId));
-
-      await inngest.send({
-        name: "story/generate-spreads", // hyphens: "generate.spreads" (dots) had no listener
-        data: { storyId },
-      });
-    }
-
-    // Persist promo usage now that payment is confirmed
-    if (promo) {
-      await db
-        .update(promoCodes)
-        .set({
-          currentUses: sql`${promoCodes.currentUses} + 1`,
-          updatedAt: new Date(),
-        })
-        .where(eq(promoCodes.id, promo.id));
-    }
-
-    const payerEmail = receipt?.payer?.email_address;
-    const amountValue = receipt?.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value;
-    const currency = receipt?.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.currency_code;
-    const distinctId = payerEmail ?? storyId;
-
-    await captureServerEvent(distinctId, "payment_captured", {
-      story_id: storyId,
-      paypal_order_id: orderID,
-      product_type: productType,
-      is_upgrade: alreadyPaid,
-      amount: amountValue ? parseFloat(amountValue) : undefined,
-      currency,
-      payer_email: payerEmail,
-      promo_code: promoCode ?? undefined,
+    // Stable event ID makes a retry after an Inngest outage safe.
+    if (!payment.isUpgrade) await inngest.send({
+      id: `checkout-${payment.id}`, name: "story/generate-spreads",
+      data: { storyId: payment.storyId },
     });
+    if (quote.status !== "paid") await captureServerEvent(user.id, "payment_captured", {
+      story_id: payment.storyId, paypal_order_id: orderID,
+      product_type: payment.productType, is_upgrade: payment.isUpgrade,
+      amount: payment.amountCents / 100, currency: payment.currency,
+      promo_code: payment.promoCode ?? undefined,
+    }).catch(error => console.error("Payment analytics failed:", error));
 
-    return NextResponse.json({
-      success: true,
-      storyId,
-      orderID,
-      productType,
-      isUpgrade: alreadyPaid,
-    });
+    return NextResponse.json({ success: true, storyId: payment.storyId, orderID, productType: payment.productType, isUpgrade: payment.isUpgrade });
   } catch (err: any) {
     console.error("[PayPal capture] error:", err);
-    return NextResponse.json(
-      { error: err?.message ?? "Failed to capture PayPal order" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err?.message ?? "Failed to capture payment. Please retry." }, { status: err instanceof CheckoutError ? 400 : 500 });
   }
 }
-
 export const POST = withAlerts("api/paypal/capture", withAccess({ login: true }, _POST), { severity: "critical" });
