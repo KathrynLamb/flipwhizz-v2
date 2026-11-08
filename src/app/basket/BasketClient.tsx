@@ -1,7 +1,9 @@
+// src/app/basket/BasketClient.tsx
 "use client";
 
 // src/app/basket/BasketClient.tsx
 
+import ChristmasDeliveryNotice, { confirmChristmasDelivery } from "@/components/ChristmasDeliveryNotice";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -18,6 +20,7 @@ type BasketStory = {
   readerName: string | null;
   length: number | null;
   productType: string;
+  bookType: string;
   currency: string;
   estimatedPrice: number; // cents
 };
@@ -107,6 +110,9 @@ export default function BasketClient({ stories }: { stories: BasketStory[] }) {
 
   async function handleFreeCheckout() {
     if (!isFreeOrder || !promoState?.valid) return;
+    for (const story of selectedStories) {
+      if (!confirmChristmasDelivery(story.productType, story.bookType)) return;
+    }
     setProcessing(true);
     try {
       const res = await fetch("/api/basket/claim-free", {
@@ -287,6 +293,11 @@ export default function BasketClient({ stories }: { stories: BasketStory[] }) {
               </motion.div>
             );
           })}
+
+          {selectedStories.map(story => <div key={`delivery-${story.id}`}>
+            <p className="mt-4 text-sm font-semibold text-[#30213c]">{story.title}</p>
+            <ChristmasDeliveryNotice productType={story.productType} bookType={story.bookType} digitalHref={`/stories/${story.id}/checkout?edition=digital`} />
+          </div>)}
 
           {/* Promo + Summary card */}
           <motion.div
