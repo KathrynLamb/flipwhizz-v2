@@ -1,204 +1,38 @@
 // src/app/api/basket/claim-free/route.ts
-//
-// Unlocks multiple stories at once with a single free promo code.
-// Called from the basket page when all stories resolve to free.
-
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { stories, storyProducts, promoCodes, projects } from "@/db/schema";
-import { and, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { CheckoutError, createCheckoutStore } from "@/lib/checkout/store";
 import { inngest } from "@/inngest/client";
-import {
-  resolvePromoDiscount,
-  getPriceCents,
-  applyDiscount,
-  getPromoUnusableReason,
-  type ProductType,
-  type CurrencyCode,
-} from "@/lib/pricing";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { withAlerts } from "@/lib/alerts";
-import { getAuthUser, withAccess } from "@/lib/authz";
+import { getAuthUser, owns, withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const VALID_PRODUCTS: ProductType[] = ["digital", "print", "gift"];
-
+const checkout = createCheckoutStore(db);
 async function _POST(req: NextRequest) {
   try {
-    // withAccess has already required a signed-in user.
     const user = await getAuthUser();
     if (!user) return NextResponse.json({ error: "Please sign in to continue." }, { status: 401 });
-
-    const body = await req.json();
-    const { storyIds, promoCode } = body ?? {};
-
-    if (!promoCode || typeof promoCode !== "string") {
-      return NextResponse.json({ error: "Promo code required" }, { status: 400 });
-    }
-
-    if (!Array.isArray(storyIds) || storyIds.length === 0) {
-      return NextResponse.json({ error: "No stories provided" }, { status: 400 });
-    }
-
-    /* ---------- VALIDATE PROMO ONCE ---------- */
-    const [promo] = await db
-      .select()
-      .from(promoCodes)
-      .where(sql`LOWER(${promoCodes.code}) = LOWER(${promoCode.trim()})`)
-      .limit(1);
-
-    if (!promo) {
-      return NextResponse.json({ error: "Invalid or inactive promo code" }, { status: 400 });
-    }
-
-    const unusable = getPromoUnusableReason(promo);
-    if (unusable) {
-      return NextResponse.json({ error: unusable }, { status: 400 });
-    }
-
-    /* ---------- PROCESS EACH STORY ---------- */
+    const { storyIds, promoCode } = await req.json();
+    if (typeof promoCode !== "string" || !promoCode.trim()) throw new CheckoutError("Promo code required.");
+    if (!Array.isArray(storyIds) || !storyIds.length || storyIds.length > 100 || storyIds.some(id => typeof id !== "string")) throw new CheckoutError("Choose between 1 and 100 stories.");
     const results: { storyId: string; success: boolean; error?: string }[] = [];
-
-    for (const storyId of storyIds) {
+    for (const storyId of new Set<string>(storyIds)) {
       try {
-        // Only the signed-in user's own stories can be unlocked
-        const [owned] = await db
-          .select({ userId: projects.userId })
-          .from(stories)
-          .innerJoin(projects, eq(stories.projectId, projects.id))
-          .where(eq(stories.id, storyId))
-          .limit(1);
-
-        if (!owned || (owned.userId !== user.id && !user.isAdmin)) {
-          results.push({ storyId, success: false, error: "Story not found" });
-          continue;
-        }
-
-        const storyProduct = await db.query.storyProducts.findFirst({
-          where: eq(storyProducts.storyId, storyId),
-        });
-
-        if (!storyProduct) {
-          results.push({ storyId, success: false, error: "No product selected" });
-          continue;
-        }
-
-        const productType = (storyProduct.productType ?? "digital") as ProductType;
-        if (!VALID_PRODUCTS.includes(productType)) {
-          results.push({ storyId, success: false, error: "Invalid product type" });
-          continue;
-        }
-
-        const formatStory = await db.query.stories.findFirst({ where: eq(stories.id, storyId) });
-        const currency = (storyProduct.currency ?? "GBP") as CurrencyCode;
-        const discount = resolvePromoDiscount(promo, productType as ProductType, currency, formatStory?.bookType);
-        const originalCents = getPriceCents(productType, currency, formatStory?.bookType);
-        const finalCents = applyDiscount(originalCents, discount.discountPercent, discount.isFree);
-
-        if (finalCents !== 0) {
-          results.push({ storyId, success: false, error: "Code does not make this product free" });
-          continue;
-        }
-
-        // Check already paid
-        const [storyRow] = await db
-          .select({ paymentStatus: stories.paymentStatus })
-          .from(stories)
-          .where(eq(stories.id, storyId))
-          .limit(1);
-
-        if (storyRow?.paymentStatus === "paid") {
-          results.push({ storyId, success: false, error: "Already paid" });
-          continue;
-        }
-
-        // Reserve a promo use atomically (fails once the limit is reached,
-        // even with concurrent requests)
-        const reserved = await db
-          .update(promoCodes)
-          .set({
-            currentUses: sql`${promoCodes.currentUses} + 1`,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(promoCodes.id, promo.id),
-              or(isNull(promoCodes.maxUses), lt(promoCodes.currentUses, promoCodes.maxUses))
-            )
-          )
-          .returning({ id: promoCodes.id });
-
-        if (reserved.length === 0) {
-          results.push({ storyId, success: false, error: "Promo code usage limit reached" });
-          continue;
-        }
-
-        // Mark paid (only if not already paid)
-        const marked = await db
-          .update(stories)
-          .set({
-            paymentStatus: "paid",
-            paymentId: `promo:${promo.code}`,
-            status: "generating",
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(stories.id, storyId),
-              or(isNull(stories.paymentStatus), ne(stories.paymentStatus, "paid"))
-            )
-          )
-          .returning({ id: stories.id });
-
-        if (marked.length === 0) {
-          await db
-            .update(promoCodes)
-            .set({ currentUses: sql`${promoCodes.currentUses} - 1`, updatedAt: new Date() })
-            .where(eq(promoCodes.id, promo.id));
-          results.push({ storyId, success: false, error: "Already paid" });
-          continue;
-        }
-
-        // Fire generation
-        await inngest.send({
-          name: "story/generate-spreads",
-          data: { storyId },
-        });
-
-        await captureServerEvent(storyId, "free_story_claimed", {
-          story_id: storyId,
-          product_type: productType,
-          promo_code: promo.code,
-          currency,
-          via: "basket",
-        });
-
+        if (!user.isAdmin && !(await owns("story", storyId, user.id))) throw new CheckoutError("Story not found.");
+        const result = await checkout.claimFree(storyId, user.id, promoCode, user.isAdmin);
+        if (result.payment) await inngest.send({ id: `checkout-${result.payment.id}`, name: "story/generate-spreads", data: { storyId } });
+        if (!result.alreadyPaid && result.payment) await captureServerEvent(user.id, "free_story_claimed", {
+          story_id: storyId, product_type: result.payment.productType,
+          promo_code: result.payment.promoCode, currency: result.payment.currency, via: "basket",
+        }).catch(error => console.error("Basket analytics failed:", error));
         results.push({ storyId, success: true });
-
-      } catch (err: any) {
-        results.push({ storyId, success: false, error: err?.message ?? "Unknown error" });
-      }
+      } catch (err: any) { results.push({ storyId, success: false, error: err?.message ?? "Unable to claim book." }); }
     }
-
-    // Promo uses were reserved per story above
-    const successCount = results.filter(r => r.success).length;
-
-    return NextResponse.json({
-      success: true,
-      results,
-      claimed: successCount,
-      failed: results.filter(r => !r.success).length,
-    });
-
+    return NextResponse.json({ success: true, results, claimed: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length });
   } catch (err: any) {
-    console.error("[Basket claim-free] error:", err);
-    return NextResponse.json(
-      { error: err?.message ?? "Failed to process basket" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err?.message ?? "Failed to process basket." }, { status: err instanceof CheckoutError ? 400 : 500 });
   }
 }
-
 export const POST = withAlerts("api/basket/claim-free", withAccess({ login: true }, _POST), { severity: "critical" });
