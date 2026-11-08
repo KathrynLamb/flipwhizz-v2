@@ -1,3 +1,4 @@
+// src/app/page.tsx
 // Editorial homepage: broad story ideas, real books and a mobile-first path into chat.
 
 import { Suspense } from "react";
@@ -16,6 +17,7 @@ import HomeFaq from "@/components/home/HomeFaq";
 import { HOME_FAQS } from "@/content/homeFaqs";
 import { BOOKS } from "@/content/homeBooks";
 import { starterHref } from "@/lib/chatStarter";
+import { CHRISTMAS } from "@/lib/christmas";
 import { getPriceCents, formatPrice, countryToCurrency } from "@/lib/pricing";
 import "./home.css";
 
@@ -122,6 +124,7 @@ export default async function Home() {
           <p className="fw-kicker fw-kicker-dots"><span aria-hidden="true"><i /><i /><i /><i /></span>Your ideas. An illustrated book.</p>
           <h1 id="opening-title">There’s a<br />book in <em className="fw-rainbow-word"><span>t</span><span>h</span><span>a</span><span>t</span><span>.</span></em></h1>
           <p className="fw-intro">A family story. A small discovery. Something completely made up. Tell us your idea; we’ll help you turn it into a book.</p>
+          {CHRISTMAS.enabled && <p className="fw-small"><Link href="/christmas" className="fw-text-link">A Christmas book starring your child, written by you ↗</Link></p>}
           <div id="start-story"><Suspense fallback={<p>Loading your story chat…</p>}><CreateDemoClient embedded /></Suspense></div>
         </div>
         <div className="fw-opening-art">

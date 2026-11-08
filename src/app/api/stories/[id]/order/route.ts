@@ -1,3 +1,5 @@
+// src/app/api/stories/[id]/order/route.ts
+import { promoFromPaymentId } from "@/lib/checkout/store";
 export const maxDuration = 300;
 import { submitColouringOrder } from "@/lib/lulu/order";
 // src/app/api/stories/[id]/order/route.ts
@@ -90,6 +92,7 @@ async function _POST(
       storyId,
       userId,
       paymentId: story.paymentId,
+      promoCode: promoFromPaymentId(story.paymentId),
       paymentStatus: story.paymentStatus ?? "pending",
       amount: String(storyProduct?.estimatedPrice ?? 0),
       currency: storyProduct?.currency ?? "GBP",
@@ -220,11 +223,12 @@ async function _POST(
        6. Send confirmation email (non-blocking)
     -------------------------------------------------- */
     if (shippingAddress.email) {
-      sendOrderConfirmation({
+      await sendOrderConfirmation({
         to: shippingAddress.email,
         childName: story.title ?? "your child",
         storyTitle: story.title ?? "Your FlipWhizz Story",
         productType: printSpec.productType,
+        bookType: story.bookType,
         gelatoOrderId: result.id,
         shippingAddress: {
           firstName: shippingAddress.firstName,

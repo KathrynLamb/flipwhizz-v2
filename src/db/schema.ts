@@ -1,3 +1,4 @@
+// src/db/schema.ts
 import type { BookType } from "@/lib/books/bookType";
 import {
   pgTable,
@@ -1164,3 +1165,24 @@ export const bookCopies = pgTable("book_copies", {
     .notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const checkoutPayments = pgTable("checkout_payments", {
+  id: text("id").primaryKey(),
+  storyId: uuid("story_id").notNull().references(() => stories.id),
+  userId: text("user_id").notNull(),
+  productType: text("product_type").notNull(),
+  bookType: text("book_type").notNull(),
+  currency: text("currency").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  promoId: uuid("promo_id").references(() => promoCodes.id),
+  promoCode: text("promo_code"),
+  isUpgrade: boolean("is_upgrade").notNull().default(false),
+  status: text("status").notNull().default("created"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+}, (t) => ({
+  promoUser: index("checkout_payments_promo_user_idx").on(t.promoId, t.userId, t.status),
+  story: index("checkout_payments_story_idx").on(t.storyId),
+}));
+

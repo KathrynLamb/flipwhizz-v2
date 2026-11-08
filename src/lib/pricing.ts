@@ -158,7 +158,7 @@ export function getPromoUnusableReason(
 ): string | null {
   if (!promo.active) return "Promo code is no longer active.";
   if (promo.startsAt && now < promo.startsAt) return "Promo code is not yet active.";
-  if (promo.expiresAt && now > promo.expiresAt) return "Promo code has expired.";
+  if (promo.expiresAt && now >= promo.expiresAt) return "Promo code has expired.";
   if (promo.maxUses !== null && promo.currentUses >= promo.maxUses) {
     return "Promo code has been fully redeemed.";
   }

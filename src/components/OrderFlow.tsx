@@ -1,5 +1,7 @@
+// src/components/OrderFlow.tsx
 'use client';
 
+import ChristmasDeliveryNotice, { confirmChristmasPrintOrder } from "@/components/ChristmasDeliveryNotice";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -136,6 +138,7 @@ export default function OrderFlowClient({
       return;
     }
 
+    if (!(await confirmChristmasPrintOrder(storyId))) return;
     setIsSubmitting(true);
     try {
       const res = await fetch('/api/orders/create', {
@@ -600,6 +603,8 @@ export default function OrderFlowClient({
                         onChange={(v) => setShippingAddress({ ...shippingAddress, phone: v })}
                       />
                     </div>
+
+                    <div className="px-6"><ChristmasDeliveryNotice storyId={storyId} productType="print" digitalHref={`/stories/${storyId}/print`} /></div>
 
                     {/* Submit */}
                     <div

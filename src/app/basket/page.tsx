@@ -37,6 +37,7 @@ export default async function BasketPage() {
       readerId: true,
       completedSteps: true,
       length: true,
+      bookType: true,
     },
     orderBy: (s, { desc }) => desc(s.createdAt),
   });
@@ -77,6 +78,7 @@ export default async function BasketPage() {
     coverSpreadUrl: s.coverSpreadUrl,
     readerName: s.readerId ? (readerMap[s.readerId] ?? null) : null,
     length: s.length,
+    bookType: s.bookType,
     productType: productMap[s.id]?.productType ?? "digital",
     currency: productMap[s.id]?.currency ?? "GBP",
     estimatedPrice: productMap[s.id]?.estimatedPrice ?? 1400,

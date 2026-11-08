@@ -1,3 +1,6 @@
+// src/lib/lulu/order.ts
+import { promoFromPaymentId } from "@/lib/checkout/store";
+import { sendOrderConfirmation } from "@/lib/emails/sendOrderConfirmation";
 import { shippingOptionsPayload, selectShippingLevel } from "./shipping";
 import { getAuthUser } from "@/lib/authz";
 import { readProofQuote, requireProofConfiguration } from "./proof";
@@ -34,7 +37,7 @@ export async function submitColouringOrder(storyId: string, address: ShippingAdd
     if (existing) return { reused: true as const, order: existing, story };
     const project = await tx.query.projects.findFirst({ where: eq(projects.id, story.projectId) });
     if (!project?.userId) throw new Error("Book owner not found");
-    const [order] = await tx.insert(orders).values({ id: randomUUID(), storyId, userId: project.userId, paymentId: story.paymentId, paymentStatus: "paid", amount: String((product.estimatedPrice ?? 0) / 100), currency: product.currency ?? "GBP", shippingAddress: address, storyProductId: product.id, printProvider: "lulu", status: "preparing" }).returning();
+    const [order] = await tx.insert(orders).values({ id: randomUUID(), storyId, userId: project.userId, paymentId: story.paymentId, promoCode: promoFromPaymentId(story.paymentId), paymentStatus: "paid", amount: String((product.estimatedPrice ?? 0) / 100), currency: product.currency ?? "GBP", shippingAddress: address, storyProductId: product.id, printProvider: "lulu", status: "preparing" }).returning();
     return { reused: false as const, order, story };
   });
   if (reservation.reused) return { success: true, orderId: reservation.order.id, status: reservation.order.status, provider: "lulu", reused: true };
@@ -60,6 +63,18 @@ export async function submitColouringOrder(storyId: string, address: ShippingAdd
     if (!job.id) throw new Error("Lulu returned no job ID");
     await db.update(orders).set({ providerOrderId: String(job.id), providerStatus: job.status?.name ?? "CREATED", pdfUrl: files.interiorUrl, status: "submitted", submittedAt: new Date(), updatedAt: new Date() }).where(eq(orders.id, reservation.order.id));
     await db.update(stories).set({ orderStatus: "order_submitted", updatedAt: new Date() }).where(eq(stories.id, storyId));
+    if (address.email && !proof) {
+      await sendOrderConfirmation({
+        to: address.email,
+        childName: reservation.story.title ?? "your child",
+        storyTitle: reservation.story.title ?? "Your FlipWhizz Story",
+        productType: "print",
+        bookType: "colouring_storybook",
+        orderedAt: new Date(),
+        gelatoOrderId: String(job.id),
+        shippingAddress: address,
+      }).catch(error => console.error("Lulu confirmation email failed:", error));
+    }
     return { success: true, orderId: reservation.order.id, provider: "lulu", status: "submitted" };
   } catch (e) {
     // A request may have reached Lulu even if its response was lost. Hold for reconciliation.

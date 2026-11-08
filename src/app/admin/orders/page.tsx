@@ -19,6 +19,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   return (
     <>
       <PageHeader title="Orders" subtitle="Test print orders are placed from a book's Overview tab." />
+      <Link href="/admin/orders/promos" className="mb-4 inline-block text-sm text-[#C4B5FD] underline">Orders per promo code</Link>
       <div className="mb-4">
         <FilterLinks base="/admin/orders" current={f} options={[{ value: "all", label: "All" }, { value: "attention", label: "Needs action" }]} />
       </div>
@@ -36,6 +37,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
                 <Link href={`/admin/customers/${o.userId}`} className="hover:text-white">{o.email ?? o.userId}</Link>
                 <span>{o.paymentStatus}{o.amount ? ` · ${o.amount} ${o.currency ?? ""}` : ""}</span>
+                {o.promoCode && <span>Promo: {o.promoCode}</span>}
                 <span>{when(o.createdAt)}</span>
                 {o.gelatoOrderId && <span className="font-mono">{o.gelatoOrderId}</span>}
                 {o.trackingUrl && <a href={o.trackingUrl} target="_blank" className="text-[#C4B5FD]">tracking ↗</a>}

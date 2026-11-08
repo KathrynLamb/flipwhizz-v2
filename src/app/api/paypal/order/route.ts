@@ -1,10 +1,11 @@
+// src/app/api/paypal/order/route.ts
 import { colouringPurchaseError } from "@/lib/lulu/client";
 // src/app/api/paypal/order/route.ts
 
 import { NextResponse } from "next/server";
 import { paypalCreateOrder } from "@/lib/paypal";
 import { db } from "@/db";
-import { stories, storyProducts, promoCodes } from "@/db/schema";
+import { stories, storyProducts, promoCodes, checkoutPayments } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import {
   getPriceCents,
@@ -35,6 +36,8 @@ function normalizeMoney(value: unknown): string | null {
 
 async function _POST(req: Request) {
   try {
+    const user = await getAuthUser();
+    if (!user) return NextResponse.json({ error: "Please sign in to continue." }, { status: 401 });
     const body = await req.json();
     const { storyId, currency: rawCurrency, upgradeFrom, promoCode } = body ?? {};
 
@@ -118,6 +121,7 @@ async function _POST(req: Request) {
     /* --------------------------------------------------
        APPLY PROMO CODE (if provided)
     -------------------------------------------------- */
+    let appliedPromo: typeof promoCodes.$inferSelect | undefined;
     let promoApplied = false;
     let promoLabel = "";
     let discountCents = 0;
@@ -147,6 +151,7 @@ async function _POST(req: Request) {
       discountCents = expectedCents - discountedCents;
       expectedCents = discountedCents;
       promoApplied = true;
+      appliedPromo = promo;
       promoLabel = discount.label;
       // NOTE: do NOT increment currentUses here — that happens in /api/paypal/capture
       // after payment is confirmed, to avoid burning uses on cancelled payments.
@@ -208,6 +213,15 @@ async function _POST(req: Request) {
       amount: canonicalPrice,
       currency,
       shippingPreference,
+    });
+
+    // Immutable server-side quote and promo attribution. No promo use is spent
+    // until the buyer approves payment and capture reserves it.
+    await db.insert(checkoutPayments).values({
+      id: order.id, storyId, userId: user.id, productType,
+      bookType: formatStory?.bookType ?? "storybook", currency,
+      amountCents: expectedCents, promoId: appliedPromo?.id ?? null,
+      promoCode: appliedPromo?.code ?? null, isUpgrade: isUpgrade || formatStory?.paymentStatus === "paid",
     });
 
     return NextResponse.json({

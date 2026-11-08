@@ -1,6 +1,7 @@
 // src/app/stories/[id]/print/PrintPage.tsx
 "use client";
 
+import ChristmasDeliveryNotice, { confirmChristmasDelivery } from "@/components/ChristmasDeliveryNotice";
 import { useState, useCallback, useEffect } from "react";
 import {
   BookOpen, Loader2, Check, Truck, AlertCircle, X, Package,
@@ -239,6 +240,7 @@ export default function PrintPage({ story, order, productType: initialProductTyp
 
   /* ----------------------------- ORDER FLOW -------------------------------- */
   async function handleOrder(address: ShippingAddress) {
+    if (!confirmChristmasDelivery(productType, story.bookType)) return;
     setSavedAddress(address);
     setFlowStatus("processing");
     try {
@@ -297,6 +299,8 @@ export default function PrintPage({ story, order, productType: initialProductTyp
               : "Choose to order a professionally printed copy, or download a print-at-home PDF."}
           </p>
         </motion.div>
+
+        {!hasOrder && <ChristmasDeliveryNotice productType={productType} bookType={story.bookType} digitalHref={`/stories/${story.id}/print`} onChooseDigital={() => { void handleDownloadPDF(); }} />}
 
         {hasOrder && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="mb-6">
@@ -502,6 +506,8 @@ function UpgradeSheet({ bookType, storyId, selectedTier, onSelectTier, onClose, 
           {promoError && <p className="text-[11px] mt-1.5 font-semibold" style={{ color: "#E91E63" }}>{promoError}</p>}
         </div>
 
+        <div className="px-6"><ChristmasDeliveryNotice productType={selectedTier} bookType={bookType} digitalHref={`/stories/${storyId}/print`} onChooseDigital={onClose} /></div>
+
         {/* PayPal or Free Checkout */}
         <div className="px-6 py-5">
           {(processing || savingProduct) && (
@@ -516,6 +522,7 @@ function UpgradeSheet({ bookType, storyId, selectedTier, onSelectTier, onClose, 
           {!processing && !savingProduct && finalCents === 0 ? (
             <button
               onClick={async () => {
+                if (!confirmChristmasDelivery(selectedTier, bookType)) return;
                 setProcessing(true);
                 try {
                   await saveProductSelection(selectedTier);
@@ -549,6 +556,7 @@ function UpgradeSheet({ bookType, storyId, selectedTier, onSelectTier, onClose, 
                 <PayPalButtons
                   key={`${selectedTier}-${currency}-${promoState?.code ?? "none"}`}
                   style={{ layout: "vertical", color: "gold", shape: "rect", label: "pay", height: 48 }}
+                  onClick={(_data, actions) => confirmChristmasDelivery(selectedTier, bookType) ? actions.resolve() : actions.reject()}
                   createOrder={async () => {
                     await saveProductSelection(selectedTier);
                     const res = await fetch("/api/paypal/order", {
