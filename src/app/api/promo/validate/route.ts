@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { promoCodes } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import {
+  getPromoUnusableReason,
   resolvePromoDiscount,
   getPriceCents,
   applyDiscount,
@@ -52,35 +53,8 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!promo.active) {
-      return NextResponse.json(
-        { valid: false, reason: "This code is no longer active" },
-        { status: 200 }
-      );
-    }
-
-    const now = new Date();
-
-    if (promo.startsAt && now < promo.startsAt) {
-      return NextResponse.json(
-        { valid: false, reason: "This code is not yet active" },
-        { status: 200 }
-      );
-    }
-
-    if (promo.expiresAt && now > promo.expiresAt) {
-      return NextResponse.json(
-        { valid: false, reason: "This code has expired" },
-        { status: 200 }
-      );
-    }
-
-    if (promo.maxUses !== null && promo.currentUses >= promo.maxUses) {
-      return NextResponse.json(
-        { valid: false, reason: "This code has been fully redeemed" },
-        { status: 200 }
-      );
-    }
+    const reason = getPromoUnusableReason(promo);
+    if (reason) return NextResponse.json({ valid: false, reason });
 
     // Calculate discount for requested product
     const discount = resolvePromoDiscount(promo, productType as ProductType, cur, bookType === "colouring_storybook" ? bookType : "storybook");
