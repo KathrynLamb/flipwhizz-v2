@@ -1,4 +1,5 @@
 // src/app/api/orders/create/route.ts
+import { promoFromPaymentId } from "@/lib/checkout/store";
 export const maxDuration = 300;
 import { sendOrderConfirmation } from "@/lib/emails/sendOrderConfirmation";
 import { submitColouringOrder } from "@/lib/lulu/order";
@@ -106,6 +107,7 @@ async function _POST(req: Request) {
       storyId,
       userId,
       paymentId: story.paymentId ?? null,
+      promoCode: promoFromPaymentId(story.paymentId),
       paymentStatus: "paid",
       amount: orderAmount,
       currency: "GBP",
