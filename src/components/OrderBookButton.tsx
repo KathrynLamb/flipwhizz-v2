@@ -1,5 +1,7 @@
+// src/components/OrderBookButton.tsx
 "use client";
 
+import ChristmasDeliveryNotice, { confirmChristmasPrintOrder } from "@/components/ChristmasDeliveryNotice";
 import { useState } from "react";
 import {
   Loader2,
@@ -477,6 +479,7 @@ export default function OrderBookButton({ storyId }: { storyId: string }) {
   const [savedAddress, setSavedAddress] = useState<ShippingAddress | null>(null);
 
   async function handleOrder(address: ShippingAddress) {
+    if (!(await confirmChristmasPrintOrder(storyId))) return;
     setSavedAddress(address);
     setStatus("processing");
 
@@ -522,6 +525,7 @@ export default function OrderBookButton({ storyId }: { storyId: string }) {
 
   return (
     <>
+      <ChristmasDeliveryNotice storyId={storyId} productType="print" digitalHref={`/stories/${storyId}/print`} />
       {/* Order Book button */}
       <button
         onClick={() => setStatus("address")}
