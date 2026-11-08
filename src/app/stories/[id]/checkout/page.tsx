@@ -1,6 +1,7 @@
 // src/app/stories/[id]/checkout/page.tsx
 'use client';
 
+import ChristmasDeliveryNotice, { confirmChristmasDelivery } from "@/components/ChristmasDeliveryNotice";
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
@@ -212,7 +213,12 @@ export default function CheckoutPage() {
           return;
         }
     
-        if (productRes.ok && productData?.productSelected && productData?.productType && allowed.includes(productData.productType)) {
+        const digitalRequested = new URLSearchParams(window.location.search).get("edition") === "digital";
+        if (digitalRequested && allowed.includes("digital")) {
+          const initial = geoCurrency ?? "GBP";
+          setCurrency(initial);
+          await saveProductSelection("digital", initial);
+        } else if (productRes.ok && productData?.productSelected && productData?.productType && allowed.includes(productData.productType)) {
           setSelectedTier(productData.productType as TierKey);
           const savedCurrency =
             productData.currency && productData.currency in CURRENCIES
@@ -314,6 +320,7 @@ export default function CheckoutPage() {
 
   async function handleFreeCheckout() {
     if (!promoState?.valid || !promoState.isFree) return;
+    if (!confirmChristmasDelivery(selectedTier, isColouring ? "colouring_storybook" : "storybook")) return;
     setProcessing(true);
     try {
       await saveProductSelection(selectedTier, currency);
@@ -560,6 +567,8 @@ export default function CheckoutPage() {
                     </p>
                   </div>
 
+                  <ChristmasDeliveryNotice productType={selectedTier} bookType={isColouring ? "colouring_storybook" : "storybook"} digitalHref={`/stories/${storyId}/checkout?edition=digital`} onChooseDigital={() => { void handleTierChange("digital"); }} />
+
                   {/* Promo code */}
                   <PromoCodeInput
                     promoInput={promoInput}
@@ -602,6 +611,7 @@ export default function CheckoutPage() {
                       <PayPalButtons
                         key={`${selectedTier}-${currency}-${promoState?.code ?? 'none'}`}
                         style={{ layout: 'vertical', color: 'gold', shape: 'rect', label: 'pay', height: 48 }}
+                        onClick={(_data, actions) => confirmChristmasDelivery(selectedTier, isColouring ? "colouring_storybook" : "storybook") ? actions.resolve() : actions.reject()}
                         createOrder={async () => {
                           await saveProductSelection(selectedTier, currency);
                           const res = await fetch('/api/paypal/order', {
