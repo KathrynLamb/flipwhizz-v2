@@ -494,7 +494,7 @@ export async function searchCustomers(q: string): Promise<CustomerRow[]> {
   }));
 }
 
-export type OrderRow = BookOrder & { storyId: string; title: string | null; email: string | null; userId: string; pdfUrl: string | null; trackingCode: string | null; updatedAt: string | null };
+export type OrderRow = BookOrder & { promoCode: string | null; storyId: string; title: string | null; email: string | null; userId: string; pdfUrl: string | null; trackingCode: string | null; updatedAt: string | null };
 
 export type OrderFilter = "all" | "attention";
 
@@ -524,6 +524,7 @@ export async function listOrders(opts: { filter?: OrderFilter; userId?: string; 
     email: o.email,
     status: o.status,
     paymentStatus: o.payment_status,
+    promoCode: o.promo_code,
     amount: o.amount,
     currency: o.currency,
     gelatoOrderId: o.gelato_order_id,
