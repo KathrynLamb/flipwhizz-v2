@@ -1,148 +1,24 @@
 // src/app/api/paypal/capture-free/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { stories, orders, promoCodes, storyProducts } from "@/db/schema";
-import { and, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
-import {
-  computeCheckoutCents,
-  getPromoUnusableReason,
-  type CurrencyCode,
-  type ProductType,
-} from "@/lib/pricing";
+import { CheckoutError, createCheckoutStore } from "@/lib/checkout/store";
 import { inngest } from "@/inngest/client";
 import { withAlerts } from "@/lib/alerts";
 import { getAuthUser, withAccess } from "@/lib/authz";
 
+const checkout = createCheckoutStore(db);
 async function _POST(req: NextRequest) {
   try {
-    // withAccess has already checked sign-in and story ownership.
     const user = await getAuthUser();
     if (!user) return NextResponse.json({ error: "Please sign in to continue." }, { status: 401 });
-
     const { storyId, promoCode } = await req.json();
-
-    if (!storyId) {
-      return NextResponse.json({ error: "Missing storyId" }, { status: 400 });
-    }
-
-    if (!promoCode || typeof promoCode !== "string") {
-      return NextResponse.json({ error: "Missing promoCode" }, { status: 400 });
-    }
-
-    // Check story isn't already paid
-    const [storyRow] = await db
-      .select({ paymentStatus: stories.paymentStatus, bookType: stories.bookType })
-      .from(stories)
-      .where(eq(stories.id, storyId))
-      .limit(1);
-
-    if (storyRow?.paymentStatus === "paid") {
-      return NextResponse.json({ success: true, alreadyPaid: true });
-    }
-
-    // The promo must be real, currently usable, and make this product free
-    const [promo] = await db
-      .select()
-      .from(promoCodes)
-      .where(sql`LOWER(${promoCodes.code}) = LOWER(${promoCode.trim()})`)
-      .limit(1);
-
-    const unusable = promo ? getPromoUnusableReason(promo) : "Invalid promo code.";
-    if (unusable) {
-      return NextResponse.json({ error: unusable }, { status: 400 });
-    }
-
-    const storyProduct = await db.query.storyProducts.findFirst({
-      where: eq(storyProducts.storyId, storyId),
-    });
-    const productType = storyProduct?.productType as ProductType | undefined;
-
-    if (!productType || !["digital", "print", "gift"].includes(productType)) {
-      return NextResponse.json({ error: "No product selected" }, { status: 400 });
-    }
-
-    const currency = (storyProduct?.currency ?? "GBP") as CurrencyCode;
-    if (computeCheckoutCents(productType, currency, { promo, bookType: storyRow?.bookType }) !== 0) {
-      return NextResponse.json(
-        { error: "This promo code does not make this product free." },
-        { status: 400 }
-      );
-    }
-
-    // Reserve a promo use atomically so concurrent claims can't exceed maxUses
-    const reserved = await db
-      .update(promoCodes)
-      .set({
-        currentUses: sql`${promoCodes.currentUses} + 1`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(promoCodes.id, promo!.id),
-          or(isNull(promoCodes.maxUses), lt(promoCodes.currentUses, promoCodes.maxUses))
-        )
-      )
-      .returning({ id: promoCodes.id });
-
-    if (reserved.length === 0) {
-      return NextResponse.json({ error: "Promo code has been fully redeemed." }, { status: 400 });
-    }
-
-    // Mark story as paid, write promo code into paymentId for order page detection
-    const marked = await db
-      .update(stories)
-      .set({
-        paymentStatus: "paid",
-        paymentId: `promo:${promo!.code.toUpperCase()}`,
-        status: "generating",
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(stories.id, storyId),
-          or(isNull(stories.paymentStatus), ne(stories.paymentStatus, "paid"))
-        )
-      )
-      .returning({ id: stories.id });
-
-    if (marked.length === 0) {
-      // Paid concurrently — give the promo use back
-      await db
-        .update(promoCodes)
-        .set({ currentUses: sql`${promoCodes.currentUses} - 1`, updatedAt: new Date() })
-        .where(eq(promoCodes.id, promo!.id));
-      return NextResponse.json({ success: true, alreadyPaid: true });
-    }
-
-    // Insert free order record
-    await db.insert(orders).values({
-      id: `free-${storyId}-${Date.now()}`,
-      storyId,
-      userId: user.id,
-      paymentStatus: "paid",
-      amount: "0",
-      currency: "GBP",
-      status: "confirmed",
-      submittedAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    // Fire generation
-    await inngest.send({
-      name: "story/generate-spreads", // hyphens: "generate.spreads" (dots) had no listener
-      data: { storyId },
-    });
-
-    return NextResponse.json({ success: true });
+    if (typeof storyId !== "string" || typeof promoCode !== "string" || !promoCode.trim()) throw new CheckoutError("Choose a story and enter a promo code.");
+    const result = await checkout.claimFree(storyId, user.id, promoCode, user.isAdmin);
+    if (result.payment) await inngest.send({ id: `checkout-${result.payment.id}`, name: "story/generate-spreads", data: { storyId } });
+    return NextResponse.json({ success: true, alreadyPaid: result.alreadyPaid });
   } catch (err: any) {
     console.error("[claim-free] Error:", err);
-    return NextResponse.json(
-      { error: err.message || "Failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err?.message ?? "Failed to claim book." }, { status: err instanceof CheckoutError ? 400 : 500 });
   }
 }
-
 export const POST = withAlerts("api/paypal/capture-free", withAccess({ story: { body: "storyId" } }, _POST), { severity: "critical" });
