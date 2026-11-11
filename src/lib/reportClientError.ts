@@ -13,7 +13,8 @@ export type ClientErrorKind =
   | "chat_failed"
   | "chat_history_failed"
   | "checkout_failed"
-  | "generation_stalled";
+  | "generation_stalled"
+  | "generation_slow";
 
 // Failures worth interrupting the parent for. Losing old chat history is
 // annoying but doesn't block them, so it only alerts Katy.

@@ -15,6 +15,7 @@ const ALLOWED_KINDS = new Set([
   "chat_history_failed",
   "checkout_failed",
   "generation_stalled",
+  "generation_slow",
   "character_image_failed",
 ]);
 
@@ -38,7 +39,12 @@ export async function POST(req: Request) {
   await sendAlert({
     area: `client/${kind}`,
     title: `User hit ${kind.replace(/_/g, " ")}`,
-    severity: kind === "story_creation_failed" || kind === "checkout_failed" ? "critical" : "error",
+    severity:
+      kind === "story_creation_failed" || kind === "checkout_failed"
+        ? "critical"
+        : kind === "generation_slow"
+        ? "warning"
+        : "error",
     error: str(body.message, 1000) || kind,
     userId,
     projectId: str(body.projectId, 64),

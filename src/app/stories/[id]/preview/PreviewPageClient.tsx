@@ -287,6 +287,8 @@ function GenerationPanel({
   const [buildRetryAt, setBuildRetryAt] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollStartRef = useRef<{ id: string; t: number } | null>(null);
+  const slowReportedRef = useRef(false);
+  const [slow, setSlow] = useState(false);
 
   useEffect(() => {
     if (!buildRetryAt) return;
@@ -314,16 +316,30 @@ function GenerationPanel({
   useEffect(() => {
     if (!jobId || (status !== "queued" && status !== "generating")) return;
 
-    // Give up after 9 minutes (each spread is drawn, checked, fixed and lettered): a failed Inngest job never reports "error"
+    // Each spread is drawn, checked, fixed and lettered, and the first one also draws
+    // reference sheets, so 10-15 minutes is slow but normal. After 9 minutes we tell
+    // the parent it's still going (and warn Katy quietly) but keep waiting. Only after
+    // 25 minutes do we treat it as stuck: a failed Inngest job never reports "error"
     // here, so without a limit the user would watch the spinner forever.
-    if (pollStartRef.current?.id !== jobId) pollStartRef.current = { id: jobId, t: Date.now() };
+    if (pollStartRef.current?.id !== jobId) {
+      pollStartRef.current = { id: jobId, t: Date.now() };
+      slowReportedRef.current = false;
+      setSlow(false);
+    }
     pollRef.current = setInterval(async () => {
-      if (pollStartRef.current && Date.now() - pollStartRef.current.t > 9 * 60 * 1000) {
+      const elapsed = pollStartRef.current ? Date.now() - pollStartRef.current.t : 0;
+      if (elapsed > 25 * 60 * 1000) {
         if (pollRef.current) clearInterval(pollRef.current);
+        setSlow(false);
         setStatus("error");
         setError("Your illustration is taking longer than it should. We've been alerted, so please try again in a few minutes.");
-        reportClientError("generation_stalled", { storyId, message: `Preview job ${jobId} still generating after 9 minutes` });
+        reportClientError("generation_stalled", { storyId, message: `Preview job ${jobId} still generating after 25 minutes` });
         return;
+      }
+      if (elapsed > 9 * 60 * 1000 && !slowReportedRef.current) {
+        slowReportedRef.current = true;
+        setSlow(true);
+        reportClientError("generation_slow", { storyId, message: `Preview job ${jobId} still generating after 9 minutes (still waiting)` });
       }
       try {
         const res = await fetch(`/api/inngest/job-status/${jobId}`);
@@ -513,6 +529,8 @@ function GenerationPanel({
                       ? "Preparing your story — will retry automatically…"
                       : status === "queued"
                       ? "Queued for generation…"
+                      : slow
+                      ? "Taking a little longer than usual. It's still going, no need to retry."
                       : "Illustrating your spread…"}
                   </p>
                   <div className="flex gap-1 mt-1">
