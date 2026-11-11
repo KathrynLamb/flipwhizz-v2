@@ -15,6 +15,7 @@ const ALLOWED_KINDS = new Set([
   "chat_history_failed",
   "checkout_failed",
   "generation_stalled",
+  "character_image_failed",
 ]);
 
 export async function POST(req: Request) {
@@ -46,6 +47,8 @@ export async function POST(req: Request) {
       page: str(body.page, 300),
       status: typeof body.status === "number" ? body.status : null,
       user_email: session.user?.email ?? null,
+      character_id: str(body.characterId, 64),
+      action: str(body.action, 100),
     },
   });
 

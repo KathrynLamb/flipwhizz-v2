@@ -6,10 +6,11 @@
 //
 // withAlerts() wraps an API route handler: if the handler throws or returns
 // a 5xx, an alert is sent and the user gets a calm JSON error instead of a
-// crash.
+// crash. The raw error text never reaches the customer.
 
 import { NextResponse } from "next/server";
 import { captureServerEvent } from "@/lib/posthog-server";
+import { FRIENDLY_BUSY_MESSAGE, FRIENDLY_RETRY_MESSAGE, isBillingOrQuotaError } from "@/lib/userErrors";
 
 export type AlertSeverity = "critical" | "error" | "warning";
 
@@ -51,9 +52,16 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export async function sendAlert(input: AlertInput): Promise<void> {
+export async function sendAlert(rawInput: AlertInput): Promise<void> {
+  const { message, stack } = errorDetails(rawInput.error);
+
+  // Billing / quota problems block every customer, so they always go out as
+  // critical with a clear subject, whatever the caller asked for.
+  const billing = isBillingOrQuotaError(message);
+  const input: AlertInput = billing
+    ? { ...rawInput, severity: "critical", title: `BILLING/QUOTA BLOCKED: ${rawInput.title}` }
+    : rawInput;
   const severity = input.severity ?? "error";
-  const { message, stack } = errorDetails(input.error);
 
   try {
     console.error(`🚨 [alert:${severity}] ${input.area}: ${input.title}`, message, input.context ?? "");
@@ -138,8 +146,8 @@ const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 async function extractIds(
   path: string | undefined,
   reqClone: Request | null,
-): Promise<{ userId?: string; storyId?: string; projectId?: string }> {
-  const out: { userId?: string; storyId?: string; projectId?: string } = {};
+): Promise<{ userId?: string; storyId?: string; projectId?: string; characterId?: string }> {
+  const out: { userId?: string; storyId?: string; projectId?: string; characterId?: string } = {};
   const storyMatch = path?.match(/\/stories\/([0-9a-f-]{36})/i);
   if (storyMatch) out.storyId = storyMatch[1];
   if (reqClone) {
@@ -149,6 +157,7 @@ async function extractIds(
         ["projectId", "projectId"],
         ["storyId", "storyId"],
         ["userId", "userId"],
+        ["characterId", "characterId"],
       ] as const) {
         const v = body?.[k];
         if (typeof v === "string" && UUID_RE.test(v)) out[field] = v;
@@ -160,8 +169,7 @@ async function extractIds(
   return out;
 }
 
-const FRIENDLY_ERROR =
-  "Something went wrong on our side. We've been notified and will look into it.";
+const FRIENDLY_ERROR = FRIENDLY_RETRY_MESSAGE;
 
 /**
  * Wrap a route handler so failures alert you and degrade gracefully.
@@ -209,26 +217,34 @@ export function withAlerts<A extends unknown[]>(
         } catch {
           /* not json */
         }
+        const { characterId, ...alertIds } = await ids();
+        const rawError = (parsed?.error as string) || body || `HTTP ${res.status}`;
         await sendAlert({
-          ...(await ids()),
+          ...alertIds,
           area,
           title: `${res.status} from ${area}`,
           severity: opts.severity,
-          error: (parsed?.error as string) || body || `HTTP ${res.status}`,
-          context: { path, status: res.status, response: parsed ?? body },
+          error: rawError,
+          context: { path, status: res.status, characterId: characterId ?? null, response: parsed ?? body },
         });
+        // The real error went to Katy. The customer gets a calm message.
+        const friendly = isBillingOrQuotaError(rawError) ? FRIENDLY_BUSY_MESSAGE : FRIENDLY_ERROR;
+        const safeBody = parsed && typeof parsed === "object" ? { ...parsed, error: friendly } : { error: friendly };
+        return NextResponse.json(safeBody, { status: res.status });
       }
       return res;
     } catch (err) {
+      const { characterId, ...alertIds } = await ids();
       await sendAlert({
-        ...(await ids()),
+        ...alertIds,
         area,
         title: `Unhandled error in ${area}`,
         severity: opts.severity ?? "critical",
         error: err,
-        context: { path },
+        context: { path, characterId: characterId ?? null },
       });
-      return NextResponse.json({ error: FRIENDLY_ERROR }, { status: 500 });
+      const friendly = isBillingOrQuotaError(err) ? FRIENDLY_BUSY_MESSAGE : FRIENDLY_ERROR;
+      return NextResponse.json({ error: friendly }, { status: 500 });
     }
   };
 }

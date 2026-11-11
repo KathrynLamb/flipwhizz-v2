@@ -14,6 +14,7 @@ import {
 import { eq, desc, and } from "drizzle-orm";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { withAccess } from "@/lib/authz";
+import { withAlerts } from "@/lib/alerts";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -1038,4 +1039,7 @@ Do not drift into a generic face and do not make it photorealistic.`,
   }
 }
 
-export const POST = withAccess({ character: { body: "characterId" } }, _POST);
+export const POST = withAccess(
+  { character: { body: "characterId" } },
+  withAlerts("api/characters/use-ai-image", _POST),
+);

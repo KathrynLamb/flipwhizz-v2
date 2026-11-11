@@ -9,6 +9,7 @@ import type { StepKey } from '@/lib/storySteps';
 import { hasPortrait, isAppearanceApproved, isCastReady } from '@/lib/characters/readiness';
 import CharactersCard from './components/CharacterCard';
 import GroupPhotoModal from './components/GroupPhotoModal';
+import { friendlyMessage } from '@/lib/userErrors';
 
 export type CharacterOutfit = { id: string; outfitKey: string; outfitDescription: string; triggerConditions: string | null };
 export type Character = {
@@ -116,7 +117,7 @@ export default function CharactersClient({ storyId, storyTitle = 'Your story', c
       if (!res.ok) throw new Error(data.error || 'Could not save your approvals. Please try again.');
       router.push(`/stories/${storyId}/locations`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Please try again.');
+      setError(friendlyMessage(err));
       setConfirming(false); router.refresh();
     }
   }
