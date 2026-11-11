@@ -26,6 +26,7 @@
 // Everything fails soft: on any error the spread or cover still generates
 // the way it did before.
 
+import { hasUserEditedTraits, PARENT_TEXT_WINS } from "@/lib/characters/userEdits";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
@@ -300,7 +301,9 @@ export async function getCastSheet(storyId: string): Promise<CastSheet | null> {
         try {
           parts.push(await imagePart(c.referenceImageUrl, MAX_REF_PX));
           parts.push({
-            text: `↑ REAL PHOTO of ${c.name.toUpperCase()} (id ${c.id}). Source of truth for face, hair, skin and build.`,
+            text: hasUserEditedTraits(c.visualDetails)
+              ? `↑ REAL PHOTO of ${c.name.toUpperCase()} (id ${c.id}). Source of truth for face shape and build only. ${PARENT_TEXT_WINS}`
+              : `↑ REAL PHOTO of ${c.name.toUpperCase()} (id ${c.id}). Source of truth for face, hair, skin and build.`,
           });
           imagesSent++;
         } catch {
@@ -328,7 +331,7 @@ export async function getCastSheet(storyId: string): Promise<CastSheet | null> {
           `NAME: ${c.name}`,
           `KIND: ${kind}`,
           `ROLE: ${c.role ?? "unknown"}`,
-          `APPEARANCE: ${clean(c.appearance) || "(none)"}`,
+          `APPEARANCE: ${clean(c.appearance) || "(none)"}${hasUserEditedTraits(c.visualDetails) ? " [PARENT-CONFIRMED: beats the photo for every trait it states]" : ""}`,
           `DESCRIPTION: ${clean(c.description) || "(none)"}`,
           `DEFAULT OUTFIT: ${clean(c.defaultOutfit) || "(none given)"}`,
         ].join("\n");
@@ -353,7 +356,7 @@ For EACH character write ONE dense line (max ~70 words) covering:
 For animals: species/breed, size against the children (e.g. "comes up to Talia's knee"), coat colour, pattern, markings.
 
 Rules:
-- A REAL PHOTO is the source of truth for everything it shows. Never contradict it.
+- A REAL PHOTO is the source of truth for everything it shows. Never contradict it, EXCEPT: if an APPEARANCE is marked PARENT-CONFIRMED, it wins over the photo for every trait it states (hair colour, eye colour, skin tone, hair length). Copy those traits from the written APPEARANCE exactly.
 - An illustrated portrait shows the outfit and art style. Use it only for things the photo does not show.
 - OUTFIT: if a DEFAULT OUTFIT is given, use it. Otherwise describe EXACTLY the clothes, colours and head covering in the illustrated portrait. If the written APPEARANCE or DESCRIPTION mentions different clothes (e.g. "wears dresses" but the portrait shows trousers), IGNORE the written clothes. The portrait is how this character is drawn throughout the book.
 - HAIR: copy the length from the picture; if the hair runs out of frame, say it continues beyond the shoulders rather than guessing shorter.

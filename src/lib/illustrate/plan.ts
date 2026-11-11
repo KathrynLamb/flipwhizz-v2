@@ -14,6 +14,7 @@ export type CastRef = {
   sheetUrl: string | null; // reference sheet (face + full body)
   cardUrl: string | null; // character card portrait
   photoUrl: string | null; // real reference photo
+  parentEdited?: boolean; // parent corrected the written appearance; it beats the photo
 };
 
 export type InspectedPerson = {

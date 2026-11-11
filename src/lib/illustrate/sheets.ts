@@ -15,6 +15,7 @@
 //    people in it (drawn before the cards were final) were leaking into
 //    pages. Cached on story_style_guide.style_plate_url / style_plate_from.
 
+import { hasUserEditedTraits, PARENT_TEXT_WINS } from "@/lib/characters/userEdits";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { characters, storyCharacters, storyStyleGuide } from "@/db/schema";
@@ -78,6 +79,7 @@ export async function ensureReferenceSheet(
 
     const NAME = c.name.toUpperCase();
     const isAnimal = !!c.species && c.species !== "human";
+    const parentEdited = !isAnimal && hasUserEditedTraits(c.visualDetails);
     const parts: any[] = [];
     const photoParts: any[] = [];
 
@@ -89,7 +91,9 @@ export async function ensureReferenceSheet(
     if (usable(c.referenceImageUrl)) {
       const img = await urlToPart(c.referenceImageUrl, 1024);
       const label = {
-        text: `↑ REAL PHOTO of ${NAME}: the actual ${isAnimal ? "animal" : "person"}. Match the face, ${isAnimal ? "coat colour and markings" : "hair colour, length and texture, skin tone"} and build, rendered in the book's illustration style. ↑`,
+        text: parentEdited
+          ? `↑ REAL PHOTO of ${NAME}: the actual person. Match the face and build, rendered in the book's illustration style. ${PARENT_TEXT_WINS} ↑`
+          : `↑ REAL PHOTO of ${NAME}: the actual ${isAnimal ? "animal" : "person"}. Match the face, ${isAnimal ? "coat colour and markings" : "hair colour, length and texture, skin tone"} and build, rendered in the book's illustration style. ↑`,
       };
       parts.push(img, label);
       photoParts.push(img, label);
@@ -113,7 +117,9 @@ Two panels side by side on a plain white background with a clear white gap betwe
 - RIGHT panel: the same ${isAnimal ? "animal" : "person"} full length from the top of the head to the ${isAnimal ? "paws and tail" : "feet"}, standing, facing the viewer, ${isAnimal ? "" : "arms relaxed, "}hair shown at its full length.
 Both panels show the SAME single ${isAnimal ? "animal" : "person"} with identical ${isAnimal ? "coat and accessories" : "clothes and head covering"}. Correct proportions for their age and size.
 ${line ? `Details: ${line}` : ""}
-Where the card and the photo disagree: clothes and colours come from the card; ${isAnimal ? "coat and markings" : "face, hair and skin tone"} come from the photo.
+${parentEdited
+  ? `Where the card and the photo disagree: clothes, colours, hair and skin tone come from the card and the Details above; only the face shape comes from the photo.`
+  : `Where the card and the photo disagree: clothes and colours come from the card; ${isAnimal ? "coat and markings" : "face, hair and skin tone"} come from the photo.`}
 No text, labels, captions, borders, other people or props beyond what they wear or always carry.`,
     });
 
@@ -223,5 +229,6 @@ export async function loadCast(
       sheetUrl: currentSheetUrl(r!, storyId),
       cardUrl: usable(r!.portraitImageUrl) ? r!.portraitImageUrl : null,
       photoUrl: usable(r!.referenceImageUrl) ? r!.referenceImageUrl : null,
+      parentEdited: hasUserEditedTraits(r!.visualDetails),
     }));
 }

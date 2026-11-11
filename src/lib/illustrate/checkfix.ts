@@ -12,6 +12,7 @@
 // Every function takes and returns image Buffers; uploads happen in the
 // Inngest steps that call these.
 
+import { PARENT_TEXT_WINS } from "@/lib/characters/userEdits";
 import { generateImage, generateJson } from "./gemini";
 import { box2dToPx, planCrop, judgeLettering, isValidBox2d, type Box2d, type TextBlock, type TextVerdict, type CropPlan } from "./geometry";
 import { normaliseReport, type CastRef, type CropFix, type InspectReport } from "./plan";
@@ -91,7 +92,7 @@ async function refParts(c: CastRef): Promise<{ parts: any[]; photoParts: any[] }
   if (c.photoUrl) {
     try {
       const img = await urlToPart(c.photoUrl, 1024);
-      const label = { text: `↑ REAL PHOTO of ${NAME}: the actual ${kindOf(c)} the book is about. Match this likeness, in the book's illustration style (never photorealistic). ↑` };
+      const label = { text: `↑ REAL PHOTO of ${NAME}: the actual ${kindOf(c)} the book is about. Match this likeness, in the book's illustration style (never photorealistic).${c.parentEdited ? ` ${PARENT_TEXT_WINS} The reference sheet above already shows the corrected look.` : ""} ↑` };
       parts.push(img, label);
       photoParts.push(img, label);
     } catch {}
