@@ -7,6 +7,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Sparkles, Check, Loader2, Camera, Pencil, RefreshCw, User, ChevronDown } from 'lucide-react';
 import type { Character } from '../CharactersClient';
 import { hasPortrait } from '@/lib/characters/readiness';
+import { friendlyMessage, looksTechnical, reportClientError } from '@/lib/userErrors';
 
 export default function CharacterCard({ character, storyId, onUpdate, disabled = false, generating = false,
   externalError, onBusyChange, bookType,
@@ -43,7 +44,13 @@ export default function CharacterCard({ character, storyId, onUpdate, disabled =
     if (busy || actionRunning.current) return;
     actionRunning.current = true; setAction(label); setError(null); onBusyChange?.(character.id, true);
     try { await work(); onUpdate?.(); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Please try again.'); onUpdate?.(); }
+    catch (err) {
+      // Raw technical errors go to Katy, never to the customer.
+      const raw = err instanceof Error ? err.message : String(err ?? '');
+      if (looksTechnical(raw)) reportClientError('character_image_failed', { error: err, storyId, characterId: character.id, action: label });
+      setError(friendlyMessage(err));
+      onUpdate?.();
+    }
     finally { setAction(null); actionRunning.current = false; onBusyChange?.(character.id, false); }
   }
   async function generate() {
@@ -84,7 +91,7 @@ export default function CharacterCard({ character, storyId, onUpdate, disabled =
     setAction('Creating appearance…');
     await generate();
   }
-  const shownError = error || externalError;
+  const shownError = error || (externalError ? friendlyMessage(externalError) : null);
   const fieldClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-[#7655A3] focus:ring-2 focus:ring-[#7655A3]/15';
   return <article aria-label={character.name} aria-busy={Boolean(action) || generating} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
     <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
