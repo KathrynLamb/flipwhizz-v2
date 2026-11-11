@@ -1,7 +1,8 @@
+// src/app/api/characters/upload-reference/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { withAccess } from "@/lib/authz";
 
 async function _POST(req: Request) {
@@ -27,6 +28,8 @@ async function _POST(req: Request) {
       .set({
         referenceImageUrl: imageUrl,
         portraitImageUrl: null,
+        // New photo: let the photo analysis lead again until the user edits the text.
+        visualDetails: sql`coalesce(${characters.visualDetails}, '{}'::jsonb) || '{"userEditedTraits": false}'::jsonb`,
         locked: false,
         lockedAt: null,
         updatedAt: new Date(),

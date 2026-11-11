@@ -1,8 +1,8 @@
-// app/api/characters/[id]/route.ts
+// src/app/api/characters/[id]/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
@@ -37,6 +37,18 @@ async function _PATCH(
       key => body[key] !== undefined && body[key] !== current[key as keyof typeof current]
     );
     if (appearanceChanged) update.portraitImageUrl = null;
+
+    // Track whether the user's own words should beat the photo analysis on regenerate.
+    // A new photo resets it; a text edit to appearance/description sets it.
+    const photoChanged =
+      body.referenceImageUrl !== undefined && body.referenceImageUrl !== current.referenceImageUrl;
+    const textEdited = ['appearance', 'description'].some(
+      key => body[key] !== undefined && body[key] !== current[key as keyof typeof current]
+    );
+    if (photoChanged || textEdited) {
+      const flag = photoChanged ? 'false' : 'true';
+      update.visualDetails = sql`coalesce(${characters.visualDetails}, '{}'::jsonb) || ${`{"userEditedTraits": ${flag}}`}::jsonb`;
+    }
 
     await db
       .update(characters)

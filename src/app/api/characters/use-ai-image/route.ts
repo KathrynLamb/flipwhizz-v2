@@ -1,5 +1,5 @@
-import { outlineReferenceText, referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
 // src/app/api/characters/use-ai-image/route.ts
+import { outlineReferenceText, referenceStyleForBook, referencePromptForBook } from '@/lib/books/referenceStyle';
 import { NextResponse } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
 import { db } from "@/db";
@@ -393,7 +393,20 @@ async function mergeCharacterText(args: {
   photo: PhotoAnalysis;
   outfitMode: OutfitMode;
   defaultOutfit: { outfitKey: string; outfitDescription: string } | null;
+  userEditsWin: boolean;
 }): Promise<MergedCharacterText> {
+  // When the user has edited the text since uploading the photo, their words
+  // are the source of truth for anything they state (e.g. "blonde hair").
+  // The photo still supplies likeness and any trait they did not mention.
+  const sourceOfTruthRules = args.userEditsWin
+    ? `- CURRENT_APPEARANCE and CURRENT_DESCRIPTION were written or corrected by the user. They are the source of truth for every trait they state (hair colour, eye colour, skin tone, age, build, etc).
+- If the photo seems to disagree with the user's text (for example the photo looks ginger but the user wrote blonde), the USER'S TEXT WINS. Lighting and filters often make photos misleading.
+- Use the PHOTO only to add traits the user's text does not mention (face shape, hair length and texture, expression).
+- Never remove or change a trait the user wrote.`
+    : `- The PHOTO is the only source of truth for physical traits: face, hair (colour, LENGTH, texture, style), eyes, skin tone, age and build.
+- CURRENT_APPEARANCE may describe an OLDER photo of this character. Drop every physical trait in it that the new photo contradicts or does not show. Never blend old and new hair, skin or face details.
+- From CURRENT_APPEARANCE keep only details the photo cannot show and does not contradict (for example glasses they always wear, or a story-specific accessory).`;
+
   const response = await gemini.models.generateContent({
     model: TEXT_MODEL,
     contents: [
@@ -456,9 +469,7 @@ DEFAULT_STORY_OUTFIT:
 ${args.defaultOutfit?.outfitDescription ?? ""}
 
 Instructions:
-- The PHOTO is the only source of truth for physical traits: face, hair (colour, LENGTH, texture, style), eyes, skin tone, age and build.
-- CURRENT_APPEARANCE may describe an OLDER photo of this character. Drop every physical trait in it that the new photo contradicts or does not show. Never blend old and new hair, skin or face details.
-- From CURRENT_APPEARANCE keep only details the photo cannot show and does not contradict (for example glasses they always wear, or a story-specific accessory).
+${sourceOfTruthRules}
 - Always state hair length against the body (e.g. "falls to mid-back") and texture (e.g. "soft loose curls"), never just "long hair".
 - Make the result concise, specific, and useful for image generation.
 - If OUTFIT_MODE is "reference", include the clothing from PHOTO_CLOTHING.
@@ -515,6 +526,7 @@ function buildStrongPrompt(args: {
   isAnimal: boolean;
   useStoryOutfit: boolean;
   defaultOutfit: { outfitKey: string; outfitDescription: string } | null;
+  userEditsWin?: boolean;
 }) {
   const traits = args.personalityTraits
     ? `PERSONALITY:\n${args.personalityTraits}\n`
@@ -551,7 +563,12 @@ function buildStrongPrompt(args: {
 - Stay very close to the reference person's recognisable traits while rendering them as a storybook illustration
 - Do not drift to a generic face
 - Keep the result stylised, painterly, and non-photorealistic
-`;
+${
+  args.userEditsWin
+    ? `- IMPORTANT: The APPEARANCE CANON above was confirmed by the parent and OVERRIDES the photo for colours. If the canon says blonde hair, draw blonde hair even if the photo looks red, ginger or brown. Same for eye colour and skin tone.
+`
+    : ""
+}`;
     }
   }
 
@@ -782,6 +799,10 @@ async function _POST(req: Request) {
     const hasReference = !!character.referenceImageUrl;
     const useStoryOutfit = !hasReference || outfitMode === "story" || outfitMode === undefined;
 
+    // Set by PATCH /api/characters/[id] when the user edits appearance/description,
+    // cleared when a new reference photo is uploaded.
+    const userEditsWin = !!(character.visualDetails as Record<string, any> | null)?.userEditedTraits;
+
     let photoAnalysis: PhotoAnalysis | null = null;
     let resolvedAppearance = compactSentence(character.appearance);
     let resolvedDescription = compactSentence(character.description);
@@ -852,6 +873,7 @@ async function _POST(req: Request) {
               photo: photoAnalysis,
               outfitMode,
               defaultOutfit,
+              userEditsWin,
             });
 
             resolvedAppearance = merged.appearance;
@@ -887,6 +909,7 @@ async function _POST(req: Request) {
       isAnimal,
       useStoryOutfit,
       defaultOutfit,
+      userEditsWin,
     });
 
     const textOnlyFallbackPrompt = buildStrongPrompt({
@@ -900,6 +923,7 @@ async function _POST(req: Request) {
       isAnimal,
       useStoryOutfit,
       defaultOutfit,
+      userEditsWin,
     });
 
     // ── Build parts ──
