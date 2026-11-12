@@ -7,10 +7,11 @@
 // - generateJson: vision/structured calls with model fallback.
 
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { trackedGemini, withGeminiLabel } from "@/lib/geminiUsage";
 import { NonRetriableError } from "inngest";
 import { FALLBACK_IMAGE_MODEL, VISION_MODELS } from "./models";
 
-const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const client = trackedGemini("lib/illustrate/gemini", { apiKey: process.env.GEMINI_API_KEY! });
 
 const SAFETY = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
@@ -121,7 +122,7 @@ export async function generateImage(args: GenerateImageArgs): Promise<{ data: Bu
   const { aspectRatio, imageSize = "2K", label } = args;
 
   const call = async (model: string, parts: any[]) =>
-    client.models.generateContent({
+    withGeminiLabel(label, () => client.models.generateContent({
       model,
       contents: [{ role: "user", parts }],
       config: {
@@ -129,7 +130,7 @@ export async function generateImage(args: GenerateImageArgs): Promise<{ data: Bu
         imageConfig: { aspectRatio, imageSize },
         safetySettings: SAFETY,
       } as any,
-    });
+    }));
 
   let model = rejectedModels.has(args.model) ? FALLBACK_IMAGE_MODEL : args.model;
   let parts = args.parts;
@@ -201,12 +202,12 @@ export async function generateJson<T>(parts: any[], label: string): Promise<T> {
   for (const model of VISION_MODELS) {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const res = await client.models.generateContent({
+        const res = await withGeminiLabel(label, () => client.models.generateContent({
           model,
           contents: [{ role: "user", parts }],
           // Google advises keeping Gemini 3's default temperature.
           config: { responseMimeType: "application/json" } as any,
-        });
+        }));
         const parsed = parseJson<T>(responseText(res));
         if (parsed) return parsed;
         last = `unparseable reply from ${model}: ${responseText(res).slice(0, 160)}`;

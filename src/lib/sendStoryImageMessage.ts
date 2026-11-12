@@ -1,6 +1,6 @@
-import { GoogleGenAI } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 
-const client = new GoogleGenAI({
+const client = trackedGemini("lib/sendStoryImageMessage", {
   apiKey: process.env.GEMINI_API_KEY!,
   apiVersion: "v1alpha",
 });

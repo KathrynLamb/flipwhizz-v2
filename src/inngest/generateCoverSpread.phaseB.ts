@@ -5,6 +5,7 @@
 
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 import { db } from "@/db";
 import {
   stories,
@@ -52,7 +53,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
-const gemini = new GoogleGenAI({
+const gemini = trackedGemini("inngest/generateCoverSpread.phaseB", {
   apiKey: process.env.GEMINI_API_KEY!,
   apiVersion: "v1alpha",
 });

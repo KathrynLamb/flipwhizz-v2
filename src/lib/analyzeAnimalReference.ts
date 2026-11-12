@@ -4,12 +4,12 @@
 // this runs Gemini Vision to extract structured animal details
 // that produce much better illustration fidelity than text-only descriptions.
 
-import { GoogleGenAI } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const client = trackedGemini("lib/analyzeAnimalReference", { apiKey: process.env.GEMINI_API_KEY! });
 
 export interface AnimalProfile {
   breed: string;

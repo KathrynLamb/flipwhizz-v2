@@ -26,6 +26,7 @@ import { COLOUR_COVER_STYLE } from "@/lib/books/bookType";
 import { finishAdminAction } from "@/lib/admin/finish";
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 import { db } from "@/db";
 import {
   stories,
@@ -76,7 +77,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
-const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const gemini = trackedGemini("inngest/generateCoverSpread.v5", { apiKey: process.env.GEMINI_API_KEY! });
 const IMAGE_MODEL = "gemini-3-pro-image";
 const LOGO_PATH = path.resolve(process.cwd(), "public", "Flipwhizz_logo_NEW.png");
 const COVER_TEMPLATE_PATH = path.resolve(process.cwd(), "public", "templates", "spread-text-safe-template.png");

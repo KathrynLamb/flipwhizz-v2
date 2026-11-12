@@ -11,7 +11,7 @@ import { v4 as uuid } from "uuid";
 import { db } from "@/db";
 import { locations, storyLocations, storyStyleGuide, stories } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { GoogleGenAI } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 import { withAccess } from "@/lib/authz";
 
 cloudinary.config({
@@ -20,7 +20,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
-const gemini = new GoogleGenAI({
+const gemini = trackedGemini("app/api/locations/use-ai-image/route", {
   apiKey: process.env.GEMINI_API_KEY!,
   apiVersion: "v1alpha",
 });

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { withAccess } from "@/lib/authz";
 
 export const maxDuration = 60;
-const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const client = trackedGemini("app/api/style/analyze/route", { apiKey: process.env.GEMINI_API_KEY! });
 
 /* ------------------------------------------------------------
    Helpers

@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -18,7 +19,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const gemini = trackedGemini("lib/characters/generatePortrait", { apiKey: process.env.GEMINI_API_KEY! });
 const IMAGE_MODEL = "gemini-3-pro-image";
 const TEXT_MODEL = "gemini-2.5-flash";
 
