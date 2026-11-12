@@ -19,7 +19,7 @@ import { hasUserEditedTraits, PARENT_TEXT_WINS } from "@/lib/characters/userEdit
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { characters, storyCharacters, storyStyleGuide } from "@/db/schema";
-import { generateImage } from "./gemini";
+import { generateImage, rethrowIfBilling } from "./gemini";
 import { fetchImage, toPart, upload, urlToPart } from "./images";
 import { artModel, type ArtModelKey } from "./models";
 import type { CastRef } from "./plan";
@@ -142,6 +142,8 @@ No text, labels, captions, borders, other people or props beyond what they wear 
     console.log(`🧾 Reference sheet for ${c.name}: ${url}`);
     return url;
   } catch (err) {
+    // Billing outage: fail the run. Returning null would draw the book without its sheets.
+    rethrowIfBilling(err, "reference-sheet");
     console.warn(`⚠️ Reference sheet failed for ${characterId}:`, err);
     return null;
   }
@@ -178,6 +180,9 @@ export async function ensureStylePlate(storyId: string, modelKey?: ArtModelKey):
     console.log(`🎨 Style plate for ${storyId}: ${url}`);
     return { url, clean: true };
   } catch (err) {
+    // Billing outage: fail the run. Falling back here would also remember the
+    // fallback forever, so the book would never get its clean style plate.
+    rethrowIfBilling(err, "style-plate");
     console.warn("⚠️ Style plate failed; using the style sample as-is:", err);
     try {
       await db.update(storyStyleGuide).set({ stylePlateUrl: null, stylePlateFrom: `${from}|fallback` }).where(eq(storyStyleGuide.id, style.id));
