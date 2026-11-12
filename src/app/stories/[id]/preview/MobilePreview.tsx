@@ -212,7 +212,7 @@ export default function MobilePreview({
         reportClientError("generation_slow", { storyId, message: `Preview job ${jobId} still generating after 9 minutes (still waiting)` });
       }
       try {
-        const res = await fetch(`/api/inngest/job-status/${jobId}`);
+        const res = await fetch(`/api/inngest/job-status/${jobId}?since=${pollStartRef.current?.t ?? 0}`);
         if (!res.ok) return;
         const data = await res.json();
         setStatus(data.status);
@@ -220,7 +220,7 @@ export default function MobilePreview({
         if (data.status === "done" || data.status === "error") {
           if (pollRef.current) clearInterval(pollRef.current);
           if (data.status === "error") {
-            setError("Generation failed — try again.");
+            setError("Sorry, this picture didn't work on our side. We've been notified, so please try again.");
             openSupportChat(
               { kind: "generation_failed", storyId, message: `Preview job ${jobId} returned status "error"` },
               { auto: true },
