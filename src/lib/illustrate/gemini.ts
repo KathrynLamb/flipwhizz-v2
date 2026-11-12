@@ -7,6 +7,7 @@
 // - generateJson: vision/structured calls with model fallback.
 
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { NonRetriableError } from "inngest";
 import { FALLBACK_IMAGE_MODEL, VISION_MODELS } from "./models";
 
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
@@ -33,13 +34,42 @@ function isModelRejected(err: unknown): boolean {
   return status === 404 || /models\/[^ ]+ is not found|not[_ ]found for api version|unknown model|model .*does not exist/.test(s);
 }
 
+/**
+ * The Gemini account itself can't pay: prepaid credits depleted, billing
+ * disabled, payment required. Retrying can't fix this; only a top-up can.
+ * Every customer is blocked until then, so callers must fail fast and loud.
+ */
+export function isBillingBlocked(err: unknown): boolean {
+  const s = errText(err).toLowerCase();
+  const status = (err as any)?.status ?? (err as any)?.code;
+  return (
+    Number(status) === 402 ||
+    /"code"\s*:\s*402|prepayment credits|credits are depleted|billing (?:is )?(?:not enabled|disabled)|payment required|outstanding balance/.test(s)
+  );
+}
+
+/** Fail the Inngest run now, with no retries, so a billing outage costs one alert per run. */
+export function billingError(err: unknown, label: string): NonRetriableError {
+  return new NonRetriableError(`[${label}] Gemini billing blocked (top up at https://ai.studio/projects): ${errText(err).slice(0, 300)}`, {
+    cause: err,
+  });
+}
+
+/** Use inside catch blocks that otherwise swallow errors: never hide a billing outage. */
+export function rethrowIfBilling(err: unknown, label = "gemini"): void {
+  if (err instanceof NonRetriableError) throw err;
+  if (isBillingBlocked(err)) throw billingError(err, label);
+}
+
 export function isRateLimited(err: unknown): boolean {
+  if (isBillingBlocked(err)) return false;
   const s = errText(err).toLowerCase();
   const status = (err as any)?.status ?? (err as any)?.code;
   return Number(status) === 429 || /resource_exhausted|rate limit|quota/.test(s);
 }
 
 function isTransient(err: unknown): boolean {
+  if (isBillingBlocked(err)) return false;
   const s = errText(err).toLowerCase();
   const status = (err as any)?.status ?? (err as any)?.code;
   return (
@@ -122,6 +152,7 @@ export async function generateImage(args: GenerateImageArgs): Promise<{ data: Bu
       }
     } catch (err) {
       lastProblem = errText(err);
+      if (isBillingBlocked(err)) throw billingError(err, label);
       if (isModelRejected(err) && model !== FALLBACK_IMAGE_MODEL) {
         console.warn(`🖼️ [${label}] model ${model} rejected (${lastProblem.slice(0, 300)}); falling back to ${FALLBACK_IMAGE_MODEL}`);
         rejectedModels.add(model);
@@ -180,6 +211,7 @@ export async function generateJson<T>(parts: any[], label: string): Promise<T> {
         if (parsed) return parsed;
         last = `unparseable reply from ${model}: ${responseText(res).slice(0, 160)}`;
       } catch (err) {
+        if (isBillingBlocked(err)) throw billingError(err, label);
         last = `${model}: ${errText(err).slice(0, 200)}`;
         if (isModelRejected(err)) break; // next model
       }

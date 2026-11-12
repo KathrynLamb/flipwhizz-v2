@@ -12,7 +12,7 @@
 import { fetchImage, upload, pastePatch } from "./images";
 import { inspectArt, fixCrop, addMissing, letterArt, readText, judge, compositeText } from "./checkfix";
 import { planFixes, wavesOf, type CastRef, type CropFix, type InspectReport } from "./plan";
-import { isRateLimited } from "./gemini";
+import { isRateLimited, rethrowIfBilling } from "./gemini";
 import type { CropPlan, TextVerdict } from "./geometry";
 
 type Step = { run: <T>(id: string, fn: () => Promise<T>) => Promise<any> };
@@ -74,6 +74,7 @@ export async function checkAndFix(
         const art = await fetchImage(artUrl);
         return { report: await inspectArt({ art, cast: o.cast, expectedIds: o.expectedIds, sceneHint: o.sceneHint }) };
       } catch (e) {
+        rethrowIfBilling(e);
         return { error: msg(e) };
       }
     });
@@ -127,6 +128,7 @@ export async function checkAndFix(
           });
           return { url: await upload(out.art, o.folder) };
         } catch (e) {
+          rethrowIfBilling(e);
           return { error: msg(e) };
         }
       });
@@ -154,6 +156,7 @@ export async function checkAndFix(
               const out = await fixCrop({ art, fix, cast: o.cast, model: o.modelId, styleBlock: o.styleBlock, preserveText: o.preserveText });
               return { patchUrl: await upload(out.patch, `${o.folder}/patches`), plan: out.plan, fix, grow: out.grow };
             } catch (e) {
+              rethrowIfBilling(e);
               // Rate limited: let Inngest retry this step with its own backoff.
               if (isRateLimited(e)) throw e;
               console.warn(`⚠️ ${o.prefix} fix ${fix.kind} failed: ${msg(e)}`);
@@ -216,6 +219,7 @@ export async function letterAndCheck(
         const out = await letterArt({ art, leftText: o.leftText, rightText: o.rightText, typography: o.typography, aspectRatio: o.aspectRatio, imageSize: o.imageSize, feedback });
         return { url: await upload(out, o.folder) };
       } catch (e) {
+        rethrowIfBilling(e);
         return { error: msg(e) };
       }
     });
@@ -229,6 +233,7 @@ export async function letterAndCheck(
         const blocks = await readText(await fetchImage(lettered.url!));
         return { blocks, verdict: judge(blocks, o.leftText, o.rightText) };
       } catch (e) {
+        rethrowIfBilling(e);
         return { error: msg(e) };
       }
     });
@@ -246,6 +251,7 @@ export async function letterAndCheck(
           const out = await compositeText(await fetchImage(o.artUrl), await fetchImage(lettered.url!), checked.blocks as any);
           return { url: await upload(out, o.folder) };
         } catch (e) {
+          rethrowIfBilling(e);
           return { error: msg(e) };
         }
       });
@@ -274,7 +280,8 @@ export async function letterAndCheck(
       try {
         const out = await compositeText(await fetchImage(o.artUrl), await fetchImage(chosen.url), chosen.blocks as any);
         return { url: await upload(out, o.folder) };
-      } catch {
+      } catch (e) {
+        rethrowIfBilling(e);
         return {};
       }
     });
