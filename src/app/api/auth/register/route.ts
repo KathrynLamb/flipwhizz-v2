@@ -86,6 +86,7 @@ async function _POST(req: Request) {
     resend
       .emails.send({
         from: "FlipWhizz <hello@flipwhizz.com>",
+        replyTo: "katy@flipwhizz.co.uk",
         to: trimmedEmail,
         subject: "Welcome to FlipWhizz! 🎨",
         html: `

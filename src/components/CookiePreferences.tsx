@@ -71,7 +71,7 @@ export default function CookiePreferences({ children }: { children: React.ReactN
       {settings && <div className="my-4 space-y-4 rounded-2xl bg-[#F5EFFA] p-4 text-sm">
         <p className="m-0"><strong>Essential — always on.</strong> Sign-in, checkout and remembering this choice for six months.</p>
         <label className="flex items-start gap-3"><input type="checkbox" className="mt-1 h-5 w-5 accent-[#6836A2]" checked={analytics} onChange={e => setAnalytics(e.target.checked)} /><span><strong>Analytics</strong><br />Page views and product events. No session recordings, story text or photos.</span></label>
-        <label className="flex items-start gap-3"><input type="checkbox" className="mt-1 h-5 w-5 accent-[#6836A2]" checked={chat} onChange={e => setChat(e.target.checked)} /><span><strong>Live chat</strong><br />Loads tawk.to and its cookies to support your conversation. You can also email hello@flipwhizz.com.</span></label>
+        <label className="flex items-start gap-3"><input type="checkbox" className="mt-1 h-5 w-5 accent-[#6836A2]" checked={chat} onChange={e => setChat(e.target.checked)} /><span><strong>Live chat</strong><br />Loads tawk.to and its cookies to support your conversation. You can also email katy@flipwhizz.co.uk.</span></label>
       </div>}
       <div className="flex flex-wrap gap-3">
         <button type="button" className={button} onClick={() => save(true, true)}>Accept all</button>

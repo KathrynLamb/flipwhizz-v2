@@ -67,6 +67,7 @@ async function _POST(req: Request) {
     // 5. Send email via Resend
     await resend.emails.send({
       from: "FlipWhizz <hello@flipwhizz.com>",
+      replyTo: "katy@flipwhizz.co.uk",
       to: email,
       subject: "🎉 Here's your 40% off — thank you for sharing!",
       html: shareRewardEmailHtml({ code, childName }),
