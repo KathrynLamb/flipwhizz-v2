@@ -1,6 +1,6 @@
 // src/inngest/generateCharacterOutfits.ts
 import { inngest } from "./client";
-import { GoogleGenAI } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 import { db } from "@/db";
 import { characterOutfits } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -14,7 +14,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
-const gemini = new GoogleGenAI({
+const gemini = trackedGemini("inngest/generateCharacterOutfits", {
   apiKey: process.env.GEMINI_API_KEY!,
   apiVersion: "v1alpha",
 });

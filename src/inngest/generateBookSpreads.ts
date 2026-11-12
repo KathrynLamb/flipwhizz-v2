@@ -10,6 +10,7 @@
 import { finishAdminAction } from "@/lib/admin/finish";
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 import { eq, inArray, asc, desc, or, sql, and } from "drizzle-orm";
 import {
   storyPages,
@@ -48,7 +49,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
-const client = new GoogleGenAI({
+const client = trackedGemini("inngest/generateBookSpreads", {
   apiKey: process.env.GEMINI_API_KEY!,
   apiVersion: "v1alpha",
 });

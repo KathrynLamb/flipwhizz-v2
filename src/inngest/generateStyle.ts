@@ -1,6 +1,7 @@
 import { requireConfirmedBookType } from "@/lib/books/storyFormat";
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
@@ -16,7 +17,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
-const client = new GoogleGenAI({
+const client = trackedGemini("inngest/generateStyle", {
   apiKey: process.env.GEMINI_API_KEY!,
   apiVersion: "v1alpha",
 });

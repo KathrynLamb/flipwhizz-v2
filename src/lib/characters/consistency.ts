@@ -28,6 +28,7 @@
 
 import { hasUserEditedTraits, PARENT_TEXT_WINS } from "@/lib/characters/userEdits";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
@@ -47,7 +48,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
-const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const gemini = trackedGemini("lib/characters/consistency", { apiKey: process.env.GEMINI_API_KEY! });
 const TEXT_MODEL = "gemini-2.5-flash";
 const IMAGE_MODEL = "gemini-3-pro-image";
 const MAX_SHEET_IMAGES = 40; // flash handles many; 13 characters x 2 pictures fits

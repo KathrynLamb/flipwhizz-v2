@@ -1,7 +1,7 @@
 import { getLinkedStory } from '@/lib/characters/generatePortrait';
 import { outlineReferenceText, referencePromptForBook } from '@/lib/books/referenceStyle';
 import { NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /* ---------------- Gemini (CRITICAL) ---------------- */
-const client = new GoogleGenAI({
+const client = trackedGemini("app/api/characters/[id]/generate-image-gemini/route", {
   apiKey: process.env.GEMINI_API_KEY!,
   apiVersion: "v1alpha", // ✅ REQUIRED
 });

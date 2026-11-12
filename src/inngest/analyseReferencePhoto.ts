@@ -3,9 +3,9 @@ import { inngest } from "@/inngest/client";
 import { db } from "@/db";
 import { characters } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { GoogleGenAI } from "@google/genai";
+import { trackedGemini } from "@/lib/geminiUsage";
 
-const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const gemini = trackedGemini("inngest/analyseReferencePhoto", { apiKey: process.env.GEMINI_API_KEY! });
 const MODEL = "gemini-2.5-flash";
 
 export const analyseReferencePhoto = inngest.createFunction(
