@@ -10,6 +10,7 @@ import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { trackedGemini, withGeminiLabel } from "@/lib/geminiUsage";
 import { NonRetriableError } from "inngest";
 import { FALLBACK_IMAGE_MODEL, VISION_MODELS } from "./models";
+import { isBillingBlocked as isAccountBlocked } from "@/lib/userErrors";
 
 const client = trackedGemini("lib/illustrate/gemini", { apiKey: process.env.GEMINI_API_KEY! });
 
@@ -37,23 +38,20 @@ function isModelRejected(err: unknown): boolean {
 
 /**
  * The Gemini account itself can't pay: prepaid credits depleted, billing
- * disabled, payment required. Retrying can't fix this; only a top-up can.
+ * disabled, or the monthly spending cap reached. Retrying can't fix this.
  * Every customer is blocked until then, so callers must fail fast and loud.
  */
 export function isBillingBlocked(err: unknown): boolean {
-  const s = errText(err).toLowerCase();
-  const status = (err as any)?.status ?? (err as any)?.code;
-  return (
-    Number(status) === 402 ||
-    /"code"\s*:\s*402|prepayment credits|credits are depleted|billing (?:is )?(?:not enabled|disabled)|payment required|outstanding balance/.test(s)
-  );
+  return isAccountBlocked(err);
 }
 
 /** Fail the Inngest run now, with no retries, so a billing outage costs one alert per run. */
 export function billingError(err: unknown, label: string): NonRetriableError {
-  return new NonRetriableError(`[${label}] Gemini billing blocked (top up at https://ai.studio/projects): ${errText(err).slice(0, 300)}`, {
-    cause: err,
-  });
+  if (err instanceof NonRetriableError) return err;
+  return new NonRetriableError(
+    `[${label}] Gemini billing blocked (raise the spend cap or top up at https://ai.studio/spend): ${errText(err).slice(0, 300)}`,
+    { cause: err },
+  );
 }
 
 /** Use inside catch blocks that otherwise swallow errors: never hide a billing outage. */
