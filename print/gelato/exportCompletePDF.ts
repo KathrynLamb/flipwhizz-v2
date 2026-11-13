@@ -193,11 +193,14 @@ export async function exportCompletePDF(
      page to fit.) */
 
   const geo = interiorGeometry(gelatoProductUid, dims);
-  // The picture sits 10mm in from the page edge on the top, bottom and
-  // outer side: after the 3mm bleed is trimmed that's a 7mm white frame,
-  // clear of Gelato's 4mm safe zone and of trimming wobble. At the spine
-  // each page carries 10mm of the other half, so the binding doesn't
-  // swallow the middle of the picture.
+  // The picture sits 10mm in from the page edge at the top and bottom:
+  // after the 3mm bleed is trimmed that's a 7mm white frame, clear of
+  // Gelato's 4mm safe zone and of trimming wobble. The spread is split
+  // exactly in half at the spine, so each page shows only its own half.
+  // (Until Nov 2026 each page also carried 10mm of the other half, which
+  // printed a 20mm strip twice across the fold: stray letters from the
+  // other page's text and doubled hands and furniture.) Keeping the
+  // picture the same size, the outer side gets a 20mm margin.
   const SAFE_MARGIN_MM = 10;
 
   const interiorPageSize = geo.pageW; // 206mm for 20x20cm
@@ -379,14 +382,15 @@ export async function exportCompletePDF(
     display: block;
   }
 
-  /* Left page shows left half of the spread, inset from all edges */
+  /* Left page: the left half of the spread, its middle exactly on the
+     spine edge, so nothing of the right half shows. */
   .page.left img {
-    left: ${SAFE_MARGIN_MM}mm;
+    left: ${interiorPageSize - insetPageWidth}mm;
   }
 
-  /* Right page shows right half of the spread, also inset */
+  /* Right page: the right half, its middle exactly on the spine edge. */
   .page.right img {
-    left: -${insetPageWidth - SAFE_MARGIN_MM}mm;
+    left: -${insetPageWidth}mm;
   }
 
   /* Optional debug guides: uncomment if needed

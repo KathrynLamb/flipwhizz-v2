@@ -10,7 +10,10 @@
 //   shrink to fit.
 // 3: Gelato's exact sizes (206mm pages: 200mm trim plus 3mm bleed), pictures
 //   at full resolution.
-// PDFs made before the number was saved are all older than 3.
-export const PDF_LAYOUT = 3;
+// 4 (13 Nov 2026): spreads split exactly at the spine. Before, each page
+//   carried 10mm of the other half, so a strip printed twice across the fold
+//   (stray letters from the other page's text).
+// PDFs made before the number was saved are all older than 4.
+export const PDF_LAYOUT = 4;
 
 export const isOldLayout = (layout: unknown): boolean => !(Number(layout) >= PDF_LAYOUT);
