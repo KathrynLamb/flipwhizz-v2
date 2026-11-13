@@ -4,6 +4,11 @@
 // "system_alert" event, and emails Katy. It never throws, so it is always
 // safe to call from a catch block.
 //
+// Billing / quota alerts are different: they block every customer at once,
+// so dozens fire together. Those go to the "system/billing-blocked" Inngest
+// event, and src/inngest/billingBlockedAlert.ts sends ONE email per hour
+// across all servers, listing the books that need a re-run.
+//
 // withAlerts() wraps an API route handler: if the handler throws or returns
 // a 5xx, an alert is sent and the user gets a calm JSON error instead of a
 // crash. The raw error text never reaches the customer.
@@ -11,6 +16,9 @@
 import { NextResponse } from "next/server";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { FRIENDLY_BUSY_MESSAGE, FRIENDLY_RETRY_MESSAGE, isBillingOrQuotaError } from "@/lib/userErrors";
+import { inngest } from "@/inngest/client";
+
+export const BILLING_BLOCKED_EVENT = "system/billing-blocked";
 
 export type AlertSeverity = "critical" | "error" | "warning";
 
@@ -83,6 +91,43 @@ export async function sendAlert(rawInput: AlertInput): Promise<void> {
   } catch (err) {
     console.error("[alerts] PostHog capture failed:", err);
   }
+
+  // Billing / quota: one rate-limited email for the whole outage, not one
+  // per failed job. Falls back to a direct email if Inngest can't be reached.
+  if (billing) {
+    try {
+      await inngest.send({
+        name: BILLING_BLOCKED_EVENT,
+        data: {
+          area: input.area,
+          title: rawInput.title,
+          error: message.slice(0, 1000),
+          storyId: input.storyId ?? null,
+          userId: input.userId ?? null,
+        },
+      });
+      return;
+    } catch (err) {
+      console.error("[alerts] Could not queue billing alert, emailing directly:", err);
+    }
+  }
+
+  await emailAlert({ ...input, severity }, { message, stack });
+}
+
+/**
+ * Send the alert email (throttled per area+title, per server instance).
+ * Exported for src/inngest/billingBlockedAlert.ts; everything else should
+ * call sendAlert().
+ */
+export async function emailAlert(
+  input: AlertInput,
+  details?: { message?: string; stack?: string },
+): Promise<void> {
+  const fromError = errorDetails(input.error);
+  const message = details?.message ?? fromError.message;
+  const stack = details?.stack ?? fromError.stack;
+  const severity = input.severity ?? "error";
 
   // Email: throttled per area+title.
   const key = `${input.area}::${input.title}`;

@@ -9,6 +9,13 @@ import type { Character } from '../CharactersClient';
 import { hasPortrait } from '@/lib/characters/readiness';
 import { friendlyMessage, looksTechnical, reportClientError } from '@/lib/userErrors';
 
+/** A failed request, with what we know about why (for the alert email). */
+class RequestError extends Error {
+  constructor(message: string, public status: number | null, public network: boolean, public elapsedMs: number) {
+    super(message);
+  }
+}
+
 export default function CharacterCard({ character, storyId, onUpdate, disabled = false, generating = false,
   externalError, onBusyChange, bookType,
 }: { character: Character; storyId: string; index?: number; onUpdate?: () => void;
@@ -35,9 +42,17 @@ export default function CharacterCard({ character, storyId, onUpdate, disabled =
   }, [character.portraitImageUrl, character.locked]);
 
   async function request(url: string, body: unknown, method = 'POST') {
-    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const started = Date.now();
+    let res: Response;
+    try {
+      res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    } catch (err) {
+      // No response at all: connection dropped, phone locked or tab suspended
+      // mid-request. The server may still finish and save the picture.
+      throw new RequestError(err instanceof Error ? err.message : 'Failed to fetch', null, true, Date.now() - started);
+    }
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(data?.error || 'That didn’t work. Please try again.');
+    if (!res.ok) throw new RequestError(data?.error || 'That didn’t work. Please try again.', res.status, false, Date.now() - started);
     return data;
   }
   async function run(label: string, work: () => Promise<void>) {
@@ -47,8 +62,21 @@ export default function CharacterCard({ character, storyId, onUpdate, disabled =
     catch (err) {
       // Raw technical errors go to Katy, never to the customer.
       const raw = err instanceof Error ? err.message : String(err ?? '');
-      if (looksTechnical(raw)) reportClientError('character_image_failed', { error: err, storyId, characterId: character.id, action: label });
-      setError(friendlyMessage(err));
+      const req = err instanceof RequestError ? err : null;
+      if (req?.network || looksTechnical(raw)) {
+        reportClientError('character_image_failed', {
+          error: err, storyId, characterId: character.id, action: label,
+          status: req?.status ?? null, network: req?.network ?? false, elapsedMs: req?.elapsedMs ?? null,
+        });
+      }
+      if (req?.network) {
+        setError('We lost the connection while drawing. Your picture may still arrive: we’ll check again in a moment.');
+        // The server often finishes anyway; look again once it has had time.
+        window.setTimeout(() => onUpdate?.(), 20000);
+        window.setTimeout(() => onUpdate?.(), 60000);
+      } else {
+        setError(friendlyMessage(err));
+      }
       onUpdate?.();
     }
     finally { setAction(null); actionRunning.current = false; onBusyChange?.(character.id, false); }
