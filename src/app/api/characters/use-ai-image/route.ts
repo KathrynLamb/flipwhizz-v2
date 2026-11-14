@@ -13,7 +13,9 @@ import {
 } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { trackedGemini } from "@/lib/geminiUsage";
+import { trackedGemini, withUsageContext, annotateUsage } from "@/lib/geminiUsage";
+import { generateCardImage } from "@/lib/ai/cardImage";
+import { CHARACTER_CARD_MODEL, CHARACTER_CARD_THINKING } from "@/lib/illustrate/models";
 import { withAccess } from "@/lib/authz";
 import { withAlerts } from "@/lib/alerts";
 
@@ -24,7 +26,7 @@ cloudinary.config({
 });
 
 const gemini = trackedGemini("app/api/characters/use-ai-image/route", { apiKey: process.env.GEMINI_API_KEY! });
-const IMAGE_MODEL = "gemini-3-pro-image";
+const IMAGE_MODEL = CHARACTER_CARD_MODEL;
 const TEXT_MODEL = "gemini-2.5-flash";
 
 type ColorPalette = {
@@ -709,7 +711,7 @@ async function generatePortrait(args: {
   let lastBlockReason = "";
 
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const response = await gemini.models.generateContent({
+    const response = await generateCardImage(gemini, {
       model: IMAGE_MODEL,
       contents: [{ role: "user", parts: args.parts }],
       config: {
@@ -722,10 +724,11 @@ async function generatePortrait(args: {
           { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
         ],
       },
-    });
+    }, CHARACTER_CARD_THINKING);
 
     const candidate = response?.candidates?.[0];
-    const imgPart = candidate?.content?.parts?.find((p: any) => p.inlineData?.data);
+    // Skip interim "thought" images: only the final picture is the card.
+    const imgPart = candidate?.content?.parts?.find((p: any) => p.inlineData?.data && !p.thought);
 
     lastFinishReason = candidate?.finishReason ?? "unknown";
     lastBlockReason = response?.promptFeedback?.blockReason ?? "";
@@ -779,6 +782,7 @@ async function _POST(req: Request) {
     if (!characterId) {
       return NextResponse.json({ error: "Character ID is required" }, { status: 400 });
     }
+    annotateUsage({ entityId: characterId });
 
     const character = await db.query.characters.findFirst({
       where: eq(characters.id, characterId),
@@ -792,6 +796,7 @@ async function _POST(req: Request) {
     const isAnimal = !!(character.species && character.species !== "human");
 
     const linkedStory = await getLinkedStory(characterId);
+    annotateUsage({ storyId: linkedStory?.storyId });
     let defaultOutfit = linkedStory?.storyId
       ? await getDefaultOutfit(linkedStory.storyId, characterId)
       : null;
@@ -1066,5 +1071,9 @@ Do not drift into a generic face and do not make it photorealistic.`,
 
 export const POST = withAccess(
   { character: { body: "characterId" } },
-  withAlerts("api/characters/use-ai-image", _POST),
+  // Every Gemini call in this request (photo checks and the picture itself)
+  // is saved to ai_usage against this character and its story.
+  withAlerts("api/characters/use-ai-image", (req: Request) =>
+    withUsageContext({ kind: "character_card" }, () => _POST(req)),
+  ),
 );

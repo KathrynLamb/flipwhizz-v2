@@ -55,6 +55,28 @@ export const FALLBACK_IMAGE_MODEL = ART_MODELS.pro.id;
 /** Lettering: Pro has the strongest text rendering for paragraphs. */
 export const LETTERING_MODEL = process.env.FW_LETTER_MODEL || ART_MODELS.pro.id;
 
+/**
+ * Reference cards. Nano Banana 2.1 at 1K costs about a quarter of Pro
+ * ($0.034 against $0.134 an image). Set an env var to "gemini-3-pro-image"
+ * to put any one of them back on Pro without a code change.
+ */
+export const CHARACTER_CARD_MODEL = process.env.FW_CHARACTER_CARD_MODEL || ART_MODELS.nb21.id;
+export const FULL_BODY_MODEL = process.env.FW_FULL_BODY_MODEL || ART_MODELS.nb21.id;
+export const LOCATION_CARD_MODEL = process.env.FW_LOCATION_CARD_MODEL || ART_MODELS.nb21.id;
+
+/**
+ * Thinking level per card. Nano Banana 2.1 defaults to "medium", billed at
+ * $7.50 per 1M thinking tokens. Character cards keep that default (likeness
+ * from a photo is the hard part); places and full-body copies use "minimal".
+ * Set the env var to "medium", "high" or "default" to change it.
+ */
+export type CardThinking = "minimal" | "medium" | "high" | "default";
+const thinking = (v: string | undefined, fallback: CardThinking): CardThinking =>
+  v === "minimal" || v === "medium" || v === "high" || v === "default" ? v : fallback;
+export const CHARACTER_CARD_THINKING = thinking(process.env.FW_CHARACTER_CARD_THINKING, "default");
+export const FULL_BODY_THINKING = thinking(process.env.FW_FULL_BODY_THINKING, "minimal");
+export const LOCATION_CARD_THINKING = thinking(process.env.FW_LOCATION_CARD_THINKING, "minimal");
+
 /** Vision (checking, boxes, reading text). Tried in order. */
 export const VISION_MODELS: string[] = [
   process.env.FW_VISION_MODEL || "gemini-3.8-flash",

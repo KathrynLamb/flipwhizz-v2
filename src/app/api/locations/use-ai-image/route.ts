@@ -11,8 +11,11 @@ import { v4 as uuid } from "uuid";
 import { db } from "@/db";
 import { locations, storyLocations, storyStyleGuide, stories } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { trackedGemini } from "@/lib/geminiUsage";
+import { trackedGemini, withUsageContext, annotateUsage } from "@/lib/geminiUsage";
 import { withAccess } from "@/lib/authz";
+import { withAlerts } from "@/lib/alerts";
+import { generateCardImage } from "@/lib/ai/cardImage";
+import { LOCATION_CARD_MODEL, LOCATION_CARD_THINKING } from "@/lib/illustrate/models";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
@@ -20,12 +23,13 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
+// Default API version, the same client setup the spread pipeline already
+// uses for Nano Banana 2.1 (src/lib/illustrate/gemini.ts).
 const gemini = trackedGemini("app/api/locations/use-ai-image/route", {
   apiKey: process.env.GEMINI_API_KEY!,
-  apiVersion: "v1alpha",
 });
 
-const MODEL = "gemini-3-pro-image";
+const MODEL = LOCATION_CARD_MODEL;
 
 /* -------------------------------------------------------------------------- */
 /*  HELPERS                                                                   */
@@ -168,6 +172,7 @@ async function _POST(req: Request) {
         { status: 400 }
       );
     }
+    annotateUsage({ entityId: locationId });
 
     if (mode !== undefined && !['description', 'reference'].includes(mode)) {
       return NextResponse.json({ error: 'Invalid generation mode' }, { status: 400 });
@@ -196,6 +201,7 @@ async function _POST(req: Request) {
         // visual anchor — the actual style reference image
         sampleIllustrationUrl: storyStyleGuide.sampleIllustrationUrl,
         bookType: stories.bookType,
+        storyId: stories.id,
       })
       .from(storyLocations)
       .innerJoin(stories, eq(storyLocations.storyId, stories.id))
@@ -204,6 +210,7 @@ async function _POST(req: Request) {
       .orderBy(desc(stories.updatedAt))
       .limit(1)
       .then((rows) => rows[0]);
+    annotateUsage({ storyId: linkedStory?.storyId });
 
     // ── 3. Resolve style ──────────────────────────────────────────────────
     const { styleBlock, avoidBlock } = referenceStyleForBook(linkedStory?.bookType, buildStyleBlock(linkedStory ?? {}));
@@ -290,7 +297,10 @@ the same book as this image — drawn by the same artist.
     if (mode !== "description" && location.referenceImageUrl) {
       console.log("📷 Attaching location reference image...");
       const locPart = await getImagePart(location.referenceImageUrl);
-      if (!locPart) throw new Error("Could not load your reference photo. Please upload it again.");
+      // A 400 (not a thrown 500) so the customer still sees this exact message.
+      if (!locPart) {
+        return NextResponse.json({ error: "Could not load your reference photo. Please upload it again." }, { status: 400 });
+      }
       if (locPart) {
         parts.push(locPart);
         parts.push({
@@ -326,17 +336,18 @@ not as a photographic reproduction.
     }
 
     // ── 7. Generate ───────────────────────────────────────────────────────
-    const response = await gemini.models.generateContent({
+    const response = await generateCardImage(gemini, {
       model: MODEL,
       contents: [{ role: "user", parts }],
       config: {
         responseModalities: ["IMAGE"],
         imageConfig: { aspectRatio: "1:1", imageSize: "1K" },
       },
-    });
+    }, LOCATION_CARD_THINKING);
 
+    // Skip interim "thought" images: only the final picture is the card.
     const imgPart = response.candidates?.[0]?.content?.parts?.find(
-      (p: any) => p.inlineData?.data
+      (p: any) => p.inlineData?.data && !p.thought
     );
 
     if (!imgPart?.inlineData?.data) {
@@ -364,4 +375,13 @@ not as a photographic reproduction.
   }
 }
 
-export const POST = withAccess({ location: { body: "locationId" } }, _POST);
+// withAlerts emails Katy on any 5xx (including billing / quota blocks) and
+// swaps the raw error for a calm message, so a customer never reads Google's
+// "exceeded its monthly spending cap" text as their own limit again.
+// withUsageContext saves every Gemini call here to ai_usage.
+export const POST = withAccess(
+  { location: { body: "locationId" } },
+  withAlerts("api/locations/use-ai-image", (req: Request) =>
+    withUsageContext({ kind: "location_card" }, () => _POST(req)),
+  ),
+);

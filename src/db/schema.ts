@@ -1186,3 +1186,53 @@ export const checkoutPayments = pgTable("checkout_payments", {
   story: index("checkout_payments_story_idx").on(t.storyId),
 }));
 
+
+/* ==================== AI USAGE ==================== */
+// One row per Gemini call made for a book's character or location cards
+// (see src/lib/geminiUsage.ts). No foreign keys on purpose: the record of
+// what was spent should outlive a deleted story, character or location.
+
+export const aiUsage = pgTable("ai_usage", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  storyId: uuid("story_id"),
+  /** character_card | character_full_body | location_card */
+  kind: text("kind").notNull(),
+  /** The character or location the call was for. */
+  entityId: uuid("entity_id"),
+  /** File that made the call, and its finer label if it has one. */
+  source: text("source").notNull(),
+  label: text("label"),
+  model: text("model").notNull(),
+  /** true = the call asked for a picture; false = a text or vision call. */
+  image: boolean("image").notNull().default(false),
+  imageSize: text("image_size"),
+  ok: boolean("ok").notNull().default(true),
+  imagesOut: integer("images_out").notNull().default(0),
+  promptTokens: integer("prompt_tokens"),
+  outputTokens: integer("output_tokens"),
+  thoughtTokens: integer("thought_tokens"),
+  totalTokens: integer("total_tokens"),
+  /** Estimated cost in micro-dollars (1,000,000 = $1). Null = model not priced. */
+  costMicroUsd: integer("cost_micro_usd"),
+  ms: integer("ms"),
+  error: text("error"),
+}, (t) => ({
+  storyKind: index("ai_usage_story_kind_idx").on(t.storyId, t.kind),
+  entity: index("ai_usage_entity_idx").on(t.entityId),
+}));
+
+// One row per "cards approved" report email already sent, so two approval
+// calls for the same set of pictures send one email, not two. signature is a
+// hash of the approved card ids and their picture URLs: regenerate a card and
+// approve again, and a fresh report goes out.
+export const aiUsageReports = pgTable("ai_usage_reports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storyId: uuid("story_id").notNull(),
+  /** characters | locations */
+  kind: text("kind").notNull(),
+  signature: text("signature").notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  once: uniqueIndex("ai_usage_reports_once_idx").on(t.storyId, t.kind, t.signature),
+}));

@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { withAccess } from '@/lib/authz';
+import { sendCardsApprovedReport } from '@/lib/emails/sendCardsReport';
 import { confirmCast } from '@/lib/characters/confirmCast';
 
 async function _POST(_req: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   try {
     const result = await confirmCast(id);
+    // Usage and cost report to Katy. Never throws; deduped per set of pictures.
+    if (result.ok) await sendCardsApprovedReport(id, 'characters');
     return NextResponse.json(result.ok ? result : {
       error: 'Generate and approve every character appearance before continuing.',
       missing: result.missing,

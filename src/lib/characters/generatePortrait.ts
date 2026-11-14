@@ -11,7 +11,9 @@ import {
 } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { trackedGemini } from "@/lib/geminiUsage";
+import { trackedGemini, withUsageContext } from "@/lib/geminiUsage";
+import { generateCardImage } from "@/lib/ai/cardImage";
+import { CHARACTER_CARD_MODEL, CHARACTER_CARD_THINKING, type CardThinking } from "@/lib/illustrate/models";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -20,7 +22,7 @@ cloudinary.config({
 });
 
 const gemini = trackedGemini("lib/characters/generatePortrait", { apiKey: process.env.GEMINI_API_KEY! });
-const IMAGE_MODEL = "gemini-3-pro-image";
+const IMAGE_MODEL = CHARACTER_CARD_MODEL;
 const TEXT_MODEL = "gemini-2.5-flash";
 
 type ColorPalette = {
@@ -221,10 +223,13 @@ REQUIREMENTS:
 - Strong character consistency suitable for reuse across multiple book pages`.trim();
 }
 
-export async function runGeminiImageGeneration(parts: any[]) {
+export async function runGeminiImageGeneration(
+  parts: any[],
+  opts: { model?: string; thinking?: CardThinking } = {},
+) {
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const response = await gemini.models.generateContent({
-      model: IMAGE_MODEL,
+    const response = await generateCardImage(gemini, {
+      model: opts.model ?? IMAGE_MODEL,
       contents: [{ role: "user", parts }],
       config: {
         responseModalities: ["IMAGE"],
@@ -236,10 +241,10 @@ export async function runGeminiImageGeneration(parts: any[]) {
           { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
         ],
       },
-    });
+    }, opts.thinking ?? CHARACTER_CARD_THINKING);
 
     const candidate = response?.candidates?.[0];
-    const imgPart = candidate?.content?.parts?.find((p: any) => p.inlineData?.data);
+    const imgPart = candidate?.content?.parts?.find((p: any) => p.inlineData?.data && !p.thought);
 
     if (imgPart?.inlineData?.data) {
       return { data: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType ?? "image/jpeg" };
@@ -331,7 +336,10 @@ export async function generatePortraitFromDescription(
 
   console.log(`🎨 Generating portrait for "${character.name}" (description-only)`);
 
-  const image = await runGeminiImageGeneration(parts);
+  const image = await withUsageContext(
+    { kind: "character_card", storyId: linkedStory?.storyId, entityId: characterId },
+    () => runGeminiImageGeneration(parts),
+  );
   if (!image) throw new Error(`Gemini failed to generate portrait for ${character.name}`);
 
   const imageBuffer = Buffer.from(image.data, "base64");
