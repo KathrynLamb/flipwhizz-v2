@@ -22,6 +22,8 @@ import {
   getImagePart,
   runGeminiImageGeneration,
 } from "@/lib/characters/generatePortrait";
+import { withUsageContext } from "@/lib/geminiUsage";
+import { LOCATION_CARD_MODEL, LOCATION_CARD_THINKING } from "@/lib/illustrate/models";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -163,7 +165,10 @@ export async function generateLocationPortraitFromDescription(
     `🏞️ Generating location portrait for "${location.name}" (description-only)`
   );
 
-  const image = await runGeminiImageGeneration(parts);
+  const image = await withUsageContext(
+    { kind: "location_card", storyId: linkedStory?.storyId, entityId: locationId },
+    () => runGeminiImageGeneration(parts, { model: LOCATION_CARD_MODEL, thinking: LOCATION_CARD_THINKING }),
+  );
   if (!image)
     throw new Error(
       `Gemini failed to generate portrait for location "${location.name}"`

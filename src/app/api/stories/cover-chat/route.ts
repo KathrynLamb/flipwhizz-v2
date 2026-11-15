@@ -10,6 +10,7 @@
 
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import {
   stories,
@@ -23,7 +24,7 @@ import { withAccess } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+const client = trackedAnthropic("app/api/stories/cover-chat/route", { apiKey: process.env.ANTHROPIC_API_KEY! });
 
 const TOOL_NAME = "cover_chat_response";
 

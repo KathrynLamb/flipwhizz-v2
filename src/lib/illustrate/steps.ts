@@ -8,14 +8,22 @@
 //                 up to maxRounds fix rounds, then "flagged" with the list
 //   letterAndCheck: letter (Pro) -> read back -> composite the text areas
 //                 onto the checked art; one retry with the problems named
+//   repairText:   one-pass mode only: the art already has lettering but the
+//                 words are wrong; one text-only edit, read back, paste the
+//                 text areas onto the art
 
 import { fetchImage, upload, pastePatch } from "./images";
 import { inspectArt, fixCrop, addMissing, letterArt, readText, judge, compositeText } from "./checkfix";
+import type { CardThinking } from "./models";
 import { planFixes, wavesOf, type CastRef, type CropFix, type InspectReport } from "./plan";
 import { isRateLimited, rethrowIfBilling } from "./gemini";
-import type { CropPlan, TextVerdict } from "./geometry";
+import type { CropPlan, TextBlock, TextVerdict } from "./geometry";
 
 type Step = { run: <T>(id: string, fn: () => Promise<T>) => Promise<any> };
+
+/** Wraps a step body, e.g. to tag its Gemini calls in ai_usage. */
+export type Track = <T>(fn: () => Promise<T>) => Promise<T>;
+const untracked: Track = (fn) => fn();
 
 export type QaStatus = "ok" | "fixed" | "flagged" | "unchecked";
 
@@ -56,9 +64,17 @@ export async function checkAndFix(
     allowDuplicates?: boolean;
     /** Whole-picture "add the missing character" edits (off for covers: they redraw the title). */
     allowAdd?: boolean;
+    /** A check already made on artUrl (one-pass mode): used for round 0 instead of inspecting again. */
+    initialReport?: InspectReport;
+    /** Replaces inspectArt for the re-checks (one-pass mode grades findings differently). */
+    inspect?: (art: Buffer) => Promise<InspectReport>;
+    /** Thinking level for the crop fixes (Nano Banana only). */
+    thinking?: CardThinking;
+    track?: Track;
   }
 ): Promise<QaResult> {
   const maxRounds = o.maxRounds ?? 2;
+  const track = o.track ?? untracked;
   let artUrl = o.artUrl;
   let alsoUrls = o.alsoPatch ?? [];
   const log: string[] = [];
@@ -69,15 +85,23 @@ export async function checkAndFix(
   }
 
   for (let r = 0; r <= maxRounds; r++) {
-    const inspected: { report?: InspectReport; error?: string } = await step.run(`${o.prefix}-inspect-${r}`, async () => {
-      try {
-        const art = await fetchImage(artUrl);
-        return { report: await inspectArt({ art, cast: o.cast, expectedIds: o.expectedIds, sceneHint: o.sceneHint }) };
-      } catch (e) {
-        rethrowIfBilling(e);
-        return { error: msg(e) };
-      }
-    });
+    const inspected: { report?: InspectReport; error?: string } =
+      r === 0 && o.initialReport
+        ? { report: o.initialReport }
+        : await step.run(`${o.prefix}-inspect-${r}`, () =>
+            track(async () => {
+              try {
+                const art = await fetchImage(artUrl);
+                const report = o.inspect
+                  ? await o.inspect(art)
+                  : await inspectArt({ art, cast: o.cast, expectedIds: o.expectedIds, sceneHint: o.sceneHint });
+                return { report };
+              } catch (e) {
+                rethrowIfBilling(e);
+                return { error: msg(e) };
+              }
+            })
+          );
 
     if (!inspected.report) {
       log.push(`check failed: ${inspected.error}`);
@@ -112,7 +136,7 @@ export async function checkAndFix(
     }
 
     if (plan.add.length > 0 && canAdd && plan.crops.every((c) => c.kind === "likeness")) {
-      const added: { url?: string; error?: string } = await step.run(`${o.prefix}-add-${r}`, async () => {
+      const added: { url?: string; error?: string } = await step.run(`${o.prefix}-add-${r}`, () => track(async () => {
         try {
           const art = await fetchImage(artUrl);
           const missing = o.cast.filter((c) => plan.add.includes(c.id));
@@ -131,7 +155,7 @@ export async function checkAndFix(
           rethrowIfBilling(e);
           return { error: msg(e) };
         }
-      });
+      }));
       if (added.url) {
         artUrl = added.url;
         fixesApplied++;
@@ -150,10 +174,10 @@ export async function checkAndFix(
     for (let w = 0; w < waves.length; w++) {
       const results: ({ patchUrl: string; plan: CropPlan; fix: CropFix; grow: number } | null)[] = await Promise.all(
         waves[w].map((fix, i) =>
-          step.run(`${o.prefix}-fix-${r}-${w}-${i}`, async () => {
+          step.run(`${o.prefix}-fix-${r}-${w}-${i}`, () => track(async () => {
             try {
               const art = await fetchImage(artUrl);
-              const out = await fixCrop({ art, fix, cast: o.cast, model: o.modelId, styleBlock: o.styleBlock, preserveText: o.preserveText });
+              const out = await fixCrop({ art, fix, cast: o.cast, model: o.modelId, styleBlock: o.styleBlock, preserveText: o.preserveText, thinking: o.thinking });
               return { patchUrl: await upload(out.patch, `${o.folder}/patches`), plan: out.plan, fix, grow: out.grow };
             } catch (e) {
               rethrowIfBilling(e);
@@ -162,7 +186,7 @@ export async function checkAndFix(
               console.warn(`⚠️ ${o.prefix} fix ${fix.kind} failed: ${msg(e)}`);
               return null;
             }
-          })
+          }))
         )
       );
       const ok = results.filter(Boolean) as { patchUrl: string; plan: CropPlan; fix: CropFix; grow: number }[];
@@ -205,15 +229,17 @@ export async function letterAndCheck(
     aspectRatio: string;
     imageSize: string;
     folder: string;
+    track?: Track;
   }
 ): Promise<LetterResult> {
   if (!o.leftText?.trim() && !o.rightText?.trim()) return { finalUrl: o.artUrl, text: null, blocks: [] };
+  const track = o.track ?? untracked;
 
   let best: { url: string; verdict: TextVerdict | null; score: number; blocks: any[] } | null = null;
   let feedback = "";
 
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const lettered: { url?: string; error?: string } = await step.run(`${o.prefix}-letter-${attempt}`, async () => {
+    const lettered: { url?: string; error?: string } = await step.run(`${o.prefix}-letter-${attempt}`, () => track(async () => {
       try {
         const art = await fetchImage(o.artUrl);
         const out = await letterArt({ art, leftText: o.leftText, rightText: o.rightText, typography: o.typography, aspectRatio: o.aspectRatio, imageSize: o.imageSize, feedback });
@@ -222,13 +248,13 @@ export async function letterAndCheck(
         rethrowIfBilling(e);
         return { error: msg(e) };
       }
-    });
+    }));
     if (!lettered.url) {
       console.warn(`⚠️ ${o.prefix} lettering attempt ${attempt} failed: ${lettered.error}`);
       continue;
     }
 
-    const checked: { blocks?: any[]; verdict?: TextVerdict; error?: string } = await step.run(`${o.prefix}-read-${attempt}`, async () => {
+    const checked: { blocks?: any[]; verdict?: TextVerdict; error?: string } = await step.run(`${o.prefix}-read-${attempt}`, () => track(async () => {
       try {
         const blocks = await readText(await fetchImage(lettered.url!));
         return { blocks, verdict: judge(blocks, o.leftText, o.rightText) };
@@ -236,7 +262,7 @@ export async function letterAndCheck(
         rethrowIfBilling(e);
         return { error: msg(e) };
       }
-    });
+    }));
 
     if (!checked.verdict) {
       // Can't read it back: keep the lettered picture rather than lose the page.
@@ -296,5 +322,94 @@ export async function letterAndCheck(
       ? { ...chosen.verdict, attempts: 2, method }
       : { ok: false, left: 0, right: 0, problems: ["could not read the lettering back"], attempts: 2, method },
     blocks: chosen.blocks,
+  };
+}
+
+/**
+ * One-pass mode: the spread was drawn with its lettering and the check found
+ * the words wrong. One text-only edit, read back, then paste only the text
+ * areas onto the art, so faces stay exactly as checked.
+ *
+ * The paste covers the areas where text was found BEFORE the repair as well
+ * as after it, so wrong words outside the new text boxes are replaced too.
+ * If the repair does not read better than the original, the original stands
+ * (and the spread is flagged by the caller).
+ */
+export async function repairText(
+  step: Step,
+  o: {
+    prefix: string;
+    artUrl: string;
+    /** Text blocks found on artUrl by the check. */
+    blocks: TextBlock[];
+    verdict: TextVerdict;
+    leftText: string;
+    rightText: string;
+    typography: string;
+    aspectRatio: string;
+    imageSize: string;
+    folder: string;
+    model: string;
+    thinking?: CardThinking;
+    track?: Track;
+  }
+): Promise<{ finalUrl: string; text: TextVerdict & { attempts: number; method: string }; blocks: TextBlock[] }> {
+  const track = o.track ?? untracked;
+  const before = { finalUrl: o.artUrl, text: { ...o.verdict, attempts: 0, method: "one-pass" }, blocks: o.blocks };
+
+  const lettered: { url?: string; error?: string } = await step.run(`${o.prefix}-repair`, () => track(async () => {
+    try {
+      const art = await fetchImage(o.artUrl);
+      const out = await letterArt({
+        art,
+        leftText: o.leftText,
+        rightText: o.rightText,
+        typography: o.typography,
+        aspectRatio: o.aspectRatio,
+        imageSize: o.imageSize,
+        feedback: o.verdict.problems.join("; "),
+        model: o.model,
+        replaceExisting: true,
+        thinking: o.thinking,
+      });
+      return { url: await upload(out, o.folder) };
+    } catch (e) {
+      rethrowIfBilling(e);
+      return { error: msg(e) };
+    }
+  }));
+  if (!lettered.url) {
+    console.warn(`⚠️ ${o.prefix} text repair failed: ${lettered.error}`);
+    return before;
+  }
+
+  const checked: { blocks?: TextBlock[]; verdict?: TextVerdict; error?: string } = await step.run(`${o.prefix}-repair-read`, () => track(async () => {
+    try {
+      const blocks = await readText(await fetchImage(lettered.url!));
+      return { blocks, verdict: judge(blocks, o.leftText, o.rightText) };
+    } catch (e) {
+      rethrowIfBilling(e);
+      return { error: msg(e) };
+    }
+  }));
+  if (!checked.verdict || !checked.blocks) return before;
+
+  const better = checked.verdict.ok || checked.verdict.left + checked.verdict.right > o.verdict.left + o.verdict.right;
+  if (!better) return before;
+
+  const regions = [...o.blocks, ...checked.blocks];
+  const composed: { url?: string } = await step.run(`${o.prefix}-repair-composite`, async () => {
+    try {
+      const out = await compositeText(await fetchImage(o.artUrl), await fetchImage(lettered.url!), regions);
+      return { url: await upload(out, o.folder) };
+    } catch (e) {
+      rethrowIfBilling(e);
+      return {};
+    }
+  });
+  return {
+    finalUrl: composed.url ?? lettered.url,
+    text: { ...checked.verdict, attempts: 1, method: composed.url ? "one-pass, text repaired" : "one-pass, text repaired (whole)" },
+    blocks: checked.blocks,
   };
 }

@@ -20,7 +20,7 @@ import {
 import { worlds } from "@/db/schema-worlds";
 import { eq, asc, and, inArray, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import {
   extractCharactersWorldAware,
   extractLocationsWorldAware,
@@ -29,7 +29,7 @@ import {
 
 export const runtime = "nodejs";
 
-const client = new Anthropic({
+const client = trackedAnthropic("inngest/ensureWorld", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
@@ -1240,6 +1240,7 @@ Rules:
           ...(event.data?.force ? { force: true } : {}),
           ...(event.data?.allowUnpaid ? { allowUnpaid: true } : {}),
           ...(event.data?.artModel ? { artModel: event.data.artModel } : {}),
+          ...(event.data?.spreadMode ? { spreadMode: event.data.spreadMode } : {}),
           ...(event.data?.adminActionId ? { adminActionId: event.data.adminActionId } : {}),
         },
       });

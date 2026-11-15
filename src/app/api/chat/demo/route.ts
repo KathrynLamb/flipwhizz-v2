@@ -3,7 +3,7 @@ import { BOOK_TYPE_TOOL, bookTypeChatContext, bookTypeFromToolBlocks, normalizeB
 // Fixed version with proper sessionId handling
 
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import { chatMessages, chatSessions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -14,7 +14,7 @@ type DemoMsg = {
   content: string;
 };
 
-const client = new Anthropic({
+const client = trackedAnthropic("app/api/chat/demo/route", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

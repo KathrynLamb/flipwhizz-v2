@@ -67,26 +67,47 @@ export function normaliseReport(raw: any, cast: CastRef[], expectedIds: string[]
     });
   }
 
-  // Exactly one "original" per character: if the model marked none or
-  // several, keep the best (matches, then fewest issues, then biggest).
+  // A spread is two pages, and often two moments of the story (falling over
+  // on the left, looking in a mirror on the right), so the same character
+  // once on each page is normal. Copies are therefore grouped by page:
+  // exactly one "original" per character per page (if the model marked none
+  // or several, keep the best: matches, then fewest issues, then biggest).
+  // Across the two pages a copy only counts as a duplicate when the model
+  // said so for that copy and not for the other page's copy, i.e. it judged
+  // them to be the same moment.
   const area = (b: Box2d) => (b[2] - b[0]) * (b[3] - b[1]);
-  const groups = new Map<string, InspectedPerson[]>();
-  for (const p of people) {
-    if (!p.characterId) continue;
-    groups.set(p.characterId, [...(groups.get(p.characterId) ?? []), p]);
-  }
-  for (const list of groups.values()) {
-    if (list.length === 1) {
-      list[0].isDuplicate = false;
-      continue;
-    }
-    const best = [...list].sort(
+  const sideOf = (b: Box2d): "L" | "R" => ((b[1] + b[3]) / 2 < 500 ? "L" : "R");
+  const modelSaidDuplicate = new Map(people.map((p) => [p, p.isDuplicate]));
+  const best = (list: InspectedPerson[]) =>
+    [...list].sort(
       (a, b) =>
         Number(b.matches) - Number(a.matches) ||
         a.issues.length - b.issues.length ||
         area(b.box_2d) - area(a.box_2d)
     )[0];
-    for (const p of list) p.isDuplicate = p !== best;
+
+  const groups = new Map<string, { L: InspectedPerson[]; R: InspectedPerson[] }>();
+  for (const p of people) {
+    if (!p.characterId) continue;
+    const g = groups.get(p.characterId) ?? { L: [], R: [] };
+    g[sideOf(p.box_2d)].push(p);
+    groups.set(p.characterId, g);
+  }
+  for (const g of groups.values()) {
+    const originals: InspectedPerson[] = [];
+    for (const list of [g.L, g.R]) {
+      if (list.length === 0) continue;
+      const keep = best(list);
+      for (const p of list) p.isDuplicate = p !== keep;
+      originals.push(keep);
+    }
+    if (originals.length === 2) {
+      const [l, r] = originals;
+      const lDup = modelSaidDuplicate.get(l) === true;
+      const rDup = modelSaidDuplicate.get(r) === true;
+      if (lDup && !rDup) l.isDuplicate = true;
+      else if (rDup && !lDup) r.isDuplicate = true;
+    }
   }
 
   const present = new Set(people.filter((p) => p.characterId && !p.isDuplicate).map((p) => p.characterId!));

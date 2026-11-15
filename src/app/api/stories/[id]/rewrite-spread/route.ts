@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import { storyPages } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -7,7 +7,7 @@ import { withAccess } from "@/lib/authz";
 
 /* -------------------- CLIENT -------------------- */
 
-const client = new Anthropic({
+const client = trackedAnthropic("app/api/stories/[id]/rewrite-spread/route", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

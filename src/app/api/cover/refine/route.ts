@@ -1,7 +1,7 @@
 //api/cover/refine/route
 
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import type { TextBlock } from "@anthropic-ai/sdk/resources/messages";
 import type { ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 
@@ -13,7 +13,7 @@ import { withAccess } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
-const client = new Anthropic({
+const client = trackedAnthropic("app/api/cover/refine/route", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

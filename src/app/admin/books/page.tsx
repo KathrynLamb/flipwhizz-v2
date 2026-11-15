@@ -6,6 +6,8 @@
 import Link from "next/link";
 import { requireAdminPage } from "@/lib/pageGuards";
 import { listBooks, type BookFilter } from "@/lib/admin/data";
+import { USD_TO_GBP } from "@/lib/ai/pricing";
+import { gbp } from "@/lib/admin/costFormat";
 import { Empty, FilterLinks, KindBadge, PageHeader, Pill, SearchBox, thumb, when } from "../ui";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +50,8 @@ export default async function BooksPage({ searchParams }: { searchParams: Promis
                     {b.flagged > 0 && <Pill tone="red">{`${b.flagged} flagged`}</Pill>}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-slate-500">
-                    {b.ownerEmail ?? "no owner"} · {b.drawn}/{b.pages} pages drawn · {b.status ?? "no status"} · {when(b.updatedAt)}
+                    {b.ownerEmail ?? "no owner"} · {b.drawn}/{b.pages} pages drawn · {b.status ?? "no status"}
+                    {b.costMicroUsd > 0 ? ` · ${gbp(b.costMicroUsd, USD_TO_GBP)} AI` : ""} · {when(b.updatedAt)}
                   </div>
                 </div>
               </Link>

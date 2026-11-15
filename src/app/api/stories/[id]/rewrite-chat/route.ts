@@ -1,6 +1,6 @@
 // src/app/api/stories/[id]/rewrite-chat/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import {
   storyEditSessions,
@@ -15,7 +15,7 @@ import { withAccess } from "@/lib/authz";
 
 export const maxDuration = 30; // web search adds latency
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+const client = trackedAnthropic("app/api/stories/[id]/rewrite-chat/route", { apiKey: process.env.ANTHROPIC_API_KEY! });
 const MODEL = "claude-sonnet-4-6"; // ✅ updated — sonnet-4-20250514 retires June 15
 
 async function _POST(

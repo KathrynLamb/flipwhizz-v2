@@ -1,11 +1,11 @@
 // src/app/api/stories/[id]/edit-with-claude/route.ts
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
-const client = new Anthropic({
+const client = trackedAnthropic("app/api/stories/[id]/edit-with-claude/route", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
