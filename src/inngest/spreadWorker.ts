@@ -5,6 +5,13 @@ import { COLOUR_SPREAD_NOTE } from "@/lib/books/bookType";
 // Draws ONE double-page spread. Every spread in the product goes through
 // here: full-book generation, the free preview, and the studio's Redraw.
 //
+// Two modes (src/lib/illustrate/models.ts, FW_SPREAD_MODE or the admin
+// switch). "staged" is described below. "onepass" draws the art and the
+// lettering in one call, checks people and text in one call, and repairs
+// only what failed: a crop fix for a person, a text-only edit for words.
+// One-pass is used only when the featured characters fit the model's
+// reference limit and the book is not a colouring book.
+//
 //   1. compose    art with NO lettering, from reference sheets (<= model cap)
 //   2. check+fix  vision finds every person, compares with their sheet;
 //                 duplicates / wrong people / wrong looks are fixed one
@@ -42,12 +49,15 @@ import {
   MAX_FEATURED_CHARACTERS,
 } from "./generateBookSpreads";
 import { getCastSheet, castSheetBlock, type CastSheet } from "@/lib/characters/consistency";
-import { artModel, SPREAD_IMAGE_SIZE } from "@/lib/illustrate/models";
+import { artModel, SPREAD_IMAGE_SIZE, spreadMode, SPREAD_DRAW_THINKING, SPREAD_REPAIR_THINKING, TEXT_REPAIR_MODEL } from "@/lib/illustrate/models";
 import { ensureReferenceSheet, ensureStylePlate, loadCast, storyCharacterIds } from "@/lib/illustrate/sheets";
-import { generateImage } from "@/lib/illustrate/gemini";
-import { upload, urlToPart } from "@/lib/illustrate/images";
-import { checkAndFix, letterAndCheck } from "@/lib/illustrate/steps";
-import type { CastRef } from "@/lib/illustrate/plan";
+import { generateImage, rethrowIfBilling } from "@/lib/illustrate/gemini";
+import { fetchImage, upload, urlToPart } from "@/lib/illustrate/images";
+import { checkAndFix, letterAndCheck, repairText, type Track } from "@/lib/illustrate/steps";
+import { inspectSpread, judge } from "@/lib/illustrate/checkfix";
+import { planFixes, type CastRef, type InspectReport } from "@/lib/illustrate/plan";
+import type { TextBlock, TextVerdict } from "@/lib/illustrate/geometry";
+import { withUsageContext } from "@/lib/geminiUsage";
 
 const ASPECT = "16:9";
 
@@ -77,9 +87,29 @@ const EventSchema = z.object({
     .optional(),
   strategistPlan: StrategistPlanSchema.optional(),
   artModel: z.string().optional(),
+  /** "staged" | "onepass"; unset = FW_SPREAD_MODE (default "staged"). */
+  spreadMode: z.string().optional(),
 });
 
 const usable = (u?: string | null): u is string => !!u && !u.startsWith("data:");
+
+/**
+ * One-pass lettering instructions, following Google's guidance for text in
+ * images: the exact words in quotation marks, the font described, where it
+ * goes. Large lettering, because small text is 2.1's stated weak spot.
+ */
+function onePassTextBlock(leftText: string, rightText: string, typography: string): string {
+  const q = (t: string) => (t?.trim() ? `"${t.trim()}"` : "(no text on this page)");
+  return `TEXT ON THE PAGES: this spread includes its story text, lettered as part of the illustration.
+LEFT PAGE text, in a calm, simple area in the upper part of the left page (upper-left), with no faces or busy detail behind it:
+${q(leftText)}
+RIGHT PAGE text, in a calm, simple area in the upper part of the right page (upper-right), with no faces or busy detail behind it:
+${q(rightText)}
+Letter each passage exactly once, word for word, exactly as written between the quotes, with the same punctuation. Each page has one block of text.
+Lettering style: ${typography}. Large, high-contrast and easy for a child to read.
+Keep every letter at least 8% in from the outer edges and 6% away from the centre fold.
+This is the only writing in the picture: signs, books and objects carry no words.`;
+}
 
 type Prepared = {
   spreadId: string | null;
@@ -106,6 +136,7 @@ type Prepared = {
   previousFinalUrl: string | null; // the lettered page that art belongs to
   outfits: Record<string, string>; // what each character wears on THIS page
   colourRefUrl: string | null; // full-colour cover, only on colour spreads of a colouring book
+  colouringBook: boolean; // colouring books always use the staged path
 };
 
 /**
@@ -357,6 +388,7 @@ export const generateSingleSpread = inngest.createFunction(
         previousArtUrl,
         previousFinalUrl,
         outfits,
+        colouringBook: isColouringBook,
       } satisfies Prepared;
     });
 
@@ -394,6 +426,26 @@ export const generateSingleSpread = inngest.createFunction(
     }
     const cast: CastRef[] = await step.run("load-cast", async () => loadCast(castIds, castSheet, storyId, prep.outfits));
 
+    // Every Gemini call in this run's steps is saved to ai_usage against this
+    // spread (label says which step: compose, inspect-spread, fix-likeness,
+    // letter, read-text, text-repair ...).
+    const track: Track = (fn) => withUsageContext({ kind: "spread", storyId, entityId: prep.spreadId }, fn);
+
+    // One-pass needs every featured character to fit as a reference image.
+    const featuredWithRefs = prep.featuredIds.filter((id) => cast.some((c) => c.id === id));
+    const requestedMode = spreadMode(ev.spreadMode);
+    const onePass =
+      requestedMode === "onepass" &&
+      !prep.colouringBook &&
+      featuredWithRefs.length <= model.maxCharacterImages &&
+      prep.featuredIds.length <= model.maxCharacterImages;
+    if (requestedMode === "onepass" && !onePass) {
+      console.log(
+        `↪️ Spread ${pageLabel}: one-pass asked for, using staged (${prep.colouringBook ? "colouring book" : `${prep.featuredIds.length} featured characters, limit ${model.maxCharacterImages}`})`
+      );
+    }
+    const hasText = !!(prep.leftText?.trim() || prep.rightText?.trim());
+
     /* ---------------------------------------------------------------- */
     /* 1. Compose (no lettering)                                         */
     /* ---------------------------------------------------------------- */
@@ -409,7 +461,7 @@ export const generateSingleSpread = inngest.createFunction(
       return { skipped: true, reason: "superseded" };
     }
 
-    const composed: { url: string; model: string } = await step.run("compose", async () => {
+    const composed: { url: string; model: string } = await step.run("compose", () => track(async () => {
       const parts: any[] = [];
       const photoParts: any[] = [];
 
@@ -452,7 +504,9 @@ export const generateSingleSpread = inngest.createFunction(
 
       if (revisionBase) {
         parts.push(await urlToPart(revisionBase, 2048), {
-          text: `↑ CURRENT VERSION of this spread. Keep what works and change what the feedback asks.${baseHasText ? " Remove all lettering and text from it." : ""} ↑`,
+          text: onePass
+            ? `↑ CURRENT VERSION of this spread. Keep what works and change what the feedback asks.${hasText ? " Letter the page text again exactly as given below." : " Remove all lettering and text from it."} ↑`
+            : `↑ CURRENT VERSION of this spread. Keep what works and change what the feedback asks.${baseHasText ? " Remove all lettering and text from it." : ""} ↑`,
         });
       }
 
@@ -487,16 +541,177 @@ SCENE DIRECTION:
 ${prep.direction}
 ${prep.compositionNotes.length ? `\nCOMPOSITION:\n${prep.compositionNotes.map((n) => `- ${n}`).join("\n")}` : ""}
 
-SPACE FOR TEXT: this spread is hand-lettered afterwards. Keep a calm, simple area in the upper part of each page (upper-left on the left page, upper-right on the right page): no faces or busy detail there.
-Do NOT draw any text, letters, words, numbers, captions, speech bubbles or writing on signs.
+${onePass && hasText ? onePassTextBlock(prep.leftText, prep.rightText, prep.typography) : `SPACE FOR TEXT: this spread is hand-lettered afterwards. Keep a calm, simple area in the upper part of each page (upper-left on the left page, upper-right on the right page): no faces or busy detail there.
+Do NOT draw any text, letters, words, numbers, captions, speech bubbles or writing on signs.`}
 Keep important content away from the outer 8% of every edge and from the centre fold.
 AVOID: ${prep.avoidBlock}${ev.feedback ? `\nFEEDBACK TO APPLY: ${ev.feedback}` : ""}
 FINAL STYLE REQUIREMENT (overrides colours in references and scene direction): ${prep.styleBlock}`,
       });
 
-      const out = await generateImage({ model: model.id, parts, aspectRatio: ASPECT, imageSize: SPREAD_IMAGE_SIZE, label: `compose-${pageLabel}`, photoParts });
+      const out = await generateImage({
+        model: model.id,
+        parts,
+        aspectRatio: ASPECT,
+        imageSize: SPREAD_IMAGE_SIZE,
+        label: `${onePass ? "onepass" : "compose"}-${pageLabel}`,
+        photoParts,
+        ...(onePass ? { thinking: SPREAD_DRAW_THINKING } : {}),
+      });
       return { url: await upload(out.data, folder), model: out.model };
-    });
+    }));
+
+    /* ---------------------------------------------------------------- */
+    /* One-pass: check once, repair only what failed, save              */
+    /* ---------------------------------------------------------------- */
+
+    if (onePass) {
+      const expectedIds = prep.sceneOnly ? [] : prep.featuredIds;
+
+      // 2. One check: people (graded to faults a parent would notice) and text.
+      const checked: { report?: InspectReport; blocks?: TextBlock[]; error?: string } = await step.run("onepass-check", () =>
+        track(async () => {
+          try {
+            const art = await fetchImage(composed.url);
+            return await inspectSpread({ art, cast, expectedIds, sceneHint: prep.sceneHint, leftText: prep.leftText, rightText: prep.rightText });
+          } catch (e) {
+            rethrowIfBilling(e);
+            return { error: e instanceof Error ? e.message.slice(0, 300) : String(e).slice(0, 300) };
+          }
+        })
+      );
+
+      // 3. People: one round of crop fixes, keeping the lettering, then one re-check.
+      let artUrl = composed.url;
+      let people: { status: string; rounds: number; fixesApplied: number; remaining: string[]; log: string[] } = {
+        status: checked.report ? "ok" : "unchecked",
+        rounds: 0,
+        fixesApplied: 0,
+        remaining: [],
+        log: checked.report ? [] : [`check failed: ${checked.error}`],
+      };
+      if (checked.report && cast.length > 0 && !planFixes(checked.report, cast, { forbiddenIds: prep.forbiddenIds }).clean) {
+        const qa = await checkAndFix(step, {
+          prefix: "qa",
+          artUrl,
+          cast,
+          expectedIds,
+          forbiddenIds: prep.forbiddenIds,
+          sceneHint: prep.sceneHint,
+          sizeNotes: castSheet?.sizeNotes,
+          styleBlock: prep.styleBlock,
+          modelId: composed.model,
+          aspectRatio: ASPECT,
+          imageSize: SPREAD_IMAGE_SIZE,
+          folder,
+          maxRounds: 1,
+          preserveText: true,
+          // A whole-picture "add" edit would redraw the lettering: a missing
+          // character is flagged for the admin instead.
+          allowAdd: false,
+          initialReport: checked.report,
+          inspect: async (art) =>
+            (await inspectSpread({ art, cast, expectedIds, sceneHint: prep.sceneHint, leftText: prep.leftText, rightText: prep.rightText })).report,
+          thinking: SPREAD_REPAIR_THINKING,
+          track,
+        });
+        artUrl = qa.artUrl;
+        people = qa;
+      }
+
+      if (await superseded("superseded-before-text")) {
+        console.warn(`⏭️ Spread ${pageLabel}: a newer request for this spread exists; stopping this one`);
+        return { skipped: true, reason: "superseded" };
+      }
+
+      // 4. Text: judged from the same check; a text-only repair if wrong.
+      let finalUrl = artUrl;
+      let blocks: TextBlock[] = checked.blocks ?? [];
+      let text: (TextVerdict & { attempts: number; method: string }) | null = null;
+      if (hasText && checked.blocks) {
+        const verdict = judge(checked.blocks, prep.leftText, prep.rightText);
+        if (verdict.ok) {
+          text = { ...verdict, attempts: 0, method: "one-pass" };
+        } else {
+          const repaired = await repairText(step, {
+            prefix: "text",
+            artUrl,
+            blocks: checked.blocks,
+            verdict,
+            leftText: prep.leftText,
+            rightText: prep.rightText,
+            typography: prep.typography,
+            aspectRatio: ASPECT,
+            imageSize: SPREAD_IMAGE_SIZE,
+            folder,
+            model: TEXT_REPAIR_MODEL,
+            thinking: SPREAD_REPAIR_THINKING,
+            track,
+          });
+          finalUrl = repaired.finalUrl;
+          text = repaired.text;
+          blocks = repaired.blocks;
+        }
+      } else if (hasText) {
+        text = { ok: false, left: 0, right: 0, problems: ["could not read the lettering back"], attempts: 0, method: "one-pass" };
+      }
+
+      // 5. Save
+      const status =
+        people.status === "unchecked"
+          ? "unchecked"
+          : people.status === "flagged" || (text && !text.ok)
+            ? "flagged"
+            : people.status;
+      const record = {
+        v: 1,
+        mode: "onepass",
+        status,
+        characters: people.status,
+        // No text-free art exists in one-pass mode: later character fixes
+        // patch the lettered page directly and keep its text.
+        artUrl: null,
+        finalUrl,
+        model: composed.model,
+        rounds: people.rounds,
+        fixesApplied: people.fixesApplied,
+        remaining: people.remaining,
+        log: people.log.slice(-30),
+        text,
+        textBlocks: blocks,
+        latestRun: myRun,
+        savedRun: myRun,
+        at: new Date().toISOString(),
+      };
+
+      const saved: boolean = await step.run("save", async () => {
+        if (prep.spreadId) {
+          const won = await db
+            .update(storySpreads)
+            .set({ qa: record })
+            .where(
+              and(
+                eq(storySpreads.id, prep.spreadId),
+                sql`coalesce((${storySpreads.qa}->>'latestRun')::bigint, 0) <= ${myRun}::bigint`
+              )
+            )
+            .returning({ id: storySpreads.id });
+          if (won.length === 0) return false;
+        }
+        await db
+          .update(storyPages)
+          .set({ imageUrl: finalUrl })
+          .where(inArray(storyPages.id, [leftPageId, ...(rightPageId ? [rightPageId] : [])]));
+        return true;
+      });
+      if (!saved) {
+        console.warn(`⏭️ Spread ${pageLabel}: finished, but a newer request owns this spread; not saving`);
+        return { skipped: true, reason: "superseded" };
+      }
+      if (status === "flagged") {
+        console.warn(`🚩 Spread ${pageLabel} flagged (one-pass): ${[...people.remaining, ...(text?.problems ?? [])].join(" | ")}`);
+      }
+      return { success: true, pageLabel, imageUrl: finalUrl, qa: status, mode: "onepass" };
+    }
 
     /* ---------------------------------------------------------------- */
     /* 2. Check and fix every person                                     */
@@ -515,6 +730,7 @@ FINAL STYLE REQUIREMENT (overrides colours in references and scene direction): $
       aspectRatio: ASPECT,
       imageSize: SPREAD_IMAGE_SIZE,
       folder,
+      track,
     });
 
     /* ---------------------------------------------------------------- */
@@ -535,6 +751,7 @@ FINAL STYLE REQUIREMENT (overrides colours in references and scene direction): $
       aspectRatio: ASPECT,
       imageSize: SPREAD_IMAGE_SIZE,
       folder,
+      track,
     });
 
     /* ---------------------------------------------------------------- */
@@ -543,6 +760,7 @@ FINAL STYLE REQUIREMENT (overrides colours in references and scene direction): $
 
     const record = {
       v: 1,
+      mode: "staged",
       status: qa.status === "flagged" || (lettered.text && !lettered.text.ok) ? "flagged" : qa.status,
       characters: qa.status,
       artUrl: qa.artUrl,

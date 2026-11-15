@@ -366,11 +366,13 @@ export const generateBookSpreads = inngest.createFunction(
     cancelOn: [{ event: "admin/stop-book", if: "async.data.storyId == event.data.storyId" }],
   },
   async ({ event, step }) => {
-    const { storyId, force, allowUnpaid, artModel: artModelKey, adminActionId } = event.data as {
+    const { storyId, force, allowUnpaid, artModel: artModelKey, spreadMode: spreadModeKey, adminActionId } = event.data as {
       storyId?: string;
       force?: boolean;
       allowUnpaid?: boolean;
       artModel?: string;
+      /** "staged" | "onepass" (admin switch); unset = FW_SPREAD_MODE. */
+      spreadMode?: string;
       /** Set when an admin started this from the Book page (marks the job done). */
       adminActionId?: string;
     };
@@ -437,6 +439,7 @@ export const generateBookSpreads = inngest.createFunction(
             ...(force ? { force: true } : {}),
             ...(allowUnpaid ? { allowUnpaid: true } : {}),
             ...(artModelKey ? { artModel: artModelKey } : {}),
+            ...(spreadModeKey ? { spreadMode: spreadModeKey } : {}),
             ...(adminActionId ? { adminActionId } : {}),
           },
         });
@@ -473,6 +476,7 @@ export const generateBookSpreads = inngest.createFunction(
             ...(force ? { force: true } : {}),
             ...(allowUnpaid ? { allowUnpaid: true } : {}),
             ...(artModelKey ? { artModel: artModelKey } : {}),
+            ...(spreadModeKey ? { spreadMode: spreadModeKey } : {}),
             ...(adminActionId ? { adminActionId } : {}),
           },
         });
@@ -625,7 +629,14 @@ export const generateBookSpreads = inngest.createFunction(
 
       events.push({
         name: "story/generate.single.spread",
-        data: { storyId, leftPageId, rightPageId, pageLabel, ...(artModelKey ? { artModel: artModelKey } : {}) },
+        data: {
+          storyId,
+          leftPageId,
+          rightPageId,
+          pageLabel,
+          ...(artModelKey ? { artModel: artModelKey } : {}),
+          ...(spreadModeKey ? { spreadMode: spreadModeKey } : {}),
+        },
       });
     }
 

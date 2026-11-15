@@ -43,6 +43,8 @@ type Body = {
   confirmed?: boolean;
   confirmText?: string;
   artModel?: string;
+  /** "staged" | "onepass": how spreads are drawn on this run. */
+  spreadMode?: string;
   spreadId?: string;
   characterId?: string;
   feedback?: string;
@@ -65,6 +67,7 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
   const action: ActionKey = body.action;
   const info = ACTIONS[action];
   const artModel = body.artModel === "nb21" || body.artModel === "pro" ? body.artModel : undefined;
+  const spreadMode = body.spreadMode === "staged" || body.spreadMode === "onepass" ? body.spreadMode : undefined;
 
   const book = await loadBookIdentity(storyId);
   if (!book) return fail(404, "Book not found");
@@ -183,6 +186,7 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
             rightPageId: s.rightPageId,
             pageLabel: `Spread ${s.spreadIndex}`,
             ...(artModel ? { artModel } : {}),
+            ...(spreadMode ? { spreadMode } : {}),
             // A note means "change this", so the current picture is the base.
             ...(feedback ? { feedback, existingSpreadImageUrl: page?.imageUrl ?? null } : {}),
           },
@@ -234,6 +238,7 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
             allowUnpaid: true,
             ...(action === "draw-missing" ? {} : { force: true }),
             ...(artModel ? { artModel } : {}),
+            ...(spreadMode ? { spreadMode } : {}),
             adminActionId: startedId,
           },
         });

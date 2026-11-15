@@ -6,7 +6,8 @@
 // size, tokens in/out, success, and how long it took. Chart "gemini_call" in
 // PostHog by source and model to see where the credits go.
 //
-// Calls made inside withUsageContext() (character and location cards) are
+// Calls made inside withUsageContext() (character and location cards, and
+// the steps of a spread) are
 // also priced and saved to the ai_usage table, tagged with their story and
 // the character or location they were for. That table is what the "cards
 // approved" report emails read (src/lib/emails/sendCardsReport.ts).
@@ -28,7 +29,8 @@ export function withGeminiLabel<T>(label: string, fn: () => Promise<T>): Promise
 /* Usage context: which book and which card a call belongs to          */
 /* ------------------------------------------------------------------ */
 
-export type UsageKind = "character_card" | "character_full_body" | "location_card";
+/** spread: every call made while drawing a spread; its label names the step. */
+export type UsageKind = "character_card" | "character_full_body" | "location_card" | "spread";
 
 export type UsageContext = {
   kind: UsageKind;

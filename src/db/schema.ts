@@ -1188,7 +1188,8 @@ export const checkoutPayments = pgTable("checkout_payments", {
 
 
 /* ==================== AI USAGE ==================== */
-// One row per Gemini call made for a book's character or location cards
+// One row per Gemini call made for a book's character or location cards, or
+// while drawing a spread (entity_id = the spread, label = the step)
 // (see src/lib/geminiUsage.ts). No foreign keys on purpose: the record of
 // what was spent should outlive a deleted story, character or location.
 
@@ -1196,7 +1197,7 @@ export const aiUsage = pgTable("ai_usage", {
   id: uuid("id").primaryKey().defaultRandom(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   storyId: uuid("story_id"),
-  /** character_card | character_full_body | location_card */
+  /** character_card | character_full_body | location_card | spread */
   kind: text("kind").notNull(),
   /** The character or location the call was for. */
   entityId: uuid("entity_id"),

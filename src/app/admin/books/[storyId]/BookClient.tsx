@@ -49,6 +49,15 @@ const MODELS = [
   { value: "pro", label: "Gemini 3 Pro Image" },
 ];
 
+// How spreads are drawn on redraws started here (src/lib/illustrate/models.ts).
+// One-pass: art and text in one call, one check, repairs only where needed.
+// Spreads with more featured characters than the model's limit, and
+// colouring books, still use staged.
+const SPREAD_MODES = [
+  { value: "staged", label: "Staged (art, then lettering)" },
+  { value: "onepass", label: "One-pass (art and text together)" },
+];
+
 const btn = "rounded-lg px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40";
 const btnPrimary = `${btn} bg-[#8B5CF6] text-white hover:bg-[#7C4DEB]`;
 const btnQuiet = `${btn} border border-white/15 text-slate-200 hover:bg-white/5`;
@@ -58,6 +67,7 @@ export default function BookClient({ detail, tab, original }: { detail: BookDeta
   const router = useRouter();
   const { book, busy } = detail;
   const [model, setModel] = useState("nb21");
+  const [mode, setMode] = useState("staged");
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string; link?: { href: string; label: string } } | null>(null);
@@ -82,7 +92,7 @@ export default function BookClient({ detail, tab, original }: { detail: BookDeta
       const res = await fetch(`/api/admin/books/${book.id}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, artModel: model, ...payload }),
+        body: JSON.stringify({ action, artModel: model, spreadMode: mode, ...payload }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) {
@@ -162,6 +172,14 @@ export default function BookClient({ detail, tab, original }: { detail: BookDeta
             Image model
             <select value={model} onChange={(e) => setModel(e.target.value)} className="rounded-lg border border-white/15 bg-[#11111d] px-2 py-1.5 text-xs text-white">
               {MODELS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-400">
+            Spread mode
+            <select value={mode} onChange={(e) => setMode(e.target.value)} className="rounded-lg border border-white/15 bg-[#11111d] px-2 py-1.5 text-xs text-white">
+              {SPREAD_MODES.map((m) => (
                 <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
@@ -413,7 +431,7 @@ function Pages({ spreads, ask, sending }: { spreads: SpreadDetail[]; ask: Ask; s
                     Fix one character
                   </button>
                   {s.artUrl && <a href={s.artUrl} target="_blank" className="self-center text-xs text-[#C4B5FD] hover:text-white">art without text ↗</a>}
-                  {s.model && <span className="self-center text-xs text-slate-500">{s.model} · {when(s.at)}</span>}
+                  {s.model && <span className="self-center text-xs text-slate-500">{s.model}{s.mode === "onepass" ? " · one-pass" : ""} · {when(s.at)}</span>}
                 </div>
                 <details className="mt-2 text-xs text-slate-400">
                   <summary className="cursor-pointer text-slate-500 hover:text-white">Scene plan</summary>

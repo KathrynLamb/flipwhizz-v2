@@ -9,7 +9,7 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { trackedGemini, withGeminiLabel } from "@/lib/geminiUsage";
 import { NonRetriableError } from "inngest";
-import { FALLBACK_IMAGE_MODEL, VISION_MODELS } from "./models";
+import { FALLBACK_IMAGE_MODEL, VISION_MODELS, type CardThinking } from "./models";
 
 const client = trackedGemini("lib/illustrate/gemini", { apiKey: process.env.GEMINI_API_KEY! });
 
@@ -116,10 +116,28 @@ export type GenerateImageArgs = {
   label: string;
   /** Parts that are real photos; dropped on a retry if the model refuses. */
   photoParts?: any[];
+  /**
+   * Thinking level. Applied to Nano Banana models only ("default" or unset =
+   * Google's default). If Google rejects the setting, the call is repeated
+   * without it and the setting stays off for this server process.
+   */
+  thinking?: CardThinking;
 };
+
+// Set once Google refuses thinkingConfig on an image call in this process.
+let imageThinkingRejected = false;
+
+function isThinkingRejected(err: unknown): boolean {
+  const s = errText(err).toLowerCase();
+  const status = (err as any)?.status ?? (err as any)?.code;
+  return (Number(status) === 400 || /invalid_argument/.test(s)) && /thinking/.test(s);
+}
 
 export async function generateImage(args: GenerateImageArgs): Promise<{ data: Buffer; mimeType: string; model: string; droppedPhotos: boolean }> {
   const { aspectRatio, imageSize = "2K", label } = args;
+
+  const wantsThinking = (model: string) =>
+    !!args.thinking && args.thinking !== "default" && !imageThinkingRejected && model.startsWith("gemini-nano-banana");
 
   const call = async (model: string, parts: any[]) =>
     withGeminiLabel(label, () => client.models.generateContent({
@@ -129,6 +147,7 @@ export async function generateImage(args: GenerateImageArgs): Promise<{ data: Bu
         responseModalities: ["IMAGE"],
         imageConfig: { aspectRatio, imageSize },
         safetySettings: SAFETY,
+        ...(wantsThinking(model) ? { thinkingConfig: { thinkingLevel: args.thinking } } : {}),
       } as any,
     }));
 
@@ -154,6 +173,11 @@ export async function generateImage(args: GenerateImageArgs): Promise<{ data: Bu
     } catch (err) {
       lastProblem = errText(err);
       if (isBillingBlocked(err)) throw billingError(err, label);
+      if (wantsThinking(model) && isThinkingRejected(err)) {
+        console.warn(`🖼️ [${label}] ${model} rejected thinkingLevel "${args.thinking}"; retrying without it`);
+        imageThinkingRejected = true;
+        continue;
+      }
       if (isModelRejected(err) && model !== FALLBACK_IMAGE_MODEL) {
         console.warn(`🖼️ [${label}] model ${model} rejected (${lastProblem.slice(0, 300)}); falling back to ${FALLBACK_IMAGE_MODEL}`);
         rejectedModels.add(model);

@@ -85,3 +85,34 @@ export const VISION_MODELS: string[] = [
 
 /** Spread output size. 2K keeps edit inputs small enough to send inline. */
 export const SPREAD_IMAGE_SIZE = process.env.FW_SPREAD_SIZE || "2K";
+
+/**
+ * How a spread is drawn.
+ * - "staged" (today's default): art with no text, check and fix every person,
+ *   then Pro letters the page and the text areas are pasted back.
+ * - "onepass": one call draws the art AND the text, one check reads people
+ *   and text together, and only what failed is repaired. Used only for
+ *   spreads whose featured characters fit the model's reference limit
+ *   (4 on Nano Banana 2.1, 5 on Pro) and never for colouring books; anything
+ *   else falls back to "staged".
+ * FW_SPREAD_MODE sets the default; the admin Book page can choose per run.
+ */
+export type SpreadMode = "staged" | "onepass";
+export function isSpreadMode(v: unknown): v is SpreadMode {
+  return v === "staged" || v === "onepass";
+}
+export const DEFAULT_SPREAD_MODE: SpreadMode = isSpreadMode(process.env.FW_SPREAD_MODE) ? process.env.FW_SPREAD_MODE : "staged";
+export function spreadMode(key?: unknown): SpreadMode {
+  return isSpreadMode(key) ? key : DEFAULT_SPREAD_MODE;
+}
+
+/**
+ * Thinking for one-pass spreads (Nano Banana 2.1 only; ignored by Pro).
+ * The draw keeps Google's default ("medium"); repairs are narrow edits and
+ * use "minimal". Same values as the card settings above.
+ */
+export const SPREAD_DRAW_THINKING = thinking(process.env.FW_SPREAD_DRAW_THINKING, "default");
+export const SPREAD_REPAIR_THINKING = thinking(process.env.FW_SPREAD_REPAIR_THINKING, "minimal");
+
+/** Text repairs in one-pass mode. Nano Banana 2.1 unless set. */
+export const TEXT_REPAIR_MODEL = process.env.FW_TEXT_REPAIR_MODEL || ART_MODELS.nb21.id;

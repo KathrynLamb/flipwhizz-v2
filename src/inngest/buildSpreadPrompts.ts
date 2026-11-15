@@ -701,6 +701,7 @@ ${spreadContexts.join("\n\n---\n\n")}
           ...(event.data?.force ? { force: true } : {}),
           ...(event.data?.allowUnpaid ? { allowUnpaid: true } : {}),
           ...(event.data?.artModel ? { artModel: event.data.artModel } : {}),
+          ...(event.data?.spreadMode ? { spreadMode: event.data.spreadMode } : {}),
           ...(event.data?.adminActionId ? { adminActionId: event.data.adminActionId } : {}),
         },
       });

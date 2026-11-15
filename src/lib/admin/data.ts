@@ -140,6 +140,8 @@ export type SpreadDetail = {
   textProblems: string[];
   fixesApplied: number;
   model: string | null;
+  /** "staged" | "onepass"; null for spreads drawn before modes existed (staged). */
+  mode: string | null;
   finalUrl: string | null;
   artUrl: string | null;
   at: string | null;
@@ -313,6 +315,7 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       textProblems: Array.isArray(qa?.text?.problems) ? qa.text.problems : [],
       fixesApplied: Number(qa?.fixesApplied ?? 0),
       model: qa?.model ?? null,
+      mode: typeof qa?.mode === "string" ? qa.mode : null,
       finalUrl,
       artUrl: qa?.artUrl ?? null,
       at: qa?.at ?? null,
