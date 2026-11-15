@@ -138,6 +138,8 @@ export type SpreadDetail = {
   status: string | null;
   remaining: string[];
   textProblems: string[];
+  /** What the checker read on each page, shown beside a text flag so a misread is easy to spot. */
+  textReadBack: { left: string; right: string } | null;
   fixesApplied: number;
   model: string | null;
   /** "staged" | "onepass"; null for spreads drawn before modes existed (staged). */
@@ -313,6 +315,10 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       status: qa?.status ?? null,
       remaining: Array.isArray(qa?.remaining) ? qa.remaining : [],
       textProblems: Array.isArray(qa?.text?.problems) ? qa.text.problems : [],
+      textReadBack:
+        typeof qa?.text?.gotLeft === "string" || typeof qa?.text?.gotRight === "string"
+          ? { left: String(qa.text.gotLeft ?? ""), right: String(qa.text.gotRight ?? "") }
+          : null,
       fixesApplied: Number(qa?.fixesApplied ?? 0),
       model: qa?.model ?? null,
       mode: typeof qa?.mode === "string" ? qa.mode : null,

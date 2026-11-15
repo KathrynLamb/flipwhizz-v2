@@ -413,6 +413,13 @@ function Pages({ spreads, ask, sending }: { spreads: SpreadDetail[]; ask: Ask; s
                     {problems.map((p, i) => <li key={i}>{p}</li>)}
                   </ul>
                 )}
+                {s.textProblems.length > 0 && s.textReadBack && (
+                  <details className="mt-1 text-xs text-slate-400">
+                    <summary className="cursor-pointer">What the checker read</summary>
+                    <p className="mt-1"><span className="text-slate-500">Left: </span>{s.textReadBack.left || "(nothing)"}</p>
+                    <p className="mt-1"><span className="text-slate-500">Right: </span>{s.textReadBack.right || "(nothing)"}</p>
+                  </details>
+                )}
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
                     className={btnQuiet}

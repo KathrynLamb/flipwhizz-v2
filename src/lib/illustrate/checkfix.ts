@@ -61,7 +61,8 @@ For each one:
   If a reference says what someone wears ON THIS PAGE, judge their clothes against that, not against the reference picture.
 - Also list as issues any rendering faults on that figure: see-through or faded parts, a half-drawn or cut-off body, a head or limb that doesn't join up, two figures merged together, extra or missing limbs.
 - matches: true only if there are no such differences or faults.
-- isDuplicate: true if this cast member appears more than once and this is NOT the copy that best matches the scene. Exactly one copy of each character is the original.
+- isDuplicate: true ONLY if this is a second copy of the same cast member in the SAME MOMENT: twice on one page, or twice in one continuous scene that runs across both pages. A double-page spread often shows two moments of the story, one on each page (for example slipping over on the left page, then admiring themselves on the right): the same character once on each page is then NOT a duplicate.
+Do NOT list reflections (in mirrors, water or windows), photos, paintings, drawings, posters, toys or soft toys as people or animals, even when they look like a cast member.
 ${args.sceneHint ? `\nScene: ${args.sceneHint}` : ""}
 Expected in this picture: ${expectedNames.length ? expectedNames.join(", ") : "(no specific cast members)"}.
 
@@ -119,7 +120,8 @@ Find EVERY person and animal in IMAGE A, including small or partly hidden ones. 
 - issues: ONLY differences that would make a parent say "that isn't my child": hair colour, hair length, hair texture or style, skin tone, apparent age, glasses, facial hair, a head covering they always wear, species, breed, coat colour and markings, or a body that is broken (merged figures, extra or missing limbs, a head or limb that doesn't join up, a see-through or half-drawn figure). Write each as "what it is in the picture; what the reference shows".
   Do NOT list clothing, shoes, socks, accessories, props, pose, expression, viewing angle, lighting or art-style rendering. Characters may wear different clothes on different pages.
 - matches: true unless there is such an issue.
-- isDuplicate: true if this cast member appears more than once and this is NOT the copy that best fits the scene. Exactly one copy of each character is the original.
+- isDuplicate: true ONLY if this is a second copy of the same cast member in the SAME MOMENT: twice on one page, or twice in one continuous scene that runs across both pages. A double-page spread often shows two moments of the story, one on each page (for example slipping over on the left page, then admiring themselves on the right): the same character once on each page is then NOT a duplicate.
+Do NOT list reflections (in mirrors, water or windows), photos, paintings, drawings, posters, toys or soft toys as people or animals, even when they look like a cast member.
 ${args.sceneHint ? `\nScene: ${args.sceneHint}` : ""}
 Expected in this picture: ${expectedNames.length ? expectedNames.join(", ") : "(no specific cast members)"}.
 

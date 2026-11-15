@@ -54,7 +54,7 @@ import { ensureReferenceSheet, ensureStylePlate, loadCast, storyCharacterIds } f
 import { generateImage, rethrowIfBilling } from "@/lib/illustrate/gemini";
 import { fetchImage, upload, urlToPart } from "@/lib/illustrate/images";
 import { checkAndFix, letterAndCheck, repairText, type Track } from "@/lib/illustrate/steps";
-import { inspectSpread, judge } from "@/lib/illustrate/checkfix";
+import { inspectSpread, judge, readText } from "@/lib/illustrate/checkfix";
 import { planFixes, type CastRef, type InspectReport } from "@/lib/illustrate/plan";
 import type { TextBlock, TextVerdict } from "@/lib/illustrate/geometry";
 import { withUsageContext } from "@/lib/geminiUsage";
@@ -630,19 +630,53 @@ FINAL STYLE REQUIREMENT (overrides colours in references and scene direction): $
         return { skipped: true, reason: "superseded" };
       }
 
-      // 4. Text: judged from the same check; a text-only repair if wrong.
+      // 4. Text. Judged from the first check, unless a character fix has
+      // since touched the picture (it can smudge nearby lettering), in which
+      // case the fixed picture is read again. A failed judgement gets one
+      // fresh, text-only read before any repair: misreads are random and a
+      // read costs a fraction of a penny, a repair about 5p.
       let finalUrl = artUrl;
       let blocks: TextBlock[] = checked.blocks ?? [];
       let text: (TextVerdict & { attempts: number; method: string }) | null = null;
+      const reread = (id: string): Promise<TextBlock[] | null> =>
+        step.run(id, () =>
+          track(async () => {
+            try {
+              return await readText(await fetchImage(artUrl));
+            } catch (e) {
+              rethrowIfBilling(e);
+              return null;
+            }
+          })
+        );
       if (hasText && checked.blocks) {
-        const verdict = judge(checked.blocks, prep.leftText, prep.rightText);
+        let readBlocks: TextBlock[] = checked.blocks;
+        let rereadDone = false;
+        if (people.fixesApplied > 0) {
+          readBlocks = (await reread("text-read-after-fix")) ?? readBlocks;
+          rereadDone = true;
+        }
+        let verdict = judge(readBlocks, prep.leftText, prep.rightText);
+        if (!verdict.ok && !rereadDone) {
+          const second = await reread("text-reread");
+          if (second) {
+            const v2 = judge(second, prep.leftText, prep.rightText);
+            // Use the second read if it passes, or if it reads closer to the
+            // story (so any repair works from the better transcription).
+            if (v2.ok || v2.left + v2.right > verdict.left + verdict.right) {
+              verdict = v2;
+              readBlocks = second;
+            }
+          }
+        }
         if (verdict.ok) {
-          text = { ...verdict, attempts: 0, method: "one-pass" };
+          blocks = readBlocks;
+          text = { ...verdict, attempts: 0, method: readBlocks === checked.blocks ? "one-pass" : "one-pass, read twice" };
         } else {
           const repaired = await repairText(step, {
             prefix: "text",
             artUrl,
-            blocks: checked.blocks,
+            blocks: readBlocks,
             verdict,
             leftText: prep.leftText,
             rightText: prep.rightText,
