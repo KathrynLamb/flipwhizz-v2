@@ -95,13 +95,15 @@ export const SPREAD_IMAGE_SIZE = process.env.FW_SPREAD_SIZE || "2K";
  *   spreads whose featured characters fit the model's reference limit
  *   (4 on Nano Banana 2.1, 5 on Pro) and never for colouring books; anything
  *   else falls back to "staged".
- * FW_SPREAD_MODE sets the default; the admin Book page can choose per run.
+ * One-pass is the default for every book (tested 15 Nov 2026: 14 spreads for
+ * £1.03, about a quarter of staged). FW_SPREAD_MODE=staged switches every book
+ * back without a deploy; the admin Book page can choose per run.
  */
 export type SpreadMode = "staged" | "onepass";
 export function isSpreadMode(v: unknown): v is SpreadMode {
   return v === "staged" || v === "onepass";
 }
-export const DEFAULT_SPREAD_MODE: SpreadMode = isSpreadMode(process.env.FW_SPREAD_MODE) ? process.env.FW_SPREAD_MODE : "staged";
+export const DEFAULT_SPREAD_MODE: SpreadMode = isSpreadMode(process.env.FW_SPREAD_MODE) ? process.env.FW_SPREAD_MODE : "onepass";
 export function spreadMode(key?: unknown): SpreadMode {
   return isSpreadMode(key) ? key : DEFAULT_SPREAD_MODE;
 }

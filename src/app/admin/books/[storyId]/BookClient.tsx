@@ -70,7 +70,7 @@ export default function BookClient({ detail, costs, tab, original }: { detail: B
   const router = useRouter();
   const { book, busy } = detail;
   const [model, setModel] = useState("nb21");
-  const [mode, setMode] = useState("staged");
+  const [mode, setMode] = useState("onepass");
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string; link?: { href: string; label: string } } | null>(null);
