@@ -1,8 +1,10 @@
 // src/lib/ai/pricing.ts
 //
-// What one Gemini call costs, worked out from the model, the image size and
-// the token counts Google returns. List prices from Google's pricing page,
-// checked 14 Nov 2026. Standard (not Batch) rates, in US dollars.
+// What one AI call costs, worked out from the model, the image size and the
+// token counts returned. Gemini list prices from Google's pricing page,
+// checked 14 Nov 2026; Claude list prices from Anthropic's. Standard (not
+// Batch) rates, in US dollars. A model missing here is saved with no cost:
+// add it when a new one is used.
 //
 // Costs are kept as whole micro-dollars (1,000,000 = $1) so they add up
 // exactly in the database. This is an estimate for tracking, not an invoice:
@@ -16,6 +18,9 @@ export type CallUsage = {
   promptTokens?: number | null;
   outputTokens?: number | null;
   thoughtTokens?: number | null;
+  /** Claude prompt caching: tokens written to and read from the cache. */
+  cacheWriteTokens?: number | null;
+  cacheReadTokens?: number | null;
 };
 
 type Rates = {
@@ -37,6 +42,12 @@ const RATES: Array<[prefix: string, rates: Rates]> = [
   ["gemini-3.8-flash", { input: 0.75, output: 3.75 }],
   ["gemini-4-hydrogen", { input: 1.5, output: 7.5 }],
   ["gemini-2.5-flash", { input: 0.3, output: 2.5 }],
+  ["gemini-3-pro-preview", { input: 2.0, output: 12.0 }],
+  // Claude. Cache writes cost 1.25x input, cache reads 0.1x (see costMicroUsd).
+  ["claude-opus-4-5", { input: 5, output: 25 }],
+  ["claude-opus-4", { input: 15, output: 75 }],
+  ["claude-sonnet-4", { input: 3, output: 15 }],
+  ["claude-haiku-4-5", { input: 1, output: 5 }],
 ];
 
 export function ratesFor(model: string): Rates | null {
@@ -50,7 +61,11 @@ export function costMicroUsd(u: CallUsage): number | null {
   if (!r) return null;
   const perToken = (tokens: number | null | undefined, per1M: number) => ((tokens ?? 0) * per1M) / 1_000_000;
 
-  let usd = perToken(u.promptTokens, r.input) + perToken(u.thoughtTokens, r.output);
+  let usd =
+    perToken(u.promptTokens, r.input) +
+    perToken(u.thoughtTokens, r.output) +
+    perToken(u.cacheWriteTokens, r.input * 1.25) +
+    perToken(u.cacheReadTokens, r.input * 0.1);
   if (u.image && r.perImage) {
     // Images are billed per image by size; their tokens are not billed again.
     const size = (u.imageSize ?? "1K").toUpperCase();

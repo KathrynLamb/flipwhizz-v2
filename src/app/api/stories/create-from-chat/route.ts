@@ -3,7 +3,7 @@ import { isBookType, normalizeBookType, bookTypeChatContext, COLOURING_STYLE, ty
 export const maxDuration = 300; // two sequential Claude calls; long chats exceed 60s
 
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import {
   stories,
@@ -28,7 +28,7 @@ if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("Missing ANTHROPIC_API_KEY environment variable");
 }
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = trackedAnthropic("app/api/stories/create-from-chat/route", { apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL = "claude-sonnet-4-5-20250929";
 const DEFAULT_PAGE_COUNT = 28;
 

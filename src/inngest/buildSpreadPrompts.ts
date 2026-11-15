@@ -25,13 +25,14 @@ import {
 } from "@/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { v4 as uuid } from "uuid";
 
 /* -------------------------------------------------------------------------- */
 /*                                  CONFIG                                    */
 /* -------------------------------------------------------------------------- */
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+const client = trackedAnthropic("inngest/buildSpreadPrompts", { apiKey: process.env.ANTHROPIC_API_KEY! });
 const MODEL = "claude-sonnet-4-6";
 
 const MAX_PRIMARY_CHARACTERS = 3;

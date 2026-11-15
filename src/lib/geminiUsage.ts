@@ -6,11 +6,14 @@
 // size, tokens in/out, success, and how long it took. Chart "gemini_call" in
 // PostHog by source and model to see where the credits go.
 //
-// Calls made inside withUsageContext() (character and location cards, and
-// the steps of a spread) are
-// also priced and saved to the ai_usage table, tagged with their story and
-// the character or location they were for. That table is what the "cards
-// approved" report emails read (src/lib/emails/sendCardsReport.ts).
+// Calls made inside withUsageContext() are also priced and saved to the
+// ai_usage table, tagged with their book (or, before the book exists, its
+// project) and what they were for. Contexts are set by the Inngest usage
+// middleware (every background job), by withAccess (every API route that
+// names a story or project) and more specifically by the card routes and
+// the spread worker. Claude calls are saved the same way
+// (src/lib/ai/anthropicUsage.ts). The admin Costs tab and the report
+// emails read that table.
 //
 // Operational data only: no user ids, prompts or emails. Never throws.
 
@@ -29,37 +32,83 @@ export function withGeminiLabel<T>(label: string, fn: () => Promise<T>): Promise
 /* Usage context: which book and which card a call belongs to          */
 /* ------------------------------------------------------------------ */
 
-/** spread: every call made while drawing a spread; its label names the step. */
-export type UsageKind = "character_card" | "character_full_body" | "location_card" | "spread";
+/**
+ * What a call was for. The admin Costs tab and the report emails group by it.
+ * - character_card, character_full_body, location_card: the card pictures
+ * - characters: other character work (photo analysis, outfits, refreshes)
+ * - spread: everything done while drawing a spread; its label names the step
+ * - world: world building and reference sheets
+ * - style: the style plate
+ * - planning: scene plans and spread prompts
+ * - cover: cover planning and drawing
+ * - writing: the story itself (chat, rewrites, author letter)
+ * - other: anything not mapped yet
+ */
+export type UsageKind =
+  | "character_card"
+  | "character_full_body"
+  | "location_card"
+  | "characters"
+  | "spread"
+  | "world"
+  | "style"
+  | "planning"
+  | "cover"
+  | "writing"
+  | "other";
 
 export type UsageContext = {
   kind: UsageKind;
   storyId?: string | null;
+  /** For calls made before the book exists (writing the story in chat). */
+  projectId?: string | null;
   /** The character or location id. */
   entityId?: string | null;
+  /**
+   * A broad default set by a wrapper (an Inngest function, an API route).
+   * A more specific context set inside it replaces its kind.
+   */
+  fallback?: boolean;
 };
 
 const usageStore = new AsyncLocalStorage<UsageContext>();
 
 /**
- * Every Gemini call made inside fn is saved to ai_usage with this context.
- * An outer context wins, so a helper can set one without overriding its caller.
+ * Every AI call made inside fn is saved to ai_usage with this context.
+ * An outer specific context wins, so a helper can set one without overriding
+ * its caller; an outer fallback context gives way to the inner one but still
+ * lends it the story and project ids.
  */
 export function withUsageContext<T>(ctx: UsageContext, fn: () => Promise<T>): Promise<T> {
   const outer = usageStore.getStore();
-  if (outer) {
+  if (outer && !outer.fallback) {
     if (!outer.storyId && ctx.storyId) outer.storyId = ctx.storyId;
+    if (!outer.projectId && ctx.projectId) outer.projectId = ctx.projectId;
     if (!outer.entityId && ctx.entityId) outer.entityId = ctx.entityId;
     return fn();
   }
-  return usageStore.run({ ...ctx }, fn);
+  if (outer && ctx.fallback) {
+    // Two broad defaults: keep the outer kind, fill in what it lacks.
+    if (!outer.storyId && ctx.storyId) outer.storyId = ctx.storyId;
+    if (!outer.projectId && ctx.projectId) outer.projectId = ctx.projectId;
+    return fn();
+  }
+  return usageStore.run(
+    {
+      ...ctx,
+      storyId: ctx.storyId ?? outer?.storyId ?? null,
+      projectId: ctx.projectId ?? outer?.projectId ?? null,
+    },
+    fn
+  );
 }
 
 /** Fill in the story or entity once it is known (e.g. after reading the request body). */
-export function annotateUsage(patch: Partial<Pick<UsageContext, "storyId" | "entityId">>): void {
+export function annotateUsage(patch: Partial<Pick<UsageContext, "storyId" | "projectId" | "entityId">>): void {
   const ctx = usageStore.getStore();
   if (!ctx) return;
   if (patch.storyId) ctx.storyId = patch.storyId;
+  if (patch.projectId) ctx.projectId = patch.projectId;
   if (patch.entityId) ctx.entityId = patch.entityId;
 }
 
@@ -67,12 +116,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const uuidOrNull = (v: unknown) => (typeof v === "string" && UUID_RE.test(v) ? v : null);
 const intOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : null);
 
+/** Before scripts/sql/2026-11-15-ai-usage-project.sql is run, ai_usage has no project_id. */
+let projectColumnMissing = false;
+
 /** Save one call to ai_usage. Awaited (serverless), capped at 2s, never throws. */
 async function saveUsage(ctx: UsageContext, props: Record<string, any>): Promise<void> {
+  // Nothing to attribute it to: the call is still logged and sent to PostHog.
+  if (!uuidOrNull(ctx.storyId) && !uuidOrNull(ctx.projectId)) return;
   try {
     const write = (async () => {
       const [{ db }, { aiUsage }] = await Promise.all([import("@/db"), import("@/db/schema")]);
-      await db.insert(aiUsage).values({
+      const row = {
         storyId: uuidOrNull(ctx.storyId),
         kind: ctx.kind,
         entityId: uuidOrNull(ctx.entityId),
@@ -90,7 +144,26 @@ async function saveUsage(ctx: UsageContext, props: Record<string, any>): Promise
         costMicroUsd: intOrNull(props.cost_micro_usd),
         ms: intOrNull(props.ms),
         error: props.error ? String(props.error).slice(0, 300) : null,
-      });
+      };
+      if (!projectColumnMissing) {
+        try {
+          await db.insert(aiUsage).values({ ...row, projectId: uuidOrNull(ctx.projectId) });
+          return;
+        } catch (err) {
+          if (!/project_id/.test(String((err as any)?.cause?.message ?? (err as any)?.message ?? err))) throw err;
+          projectColumnMissing = true;
+          console.warn("[gemini-usage] ai_usage.project_id is missing: run scripts/sql/2026-11-15-ai-usage-project.sql");
+        }
+      }
+      if (!row.storyId) return; // a project-only row needs the new column
+      // Drizzle would name every column, project_id included, so list them by hand.
+      const { sql } = await import("drizzle-orm");
+      await db.execute(sql`
+        INSERT INTO ai_usage (story_id, kind, entity_id, source, label, model, image, image_size, ok, images_out,
+                              prompt_tokens, output_tokens, thought_tokens, total_tokens, cost_micro_usd, ms, error)
+        VALUES (${row.storyId}, ${row.kind}, ${row.entityId}, ${row.source}, ${row.label}, ${row.model}, ${row.image},
+                ${row.imageSize}, ${row.ok}, ${row.imagesOut}, ${row.promptTokens}, ${row.outputTokens}, ${row.thoughtTokens},
+                ${row.totalTokens}, ${row.costMicroUsd}, ${row.ms}, ${row.error})`);
     })();
     await Promise.race([write, new Promise((r) => setTimeout(r, 2000))]);
   } catch (err) {
@@ -111,9 +184,10 @@ function ph(): PostHog | null {
   return posthog;
 }
 
-async function record(props: Record<string, unknown>) {
+/** Log, send to PostHog and (inside a usage context) save one AI call. Used by the Anthropic wrapper too. */
+export async function recordAiCall(props: Record<string, unknown>) {
   const ctx = usageStore.getStore();
-  if (ctx) props = { ...props, kind: ctx.kind, story_id: ctx.storyId ?? null, entity_id: ctx.entityId ?? null };
+  if (ctx) props = { ...props, kind: ctx.kind, story_id: ctx.storyId ?? null, project_id: ctx.projectId ?? null, entity_id: ctx.entityId ?? null };
   try {
     console.log(`[gemini-usage] ${JSON.stringify(props)}`);
   } catch {}
@@ -146,7 +220,7 @@ export function trackedGemini(source: string, opts: GoogleGenAIOptions): GoogleG
       const u = res?.usageMetadata ?? {};
       const parts: any[] = res?.candidates?.[0]?.content?.parts ?? [];
       const imagesOut = parts.filter((p) => p?.inlineData?.data && !p.thought).length;
-      await record({
+      await recordAiCall({
         ...base,
         ok: true,
         images_out: imagesOut,
@@ -169,7 +243,7 @@ export function trackedGemini(source: string, opts: GoogleGenAIOptions): GoogleG
       });
       return res;
     } catch (err: any) {
-      await record({
+      await recordAiCall({
         ...base,
         ok: false,
         status: err?.status ?? err?.code ?? null,

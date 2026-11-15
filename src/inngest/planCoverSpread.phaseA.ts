@@ -6,7 +6,7 @@ import {
   storyStyleGuide,
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { z } from "zod";
 
 /* -------------------------------------------------------------------------- */
@@ -15,7 +15,7 @@ import { z } from "zod";
 
 const MODEL = "claude-sonnet-4-6";
 
-const client = new Anthropic({
+const client = trackedAnthropic("inngest/planCoverSpread.phaseA", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

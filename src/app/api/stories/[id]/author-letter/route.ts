@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const client = new Anthropic({
+const client = trackedAnthropic("app/api/stories/[id]/author-letter/route", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

@@ -20,7 +20,7 @@ import {
 import { worlds } from "@/db/schema-worlds";
 import { eq, asc, and, inArray, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import {
   extractCharactersWorldAware,
   extractLocationsWorldAware,
@@ -29,7 +29,7 @@ import {
 
 export const runtime = "nodejs";
 
-const client = new Anthropic({
+const client = trackedAnthropic("inngest/ensureWorld", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

@@ -1197,7 +1197,9 @@ export const aiUsage = pgTable("ai_usage", {
   id: uuid("id").primaryKey().defaultRandom(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   storyId: uuid("story_id"),
-  /** character_card | character_full_body | location_card | spread */
+  /** Set for calls made before the book exists (writing the story in chat). */
+  projectId: uuid("project_id"),
+  /** What the call was for: see UsageKind in src/lib/geminiUsage.ts. */
   kind: text("kind").notNull(),
   /** The character or location the call was for. */
   entityId: uuid("entity_id"),
@@ -1221,6 +1223,7 @@ export const aiUsage = pgTable("ai_usage", {
 }, (t) => ({
   storyKind: index("ai_usage_story_kind_idx").on(t.storyId, t.kind),
   entity: index("ai_usage_entity_idx").on(t.entityId),
+  project: index("ai_usage_project_idx").on(t.projectId),
 }));
 
 // One row per "cards approved" report email already sent, so two approval

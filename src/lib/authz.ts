@@ -10,6 +10,7 @@
 // Responses: 401 not signed in, 404 not found OR not yours (so we never
 // reveal that someone else's story exists), 400 missing id.
 
+import { withUsageContext, type UsageKind } from "@/lib/geminiUsage";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { sql } from "drizzle-orm";
@@ -174,6 +175,8 @@ export function withAccess<A extends unknown[]>(
     if (!user) return deny(401, "Please sign in to continue.");
 
     const cache: { body?: Row | null; form?: FormData | null } = {};
+    // The book (or project) this request is about, for AI cost tracking.
+    const usage: { storyId: string | null; projectId: string | null } = { storyId: null, projectId: null };
     const denied = async (status: 400 | 403 | 404, error: string, detail: Record<string, unknown>) => {
       // Signed-in user refused: record it, so a wrong rule shows up in PostHog
       // as a spike of access_denied rather than silent "not found" errors.
@@ -208,6 +211,8 @@ export function withAccess<A extends unknown[]>(
           if (optional) continue;
           return denied(400, `Missing ${resource} id`, { resource, reason: "missing_id" });
         }
+        if (resource === "story") usage.storyId = id;
+        if (resource === "project") usage.projectId = id;
         if (user.isAdmin) continue;
         let ok = false;
         try {
@@ -241,6 +246,21 @@ export function withAccess<A extends unknown[]>(
       }
     }
 
+    if (usage.storyId || usage.projectId) {
+      return withUsageContext({ kind: usageKindForPath(req), ...usage, fallback: true }, () => handler(...args));
+    }
     return handler(...args);
   };
+}
+
+/** What a route's AI calls are for, from its path. Routes that know better set their own context. */
+function usageKindForPath(req: Request): UsageKind {
+  let path = "";
+  try {
+    path = new URL(req.url).pathname;
+  } catch {}
+  if (/\/cover/.test(path)) return "cover";
+  if (/\/style/.test(path)) return "style";
+  if (/\/characters?\//.test(path)) return "characters";
+  return "writing";
 }

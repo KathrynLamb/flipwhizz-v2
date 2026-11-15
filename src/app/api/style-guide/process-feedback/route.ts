@@ -1,12 +1,12 @@
 // src/app/api/style-guide/process-feedback/route.ts
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import { storyStyleGuide } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { withAccess } from "@/lib/authz";
 
-const anthropic = new Anthropic({
+const anthropic = trackedAnthropic("app/api/style-guide/process-feedback/route", {
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 

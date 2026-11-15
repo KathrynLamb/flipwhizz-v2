@@ -4,6 +4,7 @@ import { BOOK_TYPE_TOOL, bookTypeChatContext, bookTypeFromToolBlocks, normalizeB
 
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import {
   projects,
@@ -22,7 +23,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import { withAlerts } from "@/lib/alerts";
 import { withAccess } from "@/lib/authz";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+const client = trackedAnthropic("app/api/chat/route", { apiKey: process.env.ANTHROPIC_API_KEY! });
 
 // ============================================================================
 // AGE + BIRTHDAY HELPERS

@@ -4,13 +4,13 @@
 // Characters already linked to this story are left alone; a character the
 // owner already has (by name) is linked rather than duplicated.
 
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { v4 as uuid } from "uuid";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { stories, projects, characters, storyCharacters } from "@/db/schema";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+const client = trackedAnthropic("lib/admin/reExtract", { apiKey: process.env.ANTHROPIC_API_KEY! });
 
 export async function reExtractCharacters(storyId: string): Promise<{ message: string; added: string[]; linked: string[] }> {
   const story = await db.query.stories.findFirst({ where: eq(stories.id, storyId) });

@@ -12,13 +12,14 @@ import {
 } from "@/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { v4 as uuid } from "uuid";
 
 /* -------------------------------------------------------------------------- */
 /*                                   CONFIG                                   */
 /* -------------------------------------------------------------------------- */
 
-const client = new Anthropic({
+const client = trackedAnthropic("inngest/decideSpreadScenes", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
