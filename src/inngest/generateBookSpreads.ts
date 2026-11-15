@@ -704,7 +704,7 @@ export const generateBookSpreads = inngest.createFunction(
       // Mark the spreads as asked for now, so the admin shows them as drawing
       // (and keeps whole-book actions locked) while they wait in the queue.
       // Each worker claims its spread again with its own, later, time.
-      await step.run("mark-queued", async () => {
+      const bookRun: number = await step.run("mark-queued", async () => {
         const now = Date.now();
         await db.execute(sql`
           UPDATE story_spreads
@@ -715,7 +715,12 @@ export const generateBookSpreads = inngest.createFunction(
         return now;
       });
 
-      await step.sendEvent("dispatch-spread-workers", events);
+      // bookRun + bookRunSize let the last spread to finish send the
+      // "book drawn" report email (src/lib/emails/sendSpreadsReport.ts).
+      await step.sendEvent(
+        "dispatch-spread-workers",
+        events.map((e) => ({ ...e, data: { ...e.data, bookRun, bookRunSize: events.length } }))
+      );
     }
 
     if (adminActionId) {

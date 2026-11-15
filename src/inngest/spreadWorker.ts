@@ -58,6 +58,7 @@ import { inspectSpread, judge } from "@/lib/illustrate/checkfix";
 import { planFixes, type CastRef, type InspectReport } from "@/lib/illustrate/plan";
 import type { TextBlock, TextVerdict } from "@/lib/illustrate/geometry";
 import { withUsageContext } from "@/lib/geminiUsage";
+import { maybeSendSpreadsReport } from "@/lib/emails/sendSpreadsReport";
 
 const ASPECT = "16:9";
 
@@ -89,6 +90,9 @@ const EventSchema = z.object({
   artModel: z.string().optional(),
   /** "staged" | "onepass"; unset = FW_SPREAD_MODE (default "staged"). */
   spreadMode: z.string().optional(),
+  /** Set by full-book runs: when the run started and how many spreads it drew. */
+  bookRun: z.number().optional(),
+  bookRunSize: z.number().optional(),
 });
 
 const usable = (u?: string | null): u is string => !!u && !u.startsWith("data:");
@@ -171,6 +175,8 @@ export const generateSingleSpread = inngest.createFunction(
       const ts = Number(original?.ts) || 0;
       const leftPageId = original?.data?.leftPageId;
       if (ts && typeof leftPageId === "string") await markGaveUp(leftPageId, ts);
+      const d = original?.data ?? {};
+      if (typeof d.storyId === "string") await maybeSendSpreadsReport(d.storyId, d.bookRun, d.bookRunSize);
     },
   },
   async ({ event, step }) => {
@@ -395,6 +401,7 @@ export const generateSingleSpread = inngest.createFunction(
     if ("skipped" in prep) {
       console.warn(`Skipping spread ${pageLabel}: ${prep.reason}`);
       await step.run("gave-up", async () => markGaveUp(leftPageId, myRun));
+      await step.run("book-report", async () => maybeSendSpreadsReport(storyId, ev.bookRun, ev.bookRunSize));
       return { skipped: true, reason: prep.reason };
     }
 
@@ -710,6 +717,7 @@ FINAL STYLE REQUIREMENT (overrides colours in references and scene direction): $
       if (status === "flagged") {
         console.warn(`🚩 Spread ${pageLabel} flagged (one-pass): ${[...people.remaining, ...(text?.problems ?? [])].join(" | ")}`);
       }
+      await step.run("book-report", async () => maybeSendSpreadsReport(storyId, ev.bookRun, ev.bookRunSize));
       return { success: true, pageLabel, imageUrl: finalUrl, qa: status, mode: "onepass" };
     }
 
@@ -808,6 +816,7 @@ FINAL STYLE REQUIREMENT (overrides colours in references and scene direction): $
     if (record.status === "flagged") {
       console.warn(`🚩 Spread ${pageLabel} flagged: ${[...qa.remaining, ...(lettered.text?.problems ?? [])].join(" | ")}`);
     }
+    await step.run("book-report", async () => maybeSendSpreadsReport(storyId, ev.bookRun, ev.bookRunSize));
     return { success: true, pageLabel, imageUrl: lettered.finalUrl, qa: record.status };
   }
 );
