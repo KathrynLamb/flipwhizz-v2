@@ -265,7 +265,15 @@ export const generateSingleSpread = inngest.createFunction(
         } else {
           const pageIds = [leftPageId, rightPageId].filter(Boolean) as string[];
           const pageChars = pageIds.length ? await loadPageCharacterIds(pageIds) : [];
-          featured = pageChars.filter((id) => !hidden.includes(id)).slice(0, MAX_FEATURED_CHARACTERS);
+          // Characters marked not shown (story_characters.shown) are never drawn.
+          const notShown = new Set(
+            (await db
+              .select({ id: storyCharacters.characterId })
+              .from(storyCharacters)
+              .where(and(eq(storyCharacters.storyId, storyId), eq(storyCharacters.shown, false))))
+              .map((r) => r.id),
+          );
+          featured = pageChars.filter((id) => !hidden.includes(id) && !notShown.has(id)).slice(0, MAX_FEATURED_CHARACTERS);
           if (featured.length === 0) sceneOnly = true;
         }
       }

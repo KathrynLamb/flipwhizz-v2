@@ -12,7 +12,7 @@ import {
   storyCharacters,
   storyLocations,
 } from "@/db/schema";
-import { eq, inArray, asc } from "drizzle-orm";
+import { and, eq, inArray, asc } from "drizzle-orm";
 import { withAccess } from "@/lib/authz";
 
 async function _GET(
@@ -95,7 +95,8 @@ async function _GET(
       })
       .from(characters)
       .innerJoin(storyCharacters, eq(characters.id, storyCharacters.characterId))
-      .where(eq(storyCharacters.storyId, storyId));
+      // Not-shown characters (story_characters.shown) aren't in the pictures, so don't list them.
+      .where(and(eq(storyCharacters.storyId, storyId), eq(storyCharacters.shown, true)));
 
     const allLocs = await db
       .select({
