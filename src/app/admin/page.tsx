@@ -6,6 +6,9 @@ import { requireAdminPage } from "@/lib/pageGuards";
 import { runHealthCheck } from "@/lib/healthCheck";
 import { listBooks, recentPaidOrders, adminTablesReady } from "@/lib/admin/data";
 import { Card, Empty, KindBadge, MigrationBanner, PageHeader, Pill, thumb, when } from "./ui";
+import { Timeline } from "./Timeline";
+import { listRecentEvents } from "@/lib/events/bookEvents";
+import { USD_TO_GBP } from "@/lib/ai/pricing";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,11 +23,15 @@ const STORY_LINK = /\/stories\/([0-9a-f-]{36})\//i;
 
 export default async function TodayPage() {
   await requireAdminPage();
-  const [ready, running, paid, report] = await Promise.all([
+  const [ready, running, paid, report, events] = await Promise.all([
     adminTablesReady(),
     listBooks({ filter: "running", limit: 20 }),
     recentPaidOrders(14),
     runHealthCheck(),
+    listRecentEvents(30).catch((err) => {
+      console.error("[admin] could not load recent events:", err);
+      return [];
+    }),
   ]);
 
   return (
@@ -77,6 +84,12 @@ export default async function TodayPage() {
               ))}
             </ul>
           )}
+        </Card>
+      </div>
+
+      <div className="mt-4">
+        <Card title="Latest customer activity" right={<span className="text-xs text-slate-500">chats, drafts, approvals, paywall, payments, stalls</span>}>
+          <Timeline events={events} usdToGbp={USD_TO_GBP} showBook showCustomer />
         </Card>
       </div>
 

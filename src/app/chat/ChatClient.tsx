@@ -538,7 +538,7 @@ export default function ChatClient() {
       const res = await fetch("/api/projects/create-from-demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages, bookType }),
+        body: JSON.stringify({ messages, bookType, demoSessionId: demoSessionId() }),
       });
 
       const data = await res.json().catch(() => null);

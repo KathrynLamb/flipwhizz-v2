@@ -21,6 +21,7 @@ import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { v4 as uuid, v5 as uuidv5 } from "uuid";
 import type { InferSelectModel } from "drizzle-orm";
 import { withAlerts } from "@/lib/alerts";
+import { recordBookEventSoon } from "@/lib/events/bookEvents";
 import { withAccess } from "@/lib/authz";
 
 const client = trackedAnthropic("app/api/chat/route", { apiKey: process.env.ANTHROPIC_API_KEY! });
@@ -533,6 +534,18 @@ async function _POST(req: Request) {
         lastMessageAt: now,
         createdAt: now,
       };
+
+      // A signed-in customer starting a new project chat. (Chats that began
+      // in the demo already have their session, so they don't land here.)
+      recordBookEventSoon({
+        kind: "chat_started",
+        summary: `Started a new chat: "${String(message).slice(0, 140)}"`,
+        userId,
+        projectId,
+        chatSessionId: sessionId,
+        details: { first_message: String(message) },
+        dedupeKey: `chat_started:${sessionId}`,
+      });
     }
 
     let resumedMessageId: string | undefined;

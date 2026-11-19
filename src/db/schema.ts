@@ -1240,3 +1240,34 @@ export const aiUsageReports = pgTable("ai_usage_reports", {
 }, (t) => ({
   once: uniqueIndex("ai_usage_reports_once_idx").on(t.storyId, t.kind, t.signature),
 }));
+
+/* ==================== BOOK EVENTS ==================== */
+// One row per step a customer reaches (chat started, story drafted, cards
+// approved, paywall, paid, ...) or problem they hit (stalled, failed). See
+// src/lib/events/bookEvents.ts. Feeds the admin timelines and Katy's emails.
+// No foreign keys on purpose, like ai_usage: the record should outlive a
+// deleted story or user. dedupe_key makes "only once" events safe to repeat.
+export const bookEvents = pgTable("book_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  /** See BookEventKind in src/lib/events/bookEventsCore.ts. */
+  kind: text("kind").notNull(),
+  userId: text("user_id"),
+  projectId: uuid("project_id"),
+  storyId: uuid("story_id"),
+  chatSessionId: uuid("chat_session_id"),
+  /** One line for the timeline and the email subject. */
+  summary: text("summary").notNull(),
+  details: jsonb("details"),
+  /** AI cost of the book (or chat) so far when the event happened, micro-dollars. */
+  costMicroUsd: integer("cost_micro_usd"),
+  dedupeKey: text("dedupe_key"),
+  emailed: boolean("emailed").notNull().default(false),
+}, (t) => ({
+  once: uniqueIndex("book_events_dedupe_idx").on(t.dedupeKey),
+  story: index("book_events_story_idx").on(t.storyId, t.createdAt),
+  user: index("book_events_user_idx").on(t.userId, t.createdAt),
+  project: index("book_events_project_idx").on(t.projectId),
+  session: index("book_events_session_idx").on(t.chatSessionId),
+  recent: index("book_events_created_idx").on(t.createdAt),
+}));

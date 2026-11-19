@@ -251,6 +251,16 @@ export async function maybeSendSpreadsReport(storyId: string, bookRun: number | 
         .onConflictDoNothing()
         .returning({ id: aiUsageReports.id });
       if (claimed.length === 0) return false;
+      // Admin timeline. The report below is the email, so this one isn't emailed.
+      const { recordBookEvent } = await import("@/lib/events/bookEvents");
+      await recordBookEvent({
+        kind: "book_drawn",
+        summary: `Finished drawing ${bookRunSize} spread${bookRunSize === 1 ? "" : "s"}`,
+        storyId,
+        details: { spreads: bookRunSize, run: bookRun },
+        dedupeKey: `book_drawn:${storyId}:${bookRun}`,
+        email: false,
+      });
     } catch (err) {
       // Without the table there is no way to send only once, so send nothing.
       console.warn("[spreads-report] ai_usage_reports unavailable, not sending:", String((err as any)?.message ?? err).slice(0, 200));
