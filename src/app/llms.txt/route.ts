@@ -70,7 +70,7 @@ const body = `# FlipWhizz
 ${giftLines}
 
 ## Contact
-- Email: hello@flipwhizz.com
+- Email: katy@flipwhizz.co.uk
 - Instagram: https://www.instagram.com/flipwhizz_kate
 `;
 
