@@ -6,6 +6,7 @@ import { v4 as uuid } from "uuid";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { db } from "@/db";
 import { projects, chatSessions, chatMessages } from "@/db/schema";
+import { linkDemoChat } from "@/lib/events/bookEvents";
 
 type DemoMsg = {
   role: "user" | "assistant";
@@ -113,6 +114,9 @@ export async function POST(req: NextRequest) {
         createdAt: new Date(now.getTime() + index),
       }))
     );
+
+    // Join the anonymous demo chat's events to this customer and project.
+    await linkDemoChat(typeof body?.demoSessionId === "string" ? body.demoSessionId : null, session.user.id, projectId);
 
     return NextResponse.json({ projectId });
   } catch (error) {

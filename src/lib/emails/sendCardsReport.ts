@@ -255,6 +255,17 @@ export async function sendCardsApprovedReport(storyId: string, kind: CardsReport
       console.warn("[cards-report] could not record the report, sending anyway:", String((err as any)?.message ?? err).slice(0, 200));
     }
 
+    // Admin timeline. The report below is the email, so this one isn't emailed.
+    const { recordBookEvent } = await import("@/lib/events/bookEvents");
+    await recordBookEvent({
+      kind: kind === "characters" ? "characters_approved" : "locations_approved",
+      summary: `${kind === "characters" ? "Approved all characters" : "Approved all places"}: ${names.map((n) => n.name).join(", ")}`,
+      storyId,
+      details: { count: names.length },
+      dedupeKey: `${kind}_approved:${storyId}:${approvalSignature(names)}`,
+      email: false,
+    });
+
     // If the table is not there yet, still send the report (with zeros and a note).
     let rows: UsageRow[] = [];
     try {

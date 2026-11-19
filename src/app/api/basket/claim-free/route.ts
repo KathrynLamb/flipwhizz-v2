@@ -6,6 +6,7 @@ import { inngest } from "@/inngest/client";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { withAlerts } from "@/lib/alerts";
 import { getAuthUser, owns, withAccess } from "@/lib/authz";
+import { recordBookEvent } from "@/lib/events/bookEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,14 @@ async function _POST(req: NextRequest) {
           story_id: storyId, product_type: result.payment.productType,
           promo_code: result.payment.promoCode, currency: result.payment.currency, via: "basket",
         }).catch(error => console.error("Basket analytics failed:", error));
+        if (!result.alreadyPaid && result.payment) await recordBookEvent({
+          kind: "paid",
+          summary: `Claimed free from the basket with code ${result.payment.promoCode} (${result.payment.productType})`,
+          userId: user.id,
+          storyId,
+          details: { product: result.payment.productType, amount: 0, promo_code: result.payment.promoCode, via: "basket" },
+          dedupeKey: `paid:${result.payment.id}`,
+        });
         results.push({ storyId, success: true });
       } catch (err: any) { results.push({ storyId, success: false, error: err?.message ?? "Unable to claim book." }); }
     }

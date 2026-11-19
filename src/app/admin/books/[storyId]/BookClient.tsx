@@ -9,6 +9,8 @@ import type { BookDetail, SpreadDetail, CharacterDetail, LocationDetail, PdfRow 
 import { Card, Empty, KindBadge, MigrationBanner, Pill, thumb, when } from "../../ui";
 import type { BookCosts, CostLine } from "@/lib/admin/costs";
 import { gbp, usd, KIND_LABELS } from "@/lib/admin/costFormat";
+import type { BookEventRow } from "@/lib/events/bookEvents";
+import { Timeline } from "../../Timeline";
 
 export type BookTab = "overview" | "pages" | "characters" | "locations" | "redraw" | "costs" | "pdf" | "activity";
 
@@ -66,7 +68,7 @@ const btnPrimary = `${btn} bg-[#8B5CF6] text-white hover:bg-[#7C4DEB]`;
 const btnQuiet = `${btn} border border-white/15 text-slate-200 hover:bg-white/5`;
 const btnDanger = `${btn} bg-rose-600 text-white hover:bg-rose-500`;
 
-export default function BookClient({ detail, costs, tab, original }: { detail: BookDetail; costs: BookCosts | null; tab: BookTab; original: Original }) {
+export default function BookClient({ detail, costs, events, usdToGbp, tab, original }: { detail: BookDetail; costs: BookCosts | null; events: BookEventRow[]; usdToGbp: number; tab: BookTab; original: Original }) {
   const router = useRouter();
   const { book, busy } = detail;
   const [model, setModel] = useState("nb21");
@@ -238,7 +240,7 @@ export default function BookClient({ detail, costs, tab, original }: { detail: B
       {tab === "redraw" && <Redraw detail={detail} ask={ask} sending={sending} locked={locked} />}
       {/* Keyed on the newest PDF, so a PDF just made is the one shown. */}
       {tab === "pdf" && <Pdfs key={detail.pdfs[0]?.id ?? "none"} detail={detail} ask={ask} sending={sending} locked={locked} />}
-      {tab === "activity" && <Activity detail={detail} ask={ask} sending={sending} locked={locked} />}
+      {tab === "activity" && <Activity detail={detail} events={events} usdToGbp={usdToGbp} ask={ask} sending={sending} locked={locked} />}
 
       {dialog && (
         <ConfirmDialog
@@ -859,9 +861,13 @@ const ACTION_TONE: Record<string, "green" | "red" | "amber" | "violet" | "slate"
   stopped: "amber",
 };
 
-function Activity({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
+function Activity({ detail, events, usdToGbp, ask, sending, locked }: { detail: BookDetail; events: BookEventRow[]; usdToGbp: number; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
   return (
     <div className="space-y-4">
+      <Card title="Customer timeline" right={<span className="text-xs text-slate-500">newest first · includes the chat</span>}>
+        <Timeline events={events} usdToGbp={usdToGbp} />
+      </Card>
+
       <Card
         title="Running now"
         right={

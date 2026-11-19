@@ -20,6 +20,7 @@ import {
 } from "@/lib/pricing";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { getAuthUser, withAccess } from "@/lib/authz";
+import { recordBookEvent } from "@/lib/events/bookEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -157,6 +158,14 @@ async function _POST(
       product_type: productType,
       promo_code: promo.code,
       currency,
+    });
+
+    await recordBookEvent({
+      kind: "paid",
+      summary: `Claimed free with code ${promo.code} (${productType})`,
+      storyId,
+      details: { product: productType, amount: 0, promo_code: promo.code },
+      dedupeKey: `paid:promo:${storyId}`,
     });
 
     return NextResponse.json({

@@ -23,6 +23,7 @@ import { worlds, worldReaders } from "@/db/schema-worlds";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { withAlerts } from "@/lib/alerts";
 import { withAccess } from "@/lib/authz";
+import { recordBookEventSoon } from "@/lib/events/bookEvents";
 
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("Missing ANTHROPIC_API_KEY environment variable");
@@ -941,6 +942,23 @@ JSON OUTPUT — no markdown, no preamble, ONLY this structure:
   } catch (err) {
     console.warn("🟠 [create-from-chat] PostHog event failed (non-fatal):", err);
   }
+
+  // Admin timeline + email to Katy, with what the chat and draft cost.
+  recordBookEventSoon({
+    kind: "draft_created",
+    summary: `Story draft written: "${title}" (${pages.length} pages)`,
+    userId,
+    projectId,
+    storyId,
+    details: {
+      reader: extraction.reader.childName ?? null,
+      reader_age: readerAge ?? null,
+      pages: pages.length,
+      purchase_intent: intent || null,
+      first_page: String(pages[0]?.text ?? "").slice(0, 300),
+    },
+    dedupeKey: `draft_created:${storyId}`,
+  });
 
   console.log("🟢 [create-from-chat] Story creation complete!", {
     storyId,

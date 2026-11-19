@@ -9,6 +9,7 @@ import { captureServerEvent } from "@/lib/posthog-server";
 import { withAlerts } from "@/lib/alerts";
 import { getAuthUser, owns, withAccess } from "@/lib/authz";
 import { CheckoutError, createCheckoutStore } from "@/lib/checkout/store";
+import { recordBookEvent } from "@/lib/events/bookEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -115,6 +116,15 @@ async function _POST(req: Request) {
       amount: payment.amountCents / 100, currency: payment.currency,
       promo_code: payment.promoCode ?? undefined,
     }).catch(error => console.error("Payment analytics failed:", error));
+
+    await recordBookEvent({
+      kind: "paid",
+      summary: `Paid ${(payment.amountCents / 100).toFixed(2)} ${payment.currency} for ${payment.productType}${payment.isUpgrade ? " (upgrade)" : ""}${payment.promoCode ? ` with code ${payment.promoCode}` : ""}`,
+      userId: user.id,
+      storyId: payment.storyId,
+      details: { product: payment.productType, amount: payment.amountCents / 100, currency: payment.currency, promo_code: payment.promoCode ?? null, paypal_order_id: orderID },
+      dedupeKey: `paid:${payment.id}`,
+    });
 
     return NextResponse.json({ success: true, storyId: payment.storyId, orderID, productType: payment.productType, isUpgrade: payment.isUpgrade });
   } catch (err: any) {

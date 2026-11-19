@@ -6,6 +6,9 @@ import { notFound } from "next/navigation";
 import { requireAdminPage } from "@/lib/pageGuards";
 import { listBooks, listOrders, searchCustomers } from "@/lib/admin/data";
 import { Card, Empty, KindBadge, PageHeader, Pill, thumb, when } from "../../ui";
+import { Timeline } from "../../Timeline";
+import { listUserEvents } from "@/lib/events/bookEvents";
+import { USD_TO_GBP } from "@/lib/ai/pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +17,14 @@ export default async function CustomerPage({ params }: { params: Promise<{ userI
   const { userId } = await params;
   const [person] = (await searchCustomers(userId)).filter((u) => u.id === userId);
   if (!person) notFound();
-  const [books, orders] = await Promise.all([listBooks({ ownerId: userId, limit: 100 }), listOrders({ userId, limit: 50 })]);
+  const [books, orders, events] = await Promise.all([
+    listBooks({ ownerId: userId, limit: 100 }),
+    listOrders({ userId, limit: 50 }),
+    listUserEvents(userId).catch((err) => {
+      console.error("[admin] could not load customer events:", err);
+      return [];
+    }),
+  ]);
 
   return (
     <>
@@ -46,6 +56,10 @@ export default async function CustomerPage({ params }: { params: Promise<{ userI
               ))}
             </ul>
           )}
+        </Card>
+
+        <Card title="Timeline" right={<span className="text-xs text-slate-500">newest first</span>}>
+          <Timeline events={events} usdToGbp={USD_TO_GBP} showBook />
         </Card>
 
         <Card title={`Orders (${orders.length})`}>

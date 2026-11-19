@@ -5,6 +5,7 @@ import { CheckoutError, createCheckoutStore } from "@/lib/checkout/store";
 import { inngest } from "@/inngest/client";
 import { withAlerts } from "@/lib/alerts";
 import { getAuthUser, withAccess } from "@/lib/authz";
+import { recordBookEvent } from "@/lib/events/bookEvents";
 
 const checkout = createCheckoutStore(db);
 async function _POST(req: NextRequest) {
@@ -15,6 +16,14 @@ async function _POST(req: NextRequest) {
     if (typeof storyId !== "string" || typeof promoCode !== "string" || !promoCode.trim()) throw new CheckoutError("Choose a story and enter a promo code.");
     const result = await checkout.claimFree(storyId, user.id, promoCode, user.isAdmin);
     if (result.payment) await inngest.send({ id: `checkout-${result.payment.id}`, name: "story/generate-spreads", data: { storyId } });
+    if (!result.alreadyPaid && result.payment) await recordBookEvent({
+      kind: "paid",
+      summary: `Claimed free with code ${result.payment.promoCode} (${result.payment.productType})`,
+      userId: user.id,
+      storyId,
+      details: { product: result.payment.productType, amount: 0, promo_code: result.payment.promoCode },
+      dedupeKey: `paid:${result.payment.id}`,
+    });
     return NextResponse.json({ success: true, alreadyPaid: result.alreadyPaid });
   } catch (err: any) {
     console.error("[claim-free] Error:", err);
