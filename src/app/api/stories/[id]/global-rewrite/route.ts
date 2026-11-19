@@ -1,6 +1,7 @@
 // src/app/api/stories/[id]/global-rewrite/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import { stories, storyPages } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
@@ -12,7 +13,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+const client = trackedAnthropic("app/api/stories/[id]/global-rewrite/route", { apiKey: process.env.ANTHROPIC_API_KEY! });
 const MAX_GLOBAL_REWRITE_PAGES = 40;
 
 function log(...args: any[]) {

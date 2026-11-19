@@ -1,6 +1,6 @@
 // src/app/api/projects/[projectId]/split/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import {
   stories,
@@ -18,7 +18,7 @@ import { withAccess } from "@/lib/authz";
 
 export const runtime = "nodejs";
 
-const client = new Anthropic({
+const client = trackedAnthropic("app/api/projects/[projectId]/split/route", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

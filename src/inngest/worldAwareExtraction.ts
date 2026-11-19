@@ -23,9 +23,9 @@ import {
 } from "@/db/schema-worlds";
 import { eq, and, inArray } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 
-const client = new Anthropic({
+const client = trackedAnthropic("inngest/worldAwareExtraction", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

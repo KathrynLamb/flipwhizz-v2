@@ -7,8 +7,12 @@ import { useRouter } from "next/navigation";
 import { ACTIONS, BOOK_STATUSES, confirmNeeded, titleMatches, type ActionKey, type BookKind } from "@/lib/admin/catalog";
 import type { BookDetail, SpreadDetail, CharacterDetail, LocationDetail, PdfRow } from "@/lib/admin/data";
 import { Card, Empty, KindBadge, MigrationBanner, Pill, thumb, when } from "../../ui";
+import type { BookCosts, CostLine } from "@/lib/admin/costs";
+import { gbp, usd, KIND_LABELS } from "@/lib/admin/costFormat";
+import type { BookEventRow } from "@/lib/events/bookEvents";
+import { Timeline } from "../../Timeline";
 
-export type BookTab = "overview" | "pages" | "characters" | "locations" | "redraw" | "pdf" | "activity";
+export type BookTab = "overview" | "pages" | "characters" | "locations" | "redraw" | "costs" | "pdf" | "activity";
 
 type Original = { id: string; title: string; kind: BookKind; ownerEmail: string | null } | null;
 
@@ -33,6 +37,7 @@ const TAB_LABELS: Record<BookTab, string> = {
   characters: "Characters",
   locations: "Places",
   redraw: "Redraw",
+  costs: "Costs",
   pdf: "PDF",
   activity: "Activity",
 };
@@ -49,15 +54,25 @@ const MODELS = [
   { value: "pro", label: "Gemini 3 Pro Image" },
 ];
 
+// How spreads are drawn on redraws started here (src/lib/illustrate/models.ts).
+// One-pass: art and text in one call, one check, repairs only where needed.
+// Spreads with more featured characters than the model's limit, and
+// colouring books, still use staged.
+const SPREAD_MODES = [
+  { value: "staged", label: "Staged (art, then lettering)" },
+  { value: "onepass", label: "One-pass (art and text together)" },
+];
+
 const btn = "rounded-lg px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40";
 const btnPrimary = `${btn} bg-[#8B5CF6] text-white hover:bg-[#7C4DEB]`;
 const btnQuiet = `${btn} border border-white/15 text-slate-200 hover:bg-white/5`;
 const btnDanger = `${btn} bg-rose-600 text-white hover:bg-rose-500`;
 
-export default function BookClient({ detail, tab, original }: { detail: BookDetail; tab: BookTab; original: Original }) {
+export default function BookClient({ detail, costs, events, usdToGbp, tab, original }: { detail: BookDetail; costs: BookCosts | null; events: BookEventRow[]; usdToGbp: number; tab: BookTab; original: Original }) {
   const router = useRouter();
   const { book, busy } = detail;
   const [model, setModel] = useState("nb21");
+  const [mode, setMode] = useState("onepass");
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string; link?: { href: string; label: string } } | null>(null);
@@ -82,7 +97,7 @@ export default function BookClient({ detail, tab, original }: { detail: BookDeta
       const res = await fetch(`/api/admin/books/${book.id}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, artModel: model, ...payload }),
+        body: JSON.stringify({ action, artModel: model, spreadMode: mode, ...payload }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) {
@@ -166,6 +181,14 @@ export default function BookClient({ detail, tab, original }: { detail: BookDeta
               ))}
             </select>
           </label>
+          <label className="flex items-center gap-2 text-xs text-slate-400">
+            Spread mode
+            <select value={mode} onChange={(e) => setMode(e.target.value)} className="rounded-lg border border-white/15 bg-[#11111d] px-2 py-1.5 text-xs text-white">
+              {SPREAD_MODES.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </label>
         </div>
       </div>
 
@@ -209,14 +232,15 @@ export default function BookClient({ detail, tab, original }: { detail: BookDeta
         ))}
       </nav>
 
-      {tab === "overview" && <Overview detail={detail} original={original} ask={ask} sending={sending} locked={locked} />}
+      {tab === "overview" && <Overview detail={detail} costs={costs} original={original} ask={ask} sending={sending} locked={locked} />}
+      {tab === "costs" && <Costs costs={costs} />}
       {tab === "pages" && <Pages spreads={detail.spreads} ask={ask} sending={sending} />}
       {tab === "characters" && <Characters characters={detail.characters} ask={ask} sending={sending} locked={locked} />}
       {tab === "locations" && <Places locations={detail.locations} spreads={detail.spreads} bookId={book.id} />}
       {tab === "redraw" && <Redraw detail={detail} ask={ask} sending={sending} locked={locked} />}
       {/* Keyed on the newest PDF, so a PDF just made is the one shown. */}
       {tab === "pdf" && <Pdfs key={detail.pdfs[0]?.id ?? "none"} detail={detail} ask={ask} sending={sending} locked={locked} />}
-      {tab === "activity" && <Activity detail={detail} ask={ask} sending={sending} locked={locked} />}
+      {tab === "activity" && <Activity detail={detail} events={events} usdToGbp={usdToGbp} ask={ask} sending={sending} locked={locked} />}
 
       {dialog && (
         <ConfirmDialog
@@ -241,7 +265,7 @@ type Ask = (action: ActionKey, payload?: Record<string, unknown>, opts?: AskOpts
 /*                                  Overview                                  */
 /* -------------------------------------------------------------------------- */
 
-function Overview({ detail, original, ask, sending, locked }: { detail: BookDetail; original: Original; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
+function Overview({ detail, costs, original, ask, sending, locked }: { detail: BookDetail; costs: BookCosts | null; original: Original; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
   const { book } = detail;
   const drawn = detail.spreads.filter((s) => s.pageImageUrl).length;
   const flagged = detail.spreads.filter((s) => s.status === "flagged").length;
@@ -264,6 +288,14 @@ function Overview({ detail, original, ask, sending, locked }: { detail: BookDeta
         )}
         {" · "}
         <Link href={`/admin/books/${book.id}?tab=pdf`} className="text-[#C4B5FD] hover:text-white">PDF tab</Link>
+      </span>,
+    ],
+    [
+      "AI cost",
+      <span key="cost">
+        {costs ? `${gbp(costs.total.microUsd, costs.usdToGbp)} (${usd(costs.total.microUsd)})` : "not tracked yet"}
+        {" · "}
+        <Link href={`/admin/books/${book.id}?tab=costs`} className="text-[#C4B5FD] hover:text-white">Costs tab</Link>
       </span>,
     ],
     ["Created", when(book.createdAt)],
@@ -395,6 +427,13 @@ function Pages({ spreads, ask, sending }: { spreads: SpreadDetail[]; ask: Ask; s
                     {problems.map((p, i) => <li key={i}>{p}</li>)}
                   </ul>
                 )}
+                {s.textProblems.length > 0 && s.textReadBack && (
+                  <details className="mt-1 text-xs text-slate-400">
+                    <summary className="cursor-pointer">What the checker read</summary>
+                    <p className="mt-1"><span className="text-slate-500">Left: </span>{s.textReadBack.left || "(nothing)"}</p>
+                    <p className="mt-1"><span className="text-slate-500">Right: </span>{s.textReadBack.right || "(nothing)"}</p>
+                  </details>
+                )}
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
                     className={btnQuiet}
@@ -413,7 +452,7 @@ function Pages({ spreads, ask, sending }: { spreads: SpreadDetail[]; ask: Ask; s
                     Fix one character
                   </button>
                   {s.artUrl && <a href={s.artUrl} target="_blank" className="self-center text-xs text-[#C4B5FD] hover:text-white">art without text ↗</a>}
-                  {s.model && <span className="self-center text-xs text-slate-500">{s.model} · {when(s.at)}</span>}
+                  {s.model && <span className="self-center text-xs text-slate-500">{s.model}{s.mode === "onepass" ? " · one-pass" : ""} · {when(s.at)}</span>}
                 </div>
                 <details className="mt-2 text-xs text-slate-400">
                   <summary className="cursor-pointer text-slate-500 hover:text-white">Scene plan</summary>
@@ -822,9 +861,13 @@ const ACTION_TONE: Record<string, "green" | "red" | "amber" | "violet" | "slate"
   stopped: "amber",
 };
 
-function Activity({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
+function Activity({ detail, events, usdToGbp, ask, sending, locked }: { detail: BookDetail; events: BookEventRow[]; usdToGbp: number; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
   return (
     <div className="space-y-4">
+      <Card title="Customer timeline" right={<span className="text-xs text-slate-500">newest first · includes the chat</span>}>
+        <Timeline events={events} usdToGbp={usdToGbp} />
+      </Card>
+
       <Card
         title="Running now"
         right={
@@ -1024,6 +1067,89 @@ function ConfirmDialog({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                    Costs                                   */
+/* -------------------------------------------------------------------------- */
+
+function CostTable({ lines, label, rate, name }: { lines: CostLine[]; label: string; rate: number; name: (key: string) => string }) {
+  if (lines.length === 0) return <Empty>Nothing yet.</Empty>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-slate-500">
+            <th className="py-1 pr-3 font-medium">{label}</th>
+            <th className="py-1 pr-3 text-right font-medium">Calls</th>
+            <th className="py-1 pr-3 text-right font-medium">Pictures</th>
+            <th className="py-1 pr-3 text-right font-medium">Failed</th>
+            <th className="py-1 text-right font-medium">Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((l) => (
+            <tr key={l.key} className="border-t border-white/5 text-slate-200">
+              <td className="py-1.5 pr-3">{name(l.key)}</td>
+              <td className="py-1.5 pr-3 text-right tabular-nums">{l.calls}</td>
+              <td className="py-1.5 pr-3 text-right tabular-nums">{l.pictures}</td>
+              <td className={`py-1.5 pr-3 text-right tabular-nums ${l.failed ? "text-rose-300" : ""}`}>{l.failed}</td>
+              <td className="py-1.5 text-right tabular-nums">
+                {gbp(l.microUsd, rate)}
+                {l.unpriced ? <span className="text-amber-300"> +{l.unpriced} unpriced</span> : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Costs({ costs }: { costs: BookCosts | null }) {
+  if (!costs) {
+    return <Empty>Costs aren&apos;t tracked yet: run scripts/sql/2026-11-14-ai-usage.sql in Neon.</Empty>;
+  }
+  const rate = costs.usdToGbp;
+  const t = costs.total;
+  const unpriced = costs.byModel.filter((m) => m.unpriced > 0).map((m) => m.key);
+  return (
+    <div className="space-y-4">
+      <Card title="This book so far">
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+          <div>
+            <div className="text-2xl font-semibold text-white">{gbp(t.microUsd, rate)}</div>
+            <div className="text-xs text-slate-500">{usd(t.microUsd)} at list prices</div>
+          </div>
+          <div className="text-sm text-slate-300">
+            {t.calls} AI calls · {t.pictures} pictures · {t.failed} failed
+          </div>
+        </div>
+        {costs.beforeBook && (
+          <p className="mt-3 text-sm text-slate-300">
+            Plus {gbp(costs.beforeBook.microUsd, rate)} writing the story in chat before the book existed ({costs.beforeBook.calls} calls). That is
+            for the whole project, so it is shared if the project has more than one book.
+          </p>
+        )}
+        <p className="mt-3 text-xs text-slate-500">
+          Estimates from list prices, not the bill. {costs.firstAt ? `Tracked from ${when(costs.firstAt)}; ` : ""}cards and spreads are tracked
+          from 14 Nov 2026 and everything else from 15 Nov 2026, so older books show only part of their cost.
+          {unpriced.length > 0 ? ` No price is set yet for ${unpriced.join(", ")} (src/lib/ai/pricing.ts).` : ""}
+        </p>
+      </Card>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="By stage">
+          <CostTable lines={costs.byKind} label="Stage" rate={rate} name={(k) => KIND_LABELS[k] ?? k} />
+        </Card>
+        <Card title="By model">
+          <CostTable lines={costs.byModel} label="Model" rate={rate} name={(k) => k} />
+        </Card>
+      </div>
+      <Card title="By day">
+        <CostTable lines={costs.byDay} label="Day" rate={rate} name={(k) => k} />
+      </Card>
     </div>
   );
 }

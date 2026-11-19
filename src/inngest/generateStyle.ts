@@ -1,3 +1,4 @@
+// src/inngest/generateStyle.ts
 import { requireConfirmedBookType } from "@/lib/books/storyFormat";
 import { inngest } from "./client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
@@ -137,10 +138,14 @@ export const generateStyleSample = inngest.createFunction(
     for (const loc of locationRefs) {
       if (!loc.url) continue;
 
-      console.log(`🗺️ Adding location reference: ${loc.label}`);
+      // Callers send either `label` (StyleEditor, StylePreviewStage) or `name`
+      // (StyleStudio). Accept both so a missing label can never crash the job.
+      const locLabel: string = String(loc.label ?? loc.name ?? "location");
+
+      console.log(`🗺️ Adding location reference: ${locLabel}`);
       parts.push(await getImagePart(loc.url));
       parts.push({
-        text: `↑ SETTING REFERENCE: ${loc.label.toUpperCase()} ↑
+        text: `↑ SETTING REFERENCE: ${locLabel.toUpperCase()} ↑
 Match this environment/style/palette/layout exactly.
 Use it as the setting across the full spread.`,
       });
@@ -168,15 +173,17 @@ Analyze this reference image carefully and match:
       (ref: any) => ref.type === "character"
     );
     for (const char of characterRefs) {
+      const charLabel: string = String(char.label ?? char.name ?? "this character");
+
       if (!char.url) {
-        console.warn(`⚠️ Skipping character ${char.label} - no image URL`);
+        console.warn(`⚠️ Skipping character ${charLabel} - no image URL`);
         continue;
       }
 
-      console.log(`👤 Adding character reference: ${char.label}`);
+      console.log(`👤 Adding character reference: ${charLabel}`);
       parts.push(await getImagePart(char.url));
       parts.push({
-        text: `↑ THIS IS ${char.label.toUpperCase()} ↑
+        text: `↑ THIS IS ${charLabel.toUpperCase()} ↑
 Match this character EXACTLY. No redesign, no stylization, no outfit changes.`,
       });
     }

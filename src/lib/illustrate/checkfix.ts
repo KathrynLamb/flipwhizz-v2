@@ -3,6 +3,8 @@
 // Model calls for the check-and-fix pipeline:
 //   inspectArt   - vision: find every person/animal, match to the cast,
 //                  list differences from their reference
+//   inspectSpread- one-pass mode: the same check graded to faults a parent
+//                  would notice, plus a transcript of the lettering, in ONE call
 //   fixCrop      - redraw ONE person inside a crop with their references
 //   addMissing   - whole-picture edit to add characters nobody drew
 //   letterArt    - hand-letter the page text onto finished art (Pro)
@@ -17,7 +19,7 @@ import { generateImage, generateJson } from "./gemini";
 import { box2dToPx, planCrop, judgeLettering, isValidBox2d, type Box2d, type TextBlock, type TextVerdict, type CropPlan } from "./geometry";
 import { normaliseReport, type CastRef, type CropFix, type InspectReport } from "./plan";
 import { enlarge, extract, imageSize, matchSize, pastePatch, toPart, urlToPart } from "./images";
-import { LETTERING_MODEL } from "./models";
+import { LETTERING_MODEL, type CardThinking } from "./models";
 
 const kindOf = (c: CastRef) => (c.species && c.species !== "human" ? `${c.breed || c.species}` : "person");
 
@@ -59,7 +61,8 @@ For each one:
   If a reference says what someone wears ON THIS PAGE, judge their clothes against that, not against the reference picture.
 - Also list as issues any rendering faults on that figure: see-through or faded parts, a half-drawn or cut-off body, a head or limb that doesn't join up, two figures merged together, extra or missing limbs.
 - matches: true only if there are no such differences or faults.
-- isDuplicate: true if this cast member appears more than once and this is NOT the copy that best matches the scene. Exactly one copy of each character is the original.
+- isDuplicate: true ONLY if this is a second copy of the same cast member in the SAME MOMENT: twice on one page, or twice in one continuous scene that runs across both pages. A double-page spread often shows two moments of the story, one on each page (for example slipping over on the left page, then admiring themselves on the right): the same character once on each page is then NOT a duplicate.
+Do NOT list reflections (in mirrors, water or windows), photos, paintings, drawings, posters, toys or soft toys as people or animals, even when they look like a cast member.
 ${args.sceneHint ? `\nScene: ${args.sceneHint}` : ""}
 Expected in this picture: ${expectedNames.length ? expectedNames.join(", ") : "(no specific cast members)"}.
 
@@ -69,6 +72,71 @@ Return JSON only:
 
   const raw = await generateJson<any>(parts, "inspect");
   return normaliseReport(raw, cast, expectedIds);
+}
+
+/**
+ * One-pass check: people AND text in a single vision call.
+ *
+ * Differences from inspectArt:
+ * - Only faults that change who someone is are reported as issues (wrong or
+ *   missing person, duplicates, hair, skin, glasses, species, coat, broken
+ *   bodies). Clothing details and small accessories are not, so they are
+ *   never sent for repair. Both character flags on the last two paid books
+ *   were clothing details (pyjamas, socks).
+ * - It also transcribes the lettering with boxes, so the text can be judged
+ *   without a second call.
+ */
+export async function inspectSpread(args: {
+  art: Buffer;
+  cast: CastRef[];
+  expectedIds: string[];
+  sceneHint?: string;
+  leftText: string;
+  rightText: string;
+}): Promise<{ report: InspectReport; blocks: TextBlock[] }> {
+  const { art, cast, expectedIds } = args;
+  const parts: any[] = [await toPart(art, 2752), { text: "IMAGE A: the finished double-page spread to check, with its lettering." }];
+
+  for (const c of cast) {
+    const url = c.sheetUrl || c.cardUrl;
+    if (!url) continue;
+    try {
+      parts.push(await urlToPart(url, 768));
+      parts.push({ text: `REFERENCE for ${c.name.toUpperCase()} (id: ${c.id}, ${kindOf(c)}). ${c.line}` });
+    } catch {
+      parts.push({ text: `REFERENCE for ${c.name.toUpperCase()} (id: ${c.id}, ${kindOf(c)}), text only: ${c.line}` });
+    }
+  }
+
+  const expectedNames = cast.filter((c) => expectedIds.includes(c.id)).map((c) => c.name);
+  parts.push({
+    text: `You check finished pages of a personalised children's picture book. Do two jobs on IMAGE A.
+
+JOB 1: PEOPLE AND ANIMALS
+Find EVERY person and animal in IMAGE A, including small or partly hidden ones. For each one:
+- characterId: which cast member it is (use the ids above), matched by hair, face, colours, build, age and species. null if it is nobody from the cast.
+- name: the cast member's name, or a short description if unknown.
+- box_2d: a tight box around their WHOLE body as [ymin, xmin, ymax, xmax], normalised 0-1000.
+- issues: ONLY differences that would make a parent say "that isn't my child": hair colour, hair length, hair texture or style, skin tone, apparent age, glasses, facial hair, a head covering they always wear, species, breed, coat colour and markings, or a body that is broken (merged figures, extra or missing limbs, a head or limb that doesn't join up, a see-through or half-drawn figure). Write each as "what it is in the picture; what the reference shows".
+  Do NOT list clothing, shoes, socks, accessories, props, pose, expression, viewing angle, lighting or art-style rendering. Characters may wear different clothes on different pages.
+- matches: true unless there is such an issue.
+- isDuplicate: true ONLY if this is a second copy of the same cast member in the SAME MOMENT: twice on one page, or twice in one continuous scene that runs across both pages. A double-page spread often shows two moments of the story, one on each page (for example slipping over on the left page, then admiring themselves on the right): the same character once on each page is then NOT a duplicate.
+Do NOT list reflections (in mirrors, water or windows), photos, paintings, drawings, posters, toys or soft toys as people or animals, even when they look like a cast member.
+${args.sceneHint ? `\nScene: ${args.sceneHint}` : ""}
+Expected in this picture: ${expectedNames.length ? expectedNames.join(", ") : "(no specific cast members)"}.
+
+JOB 2: TEXT
+Transcribe every block of lettering visible in IMAGE A exactly as written, including punctuation. For each block give a tight box_2d [ymin, xmin, ymax, xmax] normalised 0-1000. Do not correct spelling; copy what is drawn.
+
+Return JSON only:
+{"people":[{"characterId":"id or null","name":"...","box_2d":[0,0,0,0],"matches":true,"isDuplicate":false,"issues":["..."]}],"missing":["ids of expected characters you could not find"],"text":[{"box_2d":[0,0,0,0],"text":"..."}]}`,
+  });
+
+  const raw = await generateJson<any>(parts, "inspect-spread");
+  const blocks: TextBlock[] = (Array.isArray(raw?.text) ? raw.text : []).filter(
+    (b: any) => Array.isArray(b?.box_2d) && typeof b?.text === "string"
+  );
+  return { report: normaliseReport(raw, cast, expectedIds), blocks };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -108,6 +176,7 @@ export async function fixCrop(args: {
   styleBlock: string;
   /** The image already has lettering/titles that must survive (covers, lettered pages). */
   preserveText?: boolean;
+  thinking?: CardThinking;
 }): Promise<{ patch: Buffer; plan: CropPlan; model: string; grow: number }> {
   const { art, fix, cast } = args;
   const { width: W, height: H } = await imageSize(art);
@@ -164,6 +233,7 @@ Style: ${args.styleBlock}`,
     imageSize: longSide > 1100 ? "2K" : "1K",
     label: `fix-${fix.kind}`,
     photoParts,
+    thinking: args.thinking,
   });
   // Replacements can be a different size (an adult where a child was) and
   // removals leave shadows: give them a bigger blend area.
@@ -233,11 +303,19 @@ export async function letterArt(args: {
   aspectRatio: string;
   imageSize: string;
   feedback?: string;
+  /** Defaults to LETTERING_MODEL (Pro). One-pass text repairs use Nano Banana 2.1. */
+  model?: string;
+  /** The art already has (wrong) lettering: replace it rather than add more. */
+  replaceExisting?: boolean;
+  thinking?: CardThinking;
 }): Promise<Buffer> {
+  const opening = args.replaceExisting
+    ? `This children's book double-page spread already has lettering, but the words are wrong. Replace ALL of the existing lettering with the text below, in the same places and the same lettering style. Do NOT change the illustration in any way: same people, faces, animals, colours, composition and background. Only change the words.`
+    : `Hand-letter the page text onto this children's book double-page spread. Do NOT change the illustration in any way: same people, faces, animals, colours, composition and background. Only add the lettering.`;
   const parts: any[] = [
     await toPart(args.art, 2752),
     {
-      text: `Hand-letter the page text onto this children's book double-page spread. Do NOT change the illustration in any way: same people, faces, animals, colours, composition and background. Only add the lettering.
+      text: `${opening}
 
 TEXT. Letter each passage EXACTLY ONCE, word for word, exactly as written between the quotes. Do not repeat, split, shorten or add any words. Each page gets one block of text.
 LEFT PAGE (the left half), in its calmest upper area: ${quote(args.leftText)}
@@ -249,11 +327,12 @@ ${args.feedback ? `Fix from the last attempt: ${args.feedback}` : ""}`,
     },
   ];
   const out = await generateImage({
-    model: LETTERING_MODEL,
+    model: args.model ?? LETTERING_MODEL,
     parts,
     aspectRatio: args.aspectRatio,
     imageSize: args.imageSize,
-    label: "letter",
+    label: args.replaceExisting ? "text-repair" : "letter",
+    thinking: args.thinking,
   });
   const { width, height } = await imageSize(args.art);
   return matchSize(out.data, width, height);

@@ -5,11 +5,14 @@ import { notFound } from "next/navigation";
 import { requireAdminPage } from "@/lib/pageGuards";
 import { loadBookDetail } from "@/lib/admin/data";
 import { loadBookIdentity } from "@/lib/admin/server";
+import { loadBookCosts } from "@/lib/admin/costs";
 import BookClient, { type BookTab } from "./BookClient";
+import { listStoryEvents } from "@/lib/events/bookEvents";
+import { USD_TO_GBP } from "@/lib/ai/pricing";
 
 export const dynamic = "force-dynamic";
 
-const TABS: BookTab[] = ["overview", "pages", "characters", "locations", "redraw", "pdf", "activity"];
+const TABS: BookTab[] = ["overview", "pages", "characters", "locations", "redraw", "costs", "pdf", "activity"];
 
 export default async function BookPage({
   params,
@@ -25,11 +28,25 @@ export default async function BookPage({
 
   const detail = await loadBookDetail(storyId);
   if (!detail) notFound();
-  const original = detail.book.originalStoryId ? await loadBookIdentity(detail.book.originalStoryId) : null;
+  const [original, costs, events] = await Promise.all([
+    detail.book.originalStoryId ? loadBookIdentity(detail.book.originalStoryId) : Promise.resolve(null),
+    // Cheap (indexed on story_id); the Overview shows the total, the Costs tab the detail.
+    loadBookCosts(storyId, detail.book.projectId ?? null).catch((err) => {
+      console.error("[admin] could not load book costs:", err);
+      return null;
+    }),
+    listStoryEvents(storyId, detail.book.projectId ?? null).catch((err) => {
+      console.error("[admin] could not load book events:", err);
+      return [];
+    }),
+  ]);
 
   return (
     <BookClient
       detail={detail}
+      costs={costs}
+      events={events}
+      usdToGbp={USD_TO_GBP}
       tab={TABS.includes(tab as BookTab) ? (tab as BookTab) : "overview"}
       original={original ? { id: original.id, title: original.title, kind: original.kind, ownerEmail: original.ownerEmail } : null}
     />

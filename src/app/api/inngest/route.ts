@@ -26,6 +26,7 @@ import { generateCoverSpreadV5 } from "@/inngest/generateCoverSpread.v5";
 import { alertOnFunctionFailure } from "@/inngest/alertOnFailure";
 import { dailyHealthCheck } from "@/inngest/dailyHealthCheck";
 import { billingBlockedAlert } from "@/inngest/billingBlockedAlert";
+import { detectStalledBooks } from "@/inngest/detectStalledBooks";
 
 
 export const { GET, POST, PUT } = serve({
@@ -51,5 +52,6 @@ export const { GET, POST, PUT } = serve({
     alertOnFunctionFailure,
     dailyHealthCheck,       // 08:00 UK digest of anything stuck
     billingBlockedAlert,    // one email per hour while Gemini billing/quota is blocked
+    detectStalledBooks,     // every 15 min: customers who stopped part-way
   ],
 });

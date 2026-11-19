@@ -8,6 +8,7 @@ import { adminEmailList, isAdminEmail } from "@/lib/authz";
 import { currentSheetUrl } from "@/lib/illustrate/sheets";
 import { bookKind, type BookKind } from "./catalog";
 import { isOldLayout } from "@/lib/print/layout";
+import { bookCostTotals } from "./costs";
 import { rows, isMissingTable, loadBookIdentity, bookBusy, recentActions, listSnapshots, type BookIdentity, type BusyState, type ActionRow, type SnapshotRow } from "./server";
 
 const iso = (v: unknown) => (v ? new Date(v as string).toISOString() : null);
@@ -67,6 +68,8 @@ export type BookListRow = {
   running: boolean;
   thumb: string | null;
   updatedAt: string | null;
+  /** AI cost so far in micro-dollars (0 when nothing is tracked). */
+  costMicroUsd: number;
 };
 
 export type BookFilter = "all" | "paid" | "attention" | "running" | "copies";
@@ -103,6 +106,7 @@ export async function listBooks(opts: { q?: string; filter?: BookFilter; ownerId
     LIMIT ${limit}
   `;
   const list = await tolerant(() => rows(build(true)), () => rows(build(false)));
+  const costs = await bookCostTotals(list.map((r) => String(r.id)));
   return list.map((r) => ({
     id: r.id,
     title: r.title,
@@ -117,6 +121,7 @@ export async function listBooks(opts: { q?: string; filter?: BookFilter; ownerId
     running: !!r.running,
     thumb: usable(r.thumb) ? r.thumb : null,
     updatedAt: iso(r.updated_at),
+    costMicroUsd: costs.get(String(r.id)) ?? 0,
   }));
 }
 
@@ -138,8 +143,12 @@ export type SpreadDetail = {
   status: string | null;
   remaining: string[];
   textProblems: string[];
+  /** What the checker read on each page, shown beside a text flag so a misread is easy to spot. */
+  textReadBack: { left: string; right: string } | null;
   fixesApplied: number;
   model: string | null;
+  /** "staged" | "onepass"; null for spreads drawn before modes existed (staged). */
+  mode: string | null;
   finalUrl: string | null;
   artUrl: string | null;
   at: string | null;
@@ -311,8 +320,13 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       status: qa?.status ?? null,
       remaining: Array.isArray(qa?.remaining) ? qa.remaining : [],
       textProblems: Array.isArray(qa?.text?.problems) ? qa.text.problems : [],
+      textReadBack:
+        typeof qa?.text?.gotLeft === "string" || typeof qa?.text?.gotRight === "string"
+          ? { left: String(qa.text.gotLeft ?? ""), right: String(qa.text.gotRight ?? "") }
+          : null,
       fixesApplied: Number(qa?.fixesApplied ?? 0),
       model: qa?.model ?? null,
+      mode: typeof qa?.mode === "string" ? qa.mode : null,
       finalUrl,
       artUrl: qa?.artUrl ?? null,
       at: qa?.at ?? null,

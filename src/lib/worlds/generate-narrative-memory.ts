@@ -5,12 +5,12 @@
 // to a world is marked as complete. Generates the compressed memory
 // that future books in the series will use.
 
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import { worldNarrativeMemory } from "@/db/schema/worlds";
 import { eq } from "drizzle-orm";
 
-const anthropic = new Anthropic();
+const anthropic = trackedAnthropic("lib/worlds/generate-narrative-memory");
 
 interface GenerateMemoryInput {
   worldId: string;

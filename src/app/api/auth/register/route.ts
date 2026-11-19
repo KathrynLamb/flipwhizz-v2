@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { Resend } from "resend";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { withAlerts } from "@/lib/alerts";
+import { recordBookEventSoon } from "@/lib/events/bookEvents";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -79,6 +80,14 @@ async function _POST(req: Request) {
       hashedPassword,
     });
 
+    recordBookEventSoon({
+      kind: "signed_up",
+      summary: "Signed up with email and password",
+      userId,
+      details: { method: "email" },
+      dedupeKey: `signed_up:${userId}`,
+    });
+
     // ── Track registration ──
     await captureServerEvent(userId, "user_registered", { method: "email" });
 
@@ -86,6 +95,7 @@ async function _POST(req: Request) {
     resend
       .emails.send({
         from: "FlipWhizz <hello@flipwhizz.com>",
+        replyTo: "katy@flipwhizz.co.uk",
         to: trimmedEmail,
         subject: "Welcome to FlipWhizz! 🎨",
         html: `

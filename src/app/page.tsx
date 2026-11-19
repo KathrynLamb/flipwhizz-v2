@@ -69,7 +69,7 @@ export default async function Home() {
     name: "FlipWhizz",
     url: "https://flipwhizz.com",
     logo: "https://flipwhizz.com/og-image.png",
-    email: "hello@flipwhizz.com",
+    email: "katy@flipwhizz.co.uk",
     description:
       "A platform for turning family memories, everyday discoveries and original ideas into illustrated storybooks. Founded by educator Katy Lamb.",
     founder: { "@type": "Person", name: "Katy", jobTitle: "Founder", url: "https://flipwhizz.com/about" },

@@ -1,9 +1,9 @@
 // src/app/api/characters/validate-reference/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { withAccess } from "@/lib/authz";
 
-const anthropic = new Anthropic();
+const anthropic = trackedAnthropic("app/api/characters/validate-reference/route");
 
 async function _POST(req: NextRequest) {
   try {

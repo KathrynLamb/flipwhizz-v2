@@ -1,7 +1,8 @@
 // src/lib/claude.ts
 import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 
-const client = new Anthropic({
+const client = trackedAnthropic("lib/claude", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 

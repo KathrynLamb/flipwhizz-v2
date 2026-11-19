@@ -92,6 +92,27 @@ export async function sendAlert(rawInput: AlertInput): Promise<void> {
     console.error("[alerts] PostHog capture failed:", err);
   }
 
+  // Admin timeline for the book or customer it hit. The alert email below is
+  // the email, so this isn't emailed. One row per area per book per 10 min.
+  if (input.storyId || input.projectId || input.userId) {
+    try {
+      const { recordBookEvent } = await import("@/lib/events/bookEvents");
+      const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
+      await recordBookEvent({
+        kind: "failed",
+        summary: `${input.title}${message ? `: ${message.slice(0, 200)}` : ""}`,
+        storyId: input.storyId ?? null,
+        projectId: input.projectId ?? null,
+        userId: input.userId ?? null,
+        details: { area: input.area, severity },
+        dedupeKey: `failed:${input.area}:${input.storyId ?? input.projectId ?? input.userId}:${bucket}`,
+        email: false,
+      });
+    } catch (err) {
+      console.error("[alerts] could not record book event:", err);
+    }
+  }
+
   // Billing / quota: one rate-limited email for the whole outage, not one
   // per failed job. Falls back to a direct email if Inngest can't be reached.
   if (billing) {

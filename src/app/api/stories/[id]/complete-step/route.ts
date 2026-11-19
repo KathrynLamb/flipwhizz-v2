@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { withAccess } from "@/lib/authz";
+import { sendCardsApprovedReport } from "@/lib/emails/sendCardsReport";
 
 async function _POST(
   req: NextRequest,
@@ -19,6 +20,7 @@ async function _POST(
 
   if (step === 'characters') {
     const result = await confirmCast(storyId);
+    if (result.ok) await sendCardsApprovedReport(storyId, 'characters');
     return NextResponse.json(result.ok ? result : {
       error: 'Generate and approve every character appearance before continuing.', missing: result.missing,
     }, { status: result.ok ? 200 : 409 });
@@ -26,6 +28,7 @@ async function _POST(
 
   if (step === 'locations') {
     const result = await confirmLocations(storyId);
+    if (result.ok) await sendCardsApprovedReport(storyId, 'locations');
     return NextResponse.json(result.ok ? result : {
       error: 'Generate and approve every location image before continuing.', missing: result.missing,
     }, { status: result.ok ? 200 : 409 });

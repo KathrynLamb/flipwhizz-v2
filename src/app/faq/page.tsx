@@ -204,7 +204,7 @@ export default function FAQPage() {
           <p className="text-sm text-slate-500">
             Got another question?{" "}
             <a
-              href="mailto:hello@flipwhizz.com"
+              href="mailto:katy@flipwhizz.co.uk"
               className="font-semibold text-[#D94590] hover:underline"
             >
               Get in touch

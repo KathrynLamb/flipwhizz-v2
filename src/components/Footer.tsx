@@ -39,8 +39,8 @@ export default function Footer() {
               Personalised picture books, written by the grown-ups who love them.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <a href="mailto:hello@flipwhizz.com" className="rounded-full border border-white/20 px-4 py-2 text-[15px] font-semibold transition-colors hover:border-white/60">
-                hello@flipwhizz.com
+              <a href="mailto:katy@flipwhizz.co.uk" className="rounded-full border border-white/20 px-4 py-2 text-[15px] font-semibold transition-colors hover:border-white/60">
+                katy@flipwhizz.co.uk
               </a>
               <a href="https://www.instagram.com/flipwhizz_kate" target="_blank" rel="noopener noreferrer" className="rounded-full border border-white/20 px-4 py-2 text-[15px] font-semibold transition-colors hover:border-white/60">
                 Instagram

@@ -3,18 +3,19 @@ import { BOOK_TYPE_TOOL, bookTypeChatContext, bookTypeFromToolBlocks, normalizeB
 // Fixed version with proper sessionId handling
 
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import { chatMessages, chatSessions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { withAlerts } from "@/lib/alerts";
+import { recordBookEventSoon } from "@/lib/events/bookEvents";
 
 type DemoMsg = {
   role: "user" | "assistant";
   content: string;
 };
 
-const client = new Anthropic({
+const client = trackedAnthropic("app/api/chat/demo/route", {
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
@@ -122,6 +123,15 @@ async function _POST(req: NextRequest) {
           projectId: null,
           status: "open",
           lastMessageAt: new Date(),
+        });
+        // Top of the funnel: someone typed their first idea. Linked to the
+        // customer later by create-from-demo (linkDemoChat).
+        recordBookEventSoon({
+          kind: "chat_started",
+          summary: `Started a chat before signing up: "${message.slice(0, 140)}"`,
+          chatSessionId: sessionId,
+          details: { first_message: message, book_type: body?.bookType ?? null },
+          dedupeKey: `chat_started:${sessionId}`,
         });
       }
     } catch (sessionErr) {

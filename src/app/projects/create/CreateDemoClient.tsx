@@ -373,7 +373,7 @@ export default function CreateDemoClient({ embedded = false }: { embedded?: bool
       const res = await fetch("/api/projects/create-from-demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: messages.map(({ role, content }) => ({ role, content })), bookType }),
+        body: JSON.stringify({ messages: messages.map(({ role, content }) => ({ role, content })), bookType, demoSessionId: sessionId }),
       });
 
       const data = await res.json().catch(() => null);

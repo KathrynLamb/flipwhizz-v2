@@ -4,11 +4,11 @@
 // Called fire-and-forget after a successful global rewrite.
 // Only extracts developmental observations — ignores pure edit requests.
 
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import { readerInsights } from "@/db/schema";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+const client = trackedAnthropic("lib/extractRewriteInsights", { apiKey: process.env.ANTHROPIC_API_KEY! });
 
 interface ExtractedInsight {
   type: string;

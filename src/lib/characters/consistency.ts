@@ -28,7 +28,9 @@
 
 import { hasUserEditedTraits, PARENT_TEXT_WINS } from "@/lib/characters/userEdits";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { trackedGemini } from "@/lib/geminiUsage";
+import { trackedGemini, withUsageContext } from "@/lib/geminiUsage";
+import { generateCardImage } from "@/lib/ai/cardImage";
+import { FULL_BODY_MODEL, FULL_BODY_THINKING } from "@/lib/illustrate/models";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
@@ -50,7 +52,6 @@ cloudinary.config({
 
 const gemini = trackedGemini("lib/characters/consistency", { apiKey: process.env.GEMINI_API_KEY! });
 const TEXT_MODEL = "gemini-2.5-flash";
-const IMAGE_MODEL = "gemini-3-pro-image";
 const MAX_SHEET_IMAGES = 40; // flash handles many; 13 characters x 2 pictures fits
 const SHEET_VERSION = 3; // bump to force every story to rebuild its sheet
 // Bump to force every full-body image to be redrawn. v2: v1 images were drawn
@@ -539,8 +540,10 @@ REQUIREMENTS:
 
     let data: string | null = null;
     for (let attempt = 1; attempt <= 2 && !data; attempt++) {
-      const response = await gemini.models.generateContent({
-        model: IMAGE_MODEL,
+      const response = await withUsageContext(
+        { kind: "character_full_body", storyId, entityId: c.id },
+        () => generateCardImage(gemini, {
+        model: FULL_BODY_MODEL,
         contents: [{ role: "user", parts }],
         config: {
           responseModalities: ["IMAGE"],
@@ -552,7 +555,7 @@ REQUIREMENTS:
             { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
           ],
         },
-      });
+      }, FULL_BODY_THINKING));
       const img = (response?.candidates?.[0]?.content?.parts ?? []).find(
         (p: any) => p.inlineData?.data && !p.thought
       );

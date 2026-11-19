@@ -71,11 +71,22 @@ export const authOptions: NextAuthOptions = {
           .then((r) => r[0]);
 
         if (!existing) {
+          const newId = crypto.randomUUID();
           await db.insert(users).values({
-            id: crypto.randomUUID(),
+            id: newId,
             email: user.email,
             name: user.name ?? null,
             image: user.image ?? null,
+          });
+          // Imported here, not at the top: bookEvents must stay clear of the
+          // auth route's import graph.
+          const { recordBookEventSoon } = await import("@/lib/events/bookEvents");
+          recordBookEventSoon({
+            kind: "signed_up",
+            summary: "Signed up with Google",
+            userId: newId,
+            details: { method: "google" },
+            dedupeKey: `signed_up:${newId}`,
           });
         }
       }

@@ -67,6 +67,16 @@ const TIERS: {
   },
 ];
 
+/** Best effort: never blocks or breaks the paywall. */
+function reportStep(storyId: string, kind: "paywall_reached" | "checkout_started", details?: Record<string, unknown>) {
+  fetch(`/api/stories/${storyId}/events`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, details }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 export default function StudioPaywall({
   storyId,
   storyTitle,
@@ -81,6 +91,10 @@ export default function StudioPaywall({
   const [saving, setSaving] = useState(false);
   const [availableTiers, setAvailableTiers] = useState<Tier[]>([]);
   const [error, setError] = useState("");
+  // Admin timeline + email: the customer saw the paywall (once per book).
+  useEffect(() => {
+    reportStep(storyId, "paywall_reached");
+  }, [storyId]);
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/stories/${storyId}/product`).then(async res => {
@@ -110,6 +124,8 @@ export default function StudioPaywall({
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not save your selection.");
+
+      reportStep(storyId, "checkout_started", { product: selectedTier });
 
       // Route to checkout
       router.push(`/stories/${storyId}/checkout`);

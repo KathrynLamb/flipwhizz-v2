@@ -1,6 +1,6 @@
 // src/app/api/stories/[id]/style-guide/chat/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
 import { stories } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -8,7 +8,7 @@ import { withAccess } from "@/lib/authz";
 
 export const maxDuration = 30;
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+const client = trackedAnthropic("app/api/stories/[id]/style-guide/chat/route", { apiKey: process.env.ANTHROPIC_API_KEY! });
 const MODEL = "claude-sonnet-4-6";
 
 type Message = { role: "user" | "assistant"; content: string };
