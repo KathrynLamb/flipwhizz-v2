@@ -38,11 +38,11 @@ export async function POST(req: Request) {
 
   await sendAlert({
     area: `client/${kind}`,
-    title: `User hit ${kind.replace(/_/g, " ")}`,
+    title: `User hit ${kind.replace(/_/g, " ")}${body.network === true ? " (connection dropped)" : ""}`,
     severity:
       kind === "story_creation_failed" || kind === "checkout_failed"
         ? "critical"
-        : kind === "generation_slow"
+        : kind === "generation_slow" || body.network === true
         ? "warning"
         : "error",
     error: str(body.message, 1000) || kind,
@@ -51,7 +51,13 @@ export async function POST(req: Request) {
     storyId: str(body.storyId, 64),
     context: {
       page: str(body.page, 300),
+      // null status + network:true = the browser never got a response
+      // (connection dropped, phone locked, tab suspended), not a server error.
       status: typeof body.status === "number" ? body.status : null,
+      network: body.network === true,
+      elapsed_ms: typeof body.elapsedMs === "number" ? body.elapsedMs : null,
+      online: typeof body.online === "boolean" ? body.online : null,
+      visibility: str(body.visibility, 20),
       user_email: session.user?.email ?? null,
       character_id: str(body.characterId, 64),
       action: str(body.action, 100),

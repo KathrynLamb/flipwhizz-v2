@@ -26,6 +26,8 @@ export const alertOnFunctionFailure = inngest.createFunction(
     const pick = (k: string) => (typeof original[k] === "string" ? (original[k] as string) : null);
 
     const fn = data.function_id ?? "unknown-function";
+    // Don't alert about the alerter: avoids a loop if the billing email fails.
+    if (fn.endsWith("billing-blocked-alert")) return { alerted: false, function_id: fn };
     // A job started from the admin Book page: show it as failed there too.
     await finishAdminAction(pick("adminActionId"), { status: "failed", result: `${fn}: ${data.error?.message ?? "failed"}` });
     const err = new Error(data.error?.message || "Inngest function failed");

@@ -35,6 +35,21 @@ export function isBillingOrQuotaError(error: unknown): boolean {
   return BILLING_OR_QUOTA_RE.test(errorMessageOf(error));
 }
 
+// Account-level blocks that no retry can fix: prepaid credits gone, billing
+// off, or the monthly spending cap reached (Google sends that one as a 429
+// RESOURCE_EXHAUSTED, so it looks like a rate limit unless we check the text).
+const BILLING_BLOCKED_RE =
+  /"code"\s*:\s*402|prepayment credits|credits are depleted|billing (?:is )?(?:not enabled|disabled)|payment required|outstanding balance|spending cap|spend cap|exceeded its monthly/i;
+
+/**
+ * The Gemini account itself can't pay. Retrying can't fix this; only raising
+ * the cap or topping up can. Every customer is blocked until then.
+ */
+export function isBillingBlocked(error: unknown): boolean {
+  const status = (error as { status?: unknown; code?: unknown } | null)?.status ?? (error as { code?: unknown } | null)?.code;
+  return Number(status) === 402 || BILLING_BLOCKED_RE.test(errorMessageOf(error));
+}
+
 /** True when a message is raw/technical and must not be shown to a customer. */
 export function looksTechnical(message: string | null | undefined): boolean {
   if (!message) return true;
@@ -58,7 +73,18 @@ export function friendlyMessage(error: unknown, fallback = FRIENDLY_RETRY_MESSAG
  */
 export function reportClientError(
   kind: string,
-  details: { error: unknown; storyId?: string | null; characterId?: string | null; action?: string | null },
+  details: {
+    error: unknown;
+    storyId?: string | null;
+    characterId?: string | null;
+    action?: string | null;
+    /** HTTP status, or null when no response came back at all */
+    status?: number | null;
+    /** True when the request never got a response (connection dropped, tab suspended) */
+    network?: boolean;
+    /** How long the request ran before it failed */
+    elapsedMs?: number | null;
+  },
 ): void {
   try {
     if (typeof window === "undefined") return;
@@ -73,6 +99,11 @@ export function reportClientError(
         characterId: details.characterId ?? null,
         action: details.action ?? null,
         page: window.location.pathname,
+        status: typeof details.status === "number" ? details.status : null,
+        network: details.network === true,
+        elapsedMs: typeof details.elapsedMs === "number" ? Math.round(details.elapsedMs) : null,
+        online: typeof navigator !== "undefined" ? navigator.onLine : null,
+        visibility: typeof document !== "undefined" ? document.visibilityState : null,
       }),
     }).catch(() => {});
   } catch {

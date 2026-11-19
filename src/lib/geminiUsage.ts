@@ -15,12 +15,15 @@
 // (src/lib/ai/anthropicUsage.ts). The admin Costs tab and the report
 // emails read that table.
 //
-// Operational data only: no user ids, prompts or emails. Never throws.
+// Operational data only: no user ids, prompts or emails. Never throws its own
+// errors; a Gemini billing block is rethrown as NonRetriableError.
 
 import { GoogleGenAI, type GoogleGenAIOptions } from "@google/genai";
 import { PostHog } from "posthog-node";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { costMicroUsd } from "@/lib/ai/pricing";
+import { NonRetriableError } from "inngest";
+import { isBillingBlocked } from "@/lib/userErrors";
 
 /** Optional finer label for calls inside a shared helper (e.g. "compose", "letter", "fix"). */
 const labelStore = new AsyncLocalStorage<string>();
@@ -250,6 +253,15 @@ export function trackedGemini(source: string, opts: GoogleGenAIOptions): GoogleG
         error: String(err?.message ?? err).slice(0, 200),
         ms: Date.now() - started,
       });
+      // Spending cap / billing block: no retry can help, so make sure no
+      // Inngest step burns its retries on it. Every caller is covered here,
+      // including ones that don't go through lib/illustrate/gemini.ts.
+      if (isBillingBlocked(err) && !(err instanceof NonRetriableError)) {
+        throw new NonRetriableError(
+          `[${source}] Gemini billing blocked (raise the spend cap or top up at https://ai.studio/spend): ${String(err?.message ?? err).slice(0, 300)}`,
+          { cause: err },
+        );
+      }
       throw err;
     }
   };
