@@ -397,6 +397,7 @@ export async function sendDigest(report: HealthReport, opts: { force?: boolean }
 
   try {
     await captureServerEvent("system", "health_check_run", {
+      $process_person_profile: false,
       total: report.total,
       ...Object.fromEntries(report.sections.map((x) => [x.key, x.rows.length])),
     });

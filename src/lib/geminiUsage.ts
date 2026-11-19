@@ -196,7 +196,10 @@ export async function recordAiCall(props: Record<string, unknown>) {
   } catch {}
   try {
     const client = ph();
-    if (client) client.capture({ distinctId: "system", event: "gemini_call", properties: props });
+    // Background calls have no visitor (and no visitor consent), so they stay
+    // anonymous: "system" with no person profile, so PostHog doesn't show a
+    // fake "system" person. Filter by story_id / project_id instead.
+    if (client) client.capture({ distinctId: "system", event: "gemini_call", properties: { ...props, $process_person_profile: false } });
     // Serverless: flush now so the event isn't lost when the function freezes.
     if (client) void client.flush().catch(() => {});
   } catch {}

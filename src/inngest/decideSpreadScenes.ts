@@ -10,7 +10,8 @@ import {
   storyWorkflowProgress,
   storySpreadPresence,
 } from "@/db/schema";
-import { eq, inArray, asc } from "drizzle-orm";
+import { and, eq, inArray, asc } from "drizzle-orm";
+import { charactersToAutoHide } from "@/lib/characters/visibilityRules";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { v4 as uuid } from "uuid";
@@ -379,7 +380,9 @@ export const decideScenes = inngest.createFunction(
       });
     });
 
-    const chars = await step.run("load-characters", async () => {
+    // Characters marked not shown (story_characters.shown, see
+    // src/lib/characters/visibility.ts) are never planned onto a spread.
+    const allChars = await step.run("load-characters", async () => {
       if (storyChars.length === 0) return [];
       return db.query.characters.findMany({
         where: inArray(
@@ -388,8 +391,12 @@ export const decideScenes = inngest.createFunction(
         ),
       });
     });
+    const shownIds = new Set(storyChars.filter((sc) => sc.shown !== false).map((sc) => sc.characterId));
+    const noteById = new Map(storyChars.map((sc) => [sc.characterId, sc.appearanceNote ?? null]));
+    const chars = allChars.filter((c) => shownIds.has(c.id));
+    const notShown = allChars.filter((c) => !shownIds.has(c.id));
 
-    console.log(`👥 Loaded ${chars.length} characters`);
+    console.log(`👥 Loaded ${chars.length} characters to draw${notShown.length ? `, ${notShown.length} not shown (${notShown.map((c) => c.name).join(", ")})` : ""}`);
 
     /* ------------------------------------------------------------------ */
     /* Load locations                                                      */
@@ -432,10 +439,15 @@ export const decideScenes = inngest.createFunction(
       ? chars
           .map((c) => {
             const extra = c.description ? ` — ${c.description}` : "";
-            return `${c.name} (ID: ${c.id})${extra}`;
+            const note = noteById.get(c.id);
+            return `${c.name} (ID: ${c.id})${extra}${note ? `\n  HOW TO SHOW (agreed with the customer, must be followed): ${note}` : ""}`;
           })
           .join("\n")
       : "None";
+
+    const notShownList = notShown.length
+      ? notShown.map((c) => `${c.name}${c.description ? ` — ${c.description}` : ""}`).join("\n")
+      : "";
 
     const locationList = locs.length
       ? locs
@@ -494,6 +506,8 @@ Use locations carefully:
 - "memory" = flashback, remembered, imagined, or non-present location context
 
 Rules:
+- A character with a HOW TO SHOW note must appear exactly as that note says, on the spread(s) it describes (at least once in the book).
+- Characters listed under NOT DRAWN are part of the story but are never drawn as a figure. They have no ID: never feature them, and don't reach for another character to stand in for them.
 - Use ONLY the character and location IDs provided in the user message
 - Do NOT invent or guess IDs
 - If no featured characters appear, use empty array []
@@ -509,7 +523,7 @@ Rules:
     const userPrompt = `
 AVAILABLE CHARACTERS:
 ${characterList}
-
+${notShownList ? `\nNOT DRAWN (in the story, never pictured):\n${notShownList}\n` : ""}
 AVAILABLE LOCATIONS:
 ${locationList}
 
@@ -706,6 +720,33 @@ Rules:
     });
 
     /* ------------------------------------------------------------------ */
+    /* Characters on no spread are not drawn, so they need no card         */
+    /* ------------------------------------------------------------------ */
+    // Without this an unborn baby or a remembered grandparent blocks the
+    // characters step forever. Anyone a person decided about is left alone,
+    // and the customer can bring them back with "Show this character".
+    await step.run("auto-hide-unplanned-characters", async () => {
+      const planned = new Set<string>();
+      for (const d of toolInput.spreads) {
+        for (const id of [...(d.featuredCharacterIds || []), ...(d.backgroundCharacterIds || [])]) {
+          if (validCharacterIds.has(id)) planned.add(id);
+        }
+      }
+      const hide = charactersToAutoHide(
+        storyChars.map((sc) => ({ characterId: sc.characterId, shown: sc.shown !== false, shownSource: sc.shownSource ?? null })),
+        planned,
+      );
+      if (hide.length) {
+        await db
+          .update(storyCharacters)
+          .set({ shown: false, shownSource: "auto" })
+          .where(and(eq(storyCharacters.storyId, storyId), inArray(storyCharacters.characterId, hide)));
+        console.log(`🙈 Not on any spread, marked not shown: ${hide.join(", ")}`);
+      }
+      return hide;
+    });
+
+    /* ------------------------------------------------------------------ */
     /* SAFEGUARD: Validate spread presence was actually populated          */
     /* ------------------------------------------------------------------ */
 
@@ -779,6 +820,7 @@ Rules:
           ...(event.data?.artModel ? { artModel: event.data.artModel } : {}),
           ...(event.data?.spreadMode ? { spreadMode: event.data.spreadMode } : {}),
           ...(event.data?.adminActionId ? { adminActionId: event.data.adminActionId } : {}),
+          ...(event.data?.redrawForCharacterId ? { redrawForCharacterId: event.data.redrawForCharacterId } : {}),
         },
       });
     });

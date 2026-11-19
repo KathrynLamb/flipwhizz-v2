@@ -12,7 +12,7 @@ import {
   storyCharacters, storyLocations,
   storyStyleGuide, storyPages,
 } from "@/db/schema";
-import { eq, inArray, asc, sql } from "drizzle-orm";
+import { and, eq, inArray, asc, sql } from "drizzle-orm";
 import { withAccess } from "@/lib/authz";
 
 async function _GET(
@@ -62,7 +62,7 @@ async function _GET(
           breed: characters.breed,
         }).from(storyCharacters)
         .innerJoin(characters, eq(storyCharacters.characterId, characters.id))
-        .where(eq(storyCharacters.storyId, storyId));
+        .where(and(eq(storyCharacters.storyId, storyId), eq(storyCharacters.shown, true)));
 
     // Location
     const locRow = planLocIds.length > 0

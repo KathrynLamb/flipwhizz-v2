@@ -23,7 +23,7 @@ import {
   storyStyleGuide,
   storyWorkflowProgress,
 } from "@/db/schema";
-import { eq, inArray, asc } from "drizzle-orm";
+import { and, eq, inArray, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { v4 as uuid } from "uuid";
@@ -265,8 +265,9 @@ export const buildSpreadPrompts = inngest.createFunction(
       );
 
       presenceRows = await step.run("auto-populate-presence", async () => {
+        // Characters marked not shown are never drawn (src/lib/characters/visibility.ts).
         const storyCharRows = await db.query.storyCharacters.findMany({
-          where: eq(storyCharacters.storyId, storyId),
+          where: and(eq(storyCharacters.storyId, storyId), eq(storyCharacters.shown, true)),
         });
 
         if (storyCharRows.length === 0) {
@@ -365,6 +366,19 @@ export const buildSpreadPrompts = inngest.createFunction(
 
     const charById = new Map(charRecords.map((c) => [c.id, c]));
 
+    // How the customer asked for a character to be shown, and who is in the
+    // story but never drawn (story_characters, src/lib/characters/visibility.ts).
+    const castNotes = await step.run("load-cast-visibility", async () => {
+      const rows = await db
+        .select({ id: storyCharacters.characterId, shown: storyCharacters.shown, note: storyCharacters.appearanceNote, name: characters.name })
+        .from(storyCharacters)
+        .innerJoin(characters, eq(characters.id, storyCharacters.characterId))
+        .where(eq(storyCharacters.storyId, storyId));
+      return rows;
+    });
+    const noteById = new Map(castNotes.filter((r) => r.note).map((r) => [r.id, r.note as string]));
+    const notDrawnNames = castNotes.filter((r) => r.shown === false).map((r) => r.name);
+
     /* ------------------------------------------------------------------ */
     /* Load location details                                               */
     /* ------------------------------------------------------------------ */
@@ -417,6 +431,7 @@ export const buildSpreadPrompts = inngest.createFunction(
           `CHARACTER: ${c.name}${species}`,
           c.appearance ? `APPEARANCE: ${c.appearance}` : null,
           c.description ? `PERSONALITY/ROLE: ${c.description}` : null,
+          noteById.get(c.id) ? `HOW TO SHOW IN THIS BOOK (agreed with the customer, follow exactly): ${noteById.get(c.id)}` : null,
         ]
           .filter(Boolean)
           .join("\n");
@@ -447,7 +462,7 @@ ${styleDescription}
 
 ALL CHARACTERS IN THIS STORY:
 ${allCharacterDescriptions || "No character details available."}
-
+${notDrawnNames.length ? `\nIN THE STORY BUT NEVER DRAWN: ${notDrawnNames.join(", ")}. Never draw them as a figure, even when the page text talks about them; show the other characters' feelings about them instead. Always put their names in doNotInclude.\n` : ""}
 ALL LOCATIONS IN THIS STORY:
 ${allLocationDescriptions || "No location details available."}
 
@@ -709,6 +724,52 @@ ${spreadContexts.join("\n\n---\n\n")}
 
       console.log("🚀 Triggered story/generate-spreads");
     });
+
+    /* ------------------------------------------------------------------ */
+    /* "Show this character": redraw finished pictures that now include them */
+    /* ------------------------------------------------------------------ */
+    const redrawFor = event.data?.redrawForCharacterId as string | undefined;
+    if (redrawFor) {
+      await step.run("redraw-spreads-for-shown-character", async () => {
+        const [card] = await db
+          .select({ url: characters.portraitImageUrl, name: characters.name })
+          .from(characters)
+          .where(eq(characters.id, redrawFor))
+          .limit(1);
+        if (!card?.url || !/^https?:\/\//.test(card.url)) {
+          console.log(`⏭️ ${card?.name ?? redrawFor} has no card yet; drawn spreads are left as they are`);
+          return { redrawn: [] as number[], reason: "no_card" };
+        }
+        const drawnPageIds = new Set(
+          (await db
+            .select({ id: storyPages.id, url: storyPages.imageUrl })
+            .from(storyPages)
+            .where(eq(storyPages.storyId, storyId)))
+            .filter((p) => p.url)
+            .map((p) => p.id),
+        );
+        const redrawn: number[] = [];
+        for (const sp of spreads) {
+          if (!sp.leftPageId || !drawnPageIds.has(sp.leftPageId)) continue;
+          const cast = (presenceBySpreadId.get(sp.id)?.characters ?? []) as SpreadPresenceCharacter[];
+          if (!cast.some((c) => c.characterId === redrawFor)) continue;
+          await inngest.send({
+            name: "story/generate.single.spread",
+            data: {
+              storyId,
+              leftPageId: sp.leftPageId,
+              rightPageId: sp.rightPageId,
+              pageLabel: `Spread ${sp.spreadIndex}`,
+              ...(event.data?.artModel ? { artModel: event.data.artModel } : {}),
+              ...(event.data?.spreadMode ? { spreadMode: event.data.spreadMode } : {}),
+            },
+          });
+          redrawn.push(sp.spreadIndex);
+        }
+        console.log(`🖌️ Redrawing spread(s) ${redrawn.join(", ") || "none"} to include ${card.name}`);
+        return { redrawn };
+      });
+    }
 
     console.log("✅ [build-spread-prompts] Complete");
 

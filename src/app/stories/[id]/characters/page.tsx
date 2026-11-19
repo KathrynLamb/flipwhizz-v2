@@ -61,6 +61,8 @@ export default async function CharactersPage({ params }: Props) {
     referenceImageUrl: char.referenceImageUrl ?? null,
     portraitImageUrl: char.portraitImageUrl ?? null,
     locked: char.locked,
+    shown: char.shown !== false,
+    appearanceNote: char.appearanceNote ?? null,
     visualDetails: (char.visualDetails as Record<string, any>) ?? null,
     outfits: (outfitsByCharacter.get(char.id) || []).map((o) => ({
       id: o.id,

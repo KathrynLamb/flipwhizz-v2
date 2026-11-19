@@ -235,7 +235,7 @@ export default function BookClient({ detail, costs, events, usdToGbp, tab, origi
       {tab === "overview" && <Overview detail={detail} costs={costs} original={original} ask={ask} sending={sending} locked={locked} />}
       {tab === "costs" && <Costs costs={costs} />}
       {tab === "pages" && <Pages spreads={detail.spreads} ask={ask} sending={sending} />}
-      {tab === "characters" && <Characters characters={detail.characters} ask={ask} sending={sending} locked={locked} />}
+      {tab === "characters" && <Characters bookId={book.id} characters={detail.characters} ask={ask} sending={sending} locked={locked} />}
       {tab === "locations" && <Places locations={detail.locations} spreads={detail.spreads} bookId={book.id} />}
       {tab === "redraw" && <Redraw detail={detail} ask={ask} sending={sending} locked={locked} />}
       {/* Keyed on the newest PDF, so a PDF just made is the one shown. */}
@@ -479,7 +479,7 @@ function Pages({ spreads, ask, sending }: { spreads: SpreadDetail[]; ask: Ask; s
 /*                                 Characters                                 */
 /* -------------------------------------------------------------------------- */
 
-function Characters({ characters, ask, sending, locked }: { characters: CharacterDetail[]; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
+function Characters({ bookId, characters, ask, sending, locked }: { bookId: string; characters: CharacterDetail[]; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
   if (characters.length === 0) return <Empty>No characters on this book yet.</Empty>;
   const img = (url: string | null, label: string) =>
     url ? (
@@ -506,6 +506,7 @@ function Characters({ characters, ask, sending, locked }: { characters: Characte
             {c.spreads.length ? `On spread${c.spreads.length === 1 ? "" : "s"} ${c.spreads.join(", ")}` : "Not planned on any spread"}
             {c.sheetStale && " · sheet is out of date (card or photo changed); it's redrawn on the next drawing"}
           </p>
+          <CharacterVisibility bookId={bookId} character={c} disabled={!!sending} />
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               className={btnQuiet}
@@ -520,6 +521,65 @@ function Characters({ characters, ask, sending, locked }: { characters: Characte
           </div>
         </Card>
       ))}
+    </div>
+  );
+}
+
+/** Show or hide one character in this book's pictures (story_characters.shown). */
+function CharacterVisibility({ bookId, character: c, disabled }: { bookId: string; character: CharacterDetail; disabled: boolean }) {
+  const router = useRouter();
+  const [note, setNote] = useState(c.appearanceNote ?? "");
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function save(shown: boolean) {
+    setSaving(true); setMsg(null);
+    try {
+      const res = await fetch(`/api/stories/${bookId}/characters/${c.id}/visibility`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(shown ? { shown, note: note.trim() || null } : { shown }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not save.");
+      setMsg(data.replanning
+        ? shown ? "Shown. Scenes are being re-planned; finished spreads with them are redrawn once they have a card." : "Hidden. Scenes are being re-planned without them."
+        : shown ? "Shown. They'll be planned in when the scenes are planned." : "Hidden.");
+      setOpen(false);
+      router.refresh();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Could not save.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        {c.shown ? <Pill tone="green">in the pictures</Pill> : <Pill tone="amber">not in the pictures</Pill>}
+        {c.shownSource && <span className="text-slate-500">set by {c.shownSource === "auto" ? "the planner (on no spread)" : c.shownSource}</span>}
+      </div>
+      {c.appearanceNote && <p className="mt-1 text-slate-400">How to show: {c.appearanceNote}</p>}
+      {open ? (
+        <div className="mt-2 space-y-2">
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={1000}
+            placeholder={`How and where to show ${c.name} (optional), e.g. "only on the last spread, as a newborn in Mama's arms"`}
+            className="w-full rounded border border-white/15 bg-black/30 p-2 text-xs text-white" />
+          <div className="flex gap-2">
+            <button className={btnQuiet} disabled={saving || disabled} onClick={() => void save(true)}>{saving ? "Saving…" : "Show and re-plan"}</button>
+            <button className={btnQuiet} disabled={saving} onClick={() => setOpen(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {c.shown
+            ? <button className={btnQuiet} disabled={saving || disabled} onClick={() => void save(false)}>{saving ? "Saving…" : "Leave out of the pictures"}</button>
+            : <button className={btnQuiet} disabled={saving || disabled} onClick={() => setOpen(true)}>Show in the pictures…</button>}
+          {c.shown && <button className={btnQuiet} disabled={saving || disabled} onClick={() => setOpen(true)}>Edit how to show…</button>}
+        </div>
+      )}
+      {msg && <p className="mt-1 text-slate-300">{msg}</p>}
     </div>
   );
 }

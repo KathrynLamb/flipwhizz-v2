@@ -153,7 +153,9 @@ async function _POST(
       data: { storyId },
     });
 
-    await captureServerEvent(storyId, "free_story_claimed", {
+    // The customer, not the book, is the PostHog person (was the story id).
+    const claimer = await getAuthUser();
+    if (claimer) await captureServerEvent(claimer.id, "free_story_claimed", {
       story_id: storyId,
       product_type: productType,
       promo_code: promo.code,
