@@ -19,8 +19,8 @@ import { inngest } from "@/inngest/client";
 
 export type VisibilitySource = "auto" | "customer" | "admin";
 
-import { withoutCharacter, type PresenceCharacter } from "./visibilityRules";
-export { withoutCharacter, charactersToAutoHide } from "./visibilityRules";
+import { presenceCast, withoutCharacter } from "./visibilityRules";
+export { withoutCharacter, charactersToAutoHide, presenceCast } from "./visibilityRules";
 
 /** Set whether a character is drawn in this book. Hiding also takes them off every planned spread. */
 export async function setCharacterShown(args: {
@@ -49,7 +49,7 @@ export async function setCharacterShown(args: {
         .from(storySpreadPresence)
         .where(inArray(storySpreadPresence.spreadId, spreads.map((s) => s.id)));
       for (const r of rows) {
-        const cast = (r.characters ?? []) as PresenceCharacter[];
+        const cast = presenceCast(r.characters);
         const next = withoutCharacter(cast, args.characterId);
         if (next.length !== cast.length) {
           await db

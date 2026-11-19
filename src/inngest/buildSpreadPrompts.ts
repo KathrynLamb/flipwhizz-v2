@@ -24,6 +24,7 @@ import {
   storyWorkflowProgress,
 } from "@/db/schema";
 import { and, eq, inArray, asc } from "drizzle-orm";
+import { presenceCast } from "@/lib/characters/visibilityRules";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { v4 as uuid } from "uuid";
@@ -751,7 +752,7 @@ ${spreadContexts.join("\n\n---\n\n")}
         const redrawn: number[] = [];
         for (const sp of spreads) {
           if (!sp.leftPageId || !drawnPageIds.has(sp.leftPageId)) continue;
-          const cast = (presenceBySpreadId.get(sp.id)?.characters ?? []) as SpreadPresenceCharacter[];
+          const cast = presenceCast(presenceBySpreadId.get(sp.id)?.characters);
           if (!cast.some((c) => c.characterId === redrawFor)) continue;
           await inngest.send({
             name: "story/generate.single.spread",

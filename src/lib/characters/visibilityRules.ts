@@ -22,3 +22,15 @@ export function charactersToAutoHide(
     .filter((c) => c.shown && (c.shownSource === null || c.shownSource === "auto") && !plannedIds.has(c.characterId))
     .map((c) => c.characterId);
 }
+
+/**
+ * A spread's planned cast as a list. Some older rows hold JSON null or a
+ * JSON-encoded string instead of a list; never throw on those. Pure, tested.
+ */
+export function presenceCast(value: unknown): PresenceCharacter[] {
+  let v = value;
+  if (typeof v === "string") {
+    try { v = JSON.parse(v); } catch { return []; }
+  }
+  return Array.isArray(v) ? (v.filter((c) => c && typeof c === "object" && typeof (c as PresenceCharacter).characterId === "string") as PresenceCharacter[]) : [];
+}

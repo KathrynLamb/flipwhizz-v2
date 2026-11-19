@@ -16,15 +16,26 @@ UPDATE story_characters sc
 SET shown = false, shown_source = 'auto'
 WHERE sc.shown_source IS NULL
   AND sc.shown = true
+  -- the book's scenes are planned
   AND EXISTS (
     SELECT 1 FROM story_spreads sp
     JOIN story_spread_presence pr ON pr.spread_id = sp.id
     WHERE sp.story_id = sc.story_id
   )
+  -- skip books whose plans are stored oddly (not a list or null) rather than guess
   AND NOT EXISTS (
     SELECT 1 FROM story_spreads sp
     JOIN story_spread_presence pr ON pr.spread_id = sp.id
-    CROSS JOIN LATERAL jsonb_array_elements(coalesce(pr.characters, '[]'::jsonb)) e
+    WHERE sp.story_id = sc.story_id
+      AND coalesce(jsonb_typeof(pr.characters), 'null') NOT IN ('array', 'null')
+  )
+  -- the character is on no spread
+  AND NOT EXISTS (
+    SELECT 1 FROM story_spreads sp
+    JOIN story_spread_presence pr ON pr.spread_id = sp.id
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE WHEN jsonb_typeof(pr.characters) = 'array' THEN pr.characters ELSE '[]'::jsonb END
+    ) e
     WHERE sp.story_id = sc.story_id
       AND e->>'characterId' = sc.character_id::text
   );

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isCastReady, isShown } from "../src/lib/characters/readiness";
-import { charactersToAutoHide, withoutCharacter } from "../src/lib/characters/visibilityRules";
+import { charactersToAutoHide, presenceCast, withoutCharacter } from "../src/lib/characters/visibilityRules";
 
 const approved = { locked: true, portraitImageUrl: "https://images.test/card.jpg" };
 const noCard = { locked: false, portraitImageUrl: null };
@@ -48,4 +48,12 @@ test("hiding takes a character off a spread's planned cast and keeps the rest", 
   ];
   assert.deepEqual(withoutCharacter(cast, "baby"), [{ characterId: "mama", role: "primary" }]);
   assert.deepEqual(withoutCharacter(null, "baby"), []);
+});
+
+test("odd stored casts (JSON null, a JSON string) never throw", () => {
+  assert.deepEqual(presenceCast(null), []);
+  assert.deepEqual(presenceCast("null"), []);
+  assert.deepEqual(presenceCast('[{"characterId":"mama","role":"primary"}]'), [{ characterId: "mama", role: "primary" }]);
+  assert.deepEqual(presenceCast({ characterId: "x" }), []);
+  assert.deepEqual(presenceCast([{ characterId: "a" }, null, 5]), [{ characterId: "a" }]);
 });
