@@ -25,6 +25,7 @@ import {
 } from "@/db/schema";
 import { and, eq, inArray, asc } from "drizzle-orm";
 import { presenceCast } from "@/lib/characters/visibilityRules";
+import { finishAdminAction } from "@/lib/admin/finish";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { v4 as uuid } from "uuid";
@@ -710,6 +711,13 @@ ${spreadContexts.join("\n\n---\n\n")}
           updatedAt: new Date(),
         })
         .where(eq(storyWorkflowProgress.storyId, storyId));
+
+      // Admin "Re-plan scenes only": plans and briefs are rebuilt, nothing is drawn.
+      if (event.data?.planOnly) {
+        await finishAdminAction(event.data?.adminActionId, { status: "done", result: "Scenes re-planned and briefs rebuilt. Nothing was drawn." });
+        console.log("⏹️ planOnly: not triggering story/generate-spreads");
+        return;
+      }
 
       await inngest.send({
         name: "story/generate-spreads",

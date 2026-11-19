@@ -245,6 +245,16 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
         return NextResponse.json({ ok: true, message: `${info.label}: started. Follow it on the Pages tab.` });
       }
 
+      case "replan-only": {
+        // Starts at the scene planner (not ensure-world), and build-spread-prompts
+        // stops before drawing when planOnly is set, then marks this job done.
+        await inngest.send({
+          name: "story/decide-spread-scenes",
+          data: { storyId, planOnly: true, adminActionId: startedId },
+        });
+        return NextResponse.json({ ok: true, message: "Re-planning scenes. Nothing will be drawn. Takes 2 to 4 minutes." });
+      }
+
       case "redraw-cover": {
         await db.update(stories).set({ status: "generating_covers", updatedAt: new Date() }).where(eq(stories.id, storyId));
         await inngest.send({ name: "story/generate.cover.spread", data: { storyId, adminActionId: startedId } });

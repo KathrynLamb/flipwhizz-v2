@@ -641,7 +641,7 @@ function Places({ locations, spreads, bookId }: { locations: LocationDetail[]; s
 /* -------------------------------------------------------------------------- */
 
 function Redraw({ detail, ask, sending, locked }: { detail: BookDetail; ask: Ask; sending: string | null; locked: (a: ActionKey) => boolean }) {
-  const whole: ActionKey[] = ["draw-missing", "redraw-all", "replan-all", "redraw-cover"];
+  const whole: ActionKey[] = ["draw-missing", "redraw-all", "replan-all", "replan-only", "redraw-cover"];
   return (
     <div className="space-y-4">
       <Card title="Whole book">

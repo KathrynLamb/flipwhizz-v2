@@ -13,6 +13,7 @@ export type ActionKey =
   | "redraw-sheet"
   | "draw-missing"
   | "redraw-all"
+  | "replan-only"
   | "replan-all"
   | "redraw-cover"
   | "copy-to-me"
@@ -107,6 +108,15 @@ export const ACTIONS: Record<ActionKey, ActionInfo> = {
     locks: true,
     long: true,
     usesModel: true,
+  },
+  "replan-only": {
+    label: "Re-plan scenes only (no drawing)",
+    detail: "Re-plans who is in each scene and rewrites the art direction from the current characters (who is shown, how to show them). Draws nothing and changes no pictures. Use on unpaid books before they're drawn.",
+    safeguard: "confirm",
+    snapshot: false,
+    locks: true,
+    long: true,
+    usesModel: false,
   },
   "redraw-cover": {
     label: "Redraw the cover",

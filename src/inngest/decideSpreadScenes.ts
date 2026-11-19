@@ -821,6 +821,7 @@ Rules:
           ...(event.data?.spreadMode ? { spreadMode: event.data.spreadMode } : {}),
           ...(event.data?.adminActionId ? { adminActionId: event.data.adminActionId } : {}),
           ...(event.data?.redrawForCharacterId ? { redrawForCharacterId: event.data.redrawForCharacterId } : {}),
+          ...(event.data?.planOnly ? { planOnly: true } : {}),
         },
       });
     });
