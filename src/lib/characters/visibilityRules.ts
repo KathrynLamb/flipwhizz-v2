@@ -18,6 +18,8 @@ export function charactersToAutoHide(
   storyCast: Array<{ characterId: string; shown: boolean; shownSource: string | null }>,
   plannedIds: Set<string>,
 ): string[] {
+  // A plan with nobody on it is a broken plan, not a book with no characters.
+  if (plannedIds.size === 0) return [];
   return storyCast
     .filter((c) => c.shown && (c.shownSource === null || c.shownSource === "auto") && !plannedIds.has(c.characterId))
     .map((c) => c.characterId);

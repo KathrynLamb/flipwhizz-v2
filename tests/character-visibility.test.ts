@@ -57,3 +57,8 @@ test("odd stored casts (JSON null, a JSON string) never throw", () => {
   assert.deepEqual(presenceCast({ characterId: "x" }), []);
   assert.deepEqual(presenceCast([{ characterId: "a" }, null, 5]), [{ characterId: "a" }]);
 });
+
+test("an empty plan hides nobody", () => {
+  const cast = [{ characterId: "logan", shown: true, shownSource: null }];
+  assert.deepEqual(charactersToAutoHide(cast, new Set()), []);
+});
