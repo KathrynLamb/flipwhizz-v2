@@ -17,7 +17,7 @@ import {
   storyPages,
   bookCovers,
 } from "@/db/schema";
-import { eq, sql, inArray, asc } from "drizzle-orm";
+import { and, eq, sql, inArray, asc } from "drizzle-orm";
 import { v2 as cloudinary } from "cloudinary";
 import { Readable } from "node:stream";
 import { v4 as uuid } from "uuid";
@@ -210,7 +210,7 @@ export const generateCoverSpreadPhaseB = inngest.createFunction(
           visualDetails: characters.visualDetails,
         }).from(storyCharacters)
         .innerJoin(characters, eq(storyCharacters.characterId, characters.id))
-        .where(eq(storyCharacters.storyId, storyId));
+        .where(and(eq(storyCharacters.storyId, storyId), eq(storyCharacters.shown, true)));
 
     // Location — image URL only
     let locRef: { name: string; imageUrl: string | null } | null = null;

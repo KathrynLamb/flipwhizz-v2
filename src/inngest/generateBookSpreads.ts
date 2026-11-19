@@ -522,7 +522,8 @@ export const generateBookSpreads = inngest.createFunction(
         const storyChars = await db
           .select({ characterId: storyCharacters.characterId })
           .from(storyCharacters)
-          .where(eq(storyCharacters.storyId, storyId));
+          // Not-shown characters are never drawn, so never need a card here.
+          .where(and(eq(storyCharacters.storyId, storyId), eq(storyCharacters.shown, true)));
         for (const sc of storyChars) featuredIds.add(sc.characterId);
       }
 

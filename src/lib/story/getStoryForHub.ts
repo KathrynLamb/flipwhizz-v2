@@ -52,6 +52,8 @@ export async function getStoryForHub(storyId: string) {
       // story-specific fields
       role: storyCharacters.role,
       arcSummary: storyCharacters.arcSummary,
+      shown: storyCharacters.shown,
+      appearanceNote: storyCharacters.appearanceNote,
     })
     .from(storyCharacters)
     .innerJoin(

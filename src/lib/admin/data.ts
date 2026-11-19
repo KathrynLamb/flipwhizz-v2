@@ -173,6 +173,12 @@ export type CharacterDetail = {
   sheetUrl: string | null;
   sheetStale: boolean;
   spreads: number[];
+  /** False = in the story but never drawn (story_characters.shown). */
+  shown: boolean;
+  /** Who decided: auto | customer | admin, or null. */
+  shownSource: string | null;
+  /** How to show them, from the "show this character" chat or an admin. */
+  appearanceNote: string | null;
 };
 
 export type LocationDetail = {
@@ -261,7 +267,7 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       ORDER BY sp.spread_index
     `),
     rows(sql`
-      SELECT c.id, c.name, c.species, c.portrait_image_url, c.reference_image_url, c.full_body_image_url, c.visual_details, sc.role
+      SELECT c.id, c.name, c.species, c.portrait_image_url, c.reference_image_url, c.full_body_image_url, c.visual_details, sc.role, sc.shown, sc.shown_source, sc.appearance_note
       FROM characters c JOIN story_characters sc ON sc.character_id = c.id
       WHERE sc.story_id = ${storyId}
       ORDER BY c.name
@@ -360,6 +366,9 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
       sheetUrl,
       sheetStale: hasAnySheet && !sheetUrl,
       spreads: spreads.filter((s) => s.present.some((p) => p.id === c.id)).map((s) => s.index),
+      shown: c.shown !== false,
+      shownSource: c.shown_source ?? null,
+      appearanceNote: c.appearance_note ?? null,
     };
   });
 

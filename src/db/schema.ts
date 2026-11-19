@@ -408,6 +408,16 @@ export const storyCharacters = pgTable("story_characters", {
   // Character arc tracking
   role: varchar("role", { length: 40 }), // protagonist, antagonist, supporting, etc.
   arcSummary: text("arc_summary"), // Overall character journey in this story
+
+  // Is this character drawn in this book's pictures? False for characters the
+  // story mentions but never shows (an unborn baby, someone who has died, a
+  // voice on the phone). Not-shown characters need no card, are left out of
+  // scene plans and are never drawn. See src/lib/characters/visibility.ts.
+  shown: boolean("shown").notNull().default(true),
+  /** Who decided: "auto" (the scene planner put them on no spread), "customer" or "admin". Null = never decided. */
+  shownSource: varchar("shown_source", { length: 20 }),
+  /** How and where to show them, agreed in the "show this character" chat, e.g. "a newborn in Mama's arms on the last spread". */
+  appearanceNote: text("appearance_note"),
 });
 
 /* ==================== STORY ↔ LOCATIONS ==================== */

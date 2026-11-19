@@ -87,6 +87,8 @@ export async function sendAlert(rawInput: AlertInput): Promise<void> {
       story_id: input.storyId ?? null,
       project_id: input.projectId ?? null,
       ...(input.context ?? {}),
+      // No user: don't create a "system" person in PostHog.
+      ...(input.userId ? {} : { $process_person_profile: false }),
     });
   } catch (err) {
     console.error("[alerts] PostHog capture failed:", err);
