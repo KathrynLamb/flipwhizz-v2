@@ -11,8 +11,9 @@ import {
   locations,
   storyCharacters,
   storyLocations,
+  storySpreadScene,
 } from "@/db/schema";
-import { and, eq, inArray, asc } from "drizzle-orm";
+import { and, eq, inArray, asc, sql } from "drizzle-orm";
 import { withAccess } from "@/lib/authz";
 
 async function _GET(
@@ -33,9 +34,14 @@ async function _GET(
         index: storySpreads.spreadIndex,
         leftPageId: storySpreads.leftPageId,
         rightPageId: storySpreads.rightPageId,
-        sceneSummary: storySpreads.sceneSummary,
+        // Prefer the art director's brief (story_spread_scene), which is
+        // rewritten on every re-plan and knows who is shown; the original
+        // outline (story_spreads.scene_summary) is written once and can go
+        // stale, e.g. still describing a character who is no longer drawn.
+        sceneSummary: sql<string | null>`coalesce(${storySpreadScene.sceneSummary}, ${storySpreads.sceneSummary})`,
       })
       .from(storySpreads)
+      .leftJoin(storySpreadScene, eq(storySpreadScene.spreadId, storySpreads.id))
       .where(eq(storySpreads.storyId, storyId))
       .orderBy(asc(storySpreads.spreadIndex));
 
