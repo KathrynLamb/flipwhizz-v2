@@ -14,6 +14,8 @@ export type BookEventKind =
   | "locations_approved"
   | "paywall_reached"
   | "checkout_started"
+  | "payment_declined"
+  | "payment_cancelled"
   | "paid"
   | "book_drawn"
   | "stalled"
@@ -30,6 +32,8 @@ export const EVENT_LABELS: Record<BookEventKind, string> = {
   locations_approved: "Places approved",
   paywall_reached: "Reached the paywall",
   checkout_started: "Started checkout",
+  payment_declined: "Payment declined",
+  payment_cancelled: "Closed PayPal without paying",
   paid: "Paid",
   book_drawn: "Book drawn",
   stalled: "Stalled",
@@ -49,6 +53,8 @@ export const EVENT_TONES: Record<BookEventKind, EventTone> = {
   locations_approved: "slate",
   paywall_reached: "amber",
   checkout_started: "amber",
+  payment_declined: "red",
+  payment_cancelled: "amber",
   paid: "green",
   book_drawn: "green",
   stalled: "red",
@@ -134,7 +140,7 @@ export function renderEventEmail(a: EventEmailInput): { subject: string; text: s
   const total = totalCost(a.costs);
   const who = a.ownerEmail ?? "anonymous visitor";
   const book = a.storyTitle ? ` "${a.storyTitle}"` : "";
-  const icon = a.kind === "failed" || a.kind === "stalled" ? "🔴 " : a.kind === "paid" ? "🟢 " : "";
+  const icon = a.kind === "failed" || a.kind === "stalled" || a.kind === "payment_declined" ? "🔴 " : a.kind === "paid" ? "🟢 " : "";
   const subject = `${icon}${EVENT_LABELS[a.kind]}:${book} · ${who}${a.costs.length ? ` · ${money(total, a.usdToGbp).split(" ")[0]} so far` : ""}`.slice(0, 200);
 
   const head = [

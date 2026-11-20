@@ -32,6 +32,8 @@ export function reportClientError(
     status?: number;
     projectId?: string | null;
     storyId?: string | null;
+    /** Which step failed, e.g. "create_order" on checkout. */
+    action?: string;
   } = {},
 ) {
   try {

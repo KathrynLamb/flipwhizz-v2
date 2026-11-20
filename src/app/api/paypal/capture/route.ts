@@ -10,6 +10,7 @@ import { withAlerts } from "@/lib/alerts";
 import { getAuthUser, owns, withAccess } from "@/lib/authz";
 import { CheckoutError, createCheckoutStore } from "@/lib/checkout/store";
 import { recordBookEvent } from "@/lib/events/bookEvents";
+import { DECLINED_MESSAGE, PaypalApiError, browserSummary, isRestartableDecline } from "@/lib/paypalErrors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,6 +64,8 @@ function extractPaypalShippingAddress(receipt: any): ShippingAddress | null {
 
 
 async function _POST(req: Request) {
+  // Kept outside the try so a decline can be put on the right book's timeline.
+  let declineContext: { userId: string; storyId: string; orderID: string; amountCents: number; currency: string; productType: string } | null = null;
   try {
     const user = await getAuthUser();
     if (!user) return NextResponse.json({ error: "Please sign in to continue." }, { status: 401 });
@@ -72,6 +75,7 @@ async function _POST(req: Request) {
     if (!quote || quote.userId !== user.id) throw new CheckoutError("Please refresh checkout and try your payment again.");
     if (!user.isAdmin && !(await owns("story", quote.storyId, user.id))) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    declineContext = { userId: user.id, storyId: quote.storyId, orderID, amountCents: quote.amountCents, currency: quote.currency, productType: quote.productType };
     let payment = quote;
     if (quote.status !== "paid") {
       // Trust the saved server quote, never a client-supplied promo or amount.
@@ -128,7 +132,24 @@ async function _POST(req: Request) {
 
     return NextResponse.json({ success: true, storyId: payment.storyId, orderID, productType: payment.productType, isUpgrade: payment.isUpgrade });
   } catch (err: any) {
-    console.error("[PayPal capture] error:", err);
+    // A declined card is the buyer's bank saying no, not a FlipWhizz fault:
+    // no critical alert, a clear message, and the browser restarts PayPal on
+    // the same order so they can pick another card or their balance.
+    if (isRestartableDecline(err)) {
+      console.warn("[PayPal capture] declined:", err.issue, err.debugId);
+      // Give the promo use back, or every retry fails "already used this code".
+      if (declineContext) await checkout.releaseDeclined(declineContext.orderID, declineContext.userId);
+      if (declineContext) await recordBookEvent({
+        kind: "payment_declined",
+        summary: `PayPal declined ${(declineContext.amountCents / 100).toFixed(2)} ${declineContext.currency} for ${declineContext.productType} (${err.issue}) on ${browserSummary(req.headers.get("user-agent"))}`,
+        userId: declineContext.userId,
+        storyId: declineContext.storyId,
+        details: { issue: err.issue, paypal_debug_id: err.debugId, paypal_order_id: declineContext.orderID, user_agent: req.headers.get("user-agent") },
+        dedupeKey: `payment_declined:${declineContext.orderID}:${Math.floor(Date.now() / 60_000)}`,
+      });
+      return NextResponse.json({ error: DECLINED_MESSAGE, declined: true }, { status: 402 });
+    }
+    console.error("[PayPal capture] error:", err, err instanceof PaypalApiError ? { issue: err.issue, debugId: err.debugId } : "");
     return NextResponse.json({ error: err?.message ?? "Failed to capture payment. Please retry." }, { status: err instanceof CheckoutError ? 400 : 500 });
   }
 }

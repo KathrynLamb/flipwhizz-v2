@@ -24,6 +24,7 @@ import {
   Globe,
 } from 'lucide-react';
 import type { StepKey } from '@/lib/storySteps';
+import { reportClientError } from '@/lib/reportClientError';
 import UnifiedStoryHeader from '@/app/stories/components/StoryHeader';
 import {
   CURRENCIES,
@@ -115,10 +116,25 @@ type PromoState = {
   savings: string;
 } | null;
 
+/** Best effort: never blocks or breaks checkout. Admin visits are skipped server-side. */
+function reportStepFor(storyId: string, kind: 'checkout_started' | 'payment_cancelled', details: Record<string, unknown>) {
+  try {
+    void fetch(`/api/stories/${storyId}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, details }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* never let reporting break checkout */
+  }
+}
+
 export default function CheckoutPage() {
   const params = useParams();
   const router = useRouter();
   const storyId = params.id as string;
+  const reportCheckoutEvent = (kind: 'checkout_started' | 'payment_cancelled', details: Record<string, unknown>) => reportStepFor(storyId, kind, details);
 
   const [loading, setLoading] = useState(true);
   const [story, setStory] = useState<any>(null);
@@ -133,6 +149,12 @@ export default function CheckoutPage() {
   const [availableTiers, setAvailableTiers] = useState<TierKey[]>(['digital', 'print', 'gift']);
   const [savingProduct, setSavingProduct] = useState(false);
   const [productReady, setProductReady] = useState(false);
+  // Shown above the PayPal buttons. Not alert(): on a phone, PayPal's window
+  // sits on top of this page, so an alert here is never seen.
+  const [payError, setPayError] = useState<string | null>(null);
+  const paypalOpenedAt = useRef<number | null>(null);
+  // createOrder already reported its own failure; PayPal then calls onError too.
+  const orderFailureReported = useRef(false);
 
   // Currency
   const [currency, setCurrency] = useState<CurrencyCode>('GBP');
@@ -212,6 +234,10 @@ export default function CheckoutPage() {
           router.replace(`/stories/${storyId}/studio`);
           return;
         }
+
+        // Admin timeline + email: reached checkout. Covers links straight to
+        // checkout that skip the paywall. Once per book and product.
+        reportStepFor(storyId, 'checkout_started', { product: productData?.productType ?? null });
     
         const digitalRequested = new URLSearchParams(window.location.search).get("edition") === "digital";
         if (digitalRequested && allowed.includes("digital")) {
@@ -605,30 +631,53 @@ export default function CheckoutPage() {
                     </button>
                   )}
 
+                  {payError && !processing && (
+                    <div role="alert" className="mt-4 mb-3 px-4 py-3 rounded-xl text-[13px] leading-snug" style={{ background: '#FFF4F1', border: '1px solid #F6C9BC', color: '#8A3B26' }}>
+                      {payError}
+                    </div>
+                  )}
+
                   {/* PayPal buttons */}
                   <div style={{ display: isFreeOrder || processing || savingProduct || !productReady ? 'none' : 'block' }}>
                     <PayPalScriptProvider options={{ clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!, currency, intent: 'capture' }}>
                       <PayPalButtons
                         key={`${selectedTier}-${currency}-${promoState?.code ?? 'none'}`}
                         style={{ layout: 'vertical', color: 'gold', shape: 'rect', label: 'pay', height: 48 }}
-                        onClick={(_data, actions) => confirmChristmasDelivery(selectedTier, isColouring ? "colouring_storybook" : "storybook") ? actions.resolve() : actions.reject()}
-                        createOrder={async () => {
-                          await saveProductSelection(selectedTier, currency);
-                          const res = await fetch('/api/paypal/order', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              storyId,
-                              price: (finalCents / 100).toFixed(2),
-                              currency,
-                              promoCode: promoState?.valid ? promoState.code : undefined,
-                            }),
-                          });
-                          const data = await res.json();
-                          if (!res.ok || !data.orderID) throw new Error(data?.error || 'Failed to create order');
-                          return data.orderID;
+                        onClick={(_data, actions) => {
+                          setPayError(null);
+                          orderFailureReported.current = false;
+                          if (!confirmChristmasDelivery(selectedTier, isColouring ? "colouring_storybook" : "storybook")) return actions.reject();
+                          paypalOpenedAt.current = Date.now();
+                          return actions.resolve();
                         }}
-                        onApprove={async (data) => {
+                        createOrder={async () => {
+                          try {
+                            await saveProductSelection(selectedTier, currency);
+                            const res = await fetch('/api/paypal/order', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                storyId,
+                                price: (finalCents / 100).toFixed(2),
+                                currency,
+                                promoCode: promoState?.valid ? promoState.code : undefined,
+                              }),
+                            });
+                            const data = await res.json().catch(() => ({}));
+                            if (!res.ok || !data.orderID) throw Object.assign(new Error(data?.error || 'Failed to create order'), { status: res.status });
+                            return data.orderID;
+                          } catch (err: unknown) {
+                            // Server-side 4xx answers here never reached Katy before, and the
+                            // customer only saw PayPal's window, so tell both.
+                            const { message, status } = (err ?? {}) as { message?: string; status?: number };
+                            orderFailureReported.current = true;
+                            reportClientError('checkout_failed', { action: 'create_order', message, status, storyId });
+                            setPayError(message ? `We couldn't start your payment: ${message}` : "We couldn't start your payment. Please try again.");
+                            throw err;
+                          }
+                        }}
+                        onApprove={async (data, actions) => {
+                          paypalOpenedAt.current = null;
                           setProcessing(true);
                           try {
                             const res = await fetch('/api/paypal/capture', {
@@ -639,8 +688,15 @@ export default function CheckoutPage() {
                                 promoCode: promoState?.valid ? promoState.code : undefined,
                               }),
                             });
-                            const result = await res.json();
-                            if (!res.ok || !result.success) throw new Error(result?.error || 'Payment capture failed.');
+                            const result = await res.json().catch(() => ({}));
+                            if (result?.declined) {
+                              // Bank said no. Nothing was taken: reopen PayPal on the same order
+                              // so they can choose another card or their balance.
+                              setPayError(result.error);
+                              setProcessing(false);
+                              return actions.restart();
+                            }
+                            if (!res.ok || !result.success) throw Object.assign(new Error(result?.error || 'Payment capture failed.'), { status: res.status });
                             await fetch(`/api/stories/${storyId}/complete-step`, {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
@@ -650,13 +706,28 @@ export default function CheckoutPage() {
                             setJustPaid(true);
                             startGeneration();
                           } catch (err: any) {
-                            alert(err?.message || 'Payment processed but something went wrong.');
+                            reportClientError('checkout_failed', { action: 'capture', message: err?.message, status: err?.status, storyId });
+                            setPayError(err?.message || 'Payment processed but something went wrong.');
                           } finally {
                             setProcessing(false);
                           }
                         }}
-                        onError={(err) => { console.error('PayPal error:', err); setProcessing(false); alert('Payment failed. Please try again.'); }}
-                        onCancel={() => setProcessing(false)}
+                        onError={(err) => {
+                          console.error('PayPal error:', err);
+                          paypalOpenedAt.current = null;
+                          setProcessing(false);
+                          if (!orderFailureReported.current) {
+                            reportClientError('checkout_failed', { action: 'paypal_error', message: err instanceof Error ? err.message : String(err), storyId });
+                          }
+                          setPayError((prev) => prev ?? "PayPal couldn't finish that payment, and nothing was taken. Please try again.");
+                        }}
+                        onCancel={() => {
+                          setProcessing(false);
+                          const openMs = paypalOpenedAt.current ? Date.now() - paypalOpenedAt.current : null;
+                          paypalOpenedAt.current = null;
+                          reportCheckoutEvent('payment_cancelled', { product: selectedTier, openMs });
+                          setPayError("PayPal was closed before paying, so nothing was taken. If the PayPal window was blank or froze, try opening this page in Safari or Chrome, or email katy@flipwhizz.co.uk and we'll sort it.");
+                        }}
                       />
                     </PayPalScriptProvider>
                   </div>

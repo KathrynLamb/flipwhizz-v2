@@ -55,7 +55,14 @@ export async function verifyCheckoutStore(db: DB) {
     const f=await fixture();await db.update(promoCodes).set(change).where(eq(promoCodes.id,f.id));await assert.rejects(store.reserve(await quote(f),"buyer"));assert.equal(await uses(f.id),0);
   }
   const e=await fixture(),e1=await quote(e);await store.reserve(e1,"buyer");await db.update(promoCodes).set({expiresAt:new Date(0)}).where(eq(promoCodes.id,e.id));await store.reserve(e1,"buyer");await store.cancelVoided(e1,"buyer");await store.cancelVoided(e1,"buyer");assert.equal(await uses(e.id),0);await assert.rejects(store.reserve(e1,"buyer"),/cancelled/);
-  console.log("Checkout assertions passed: final-use contention, retries, free claims, rollback, user limits, validity and cancellation.");
+  // Declined card (Georgeta, 19 Nov): a one-per-user code must be usable again on a retry or a new order.
+  const g=await fixture(10,1),g1=await quote(g);await store.reserve(g1,"buyer");assert.equal(await uses(g.id),1);
+  await store.releaseDeclined(g1,"other");assert.equal(await uses(g.id),1,"only the buyer can release");
+  await store.releaseDeclined(g1,"buyer");await store.releaseDeclined(g1,"buyer");assert.equal(await uses(g.id),0,"released once");
+  await store.reserve(g1,"buyer");assert.equal(await uses(g.id),1,"restart on the same order reserves again");
+  await store.releaseDeclined(g1,"buyer");const g2=await quote(g);await store.reserve(g2,"buyer");await store.complete(g2,"buyer",null);
+  await store.releaseDeclined(g2,"buyer");assert.equal((await db.select().from(checkoutPayments).where(eq(checkoutPayments.id,g2)))[0].status,"paid","never releases a paid order");assert.equal(await uses(g.id),1);
+  console.log("Checkout assertions passed: final-use contention, retries, free claims, rollback, user limits, validity, cancellation and declines.");
 }
 test("checkout transactions in isolated PostgreSQL",{skip:!process.env.TEST_DATABASE_URL},async()=>{
   const {default:postgres}=await import("postgres");const {drizzle}=await import("drizzle-orm/postgres-js");
