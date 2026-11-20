@@ -137,6 +137,8 @@ async function _POST(req: Request) {
     // the same order so they can pick another card or their balance.
     if (isRestartableDecline(err)) {
       console.warn("[PayPal capture] declined:", err.issue, err.debugId);
+      // Give the promo use back, or every retry fails "already used this code".
+      if (declineContext) await checkout.releaseDeclined(declineContext.orderID, declineContext.userId);
       if (declineContext) await recordBookEvent({
         kind: "payment_declined",
         summary: `PayPal declined ${(declineContext.amountCents / 100).toFixed(2)} ${declineContext.currency} for ${declineContext.productType} (${err.issue}) on ${browserSummary(req.headers.get("user-agent"))}`,

@@ -73,6 +73,20 @@ export function createCheckoutStore(database: typeof db) {
     });
   }
 
+  // Only call after PayPal says the card was declined at capture: PayPal has
+  // definitely taken nothing. Hands the promo use back and returns the payment
+  // to "created", so the buyer can retry this order (actions.restart) or start
+  // a new one. Keeping the reservation blocked every retry with a one-use code.
+  async function releaseDeclined(id: string, userId: string) {
+    await database.transaction(async tx => {
+      const [p] = await tx.select().from(checkoutPayments).where(eq(checkoutPayments.id, id)).for("update");
+      if (!p || p.userId !== userId || p.status !== "reserved") return;
+      if (p.promoId) await tx.update(promoCodes)
+        .set({ currentUses: sql`greatest(0, ${promoCodes.currentUses} - 1)`, updatedAt: new Date() }).where(eq(promoCodes.id, p.promoId));
+      await tx.update(checkoutPayments).set({ status: "created", updatedAt: new Date() }).where(eq(checkoutPayments.id, id));
+    });
+  }
+
   async function claimFree(storyId: string, userId: string, code: string, isAdmin = false) {
     return database.transaction(async tx => {
       const [story] = await tx.select().from(stories).where(eq(stories.id, storyId)).for("update");
@@ -100,5 +114,5 @@ export function createCheckoutStore(database: typeof db) {
       return { alreadyPaid: false, payment };
     });
   }
-  return { reserve, complete, cancelVoided, claimFree };
+  return { reserve, complete, cancelVoided, releaseDeclined, claimFree };
 }
