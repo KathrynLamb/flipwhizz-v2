@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { sendAlert } from "@/lib/alerts";
+import { browserSummary } from "@/lib/paypalErrors";
 
 const ALLOWED_KINDS = new Set([
   "story_creation_failed",
@@ -61,6 +62,8 @@ export async function POST(req: Request) {
       user_email: session.user?.email ?? null,
       character_id: str(body.characterId, 64),
       action: str(body.action, 100),
+      device: browserSummary(req.headers.get("user-agent")),
+      user_agent: str(req.headers.get("user-agent"), 300),
     },
   });
 

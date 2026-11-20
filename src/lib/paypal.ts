@@ -1,4 +1,5 @@
 // src/lib/paypal.ts
+import { paypalErrorFromBody } from "./paypalErrors";
 const PAYPAL_ENV = process.env.PAYPAL_ENV || "sandbox";
 
 export const PAYPAL_BASE_URL =
@@ -90,7 +91,7 @@ export async function paypalCreateOrder(args: CreateOrderArgs) {
 
   if (!res.ok) {
     console.error("[PayPal] create order failed:", data);
-    throw new Error(data?.message || "Failed to create PayPal order");
+    throw paypalErrorFromBody("Failed to create PayPal order", data, res.status);
   }
 
   return data; // includes id
@@ -114,7 +115,7 @@ export async function paypalGetOrder(orderID: string) {
 
   if (!res.ok) {
     console.error("[PayPal] get order failed:", data);
-    throw new Error(data?.message || "Failed to load PayPal order");
+    throw paypalErrorFromBody("Failed to load PayPal order", data, res.status);
   }
 
   return data;
@@ -138,7 +139,7 @@ export async function paypalCaptureOrder(orderID: string) {
 
   if (!res.ok) {
     console.error("[PayPal] capture failed:", data);
-    throw new Error(data?.message || "Failed to capture PayPal order");
+    throw paypalErrorFromBody("Failed to capture PayPal order", data, res.status);
   }
 
   return data;
