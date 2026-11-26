@@ -6,7 +6,6 @@ import { inngest } from "@/inngest/client";
 export const maxDuration = 300;
 
 // Core narrative
-import { globalRewriteJob } from "@/inngest/functions";
 import { ensureWorld } from "@/inngest/ensureWorld";
 
 import { decideScenes } from "@/inngest/decideSpreadScenes";
@@ -33,7 +32,6 @@ export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [
     // Core pipeline
-    globalRewriteJob,
     ensureWorld,
     buildSpreads,
     decideScenes,

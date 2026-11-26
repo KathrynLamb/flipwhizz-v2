@@ -3,8 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
 import { db } from "@/db";
-import { stories, storyPages } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { stories, storyPages, storySpreads } from "@/db/schema";
+import { eq, asc, inArray } from "drizzle-orm";
+import { inngest } from "@/inngest/client";
 import { v4 as uuid } from "uuid";
 import { extractInsightsFromRewriteChat } from "@/lib/extractRewriteInsights";
 import { withAccess } from "@/lib/authz";
@@ -103,6 +104,15 @@ async function _POST(
 
     if (!story) {
       return NextResponse.json({ error: "Story not found" }, { status: 404 });
+    }
+
+    // Once a print order has gone in, the words are what's being printed.
+    // Further edits go through support so the book and the order never drift apart.
+    if (story.orderStatus && story.orderStatus !== "not_ready") {
+      return NextResponse.json(
+        { error: "This book has been sent to print, so it can't be edited here. Reply to your order email and we'll help." },
+        { status: 409 }
+      );
     }
 
     const pages = await db
@@ -221,15 +231,33 @@ RULES:
       byNum.set(n, String(p.text ?? "").trim());
     }
 
-    const normalized = Array.from({ length: pageCount }, (_, i) => ({
-      id: uuid(),
-      storyId,
-      pageNumber: i + 1,
-      text: byNum.get(i + 1) ?? "",
-      illustrationPrompt: null,
-      imageId: null,
-      createdAt: new Date(),
-    }));
+    // Update pages IN PLACE, matched by page number. Never delete and
+    // re-insert: story_pages.id is referenced by story_spreads (left/right
+    // page, ON DELETE SET NULL) and by page characters, locations, entities
+    // and text runs (ON DELETE CASCADE), and image_url lives on the page row.
+    // Recreating pages unlinked every spread, wiped the pictures and made the
+    // studio auto-trigger a full-book redraw that then failed.
+    const existingByNum = new Map(pages.map((p) => [p.pageNumber, p]));
+    const changedPageIds: string[] = [];
+    const toInsert: (typeof storyPages.$inferInsert)[] = [];
+
+    for (let n = 1; n <= pageCount; n++) {
+      const newText = byNum.get(n) ?? "";
+      const existing = existingByNum.get(n);
+      if (!existing) {
+        toInsert.push({
+          id: uuid(),
+          storyId,
+          pageNumber: n,
+          text: newText,
+          illustrationPrompt: null,
+          imageId: null,
+          createdAt: new Date(),
+        });
+      } else if ((existing.text ?? "").trim() !== newText) {
+        changedPageIds.push(existing.id);
+      }
+    }
 
     await db.transaction(async (tx) => {
       await tx
@@ -237,9 +265,66 @@ RULES:
         .set({ fullDraft: raw, length: pageCount, updatedAt: new Date() })
         .where(eq(stories.id, storyId));
 
-      await tx.delete(storyPages).where(eq(storyPages.storyId, storyId));
-      await tx.insert(storyPages).values(normalized);
+      for (const p of pages) {
+        if (!changedPageIds.includes(p.id)) continue;
+        await tx
+          .update(storyPages)
+          .set({ text: byNum.get(p.pageNumber) ?? "" })
+          .where(eq(storyPages.id, p.id));
+      }
+
+      if (toInsert.length) await tx.insert(storyPages).values(toInsert);
     });
+
+    log("pages changed", changedPageIds.length, "inserted", toInsert.length);
+
+    // If the book is already drawn, the old words are painted into the
+    // pictures (one-pass). Redraw ONLY the spreads whose text changed,
+    // keeping the same picture as the reference so just the lettering and
+    // anything the new words require changes.
+    let spreadsRedrawn = 0;
+    const isDrawn = pages.some((p) => !!p.imageUrl);
+    if (changedPageIds.length && isDrawn) {
+      const spreads = await db
+        .select()
+        .from(storySpreads)
+        .where(eq(storySpreads.storyId, storyId));
+
+      const changed = new Set(changedPageIds);
+      const affected = spreads.filter(
+        (s) =>
+          (s.leftPageId && changed.has(s.leftPageId)) ||
+          (s.rightPageId && changed.has(s.rightPageId))
+      );
+
+      for (const s of affected) {
+        if (!s.leftPageId || !s.rightPageId) continue;
+        const left = pages.find((p) => p.id === s.leftPageId);
+        const right = pages.find((p) => p.id === s.rightPageId);
+        const existingSpreadImageUrl = left?.imageUrl ?? right?.imageUrl ?? null;
+
+        // Same pattern as spreads/regenerate: clear so the studio shows
+        // "drawing" for this spread, then send the single-spread job.
+        await db
+          .update(storyPages)
+          .set({ imageUrl: null })
+          .where(inArray(storyPages.id, [s.leftPageId, s.rightPageId]));
+
+        await inngest.send({
+          name: "story/generate.single.spread",
+          data: {
+            storyId,
+            leftPageId: s.leftPageId,
+            rightPageId: s.rightPageId,
+            pageLabel: `${left?.pageNumber ?? ""}-${right?.pageNumber ?? ""}`,
+            feedback:
+              "The words on this spread changed. Keep the same picture, characters and layout; update the lettering to the new page text, and only change the art if the new words need it.",
+            existingSpreadImageUrl,
+          },
+        });
+        spreadsRedrawn++;
+      }
+    }
 
     log("DONE total ms", Date.now() - started);
 
@@ -249,7 +334,12 @@ RULES:
       );
     }
 
-    return NextResponse.json({ ok: true, pagesRewritten: pageCount });
+    return NextResponse.json({
+      ok: true,
+      pagesRewritten: pageCount,
+      pagesChanged: changedPageIds.length,
+      spreadsRedrawn,
+    });
   } catch (err) {
     log("Unhandled error", err);
     return NextResponse.json(
