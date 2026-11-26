@@ -237,6 +237,21 @@ RULES:
     // and text runs (ON DELETE CASCADE), and image_url lives on the page row.
     // Recreating pages unlinked every spread, wiped the pictures and made the
     // studio auto-trigger a full-book redraw that then failed.
+    // The prompt asks the model for single quotes (JSON safety), so pages
+    // with "double-quoted" dialogue always come back slightly different.
+    // Treat quote-style-only differences as unchanged and keep the original
+    // wording, otherwise every page with dialogue gets redrawn for nothing.
+    const sameWords = (a: string, b: string) => {
+      const norm = (t: string) =>
+        t
+          .replace(/[\u2018\u2019\u201A\u201B\u2032`]/g, "'")
+          .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, "'")
+          .replace(/"/g, "'")
+          .replace(/\s+/g, " ")
+          .trim();
+      return norm(a) === norm(b);
+    };
+
     const existingByNum = new Map(pages.map((p) => [p.pageNumber, p]));
     const changedPageIds: string[] = [];
     const toInsert: (typeof storyPages.$inferInsert)[] = [];
@@ -254,7 +269,7 @@ RULES:
           imageId: null,
           createdAt: new Date(),
         });
-      } else if ((existing.text ?? "").trim() !== newText) {
+      } else if (!sameWords(existing.text ?? "", newText)) {
         changedPageIds.push(existing.id);
       }
     }
