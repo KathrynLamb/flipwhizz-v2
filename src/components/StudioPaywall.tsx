@@ -92,9 +92,11 @@ export default function StudioPaywall({
   const [availableTiers, setAvailableTiers] = useState<Tier[]>([]);
   const [error, setError] = useState("");
   // Admin timeline + email: the customer saw the paywall (once per book).
+  // freePageDrawn tells the admin email whether they actually saw a drawn page.
+  const freePageDrawn = Boolean(previewSpreadUrl);
   useEffect(() => {
-    reportStep(storyId, "paywall_reached");
-  }, [storyId]);
+    reportStep(storyId, "paywall_reached", { freePageDrawn });
+  }, [storyId, freePageDrawn]);
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/stories/${storyId}/product`).then(async res => {

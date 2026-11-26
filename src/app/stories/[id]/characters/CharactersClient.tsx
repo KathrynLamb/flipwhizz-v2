@@ -152,7 +152,7 @@ export default function CharactersClient({ storyId, storyTitle = 'Your story', c
     <header className="border-b border-slate-200/70 bg-white">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
         <div className="flex min-w-0 items-center gap-3">
-          <Link href={`/stories/${storyId}/design`} aria-label="Back to book design" className="rounded-xl p-2 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" /></Link>
+          <Link href={`/stories/${storyId}/illustration-style`} aria-label="Back to book design" className="rounded-xl p-2 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" /></Link>
           <div className="min-w-0"><p className="text-xs font-medium text-[#7655A3]">Story studio</p><p className="truncate text-sm font-semibold">{storyTitle}</p></div>
         </div>
         <Link href="/projects" className="shrink-0 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100">My library</Link>
@@ -160,7 +160,7 @@ export default function CharactersClient({ storyId, storyTitle = 'Your story', c
     </header>
     <main className="mx-auto max-w-6xl px-5 pb-32 pt-8 sm:px-8 sm:pt-10">
       <nav aria-label="Book setup" className="mb-6 flex items-center gap-2 text-xs text-slate-500">
-        <Link href={`/stories/${storyId}/design`} className="hover:underline">Design</Link><span aria-hidden="true">/</span>
+        <Link href={`/stories/${storyId}/illustration-style`} className="hover:underline">Design</Link><span aria-hidden="true">/</span>
         <span aria-current="step" className="font-semibold text-[#7655A3]">Characters</span><span aria-hidden="true">/</span><span>Locations</span>
       </nav>
       <div className="mb-7 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
