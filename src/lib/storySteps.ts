@@ -76,8 +76,9 @@ export function stepNumbersToKeys(steps: (string | number)[]): StepKey[] {
 ====================================================== */
 
 type StoryRoutingFields = {
-  completed_steps?: StepKey[] | null;
-  completedSteps?: StepKey[] | null;
+  // jsonb in the DB, so typed loosely and checked below
+  completed_steps?: StepKey[] | null | unknown;
+  completedSteps?: StepKey[] | null | unknown;
   story_confirmed?: boolean;
   storyConfirmed?: boolean;
   payment_status?: string | null;
@@ -111,7 +112,7 @@ function isPostPayment(status: string | null): boolean {
 
 export function getNextIncompleteStep(story: StoryRoutingFields): StepKey {
   const raw = story.completed_steps ?? story.completedSteps ?? [];
-  const done = new Set<StepKey>(raw);
+  const done = new Set<StepKey>(Array.isArray(raw) ? (raw as StepKey[]) : []);
 
   if (story.story_confirmed ?? story.storyConfirmed) done.add("write");
 
@@ -159,4 +160,32 @@ export function getNextStepHref(
 ): string {
   const step = getNextIncompleteStep(story);
   return STEP_HREF[step](storyId);
+}
+/* ======================================================
+   SETUP GUARD FOR UNPAID BOOKS
+
+   Unpaid books must finish the set-up steps (write, style,
+   characters, places) before they can reach the studio or
+   the legacy /design page. Without this, the old /design
+   page's "approve" button sent people straight to /studio
+   with characters that had no cards.
+
+   Returns the URL of the step still to do, or null when the
+   book is paid or its set-up is finished.
+====================================================== */
+
+const SETUP_STEPS: StepKey[] = ["write", "design", "characters", "locations"];
+
+export function getUnfinishedSetupHref(
+  storyId: string,
+  story: StoryRoutingFields
+): string | null {
+  if (isPostPayment(resolvePaymentStatus(story))) return null;
+  const step = getNextIncompleteStep(story);
+  return SETUP_STEPS.includes(step) ? STEP_HREF[step](storyId) : null;
+}
+
+/** True once the book is paid (or gifted, or paid with a failed print order). */
+export function isStoryPaid(story: StoryRoutingFields): boolean {
+  return isPostPayment(resolvePaymentStatus(story));
 }

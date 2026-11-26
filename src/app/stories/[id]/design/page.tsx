@@ -14,6 +14,7 @@ import {
 import { eq, inArray, asc } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { requireStoryOwnerPage, requireAdminPage } from "@/lib/pageGuards";
+import { getNextStepHref, isStoryPaid } from "@/lib/storySteps";
 
 
 export default async function DesignPage({
@@ -24,7 +25,7 @@ export default async function DesignPage({
   const { id: storyId } = await params;
   // Check access BEFORE loading data: the layout's redirect doesn't stop
   // this page rendering in parallel. See src/lib/pageGuards.ts
-  await requireStoryOwnerPage(storyId);
+  const user = await requireStoryOwnerPage(storyId);
 
   const progress = await db.query.storyWorkflowProgress.findFirst({
     where: eq(storyWorkflowProgress.storyId, storyId),
@@ -39,6 +40,13 @@ export default async function DesignPage({
   });
 
   if (!story) return notFound();
+
+  // This is the legacy style page. Its "approve" button goes straight to
+  // the studio, skipping characters and places. Unpaid books use the
+  // current flow (/illustration-style → characters → locations → preview).
+  if (!user.isAdmin && !isStoryPaid(story)) {
+    redirect(getNextStepHref(storyId, story));
+  }
 
   const pages = await db.query.storyPages.findMany({
     where: eq(storyPages.storyId, storyId),

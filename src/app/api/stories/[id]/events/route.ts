@@ -52,12 +52,16 @@ async function _POST(req: Request, context: { params: Promise<{ id: string }> })
     return NextResponse.json({ ok: true });
   }
 
+  // The paywall shows on any unpaid studio visit, drawn page or not.
+  const noFreePage = kind === "paywall_reached" && body?.details?.freePageDrawn === false;
+  const label = noFreePage ? "Saw the paywall before any page was drawn" : ALLOWED[kind];
+
   recordBookEventSoon({
     kind,
-    summary: product ? `${ALLOWED[kind]} (${product})` : ALLOWED[kind],
+    summary: product ? `${label} (${product})` : label,
     storyId,
     userId: user?.id ?? null,
-    details: product ? { product } : null,
+    details: product ? { product } : noFreePage ? { free_page_drawn: false } : null,
     dedupeKey: kind === "checkout_started" ? `${kind}:${storyId}:${product ?? "unknown"}` : `${kind}:${storyId}`,
   });
   return NextResponse.json({ ok: true });
