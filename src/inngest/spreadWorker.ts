@@ -51,6 +51,7 @@ import {
 import { getCastSheet, castSheetBlock, type CastSheet } from "@/lib/characters/consistency";
 import { artModel, SPREAD_IMAGE_SIZE, spreadMode, SPREAD_DRAW_THINKING, SPREAD_REPAIR_THINKING, TEXT_REPAIR_MODEL } from "@/lib/illustrate/models";
 import { ensureReferenceSheet, ensureStylePlate, loadCast, storyCharacterIds } from "@/lib/illustrate/sheets";
+import { ensurePropCard, propsBlock, propsOnPages } from "@/lib/illustrate/props";
 import { generateImage, rethrowIfBilling } from "@/lib/illustrate/gemini";
 import { fetchImage, upload, urlToPart } from "@/lib/illustrate/images";
 import { checkAndFix, letterAndCheck, repairText, type Track } from "@/lib/illustrate/steps";
@@ -130,6 +131,8 @@ type Prepared = {
   forbiddenIds: string[];
   doNotIncludeNames: string[];
   location: { name: string; imageUrl: string } | null;
+  /** Key objects on these pages (cards are made just before drawing). */
+  props: { id: string; name: string; description: string }[];
   direction: string; // illustration prompt or strategist prompt
   compositionNotes: string[];
   mood: string | null;
@@ -209,9 +212,9 @@ export const generateSingleSpread = inngest.createFunction(
 
     const prep: Prepared | { skipped: true; reason: string } = await step.run("prepare", async () => {
       const [left, right] = await Promise.all([
-        db.query.storyPages.findFirst({ where: eq(storyPages.id, leftPageId), columns: { text: true } }),
+        db.query.storyPages.findFirst({ where: eq(storyPages.id, leftPageId), columns: { text: true, pageNumber: true } }),
         rightPageId
-          ? db.query.storyPages.findFirst({ where: eq(storyPages.id, rightPageId), columns: { text: true } })
+          ? db.query.storyPages.findFirst({ where: eq(storyPages.id, rightPageId), columns: { text: true, pageNumber: true } })
           : Promise.resolve(null),
       ]);
 
@@ -343,6 +346,10 @@ export const generateSingleSpread = inngest.createFunction(
         if (loc && usable(loc.imageUrl)) location = loc;
       }
 
+      // Key objects on these pages (Grandy's tractor): their cards keep them identical on every spread.
+      const pageNumbers = [left?.pageNumber, right?.pageNumber].filter((n): n is number => typeof n === "number");
+      const props = (await propsOnPages(storyId, pageNumbers)).map((p) => ({ id: p.id, name: p.name, description: p.description }));
+
       // Previous un-lettered art (for studio revisions)
       let previousArtUrl: string | null = null;
       let previousFinalUrl: string | null = null;
@@ -392,6 +399,7 @@ export const generateSingleSpread = inngest.createFunction(
         forbiddenIds,
         doNotIncludeNames,
         location,
+        props,
         direction: `${direction}\n${isColourSpreadInColouringBook ? COLOUR_SPREAD_NOTE : format.interiorStyle}`,
         colourRefUrl,
         compositionNotes: ((scene?.compositionNotes as string[]) ?? []).filter(Boolean),
@@ -440,6 +448,13 @@ export const generateSingleSpread = inngest.createFunction(
       await step.run(`sheet-${id}`, async () => ensureReferenceSheet(id, storyId, { modelKey: model.key, line: castSheet?.lines?.[id] }));
     }
     const cast: CastRef[] = await step.run("load-cast", async () => loadCast(castIds, castSheet, storyId, prep.outfits));
+
+    // Key-object cards (cached; only the first spread with an object draws its card)
+    const propRefs: { name: string; description: string; cardUrl: string | null }[] = [];
+    for (const p of prep.props ?? []) {
+      const cardUrl = await step.run(`prop-card-${p.id}`, async () => ensurePropCard(storyId, p.id, { modelKey: model.key }));
+      propRefs.push({ name: p.name, description: p.description, cardUrl });
+    }
 
     // Every Gemini call in this run's steps is saved to ai_usage against this
     // spread (label says which step: compose, inspect-spread, fix-likeness,
@@ -517,6 +532,17 @@ export const generateSingleSpread = inngest.createFunction(
         } catch {}
       }
 
+      // Key objects: within the image budget, leaving room for the revision base.
+      for (const p of propRefs) {
+        const used = parts.filter((x: { inlineData?: unknown }) => x?.inlineData).length + (revisionBase ? 1 : 0);
+        if (!p.cardUrl || used >= model.maxInputImages) continue;
+        try {
+          parts.push(await urlToPart(p.cardUrl, 1024), {
+            text: `↑ KEY OBJECT: ${p.name.toUpperCase()}. Wherever it appears, draw this exact design: same shape, colours, parts and proportions. Do not add or remove parts (e.g. a cab, roof or extra wheels). ↑`,
+          });
+        } catch {}
+      }
+
       if (revisionBase) {
         parts.push(await urlToPart(revisionBase, 2048), {
           text: onePass
@@ -540,6 +566,7 @@ ${
 - Do not add any other named characters.`
 }
 ${castBlock}
+${propRefs.length ? `\n${propsBlock(propRefs)}` : ""}
 ${
   fromText.length
     ? `\nALSO IN THIS SCENE (no reference picture here; draw them exactly from their description, they will be refined afterwards):\n${fromText.map((c) => `- ${c.name}: ${c.line}`).join("\n")}`

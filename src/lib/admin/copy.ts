@@ -197,6 +197,13 @@ BEGIN
       to_jsonb(r) || jsonb_build_object('id', gen_random_uuid(), 'story_id', new_story));
   END LOOP;
 
+  -- Key objects (scripts/sql/story-props.sql); skipped until that table exists.
+  IF to_regclass('public.story_props') IS NOT NULL THEN
+    INSERT INTO story_props (story_id, name, description, page_numbers, card_url, card_from, edited, created_at, updated_at)
+    SELECT new_story, name, description, page_numbers, card_url, card_from, edited, created_at, now()
+    FROM story_props WHERE story_id = src_story;
+  END IF;
+
   INSERT INTO book_copies (copy_story_id, original_story_id) VALUES (new_story, src_story);
 END $$;
 `)
@@ -317,6 +324,12 @@ export async function applyCopyToOriginal(copyStoryId: string, opts: { character
     }
   }
 
+  // Key objects travel with the pictures: the original then draws with the same cards.
+  const [propsTable] = await rows<{ ok: boolean }>(sql`SELECT to_regclass('public.story_props') IS NOT NULL AS ok`);
+  const copyProps = propsTable?.ok
+    ? await rows<{ n: number }>(sql`SELECT count(*)::int AS n FROM story_props WHERE story_id = ${copyStoryId}`).then((r) => Number(r[0]?.n ?? 0))
+    : 0;
+
   const snapshotId = await takeSnapshot(originalId, "Before applying a test copy", { characters: opts.characters, plans: plansOk });
   const [copyStory] = await rows<{ cover_spread_url: string | null }>(sql`SELECT cover_spread_url FROM stories WHERE id = ${copyStoryId}`);
   const now = Date.now();
@@ -372,6 +385,14 @@ export async function applyCopyToOriginal(copyStoryId: string, opts: { character
         cards++;
       }
     }
+    if (copyProps > 0) {
+      await tx.execute(sql`DELETE FROM story_props WHERE story_id = ${originalId}`);
+      await tx.execute(sql`
+        INSERT INTO story_props (story_id, name, description, page_numbers, card_url, card_from, edited, created_at, updated_at)
+        SELECT ${originalId}, name, description, page_numbers, card_url, card_from, edited, created_at, now()
+        FROM story_props WHERE story_id = ${copyStoryId}
+      `);
+    }
     if (plansOk) {
       for (const key of PLAN_KEYS) {
         await tx.execute(planDeleteQuery(key, originalId));
@@ -385,6 +406,7 @@ export async function applyCopyToOriginal(copyStoryId: string, opts: { character
   const summary = [
     `${drawn} page pictures`,
     copyStory?.cover_spread_url ? "the cover" : null,
+    copyProps ? `${copyProps} key object${copyProps === 1 ? "" : "s"}` : null,
     opts.characters && cards ? `${cards} character cards` : null,
     plansOk ? "scene plans" : null,
   ]

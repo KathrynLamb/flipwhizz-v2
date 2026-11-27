@@ -21,6 +21,7 @@ import { worlds } from "@/db/schema-worlds";
 import { eq, asc, and, inArray, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { trackedAnthropic } from "@/lib/ai/anthropicUsage";
+import { findStoryPropsSoft } from "@/lib/illustrate/props";
 import {
   extractCharactersWorldAware,
   extractLocationsWorldAware,
@@ -336,6 +337,16 @@ Focus on visual details: architecture, natural features, atmosphere, colors, lig
     } else {
       console.log("✓ Locations already extracted, skipping");
     }
+
+    /* --------------------------------------------------
+       STEP 2b: Key objects (the tractor, a red bike): things that recur
+       and must look the same on every page. Never blocks the book; a book
+       that already has objects keeps them. Cards are drawn on first use.
+    -------------------------------------------------- */
+    await step.run("find-key-objects", async () => {
+      const r = await findStoryPropsSoft(storyId, { onlyIfNone: true });
+      return r ? { found: r.found, kept: r.kept, names: r.names } : { skipped: true };
+    });
 
     /* --------------------------------------------------
        STEP 3: Extract Style Guide (if not done)

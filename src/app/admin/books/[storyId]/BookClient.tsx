@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ACTIONS, BOOK_STATUSES, confirmNeeded, titleMatches, type ActionKey, type BookKind } from "@/lib/admin/catalog";
-import type { BookDetail, SpreadDetail, CharacterDetail, LocationDetail, PdfRow } from "@/lib/admin/data";
+import type { BookDetail, SpreadDetail, CharacterDetail, LocationDetail, PdfRow, PropDetail } from "@/lib/admin/data";
 import { Card, Empty, KindBadge, MigrationBanner, Pill, thumb, when } from "../../ui";
 import type { BookCosts, CostLine } from "@/lib/admin/costs";
 import { gbp, usd, KIND_LABELS } from "@/lib/admin/costFormat";
@@ -236,7 +236,12 @@ export default function BookClient({ detail, costs, events, usdToGbp, tab, origi
       {tab === "costs" && <Costs costs={costs} />}
       {tab === "pages" && <Pages spreads={detail.spreads} ask={ask} sending={sending} />}
       {tab === "characters" && <Characters bookId={book.id} characters={detail.characters} ask={ask} sending={sending} locked={locked} />}
-      {tab === "locations" && <Places locations={detail.locations} spreads={detail.spreads} bookId={book.id} />}
+      {tab === "locations" && (
+        <div className="space-y-8">
+          <Places locations={detail.locations} spreads={detail.spreads} bookId={book.id} />
+          <KeyObjects props={detail.props} ask={ask} sending={sending} />
+        </div>
+      )}
       {tab === "redraw" && <Redraw detail={detail} ask={ask} sending={sending} locked={locked} />}
       {/* Keyed on the newest PDF, so a PDF just made is the one shown. */}
       {tab === "pdf" && <Pdfs key={detail.pdfs[0]?.id ?? "none"} detail={detail} ask={ask} sending={sending} locked={locked} />}
@@ -587,6 +592,78 @@ function CharacterVisibility({ bookId, character: c, disabled }: { bookId: strin
 /* -------------------------------------------------------------------------- */
 /*                                   Places                                   */
 /* -------------------------------------------------------------------------- */
+
+/** Key objects (story_props): things that must look the same on every page. */
+function KeyObjects({ props, ask, sending }: { props: PropDetail[] | null; ask: Ask; sending: string | null }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-white">Key objects</h3>
+          <p className="text-xs text-slate-400">Things that must look the same on every page. Each card is sent with every spread the object is on.</p>
+        </div>
+        <button className={btnQuiet} disabled={!!sending || props === null} onClick={() => ask("find-props", {}, { heading: "Find key objects" })}>
+          {sending === "find-props" ? "Reading the story…" : props?.length ? "Find again" : "Find key objects"}
+        </button>
+      </div>
+      {props === null ? (
+        <p className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-2 text-xs text-amber-100">
+          Run scripts/sql/story-props.sql in Neon to turn on key objects.
+        </p>
+      ) : props.length === 0 ? (
+        <Empty>No key objects on this book yet.</Empty>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {props.map((p) => (
+            <PropCard key={p.id} prop={p} ask={ask} sending={sending} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PropCard({ prop: p, ask, sending }: { prop: PropDetail; ask: Ask; sending: string | null }) {
+  const [name, setName] = useState(p.name);
+  const [description, setDescription] = useState(p.description);
+  const changed = name.trim() !== p.name || description.trim() !== p.description;
+  return (
+    <Card title={p.name} right={p.edited ? <span className="text-xs text-slate-500">edited</span> : undefined}>
+      {p.cardUrl ? (
+        <a href={p.cardUrl} target="_blank">
+          <img src={thumb(p.cardUrl, 480)} alt={p.name} className="h-40 w-full rounded-lg border border-white/10 bg-white object-contain" />
+        </a>
+      ) : (
+        <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-white/10 text-xs text-slate-500">
+          No card yet: it&apos;s drawn on the next drawing, or press Redraw card
+        </div>
+      )}
+      <p className="mt-2 text-xs text-slate-300">
+        {p.spreads.length ? `On spread${p.spreads.length === 1 ? "" : "s"} ${p.spreads.join(", ")}` : "Not on any spread"}
+        {p.cardUrl && p.cardStale && " · card is out of date (design changed)"}
+      </p>
+      <label className="mt-3 block text-xs text-slate-400">
+        Name
+        <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 w-full rounded-lg border border-white/15 bg-black/30 p-2 text-sm text-white" />
+      </label>
+      <label className="mt-2 block text-xs text-slate-400">
+        Design (one fixed look; say what it does NOT have, e.g. &quot;no cab&quot;)
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="mt-1 w-full rounded-lg border border-white/15 bg-black/30 p-2 text-sm text-white" />
+      </label>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button className={btnPrimary} disabled={!!sending || !changed || !description.trim()} onClick={() => ask("edit-prop", { propId: p.id, name: name.trim(), description: description.trim() })}>
+          {sending === "edit-prop" ? "Saving…" : "Save design"}
+        </button>
+        <button className={btnQuiet} disabled={!!sending || changed} title={changed ? "Save the design first" : undefined} onClick={() => ask("redraw-prop-card", { propId: p.id })}>
+          {sending === "redraw-prop-card" ? "Drawing…" : "Redraw card"}
+        </button>
+        <button className={btnQuiet} disabled={!!sending} onClick={() => ask("delete-prop", { propId: p.id }, { heading: `Remove ${p.name}` })}>
+          Remove
+        </button>
+      </div>
+    </Card>
+  );
+}
 
 function Places({ locations, spreads, bookId }: { locations: LocationDetail[]; spreads: SpreadDetail[]; bookId: string }) {
   const unplaced = spreads.filter((s) => s.pageImageUrl && !s.locationId).map((s) => s.index);

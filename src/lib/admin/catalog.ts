@@ -11,6 +11,10 @@ export type ActionKey =
   | "fix-character-spread"
   | "refresh-character"
   | "redraw-sheet"
+  | "find-props"
+  | "edit-prop"
+  | "redraw-prop-card"
+  | "delete-prop"
   | "draw-missing"
   | "redraw-all"
   | "replan-only"
@@ -72,6 +76,39 @@ export const ACTIONS: Record<ActionKey, ActionInfo> = {
     locks: true,
     long: true,
     usesModel: true,
+  },
+  "find-props": {
+    label: "Find key objects",
+    detail: "Reads the story and lists the objects that must look the same on every page (a tractor, a bike, a teddy), each with one fixed design. Objects you've edited are kept. Pages don't change until they're redrawn.",
+    safeguard: "confirm",
+    snapshot: false,
+    locks: false,
+    long: false,
+  },
+  "edit-prop": {
+    label: "Save key object",
+    detail: "Saves this object's name and design. Its card is redrawn next time it's needed, and pages change only when they're redrawn.",
+    safeguard: "none",
+    snapshot: false,
+    locks: false,
+    long: false,
+  },
+  "redraw-prop-card": {
+    label: "Redraw key object card",
+    detail: "Draws this object's reference card again from its design. Pages don't change until they're redrawn.",
+    safeguard: "none",
+    snapshot: false,
+    locks: false,
+    long: false,
+    usesModel: true,
+  },
+  "delete-prop": {
+    label: "Remove key object",
+    detail: "Stops sending this object's card with the pages. Pages don't change until they're redrawn.",
+    safeguard: "confirm",
+    snapshot: false,
+    locks: false,
+    long: false,
   },
   "redraw-sheet": {
     label: "Redraw reference sheet",
