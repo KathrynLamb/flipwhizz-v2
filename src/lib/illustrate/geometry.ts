@@ -204,6 +204,40 @@ export function textSimilarity(expected: string, actual: string): number {
   return 1 - wordDistance(e, a) / Math.max(e.length, a.length);
 }
 
+/**
+ * The quote marks in a passage, in order, as ' and ". Curly and straight
+ * marks count the same (lettering style), but apostrophes inside words
+ * (it's, Who'll) are left out. normaliseText drops punctuation, so without
+ * this a stray or mismatched quote mark always passed the check.
+ */
+export function quoteMarks(s: string): string {
+  const chars = [...(s ?? "")];
+  const isWordChar = (c: string | undefined) => !!c && /[\p{L}\p{N}]/u.test(c);
+  let out = "";
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i];
+    if (/["“”„‟″]/.test(c)) out += '"';
+    else if (/['‘’‚‛′`]/.test(c) && !(isWordChar(chars[i - 1]) && isWordChar(chars[i + 1]))) out += "'";
+  }
+  return out;
+}
+
+/**
+ * A page's text for a lettering prompt. It used to be wrapped in "...", so a
+ * passage that starts or ends with its own quote marks ('Me! Me! Me!') read
+ * to the model as '...'" and got lettered with a stray or mismatched mark.
+ * Marker lines can't be mistaken for punctuation.
+ */
+export function pagePassage(text: string | null | undefined): string {
+  const t = (text ?? "").trim();
+  if (!t) return "(no text on this page)";
+  return `<<<BEGIN TEXT>>>\n${t}\n<<<END TEXT>>>`;
+}
+
+/** Said once wherever pagePassage is used. */
+export const PASSAGE_RULE =
+  "Each page's text sits between <<<BEGIN TEXT>>> and <<<END TEXT>>>. Never letter those markers. Letter everything between them exactly as written, word for word, with exactly the same punctuation: every quote mark in it belongs to the story, so letter each one, add none and change none (keep single marks single and double marks double).";
+
 export type TextBlock = { box_2d: Box2d; text: string };
 
 export type TextVerdict = {
@@ -253,6 +287,10 @@ export function judgeLettering(
     }
     if (words(got) > words(exp) * 1.3 + 3) problems.push(`${side} page text appears to be repeated`);
     if (sim < threshold) problems.push(`${side} page text does not match (similarity ${sim.toFixed(2)})`);
+    // Only worth judging punctuation once the words themselves are right.
+    else if (quoteMarks(exp) !== quoteMarks(got)) {
+      problems.push(`${side} page quote marks don't match the story (story: ${quoteMarks(exp) || "none"}, lettered: ${quoteMarks(got) || "none"})`);
+    }
   };
   check("Left", expectedLeft, gotLeft, left);
   check("Right", expectedRight, gotRight, right);

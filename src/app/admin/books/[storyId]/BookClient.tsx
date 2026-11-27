@@ -456,6 +456,14 @@ function Pages({ spreads, ask, sending }: { spreads: SpreadDetail[]; ask: Ask; s
                   >
                     Fix one character
                   </button>
+                  <button
+                    className={btnQuiet}
+                    disabled={!!sending || !s.pageImageUrl}
+                    title="Re-letter the text only; the picture stays exactly as it is"
+                    onClick={() => ask("fix-lettering", { spreadId: s.id }, { heading: `Fix lettering only on spread ${s.index}`, fields: "note" })}
+                  >
+                    {sending === "fix-lettering" ? "Re-lettering… (about a minute)" : "Fix lettering only"}
+                  </button>
                   {s.artUrl && <a href={s.artUrl} target="_blank" className="self-center text-xs text-[#C4B5FD] hover:text-white">art without text ↗</a>}
                   {s.model && <span className="self-center text-xs text-slate-500">{s.model}{s.mode === "onepass" ? " · one-pass" : ""} · {when(s.at)}</span>}
                 </div>
@@ -1131,13 +1139,15 @@ function ConfirmDialog({
 
         {dialog.fields === "note" && (
           <label className="mt-4 block text-xs text-slate-400">
-            What should change? (optional; leave empty to draw it fresh)
+            {dialog.action === "fix-lettering"
+              ? "Anything specific? (optional; it always re-letters from the story text)"
+              : "What should change? (optional; leave empty to draw it fresh)"}
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={3}
               className="mt-1 w-full rounded-lg border border-white/15 bg-black/30 p-2 text-sm text-white"
-              placeholder="e.g. Talia's curls should be longer; Dad is missing"
+              placeholder={dialog.action === "fix-lettering" ? "e.g. remove the extra quote mark after Me! Me! Me!" : "e.g. Talia's curls should be longer; Dad is missing"}
             />
           </label>
         )}

@@ -31,6 +31,7 @@ import { reExtractCharacters } from "@/lib/admin/reExtract";
 import { ensureReferenceSheet, storyCharacterIds } from "@/lib/illustrate/sheets";
 import { getCastSheet } from "@/lib/characters/consistency";
 import { deleteProp, ensurePropCard, findStoryProps, listStoryProps, setPropDetails } from "@/lib/illustrate/props";
+import { fixLetteringOnly } from "@/lib/illustrate/fixLettering";
 import { createGelatoOrder } from "print/gelato/createOrder";
 import { getPrintSpec } from "@/lib/printSpecs";
 import { isOldLayout } from "@/lib/print/layout";
@@ -105,7 +106,7 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
 
   /* --------------------- 2. Everything checkable up front -------------------- */
   let spread: typeof storySpreads.$inferSelect | undefined;
-  if (action === "redraw-spread" || action === "fix-character-spread") {
+  if (action === "redraw-spread" || action === "fix-character-spread" || action === "fix-lettering") {
     spread = await db.query.storySpreads.findFirst({
       where: and(eq(storySpreads.id, body.spreadId ?? ""), eq(storySpreads.storyId, storyId)),
     });
@@ -202,6 +203,18 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
         });
         await log("sent", `Spread ${s.spreadIndex}${feedback ? `: "${feedback.slice(0, 120)}"` : ""}`, snapshotId);
         return NextResponse.json({ ok: true, message: `Spread ${s.spreadIndex} is being redrawn. The page keeps its current picture until the new one is checked and saved.` });
+      }
+
+      case "fix-lettering": {
+        const r = await fixLetteringOnly({ storyId, spreadId: spread!.id, note: body.feedback });
+        if (!r.saved) {
+          await log("failed", r.reason, snapshotId);
+          return fail(409, r.reason);
+        }
+        const fixed = r.before.problems.length ? ` Fixed: ${r.before.problems.join("; ")}.` : "";
+        const left = r.after.problems.length ? ` Still to check: ${r.after.problems.join("; ")}.` : "";
+        await log("done", `Spread ${spread!.spreadIndex}: lettering fixed.${fixed}${left}`, snapshotId);
+        return NextResponse.json({ ok: true, message: `Spread ${spread!.spreadIndex}: lettering fixed, picture untouched.${fixed}${left}` });
       }
 
       case "fix-character-spread":
