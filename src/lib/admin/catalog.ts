@@ -8,6 +8,7 @@
 
 export type ActionKey =
   | "redraw-spread"
+  | "fix-lettering"
   | "fix-character-spread"
   | "refresh-character"
   | "redraw-sheet"
@@ -58,6 +59,14 @@ export const ACTIONS: Record<ActionKey, ActionInfo> = {
     locks: false,
     long: false,
     usesModel: true,
+  },
+  "fix-lettering": {
+    label: "Fix lettering only",
+    detail: "Re-letters this spread's text from the story without redrawing the picture: only the text areas are replaced, so faces and everything else stay exactly as they are. Checks the words and the quote marks, and saves only if it's right or clearly better. Takes about a minute. Add a note for anything specific.",
+    safeguard: "confirm",
+    snapshot: true,
+    locks: false,
+    long: false,
   },
   "fix-character-spread": {
     label: "Fix one character on this spread",

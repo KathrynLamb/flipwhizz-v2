@@ -57,7 +57,7 @@ import { fetchImage, upload, urlToPart } from "@/lib/illustrate/images";
 import { checkAndFix, letterAndCheck, repairText, type Track } from "@/lib/illustrate/steps";
 import { inspectSpread, judge, readText } from "@/lib/illustrate/checkfix";
 import { planFixes, type CastRef, type InspectReport } from "@/lib/illustrate/plan";
-import type { TextBlock, TextVerdict } from "@/lib/illustrate/geometry";
+import { pagePassage, PASSAGE_RULE, type TextBlock, type TextVerdict } from "@/lib/illustrate/geometry";
 import { withUsageContext } from "@/lib/geminiUsage";
 import { maybeSendSpreadsReport } from "@/lib/emails/sendSpreadsReport";
 
@@ -104,13 +104,13 @@ const usable = (u?: string | null): u is string => !!u && !u.startsWith("data:")
  * goes. Large lettering, because small text is 2.1's stated weak spot.
  */
 function onePassTextBlock(leftText: string, rightText: string, typography: string): string {
-  const q = (t: string) => (t?.trim() ? `"${t.trim()}"` : "(no text on this page)");
   return `TEXT ON THE PAGES: this spread includes its story text, lettered as part of the illustration.
 LEFT PAGE text, in a calm, simple area in the upper part of the left page (upper-left), with no faces or busy detail behind it:
-${q(leftText)}
+${pagePassage(leftText)}
 RIGHT PAGE text, in a calm, simple area in the upper part of the right page (upper-right), with no faces or busy detail behind it:
-${q(rightText)}
-Letter each passage exactly once, word for word, exactly as written between the quotes, with the same punctuation. Each page has one block of text.
+${pagePassage(rightText)}
+${PASSAGE_RULE}
+Letter each passage exactly once. Each page has one block of text.
 Lettering style: ${typography}. Large, high-contrast and easy for a child to read.
 Keep every letter at least 8% in from the outer edges and 6% away from the centre fold.
 This is the only writing in the picture: signs, books and objects carry no words.`;

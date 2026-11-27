@@ -16,7 +16,7 @@
 
 import { PARENT_TEXT_WINS } from "@/lib/characters/userEdits";
 import { generateImage, generateJson } from "./gemini";
-import { box2dToPx, planCrop, judgeLettering, isValidBox2d, type Box2d, type TextBlock, type TextVerdict, type CropPlan } from "./geometry";
+import { box2dToPx, planCrop, judgeLettering, isValidBox2d, pagePassage, PASSAGE_RULE, type Box2d, type TextBlock, type TextVerdict, type CropPlan } from "./geometry";
 import { normaliseReport, type CastRef, type CropFix, type InspectReport } from "./plan";
 import { enlarge, extract, imageSize, matchSize, pastePatch, toPart, urlToPart } from "./images";
 import { LETTERING_MODEL, type CardThinking } from "./models";
@@ -293,7 +293,6 @@ Style: ${args.styleBlock}`,
 /*                                 LETTERING                                  */
 /* -------------------------------------------------------------------------- */
 
-const quote = (t?: string | null) => (t && t.trim() ? `"${t.trim()}"` : "(no text on this page)");
 
 export async function letterArt(args: {
   art: Buffer;
@@ -317,9 +316,12 @@ export async function letterArt(args: {
     {
       text: `${opening}
 
-TEXT. Letter each passage EXACTLY ONCE, word for word, exactly as written between the quotes. Do not repeat, split, shorten or add any words. Each page gets one block of text.
-LEFT PAGE (the left half), in its calmest upper area: ${quote(args.leftText)}
-RIGHT PAGE (the right half), in its calmest upper area: ${quote(args.rightText)}
+TEXT. Letter each passage EXACTLY ONCE. Do not repeat, split, shorten or add any words. Each page gets one block of text.
+${PASSAGE_RULE}
+LEFT PAGE (the left half), in its calmest upper area:
+${pagePassage(args.leftText)}
+RIGHT PAGE (the right half), in its calmest upper area:
+${pagePassage(args.rightText)}
 
 Placement: keep every letter at least 8% in from the outer edges and 6% away from the centre fold. Never over faces.
 Lettering style: ${args.typography}. Large, high-contrast and easy for a child to read.
