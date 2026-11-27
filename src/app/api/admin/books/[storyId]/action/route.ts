@@ -211,10 +211,13 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
           await log("failed", r.reason, snapshotId);
           return fail(409, r.reason);
         }
-        const fixed = r.before.problems.length ? ` Fixed: ${r.before.problems.join("; ")}.` : "";
-        const left = r.after.problems.length ? ` Still to check: ${r.after.problems.join("; ")}.` : "";
-        await log("done", `Spread ${spread!.spreadIndex}: lettering fixed.${fixed}${left}`, snapshotId);
-        return NextResponse.json({ ok: true, message: `Spread ${spread!.spreadIndex}: lettering fixed, picture untouched.${fixed}${left}` });
+        // Only "fixed" when two separate reads both pass; otherwise say what to look at.
+        const was = r.before.problems.length ? ` Before: ${r.before.problems.join("; ")}.` : "";
+        const headline = r.confirmed
+          ? `Spread ${spread!.spreadIndex}: lettering fixed (checked twice), picture untouched.`
+          : `Spread ${spread!.spreadIndex}: lettering improved, picture untouched, but please check it by eye: ${r.after.problems.join("; ") || "the two reads disagreed"}.`;
+        await log("done", `${headline}${was}`, snapshotId);
+        return NextResponse.json({ ok: true, message: `${headline}${was}` });
       }
 
       case "fix-character-spread":
