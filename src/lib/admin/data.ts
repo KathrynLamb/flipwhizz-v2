@@ -6,6 +6,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { adminEmailList, isAdminEmail } from "@/lib/authz";
 import { currentSheetUrl } from "@/lib/illustrate/sheets";
+import { listStoryProps, propCardStale } from "@/lib/illustrate/props";
 import { bookKind, type BookKind } from "./catalog";
 import { isOldLayout } from "@/lib/print/layout";
 import { bookCostTotals } from "./costs";
@@ -229,6 +230,18 @@ export type PdfRow = {
   changed: { cover: boolean; spreads: number[] } | null;
 };
 
+/** A key object (story_props): its fixed design, card and the spreads it's on. */
+export type PropDetail = {
+  id: string;
+  name: string;
+  description: string;
+  cardUrl: string | null;
+  /** The card is missing or older than the design; it's redrawn on the next drawing. */
+  cardStale: boolean;
+  edited: boolean;
+  spreads: number[];
+};
+
 export type BookDetail = {
   book: BookIdentity;
   tablesReady: boolean;
@@ -236,6 +249,8 @@ export type BookDetail = {
   spreads: SpreadDetail[];
   characters: CharacterDetail[];
   locations: LocationDetail[];
+  /** Null when story_props doesn't exist yet (scripts/sql/story-props.sql). */
+  props: PropDetail[] | null;
   orders: BookOrder[];
   copies: { id: string; createdAt: string | null }[];
   progress: Record<string, boolean | null> | null;
@@ -383,6 +398,27 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
     spreadsPlanned: spreads.filter((s) => s.plannedLocationId === l.id).map((s) => s.index),
   }));
 
+  // Key objects: which spreads each is on, from the spreads' page numbers.
+  const spreadByPage = new Map<number, number>();
+  for (const r of spreadRows) {
+    for (const n of [r.left_no, r.right_no]) if (typeof n === "number") spreadByPage.set(n, Number(r.spread_index));
+  }
+  const propsOut: PropDetail[] | null = await tolerant(
+    async () => {
+      const list = await listStoryProps(storyId, { strict: true });
+      return list.map((p) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        cardUrl: p.cardUrl,
+        cardStale: propCardStale(p),
+        edited: p.edited,
+        spreads: [...new Set(p.pageNumbers.map((n) => spreadByPage.get(n)).filter((i): i is number => typeof i === "number"))].sort((a, b) => a - b),
+      }));
+    },
+    async () => null
+  );
+
   const orders: BookOrder[] = orderRows.map((o) => ({
     id: o.id,
     status: o.status,
@@ -450,6 +486,7 @@ export async function loadBookDetail(storyId: string): Promise<BookDetail | null
     spreads,
     characters,
     locations: locationsOut,
+    props: propsOut,
     orders,
     copies,
     progress: p

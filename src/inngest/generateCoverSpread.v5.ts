@@ -53,6 +53,7 @@ import {
   type RefCharacter,
 } from "@/lib/characters/consistency";
 import { ensureReferenceSheet, loadCast } from "@/lib/illustrate/sheets";
+import { ensurePropCard, listStoryProps, propsBlock, propsMentioned } from "@/lib/illustrate/props";
 import { checkAndFix } from "@/lib/illustrate/steps";
 import type { CastRef } from "@/lib/illustrate/plan";
 
@@ -243,6 +244,29 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       return { chars, locs, styleRefUrl, castSheet };
     });
 
+    // Key objects the cover plan mentions (the tractor): same cards as the spreads.
+    const coverProps: { name: string; description: string; cardUrl: string | null }[] = [];
+    {
+      const mentioned: { id: string; name: string; description: string }[] = await step.run("cover-props", async () =>
+        propsMentioned(await listStoryProps(storyId), [strategy.pass1Prompt, strategy.pass2Prompt, strategy.editPrompt].filter(Boolean).join(" "))
+          .map((p) => ({ id: p.id, name: p.name, description: p.description }))
+      );
+      for (const p of mentioned) {
+        const cardUrl = await step.run(`prop-card-${p.id}`, async () => ensurePropCard(storyId, p.id));
+        coverProps.push({ name: p.name, description: p.description, cardUrl });
+      }
+    }
+    const pushPropCards = async (parts: unknown[]) => {
+      for (const p of coverProps) {
+        if (!p.cardUrl) continue;
+        try {
+          parts.push(await getImagePart(p.cardUrl));
+          parts.push({ text: `↑ KEY OBJECT: ${p.name.toUpperCase()}. Draw this exact design: same shape, colours and parts. Do not add or remove parts (e.g. a cab or roof). ↑` });
+        } catch {}
+      }
+      if (coverProps.length) parts.push({ text: propsBlock(coverProps) });
+    };
+
     const castBlock = castSheetBlock(refs.castSheet as CastSheet | null, characterIds);
     const charBudget = (fixedImages: number) =>
       Math.max(refs.chars.length, MAX_INPUT_IMAGES - fixedImages);
@@ -264,8 +288,9 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         const parts: any[] = [];
         parts.push(await getImagePart(resizedCoverUrl));
         parts.push({ text: "↑ THIS IS THE EXISTING COVER. Keep EVERYTHING the same — composition, layout, text, background, colours, lighting. Only replace the characters so they match the references below exactly. ↑" });
-        const { photoParts } = await pushCharacterReferenceParts(parts, refs.chars, charBudget(1), refs.castSheet as CastSheet | null);
+        const { photoParts } = await pushCharacterReferenceParts(parts, refs.chars, charBudget(1 + coverProps.length), refs.castSheet as CastSheet | null);
         if (castBlock) parts.push({ text: castBlock });
+        await pushPropCards(parts);
         parts.push({ text: strategy.editPrompt! });
         console.log(`🎨 [edit] ${parts.filter((p: any) => p.inlineData).length} images`);
         const image = await generateWithPhotoFallback(parts, photoParts, strategy, "edit");
@@ -289,6 +314,7 @@ export const generateCoverSpreadV5 = inngest.createFunction(
         if (strategy.includeLogo) { try { parts.push(await getImagePart(LOGO_PATH)); parts.push({ text: '↑ FLIPWHIZZ LOGO. Place small, bottom-left of back cover. Add "flipwhizz.com" below. ↑' }); } catch {} }
         if (strategy.includeTemplate) { try { parts.push(await getImagePart(COVER_TEMPLATE_PATH)); parts.push({ text: "↑ LAYOUT GUIDE — shows safe zones only. Do NOT render guide lines. ↑" }); } catch {} }
         if (castBlock) parts.push({ text: castBlock });
+        await pushPropCards(parts);
         parts.push({ text: strategy.pass1Prompt });
         parts.push({ text: PRINT_LAYOUT });
         console.log(`🎨 [single] ${parts.filter((p: any) => p.inlineData).length} images`);
@@ -310,6 +336,7 @@ export const generateCoverSpreadV5 = inngest.createFunction(
       }
       if (strategy.includeLogo) { try { parts.push(await getImagePart(LOGO_PATH)); parts.push({ text: '↑ FLIPWHIZZ LOGO. Place small, bottom-left of back cover. Add "flipwhizz.com" below. ↑' }); } catch {} }
       if (strategy.includeTemplate) { try { parts.push(await getImagePart(COVER_TEMPLATE_PATH)); parts.push({ text: "↑ LAYOUT GUIDE — shows safe zones only. Do NOT render guide lines. ↑" }); } catch {} }
+      await pushPropCards(parts);
       parts.push({ text: strategy.pass1Prompt });
       parts.push({ text: PRINT_LAYOUT });
       console.log(`🎨 [pass1] ${parts.filter((p: any) => p.inlineData).length} images`);

@@ -30,6 +30,7 @@ import { copyBookTo, applyCopyToOriginal } from "@/lib/admin/copy";
 import { reExtractCharacters } from "@/lib/admin/reExtract";
 import { ensureReferenceSheet, storyCharacterIds } from "@/lib/illustrate/sheets";
 import { getCastSheet } from "@/lib/characters/consistency";
+import { deleteProp, ensurePropCard, findStoryProps, listStoryProps, setPropDetails } from "@/lib/illustrate/props";
 import { createGelatoOrder } from "print/gelato/createOrder";
 import { getPrintSpec } from "@/lib/printSpecs";
 import { isOldLayout } from "@/lib/print/layout";
@@ -54,6 +55,10 @@ type Body = {
   plans?: boolean;
   /** "Make this the print PDF": the admin_actions row that made the PDF. */
   pdfActionId?: string;
+  /** Key objects (story_props). */
+  propId?: string;
+  name?: string;
+  description?: string;
 };
 
 const fail = (status: number, error: string) => NextResponse.json({ ok: false, error }, { status });
@@ -110,6 +115,10 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
     const characterId = body.characterId ?? "";
     if (!(await storyCharacterIds(storyId, [characterId])).includes(characterId)) return refuse("Choose a character from this book.");
   }
+  if (action === "edit-prop" || action === "redraw-prop-card" || action === "delete-prop") {
+    if (!(await listStoryProps(storyId)).some((p) => p.id === body.propId)) return refuse("That key object isn't in this book.");
+  }
+  if (action === "edit-prop" && !body.description?.trim()) return refuse("Write the object's design first.");
   if (action === "redraw-cover" && !book.hasCoverStrategy) return refuse("This book has no saved cover plan yet. Make the cover in the cover chat first.");
   if (action === "restore-snapshot" && !(body.snapshotId && (await snapshotExists(storyId, body.snapshotId)))) return refuse("That snapshot isn't there any more.");
   if (action === "fix-status" && !BOOK_STATUSES.some((s) => s.value === body.status)) return refuse("Choose a status.");
@@ -225,6 +234,38 @@ async function _POST(req: Request, { params }: { params: Promise<{ storyId: stri
         }
         await log("done", url);
         return NextResponse.json({ ok: true, message: "New reference sheet drawn. Pages change when they're next redrawn or fixed." });
+      }
+
+      case "find-props": {
+        const r = await findStoryProps(storyId);
+        const result = r.names.length
+          ? `Key objects: ${r.names.join(", ")}${r.kept ? ` (${r.kept} you edited kept)` : ""}.`
+          : "No key objects found in this story.";
+        await log("done", result);
+        return NextResponse.json({ ok: true, message: `${result} Cards are drawn when they're first needed, or press Redraw card.` });
+      }
+
+      case "edit-prop": {
+        const p = await setPropDetails(storyId, body.propId!, { name: body.name, description: body.description });
+        if (!p) return refuse("That key object isn't in this book.");
+        await log("done", `${p.name}: ${p.description.slice(0, 200)}`);
+        return NextResponse.json({ ok: true, message: `Saved ${p.name}. Press Redraw card to see it, then redraw the spreads it's on.` });
+      }
+
+      case "redraw-prop-card": {
+        const url = await ensurePropCard(storyId, body.propId!, { modelKey: artModel, force: true });
+        if (!url) {
+          await log("failed", "Couldn't draw the card");
+          return fail(500, "Couldn't draw that card. Try again in a minute.");
+        }
+        await log("done", url);
+        return NextResponse.json({ ok: true, message: "New card drawn. Pages change when they're next redrawn." });
+      }
+
+      case "delete-prop": {
+        await deleteProp(storyId, body.propId!);
+        await log("done", "Removed");
+        return NextResponse.json({ ok: true, message: "Removed. Pages change when they're next redrawn." });
       }
 
       case "draw-missing":
