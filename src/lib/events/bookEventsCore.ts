@@ -21,7 +21,8 @@ export type BookEventKind =
   | "stalled"
   | "failed"
   | "character_shown"
-  | "character_hidden";
+  | "character_hidden"
+  | "customer_problem";
 
 export const EVENT_LABELS: Record<BookEventKind, string> = {
   chat_started: "Chat started",
@@ -40,6 +41,7 @@ export const EVENT_LABELS: Record<BookEventKind, string> = {
   failed: "Something failed",
   character_shown: "Character added to the pictures",
   character_hidden: "Character taken out of the pictures",
+  customer_problem: "Customer reported a problem",
 };
 
 export type EventTone = "green" | "red" | "amber" | "violet" | "slate";
@@ -61,6 +63,7 @@ export const EVENT_TONES: Record<BookEventKind, EventTone> = {
   failed: "red",
   character_shown: "violet",
   character_hidden: "slate",
+  customer_problem: "red",
 };
 
 export function eventLabel(kind: string): string {

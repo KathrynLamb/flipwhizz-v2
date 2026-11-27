@@ -21,6 +21,7 @@ import {
 import { eq, asc } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { withAccess } from "@/lib/authz";
+import { recordBookEvent } from "@/lib/events/bookEvents";
 
 export const dynamic = "force-dynamic";
 
@@ -155,6 +156,10 @@ async function _POST(req: Request) {
               coverLocationIds: { type: "array", items: { type: "string" }, description: "Location IDs for the cover." },
               backCoverContent: { type: "string", description: "Back cover text (blurb, dedication, or message)." },
               authorCredit: { type: "string", description: "Author credit line." },
+              flagForTeam: {
+                type: "string",
+                description: "ONLY when the parent reports a problem with the book (a character looks different from the drawing they approved, something is wrong on a page or the cover, something won't let them do what they want). One plain sentence describing the problem in their words. It is sent to the FlipWhizz team.",
+              },
               generationStrategy: {
                 type: "object",
                 description: "ONLY include when stage is 'ready' and user wants to generate. This is the complete generation strategy.",
@@ -209,6 +214,17 @@ async function _POST(req: Request) {
       hasStrategy: !!payload.generationStrategy,
       approach: payload.generationStrategy?.approach,
     });
+
+    // ── A problem the parent reported: tell Katy now, don't let it sit in the chat ──
+    const flag = typeof payload.flagForTeam === "string" ? payload.flagForTeam.trim() : "";
+    if (flag) {
+      await recordBookEvent({
+        kind: "customer_problem",
+        summary: `Cover chat: ${flag}`.slice(0, 500),
+        storyId,
+        details: { where: "cover chat", stage, parentSaid: typeof message === "string" ? message.slice(0, 1000) : null },
+      });
+    }
 
     // ── Save assistant message ──
     if (payload.message) {
@@ -338,6 +354,11 @@ ${ctx.characters.map((c: any) => `  "${c.name}" → ID: "${c.id}"`).join("\n")}
 
 AVAILABLE LOCATION IDS:
 ${ctx.locations.map((l: any) => `  "${l.name}" → ID: "${l.id}"`).join("\n")}
+
+IF THE PARENT REPORTS A PROBLEM WITH THE BOOK (a character doesn't look like the drawing they approved, something is wrong on a page or the cover, they can't change something):
+- Never say it's fine, never promise the cover will fix the pages, never guess why it happened.
+- Say sorry in a few words, tell them you've passed it straight to the FlipWhizz team, who will look at it and get back to them, and set flagForTeam to one sentence describing the problem.
+- Then carry on helping with the cover only if they want to.
 
 RULES FOR TALKING TO THE PARENT:
 - 3-5 sentences max per response. Warm but concise.

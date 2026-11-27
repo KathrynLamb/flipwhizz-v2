@@ -691,10 +691,19 @@ useEffect(() => {
 
       {/* ── Info bar below the spread (page label + redraw) ── */}
       {isCover ? (
-        <div className="flex items-center justify-center px-5 pt-3 pb-1">
+        <div className="flex items-center justify-between gap-3 px-5 pt-3 pb-1">
           <span className="text-xs font-bold" style={{ color: "#9B59D0" }}>
             Cover
           </span>
+          {/* Same as "Redraw Cover" on desktop: back to the cover chat to change or redo it. */}
+          <button
+            onClick={() => router.push(`/stories/${story.id}/cover`)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold active:scale-95 transition-transform"
+            style={{ background: "rgba(176,92,230,0.12)", color: "#9B59D0", border: "none" }}
+          >
+            <Wand2 className="w-3.5 h-3.5" />
+            Change cover
+          </button>
         </div>
       ) : currentSpread ? (
         <SpreadInfoBar
