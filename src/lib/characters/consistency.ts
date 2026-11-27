@@ -39,6 +39,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   characters,
+  stories,
   storyCharacters,
   characterStoryOutfits,
   storyStyleGuide,
@@ -53,7 +54,7 @@ cloudinary.config({
 const gemini = trackedGemini("lib/characters/consistency", { apiKey: process.env.GEMINI_API_KEY! });
 const TEXT_MODEL = "gemini-2.5-flash";
 const MAX_SHEET_IMAGES = 40; // flash handles many; 13 characters x 2 pictures fits
-const SHEET_VERSION = 3; // bump to force every story to rebuild its sheet
+const SHEET_VERSION = 4; // bump to force every story to rebuild its sheet (4: approved cards win over photos)
 // Bump to force every full-body image to be redrawn. v2: v1 images were drawn
 // from sheet lines that copied clothes from the written description, so they
 // could disagree with the character card.
@@ -298,7 +299,28 @@ export async function getCastSheet(storyId: string): Promise<CastSheet | null> {
       return rank(a.role) - rank(b.role);
     });
 
+    // A character's card is the drawing the parent approved, so when there is
+    // one it is the source of truth and the real photo is not sent: with the
+    // photo winning, these lines described the photo's face and hair and every
+    // page drifted away from the approved card. Colouring books keep the photo,
+    // because their cards are outlines with no real colours.
+    const story = await db.query.stories.findFirst({ where: eq(stories.id, storyId), columns: { bookType: true } });
+    const cardsWin = story?.bookType !== "colouring_storybook";
+
     for (const c of ordered) {
+      const approvedCard = cardsWin && !!c.portraitImageUrl;
+      if (approvedCard && imagesSent < MAX_SHEET_IMAGES) {
+        try {
+          parts.push(await imagePart(c.portraitImageUrl!, MAX_REF_PX));
+          parts.push({
+            text: `↑ APPROVED CARD of ${c.name.toUpperCase()} (id ${c.id}): the drawing the parent approved. Source of truth for face, hair, skin, glasses, facial hair, apparent age, build and outfit.`,
+          });
+          imagesSent++;
+        } catch {
+          /* text-only for this character */
+        }
+        continue;
+      }
       if (c.referenceImageUrl && imagesSent < MAX_SHEET_IMAGES) {
         try {
           parts.push(await imagePart(c.referenceImageUrl, MAX_REF_PX));
@@ -358,8 +380,9 @@ For EACH character write ONE dense line (max ~70 words) covering:
 For animals: species/breed, size against the children (e.g. "comes up to Talia's knee"), coat colour, pattern, markings.
 
 Rules:
-- A REAL PHOTO is the source of truth for everything it shows. Never contradict it, EXCEPT: if an APPEARANCE is marked PARENT-CONFIRMED, it wins over the photo for every trait it states (hair colour, eye colour, skin tone, hair length). Copy those traits from the written APPEARANCE exactly.
-- An illustrated portrait shows the outfit and art style. Use it only for things the photo does not show.
+- An APPROVED CARD is the source of truth for everything it shows: describe that character exactly as the card draws them (face, hair colour, length and texture, skin, glasses, facial hair, apparent age, build, outfit). Written text only fills in what the card cannot show (height, age).
+- For characters without an approved card, a REAL PHOTO is the source of truth for everything it shows. Never contradict it, EXCEPT: if an APPEARANCE is marked PARENT-CONFIRMED, it wins over the photo for every trait it states (hair colour, eye colour, skin tone, hair length). Copy those traits from the written APPEARANCE exactly.
+- For characters without an approved card, an illustrated portrait shows the outfit and art style. Use it only for things the photo does not show.
 - OUTFIT: if a DEFAULT OUTFIT is given, use it. Otherwise describe EXACTLY the clothes, colours and head covering in the illustrated portrait. If the written APPEARANCE or DESCRIPTION mentions different clothes (e.g. "wears dresses" but the portrait shows trousers), IGNORE the written clothes. The portrait is how this character is drawn throughout the book.
 - HAIR: copy the length from the picture; if the hair runs out of frame, say it continues beyond the shoulders rather than guessing shorter.
 - Written text fills in what the picture cannot show (height, outfit, age).
