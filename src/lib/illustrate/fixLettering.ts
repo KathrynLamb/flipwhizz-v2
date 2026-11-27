@@ -4,10 +4,15 @@
 // without redrawing the picture.
 //
 // 1. Read the lettering on the current picture, and where it is.
-// 2. Re-letter a copy with the story text (plus an optional admin note).
+// 2. Erase all lettering from a copy, then letter the story text onto that
+//    clean copy (plus an optional admin note). Re-lettering over the old
+//    words made the model copy the old mistakes (a stray quote mark came
+//    back every time), so it never sees them now.
 // 3. Paste ONLY the text areas (old and new) back onto the current picture,
 //    so faces, characters and background stay exactly as they were.
-// 4. Read the result back and judge words AND quote marks.
+// 4. Read the result back TWICE and judge words AND quote marks. Reading
+//    punctuation is unreliable (one read saw a stray mark, the next missed
+//    it), so the worse of the two reads is what counts.
 // 5. Save only if it's right, or clearly better than before. Otherwise the
 //    page is left alone and the reason comes back.
 //
@@ -20,7 +25,8 @@ import { storyPages, storySpreads, storyStyleGuide } from "@/db/schema";
 import { getStoryFormat } from "@/lib/books/storyFormat";
 import { resolveStyleGuide } from "@/inngest/generateBookSpreads";
 import { compositeText, judge, letterArt, readText } from "./checkfix";
-import { fetchImage, upload } from "./images";
+import { generateImage } from "./gemini";
+import { fetchImage, imageSize, matchSize, toPart, upload } from "./images";
 import { LETTERING_MODEL, SPREAD_IMAGE_SIZE } from "./models";
 import type { TextBlock, TextVerdict } from "./geometry";
 
@@ -29,8 +35,33 @@ const PLAIN_TYPOGRAPHY =
   "Plain legible black lettering on pure white. No colour, decorative shading or coloured panels. Preserve all outline artwork as black lines on white.";
 
 export type FixLetteringResult =
-  | { saved: true; url: string; before: TextVerdict; after: TextVerdict }
+  | { saved: true; url: string; before: TextVerdict; after: TextVerdict; /** Both reads passed. */ confirmed: boolean }
   | { saved: false; reason: string; before?: TextVerdict; after?: TextVerdict };
+
+/** The stricter of two reads of the same picture. */
+function worse(a: TextVerdict, b: TextVerdict): TextVerdict {
+  if (a.ok !== b.ok) return a.ok ? b : a;
+  if (a.problems.length !== b.problems.length) return a.problems.length > b.problems.length ? a : b;
+  return a.left + a.right <= b.left + b.right ? a : b;
+}
+
+/** A copy of the picture with every bit of lettering painted out. */
+async function eraseLettering(art: Buffer): Promise<Buffer> {
+  const out = await generateImage({
+    model: LETTERING_MODEL,
+    parts: [
+      await toPart(art, 2752),
+      {
+        text: "Remove ALL the lettering from this children's book double-page spread: every word, letter, number and punctuation mark. Repaint the background behind where the text was so it matches its surroundings (same texture, colours and lighting). Do NOT change anything else: same people, faces, clothes, animals, objects, colours and composition.",
+      },
+    ],
+    aspectRatio: ASPECT,
+    imageSize: SPREAD_IMAGE_SIZE,
+    label: "text-erase",
+  });
+  const { width, height } = await imageSize(art);
+  return matchSize(out.data, width, height);
+}
 
 /** Fewer problems wins; ties go to the closer words. */
 function better(after: TextVerdict, before: TextVerdict): boolean {
@@ -68,10 +99,11 @@ export async function fixLetteringOnly(args: { storyId: string; spreadId: string
     return { saved: false, reason: "The lettering already matches the story (words and quote marks). Add a note if something else needs changing.", before };
   }
 
-  // 2. Re-letter a copy
+  // 2. Erase the lettering from a copy, then letter the clean copy
   const feedback = [args.note?.trim(), ...before.problems].filter(Boolean).join("; ");
+  const clean = await eraseLettering(art);
   const lettered = await letterArt({
-    art,
+    art: clean,
     leftText,
     rightText,
     typography,
@@ -79,16 +111,20 @@ export async function fixLetteringOnly(args: { storyId: string; spreadId: string
     imageSize: SPREAD_IMAGE_SIZE,
     feedback,
     model: LETTERING_MODEL,
-    replaceExisting: true,
+    replaceExisting: false,
   });
 
   // 3. Paste only the text areas (where text was before AND after) onto the current picture
   const afterLetterBlocks = await readText(lettered);
   const composed = await compositeText(art, lettered, [...beforeBlocks, ...afterLetterBlocks]);
 
-  // 4. Judge what would actually be saved
-  const afterBlocks = await readText(composed);
-  const after = judge(afterBlocks, leftText, rightText);
+  // 4. Judge what would actually be saved, read twice; the stricter read counts
+  const [readA, readB] = await Promise.all([readText(composed), readText(composed)]);
+  const verdictA = judge(readA, leftText, rightText);
+  const verdictB = judge(readB, leftText, rightText);
+  const after = worse(verdictA, verdictB);
+  const afterBlocks = after === verdictA ? readA : readB;
+  const confirmed = verdictA.ok && verdictB.ok;
   if (!better(after, before)) {
     return { saved: false, reason: `The new lettering wasn't better (${after.problems.join("; ") || "no change"}). Nothing was changed.`, before, after };
   }
@@ -114,5 +150,5 @@ export async function fixLetteringOnly(args: { storyId: string; spreadId: string
     await tx.update(storySpreads).set({ qa: record }).where(eq(storySpreads.id, spreadId));
     await tx.update(storyPages).set({ imageUrl: url }).where(inArray(storyPages.id, pageIds));
   });
-  return { saved: true, url, before, after };
+  return { saved: true, url, before, after, confirmed };
 }
