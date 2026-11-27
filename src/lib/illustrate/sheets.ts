@@ -3,8 +3,9 @@
 // The fixed anchors every picture is drawn and checked against:
 //
 // 1. Reference sheet per character: one image with a face close-up and the
-//    same person full length, made from their card (how they're drawn in
-//    this book) and real photo (likeness). One image carries face, body,
+//    same person full length, made from their card (the approved drawing,
+//    which wins on everything) or, with no card yet, from the real photo
+//    (likeness). One image carries face, body,
 //    hair length and outfit, which matters because the image models only
 //    take 4-5 character images per request. Cached PER STORY on
 //    characters.visual_details.sheets[storyId] (a character can be in several
@@ -18,7 +19,7 @@
 import { hasUserEditedTraits, PARENT_TEXT_WINS } from "@/lib/characters/userEdits";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { characters, storyCharacters, storyStyleGuide } from "@/db/schema";
+import { characters, stories, storyCharacters, storyStyleGuide } from "@/db/schema";
 import { generateImage, rethrowIfBilling } from "./gemini";
 import { fetchImage, toPart, upload, urlToPart } from "./images";
 import { artModel, type ArtModelKey } from "./models";
@@ -83,12 +84,27 @@ export async function ensureReferenceSheet(
     const parts: any[] = [];
     const photoParts: any[] = [];
 
-    if (usable(c.portraitImageUrl)) {
-      parts.push(await urlToPart(c.portraitImageUrl, 1536), {
+    // The card is the drawing the parent approved, so when there is one it is
+    // the only source for how the character looks. The real photo is left out:
+    // sending it let the photo's face and hair override the approved card, and
+    // every page then copied that drifted sheet instead of the card.
+    // Colouring books keep the old mix: their cards are outlines, so the real
+    // colours still come from the photo.
+    const story = await db.query.stories.findFirst({ where: eq(stories.id, storyId), columns: { bookType: true } });
+    const outlineCards = story?.bookType === "colouring_storybook";
+    const hasCard = usable(c.portraitImageUrl) && !outlineCards;
+
+    if (usable(c.portraitImageUrl) && outlineCards) {
+      parts.push(await urlToPart(c.portraitImageUrl!, 1536), {
         text: `↑ CHARACTER CARD for ${NAME}: exactly how ${c.name} is drawn in this book. Copy the clothes, colours, ${isAnimal ? "coat, markings" : "head covering, hairstyle"} and art style. ↑`,
       });
     }
-    if (usable(c.referenceImageUrl)) {
+    if (hasCard) {
+      parts.push(await urlToPart(c.portraitImageUrl!, 1536), {
+        text: `↑ CHARACTER CARD for ${NAME}: the approved drawing of ${c.name}. Copy it exactly: same face and face shape, ${isAnimal ? "coat, markings, colours" : "hair colour, length and style, skin tone, glasses, facial hair, age"}, build, clothes, colours and art style. Do not redesign or age ${c.name}. ↑`,
+      });
+    }
+    if (!hasCard && usable(c.referenceImageUrl)) {
       const img = await urlToPart(c.referenceImageUrl, 1024);
       const label = {
         text: parentEdited
@@ -117,9 +133,11 @@ Two panels side by side on a plain white background with a clear white gap betwe
 - RIGHT panel: the same ${isAnimal ? "animal" : "person"} full length from the top of the head to the ${isAnimal ? "paws and tail" : "feet"}, standing, facing the viewer, ${isAnimal ? "" : "arms relaxed, "}hair shown at its full length.
 Both panels show the SAME single ${isAnimal ? "animal" : "person"} with identical ${isAnimal ? "coat and accessories" : "clothes and head covering"}. Correct proportions for their age and size.
 ${line ? `Details: ${line}` : ""}
-${parentEdited
-  ? `Where the card and the photo disagree: clothes, colours, hair and skin tone come from the card and the Details above; only the face shape comes from the photo.`
-  : `Where the card and the photo disagree: clothes and colours come from the card; ${isAnimal ? "coat and markings" : "face, hair and skin tone"} come from the photo.`}
+${hasCard
+  ? `The CHARACTER CARD is the approved look and wins over everything else, including the Details above. Both panels must look like the same ${isAnimal ? "animal" : "person"} as the card, simply shown as a close-up and full length.`
+  : parentEdited
+    ? `Where the card and the photo disagree: clothes, colours, hair and skin tone come from the card and the Details above; only the face shape comes from the photo.`
+    : `Where the card and the photo disagree: clothes and colours come from the card; ${isAnimal ? "coat and markings" : "face, hair and skin tone"} come from the photo.`}
 No text, labels, captions, borders, other people or props beyond what they wear or always carry.`,
     });
 
