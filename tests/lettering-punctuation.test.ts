@@ -1,7 +1,7 @@
 // tests/lettering-punctuation.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judgeLettering, pagePassage, quoteMarks, type TextBlock } from "../src/lib/illustrate/geometry";
+import { judgeLettering, normaliseText, pagePassage, quoteMarks, quoteMarksMatch, type TextBlock } from "../src/lib/illustrate/geometry";
 
 const left = (text: string): TextBlock => ({ box_2d: [50, 50, 200, 450], text });
 const right = (text: string): TextBlock => ({ box_2d: [50, 550, 200, 950], text });
@@ -49,4 +49,22 @@ test("pagePassage never wraps text in quote marks", () => {
   assert.ok(p.includes("\n'Me! Me! Me!'\n"));
   assert.ok(!p.includes(`"'Me`));
   assert.equal(pagePassage("  "), "(no text on this page)");
+});
+
+test("single quotes at word edges don't change the words (page 21 scored 0.89 before)", () => {
+  assert.equal(normaliseText("'Climb aboard, my fixers!'"), normaliseText("“Climb aboard, my fixers!”"));
+  assert.equal(normaliseText("Who'll fix it? It's Grandy's."), "who'll fix it it's grandy's");
+});
+
+test("lettering all-double where the story is all-single is fine (page 21)", () => {
+  const story = "'Climb aboard, my fixers!' Grandy patted the seat. Oakley scrambled up, and Ezra followed — what a treat!";
+  const lettered = "“Climb aboard, my fixers!” Grandy patted the seat. Oakley scrambled up, and Ezra followed — what a treat!";
+  const v = judgeLettering([left(lettered)], story, "");
+  assert.equal(v.ok, true, v.problems.join("; "));
+  assert.equal(quoteMarksMatch(story, lettered), true);
+});
+
+test("a pair that opens single and closes double still fails", () => {
+  assert.equal(quoteMarksMatch('"Hold on tight!"', "‘Hold on tight!”"), false);
+  assert.equal(quoteMarksMatch("'Me!'", "‘Me!’”"), false);
 });

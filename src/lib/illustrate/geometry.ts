@@ -175,6 +175,12 @@ export function normaliseText(s: string): string {
     .replace(/[‘’‚‛′`]/g, "'")
     .replace(/[“”„‟″]/g, '"')
     .replace(/[–—―]/g, "-")
+    // A single quote mark at the edge of a word ('Climb ... fixers!') is
+    // punctuation, not part of the word; only apostrophes inside a word
+    // (it's, Who'll) are kept. Without this, 'Climb' and "Climb" read as
+    // different words and correct pages were flagged.
+    .replace(/(^|[^a-z0-9])'+/g, "$1")
+    .replace(/'+(?=[^a-z0-9]|$)/g, "")
     .replace(/[^a-z0-9' ]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -238,6 +244,19 @@ export function pagePassage(text: string | null | undefined): string {
 export const PASSAGE_RULE =
   "Each page's text sits between <<<BEGIN TEXT>>> and <<<END TEXT>>>. Never letter those markers. Letter everything between them exactly as written, word for word, with exactly the same punctuation: every quote mark in it belongs to the story, so letter each one, add none and change none (keep single marks single and double marks double).";
 
+/**
+ * Lettering may use "double" where the story has 'single' quote marks, or the
+ * other way round, as long as it does so throughout: that's house style. A
+ * missing or extra mark, or a pair that opens single and closes double, fails.
+ */
+export function quoteMarksMatch(expected: string, lettered: string): boolean {
+  const a = quoteMarks(expected);
+  const b = quoteMarks(lettered);
+  if (a === b) return true;
+  const swapped = [...a].map((c) => (c === "'" ? '"' : "'")).join("");
+  return swapped === b;
+}
+
 export type TextBlock = { box_2d: Box2d; text: string };
 
 export type TextVerdict = {
@@ -288,7 +307,7 @@ export function judgeLettering(
     if (words(got) > words(exp) * 1.3 + 3) problems.push(`${side} page text appears to be repeated`);
     if (sim < threshold) problems.push(`${side} page text does not match (similarity ${sim.toFixed(2)})`);
     // Only worth judging punctuation once the words themselves are right.
-    else if (quoteMarks(exp) !== quoteMarks(got)) {
+    else if (!quoteMarksMatch(exp, got)) {
       problems.push(`${side} page quote marks don't match the story (story: ${quoteMarks(exp) || "none"}, lettered: ${quoteMarks(got) || "none"})`);
     }
   };
